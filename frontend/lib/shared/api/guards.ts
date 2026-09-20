@@ -693,13 +693,57 @@ export const isParticipantReadyEvent = (value: unknown): value is ParticipantRea
 
 const isParticipantDraftAction = (value: unknown): boolean =>
   isParticipantObject(value) &&
-  hasExactKeys(value, ["turn", "actor_id", "action", "category", "occurred_at", "turn_deadline"]) &&
+  hasExactKeys(value, [
+    "turn",
+    "actor_id",
+    "action",
+    "category",
+    "occurred_at",
+    "turn_deadline",
+    "automatic",
+    "decision_evidence",
+  ]) &&
   isSafePositiveInteger(value.turn) &&
   isNonNilUUID(value.actor_id) &&
   (value.action === "ban" || value.action === "pick") &&
   isParticipantCategory(value.category) &&
   isDateTimeString(value.occurred_at) &&
-  isDateTimeString(value.turn_deadline);
+  isDateTimeString(value.turn_deadline) &&
+  typeof value.automatic === "boolean" &&
+  (value.decision_evidence === null || (
+    isParticipantObject(value.decision_evidence) &&
+    hasExactKeys(value.decision_evidence, [
+      "algorithm_version",
+      "decided_at",
+      "id",
+      "normalized_inputs",
+      "owner_id",
+      "purpose",
+      "replay_digest",
+      "result",
+    ]) &&
+    value.decision_evidence.algorithm_version === "hmac-sha256-order-v1" &&
+    isDateTimeString(value.decision_evidence.decided_at) &&
+    isNonNilUUID(value.decision_evidence.id) &&
+    Array.isArray(value.decision_evidence.normalized_inputs) &&
+    value.decision_evidence.normalized_inputs.length > 0 &&
+    value.decision_evidence.normalized_inputs.every(isString) &&
+    isNonNilUUID(value.decision_evidence.owner_id) &&
+    new Set([
+      "category",
+      "draft_order",
+      "pairing",
+      "reserve_order",
+      "task",
+      "wave_order",
+    ]).has(String(value.decision_evidence.purpose)) &&
+    isString(value.decision_evidence.replay_digest) &&
+    /^[0-9a-f]{64}$/.test(value.decision_evidence.replay_digest) &&
+    Array.isArray(value.decision_evidence.result) &&
+    value.decision_evidence.result.length > 0 &&
+    value.decision_evidence.result.every(isString)
+  )) &&
+  value.automatic === (value.decision_evidence !== null);
 
 const isParticipantDraftValue = (value: unknown): value is ParticipantDraft =>
   isParticipantObject(value) &&
@@ -716,6 +760,9 @@ const isParticipantDraftValue = (value: unknown): value is ParticipantDraft =>
     "turn_deadline",
     "actions",
     "selected_categories",
+    "current_action",
+    "current_actor_id",
+    "legal_categories",
   ]) &&
   isNonNilUUID(value.id) &&
   isNonNilUUID(value.series_id) &&
@@ -729,16 +776,29 @@ const isParticipantDraftValue = (value: unknown): value is ParticipantDraft =>
   value.pool.length <= 5 &&
   value.pool.every(isParticipantCategory) &&
   new Set(value.pool).size === value.pool.length &&
-  (value.state === "active" || value.state === "completed") &&
+  new Set(["active", "paused", "recovery_required", "completed", "superseded"]).has(String(value.state)) &&
   isSafePositiveInteger(value.turn) &&
   isParticipantDateOrNull(value.turn_deadline) &&
+  (value.current_action === null || value.current_action === "ban" || value.current_action === "pick") &&
+  isParticipantUUIDOrNull(value.current_actor_id) &&
+  Array.isArray(value.legal_categories) &&
+  value.legal_categories.every(isParticipantCategory) &&
+  new Set(value.legal_categories).size === value.legal_categories.length &&
   Array.isArray(value.actions) &&
   value.actions.length <= 4 &&
   value.actions.every(isParticipantDraftAction) &&
   Array.isArray(value.selected_categories) &&
   value.selected_categories.length <= 3 &&
   value.selected_categories.every(isParticipantCategory) &&
-  new Set(value.selected_categories).size === value.selected_categories.length;
+  new Set(value.selected_categories).size === value.selected_categories.length &&
+  (value.state === "active"
+    ? value.current_action !== null &&
+      value.current_actor_id !== null &&
+      value.turn_deadline !== null
+    : value.current_action === null &&
+      value.current_actor_id === null &&
+      value.turn_deadline === null &&
+      value.legal_categories.length === 0);
 
 export const isParticipantDraft = (value: unknown): value is ParticipantDraft =>
   isParticipantDraftValue(value);
@@ -1560,47 +1620,7 @@ export const isPreflightReport = (value: unknown): value is PreflightReport =>
   value.revisions.every(isOperatorPreflightSourceRevision) &&
   isNonNilUUID(value.tournament_id);
 
-const isOperatorDraftAction = (value: unknown): boolean =>
-  isRecord(value) &&
-  hasExactKeys(value, ["action", "actor_id", "category", "occurred_at", "turn", "turn_deadline"]) &&
-  (value.action === "ban" || value.action === "pick") &&
-  isNonNilUUID(value.actor_id) &&
-  isOperatorCategory(value.category) &&
-  isDateTimeString(value.occurred_at) &&
-  isSafePositiveInteger(value.turn) &&
-  isDateTimeString(value.turn_deadline);
-
-const isOperatorDraft = (value: unknown): boolean =>
-  isRecord(value) &&
-  hasExactKeys(value, [
-    "actions",
-    "first_participant_id",
-    "format",
-    "id",
-    "pool",
-    "revision",
-    "second_participant_id",
-    "selected_categories",
-    "series_id",
-    "state",
-    "turn",
-    "turn_deadline",
-  ]) &&
-  Array.isArray(value.actions) &&
-  value.actions.every(isOperatorDraftAction) &&
-  isNonNilUUID(value.first_participant_id) &&
-  (value.format === "bo1" || value.format === "bo3") &&
-  isNonNilUUID(value.id) &&
-  Array.isArray(value.pool) &&
-  value.pool.every(isOperatorCategory) &&
-  isSafePositiveInteger(value.revision) &&
-  isNonNilUUID(value.second_participant_id) &&
-  Array.isArray(value.selected_categories) &&
-  value.selected_categories.every(isOperatorCategory) &&
-  isNonNilUUID(value.series_id) &&
-  (value.state === "active" || value.state === "completed") &&
-  isSafePositiveInteger(value.turn) &&
-  isOperatorOptionalDateTime(value.turn_deadline);
+const isOperatorDraft = (value: unknown): boolean => isParticipantDraftValue(value);
 
 const isOperatorPauseGame = (value: unknown): boolean =>
   isRecord(value) &&

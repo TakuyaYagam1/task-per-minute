@@ -4,7 +4,8 @@ CategoryMode:
 
 DraftState:
   type: string
-  enum: [active, completed]
+  description: Durable draft execution state. Only an active draft accepts participant actions.
+  enum: [active, paused, recovery_required, completed, superseded]
 
 DraftActionType:
   type: string
@@ -50,7 +51,7 @@ DraftTurn:
 
 DraftAction:
   type: object
-  required: [turn, actor_id, action, category, occurred_at, turn_deadline]
+  required: [turn, actor_id, action, category, occurred_at, turn_deadline, automatic, decision_evidence]
   properties:
     turn:
       type: integer
@@ -71,10 +72,65 @@ DraftAction:
       type: string
       format: date-time
       readOnly: true
+    automatic:
+      type: boolean
+      description: Whether the server recorded this action automatically after the turn deadline.
+      readOnly: true
+    decision_evidence:
+      type: object
+      nullable: true
+      readOnly: true
+      allOf:
+        - $ref: '#/DraftDecisionEvidence'
+
+DraftDecisionEvidence:
+  type: object
+  additionalProperties: false
+  description: Recorded evidence for an automatic draft decision. The private decision seed is never exposed.
+  required: [id, purpose, algorithm_version, normalized_inputs, result, replay_digest, owner_id, decided_at]
+  properties:
+    id:
+      type: string
+      format: uuid
+      readOnly: true
+    purpose:
+      type: string
+      enum: [category, draft_order, pairing, reserve_order, task, wave_order]
+      readOnly: true
+    algorithm_version:
+      type: string
+      enum: [hmac-sha256-order-v1]
+      readOnly: true
+    normalized_inputs:
+      type: array
+      minItems: 1
+      readOnly: true
+      items:
+        type: string
+    result:
+      type: array
+      minItems: 1
+      readOnly: true
+      items:
+        type: string
+    replay_digest:
+      type: string
+      minLength: 64
+      maxLength: 64
+      pattern: '^[0-9a-f]{64}$'
+      readOnly: true
+    owner_id:
+      type: string
+      format: uuid
+      readOnly: true
+    decided_at:
+      type: string
+      format: date-time
+      readOnly: true
 
 Draft:
   type: object
-  required: [id, series_id, revision, format, first_participant_id, second_participant_id, pool, state, turn, turn_deadline, actions, selected_categories]
+  required: [id, series_id, revision, format, first_participant_id, second_participant_id, pool, state, turn, current_actor_id, current_action, turn_deadline, legal_categories, actions, selected_categories]
   properties:
     id:
       type: string
@@ -107,10 +163,34 @@ Draft:
       type: integer
       format: int32
       minimum: 1
+      readOnly: true
+    current_actor_id:
+      type: string
+      format: uuid
+      nullable: true
+      description: Server-authoritative participant allowed to act on the current turn. Null for terminal states.
+      readOnly: true
+    current_action:
+      type: string
+      nullable: true
+      description: Server-authoritative action required on the current turn. Null for terminal states.
+      readOnly: true
+      allOf:
+        - $ref: '#/DraftActionType'
     turn_deadline:
       type: string
       format: date-time
       nullable: true
+      description: Server-authoritative deadline for the current turn. Null when no turn is actionable.
+      readOnly: true
+    legal_categories:
+      type: array
+      maxItems: 5
+      uniqueItems: true
+      description: Categories still legal for the server-authoritative current turn. Empty when no action is actionable.
+      readOnly: true
+      items:
+        $ref: '#/Category'
     actions:
       type: array
       maxItems: 4

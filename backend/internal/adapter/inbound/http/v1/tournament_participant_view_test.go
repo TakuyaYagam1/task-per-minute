@@ -1,6 +1,8 @@
 package v1
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -137,4 +139,153 @@ func TestParticipantWaveResponseRedactsSeriesForAuthoritativeBye(t *testing.T) {
 	require.Len(t, wave.Members, 2)
 	require.Nil(t, wave.Members[0].SeriesId)
 	require.Equal(t, seriesID, *wave.Members[1].SeriesId)
+}
+
+func TestParticipantDraftResponseIncludesAuthoritativeTurnAndAutomaticEvidence(t *testing.T) {
+	t.Parallel()
+
+	draftID := uuid.New()
+	firstParticipantID := uuid.New()
+	secondParticipantID := uuid.New()
+	deadline := time.Date(2026, 9, 6, 10, 0, 15, 0, time.UTC)
+	evidence, err := domain.NewDecisionEvidence(
+		uuid.New(), domain.DecisionPurposeCategory, domain.DecisionAlgorithmV1,
+		[]string{string(domain.CategoryWeb), string(domain.CategoryCrypto)}, draftID, deadline,
+	)
+	require.NoError(t, err)
+	actionCategory := domain.Category(evidence.Result[0])
+
+	view, err := participantDraftResponse(usecase.DraftExecutionView{
+		ID:                  draftID,
+		SeriesID:            uuid.New(),
+		Format:              domain.SeriesFormatBO1,
+		FirstParticipantID:  firstParticipantID,
+		SecondParticipantID: secondParticipantID,
+		Pool:                []domain.Category{domain.CategoryWeb, domain.CategoryCrypto, domain.CategoryPwn},
+		State:               usecase.DraftExecutionState("active"),
+		Revision:            2,
+		Turn:                2,
+		CurrentActorID:      &secondParticipantID,
+		CurrentAction:       draftActionPointer(domain.DraftActionBan),
+		TurnDeadline:        deadline,
+		LegalCategories:     []domain.Category{domain.CategoryCrypto, domain.CategoryPwn},
+		Actions: []usecase.DraftActionRecordView{{
+			Turn:              1,
+			ActorID:           firstParticipantID,
+			Action:            domain.DraftActionBan,
+			Category:          actionCategory,
+			OccurredAt:        deadline.Add(-time.Second),
+			ScheduledDeadline: deadline,
+			Automatic:         true,
+			DecisionEvidence:  &evidence,
+		}},
+	})
+	require.NoError(t, err)
+	require.Equal(t, secondParticipantID, *view.CurrentActorId)
+	require.Equal(t, api.Ban, *view.CurrentAction)
+	require.Equal(t, deadline, *view.TurnDeadline)
+	require.Equal(t, []api.Category{api.CategoryCrypto, api.CategoryPwn}, view.LegalCategories)
+	require.True(t, view.Actions[0].Automatic)
+	require.NotNil(t, view.Actions[0].DecisionEvidence)
+	require.Equal(t, evidence.ID, view.Actions[0].DecisionEvidence.Id)
+	require.Equal(t, api.DraftDecisionEvidencePurposeCategory, view.Actions[0].DecisionEvidence.Purpose)
+	require.Equal(t, evidence.OwnerID, view.Actions[0].DecisionEvidence.OwnerId)
+	require.Equal(t, evidence.DecidedAt, view.Actions[0].DecisionEvidence.DecidedAt)
+	require.Equal(t, evidence.Result, view.Actions[0].DecisionEvidence.Result)
+}
+
+func TestParticipantDraftResponseDisablesPersistedNonActiveStates(t *testing.T) {
+	t.Parallel()
+
+	firstParticipantID := uuid.New()
+	secondParticipantID := uuid.New()
+	states := []struct {
+		name  string
+		state usecase.DraftExecutionState
+	}{
+		{name: "paused", state: usecase.DraftExecutionState("paused")},
+		{name: "recovery required", state: usecase.DraftExecutionState("recovery_required")},
+		{name: "completed", state: usecase.DraftExecutionState("completed")},
+		{name: "superseded", state: usecase.DraftExecutionState("superseded")},
+	}
+	for _, testCase := range states {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			currentActorID := &firstParticipantID
+			currentAction := draftActionPointer(domain.DraftActionBan)
+			turnDeadline := time.Date(2026, 9, 6, 10, 0, 15, 0, time.UTC)
+			legalCategories := []domain.Category{domain.CategoryCrypto}
+			if testCase.state == usecase.DraftExecutionState("completed") || testCase.state == usecase.DraftExecutionState("superseded") {
+				currentActorID = nil
+				currentAction = nil
+				turnDeadline = time.Time{}
+				legalCategories = nil
+			}
+			view, err := participantDraftResponse(usecase.DraftExecutionView{
+				ID:                  uuid.New(),
+				SeriesID:            uuid.New(),
+				Format:              domain.SeriesFormatBO1,
+				FirstParticipantID:  firstParticipantID,
+				SecondParticipantID: secondParticipantID,
+				Pool:                []domain.Category{domain.CategoryWeb, domain.CategoryCrypto, domain.CategoryPwn},
+				State:               testCase.state,
+				Revision:            3,
+				Turn:                2,
+				CurrentActorID:      currentActorID,
+				CurrentAction:       currentAction,
+				TurnDeadline:        turnDeadline,
+				LegalCategories:     legalCategories,
+			})
+			require.NoError(t, err)
+			require.Nil(t, view.CurrentActorId)
+			require.Nil(t, view.CurrentAction)
+			require.Nil(t, view.TurnDeadline)
+			require.Empty(t, view.LegalCategories)
+			require.Equal(t, api.DraftState(testCase.state), view.State)
+		})
+	}
+}
+
+func TestSubmitParticipantDraftActionRequiresAuthenticatedActor(t *testing.T) {
+	t.Parallel()
+
+	server := New(Dependencies{})
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/tournaments/10000000-0000-0000-0000-000000000001/participant/series/20000000-0000-0000-0000-000000000002/draft/actions", nil)
+
+	server.SubmitParticipantDraftAction(
+		recorder,
+		request,
+		uuid.MustParse("10000000-0000-0000-0000-000000000001"),
+		uuid.MustParse("20000000-0000-0000-0000-000000000002"),
+		api.SubmitParticipantDraftActionParams{},
+	)
+
+	require.Equal(t, http.StatusUnauthorized, recorder.Code)
+}
+
+func TestAdminPausedDraftResponseSerializesRequiredLegalCategories(t *testing.T) {
+	t.Parallel()
+
+	deadline := time.Date(2026, 9, 20, 10, 0, 0, 0, time.UTC)
+	view, err := adminPausedDraftResponse(usecase.AdminDraftView{
+		ID:                  uuid.New(),
+		SeriesID:            uuid.New(),
+		FirstParticipantID:  uuid.New(),
+		SecondParticipantID: uuid.New(),
+		Format:              domain.SeriesFormatBO1,
+		Pool:                []domain.Category{domain.CategoryWeb, domain.CategoryCrypto, domain.CategoryReverse},
+		State:               domain.DraftStateActive,
+		Turn:                1,
+		TurnDeadline:        &deadline,
+		Revision:            1,
+	})
+	require.NoError(t, err)
+	require.NotNil(t, view.LegalCategories)
+	require.Empty(t, view.LegalCategories)
+}
+
+func draftActionPointer(value domain.DraftActionType) *domain.DraftActionType {
+	return &value
 }

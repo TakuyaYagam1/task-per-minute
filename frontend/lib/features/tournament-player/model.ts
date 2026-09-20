@@ -43,6 +43,51 @@ export type ParticipantReadyResult = Readonly<{
   message?: string;
 }>;
 
+export type ParticipantDraftActionView = Readonly<{
+  action: components["schemas"]["DraftActionType"];
+  actorId: string;
+  automatic: boolean;
+  category: components["schemas"]["Category"];
+  decisionEvidence: components["schemas"]["DraftDecisionEvidence"] | null;
+  occurredAt: string;
+  turn: number;
+  turnDeadline: string;
+}>;
+
+export type ParticipantDraftView = Readonly<{
+  id: string;
+  seriesId: string;
+  format: components["schemas"]["SeriesFormat"];
+  firstParticipantId: string;
+  secondParticipantId: string;
+  pool: readonly components["schemas"]["Category"][];
+  state: components["schemas"]["DraftState"];
+  revision: number;
+  turn: number;
+  turnDeadline: string | null;
+  currentActorId: string | null;
+  currentAction: components["schemas"]["DraftActionType"] | null;
+  legalCategories: readonly components["schemas"]["Category"][];
+  selectedCategories: readonly components["schemas"]["Category"][];
+  actions: readonly ParticipantDraftActionView[];
+}>;
+
+export type ParticipantDraftIntent = Readonly<{
+  tournamentId: string;
+  seriesId: string;
+  draftId: string;
+  draftRevision: number;
+  projectionRevision: number;
+  expectedTurn: number;
+  action: "ban";
+  category: components["schemas"]["Category"];
+}>;
+
+export type ParticipantDraftResult = Readonly<{
+  status: "accepted" | "conflict" | "rate_limited";
+  message?: string;
+}>;
+
 export type ParticipantAssignmentView = Readonly<{
   assignmentId: string;
   attemptId: string;
@@ -71,6 +116,7 @@ export type ParticipantAssignmentView = Readonly<{
 
 export type ParticipantPlayerView = Readonly<{
   tournamentId: string;
+  participantId: string;
   projectionRevision: number;
   state: ParticipantPlayerState;
   stateLabel: string;
@@ -94,6 +140,7 @@ export type ParticipantPlayerView = Readonly<{
   readyKey: ParticipantReadinessKey;
   assignmentDeliveryState: ParticipantAssignmentDeliveryState;
   assignment: ParticipantAssignmentView | null;
+  draft: ParticipantDraftView | null;
 }>;
 
 const participantStateCopy: Readonly<
@@ -195,6 +242,37 @@ const readyKeyFor = (
   tournamentId,
   waveId,
 });
+
+const participantDraftViewFor = (
+  value: components["schemas"]["Draft"] | null,
+): ParticipantDraftView | null => value === null
+  ? null
+  : {
+      actions: value.actions.map((action) => ({
+        action: action.action,
+        actorId: action.actor_id,
+        automatic: action.automatic,
+        category: action.category,
+        decisionEvidence: action.decision_evidence,
+        occurredAt: action.occurred_at,
+        turn: action.turn,
+        turnDeadline: action.turn_deadline,
+      })),
+      currentAction: value.current_action,
+      currentActorId: value.current_actor_id,
+      firstParticipantId: value.first_participant_id,
+      format: value.format,
+      id: value.id,
+      legalCategories: value.legal_categories,
+      pool: value.pool,
+      revision: value.revision,
+      secondParticipantId: value.second_participant_id,
+      selectedCategories: value.selected_categories,
+      seriesId: value.series_id,
+      state: value.state,
+      turn: value.turn,
+      turnDeadline: value.turn_deadline,
+    };
 
 /**
  * Converts the validated participant recovery projection into display state.
@@ -307,6 +385,7 @@ export const buildParticipantPlayerView = (
     matchFormat: currentSeries ? formatSeriesFormat(currentSeries.format) : null,
     opponentName: currentSeries?.opponent_display_name ?? null,
     ownPoints: lobby.swiss_points,
+    participantId: lobby.participant_id,
     projectionRevision: snapshot.projection_revision,
     ready,
     readyKey,
@@ -325,5 +404,6 @@ export const buildParticipantPlayerView = (
     stateLabel: participantStateCopy[state].label,
     tournamentId: snapshot.tournament_id,
     tournamentLabel: formatTournamentState(lobby.state),
+    draft: participantDraftViewFor(snapshot.draft),
   };
 };

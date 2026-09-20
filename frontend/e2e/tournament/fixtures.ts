@@ -45,6 +45,9 @@ export const tournamentFixtureIds = {
   task: "00000000-0000-4000-8000-000000000182",
   event: "00000000-0000-4000-8000-000000000190",
   resume: "00000000-0000-4000-8000-000000000191",
+  draft: "00000000-0000-4000-8000-000000000192",
+  draftEvidence: "00000000-0000-4000-8000-000000000193",
+  draftCommand: "00000000-0000-4000-8000-000000000194",
 } as const;
 
 const dates = {
@@ -534,6 +537,86 @@ export const participantRecovery = (projectionRevision = 9): Schema["Participant
     dates.paused,
   ),
 });
+
+export const participantDraft = (
+  overrides: Partial<Schema["Draft"]> = {},
+): Schema["Draft"] => ({
+  actions: [],
+  current_action: "ban",
+  current_actor_id: tournamentFixtureIds.firstParticipant,
+  first_participant_id: tournamentFixtureIds.firstParticipant,
+  format: "bo1",
+  id: tournamentFixtureIds.draft,
+  legal_categories: ["web", "crypto", "reverse"],
+  pool: ["web", "crypto", "reverse"],
+  revision: 1,
+  second_participant_id: tournamentFixtureIds.secondParticipant,
+  selected_categories: [],
+  series_id: tournamentFixtureIds.bo1Series,
+  state: "active",
+  turn: 1,
+  turn_deadline: dates.deadline,
+  ...overrides,
+});
+
+export const participantRecoveryWithDraft = (
+  draft: Schema["Draft"] = participantDraft(),
+  projectionRevision = 9,
+): Schema["ParticipantRecoverySnapshot"] => {
+  const base = participantRecovery(projectionRevision);
+  const series: Schema["Series"] | null = base.series === null
+    ? null
+    : {
+        ...base.series,
+        format: draft.format,
+        id: draft.series_id,
+        state: (draft.state === "completed" || draft.state === "superseded" ? "completed" : "draft") as Schema["SeriesState"],
+        winner_id: null,
+      };
+  const wave = base.wave === null
+    ? null
+    : {
+        ...base.wave,
+        id: tournamentFixtureIds.bo1Wave,
+        members: base.wave.members.map((member) => ({
+          ...member,
+          series_id: draft.series_id,
+        })),
+        paused_at: null,
+        ready_window: null,
+        state: "active" as const,
+      };
+
+  return {
+    ...base,
+    assignment: null,
+    draft,
+    lobby: {
+      ...base.lobby,
+      current_swiss_round: 1,
+      participant_id: draft.current_actor_id ?? tournamentFixtureIds.firstParticipant,
+      projection_revision: projectionRevision,
+      required_action: draft.state === "active" ? "draft" : "wait",
+      series: [{
+        format: draft.format,
+        opponent_display_name: "Боб",
+        series_id: draft.series_id,
+        state: series?.state ?? "completed",
+        wave_id: tournamentFixtureIds.bo1Wave,
+      }],
+      state: "swiss",
+      status: draft.state === "completed" || draft.state === "superseded" ? "completed" : "assigned",
+    },
+    next_cursor: {
+      ...base.next_cursor,
+      projection_revision: projectionRevision,
+    },
+    projection_revision: projectionRevision,
+    series,
+    tournament_id: base.tournament_id,
+    wave,
+  };
+};
 
 const goldenTask = (): Schema["GoldenRuntimeTask"] => ({
   assignment_id: tournamentFixtureIds.assignment,

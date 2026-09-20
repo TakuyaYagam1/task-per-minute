@@ -246,5 +246,11 @@ func adminPausedDraftResponse(draft inbound.AdminDraftView) (api.Draft, error) {
 		}
 		actions[i] = api.DraftAction{Turn: response.IntToInt32(action.Turn), ActorId: action.ActorID, Action: kind, Category: category, OccurredAt: action.OccurredAt, TurnDeadline: action.TurnDeadline}
 	}
-	return api.Draft{Id: draft.ID, SeriesId: draft.SeriesID, Format: format, FirstParticipantId: draft.FirstParticipantID, SecondParticipantId: draft.SecondParticipantID, Pool: pool, State: state, Turn: response.IntToInt32(draft.Turn), TurnDeadline: cloneTimePointer(draft.TurnDeadline), Actions: actions, SelectedCategories: selected, Revision: draft.Revision}, nil
+	return api.Draft{
+		Id: draft.ID, SeriesId: draft.SeriesID, Format: format,
+		FirstParticipantId: draft.FirstParticipantID, SecondParticipantId: draft.SecondParticipantID,
+		Pool: pool, State: state, Turn: response.IntToInt32(draft.Turn),
+		CurrentActorId: nil, CurrentAction: nil, TurnDeadline: cloneTimePointer(draft.TurnDeadline),
+		LegalCategories: []api.Category{}, Actions: actions, SelectedCategories: selected, Revision: draft.Revision,
+	}, nil
 }

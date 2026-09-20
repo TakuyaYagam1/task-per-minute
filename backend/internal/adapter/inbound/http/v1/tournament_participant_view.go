@@ -262,7 +262,9 @@ func participantRecoveryResponse(
 
 //nolint:gocyclo // One transactional workflow keeps ordering, rollback, and fail-closed branches explicit.
 func participantDraftResponse(execution usecase.DraftExecutionView) (api.Draft, error) {
-	if execution.ID == uuid.Nil || execution.SeriesID == uuid.Nil || execution.Revision < 1 {
+	if execution.ID == uuid.Nil || execution.SeriesID == uuid.Nil || execution.Revision < 1 ||
+		execution.FirstParticipantID == uuid.Nil || execution.SecondParticipantID == uuid.Nil ||
+		execution.FirstParticipantID == execution.SecondParticipantID || len(execution.Pool) < 3 || len(execution.Pool) > 5 {
 		return api.Draft{}, domain.ErrInternal
 	}
 	format := api.SeriesFormat(execution.Format)
@@ -278,26 +280,76 @@ func participantDraftResponse(execution usecase.DraftExecutionView) (api.Draft, 
 	if err != nil {
 		return api.Draft{}, err
 	}
+	if !uniqueParticipantCategories(pool) || len(selected) > 3 || !uniqueParticipantCategories(selected) || len(execution.Actions) > 4 {
+		return api.Draft{}, domain.ErrInternal
+	}
+	legalCategories, err := participantCategories(execution.LegalCategories)
+	if err != nil {
+		return api.Draft{}, err
+	}
+	if len(legalCategories) > len(pool) || !uniqueParticipantCategories(legalCategories) ||
+		!participantCategoriesSubset(legalCategories, pool) {
+		return api.Draft{}, domain.ErrInternal
+	}
+
+	var currentActorID *uuid.UUID
+	var currentAction *api.DraftActionType
+	var turnDeadline *time.Time
+	switch state {
+	case api.DraftStateActive:
+		if execution.CurrentActorID == nil || *execution.CurrentActorID == uuid.Nil ||
+			(*execution.CurrentActorID != execution.FirstParticipantID && *execution.CurrentActorID != execution.SecondParticipantID) ||
+			execution.CurrentAction == nil || !api.DraftActionType(*execution.CurrentAction).Valid() ||
+			execution.TurnDeadline.IsZero() || !domain.IsValidServerTime(execution.TurnDeadline) || len(legalCategories) == 0 {
+			return api.Draft{}, domain.ErrInternal
+		}
+		currentActorID = participantUUIDPointer(execution.CurrentActorID)
+		currentActionValue := api.DraftActionType(*execution.CurrentAction)
+		currentAction = &currentActionValue
+		deadline := execution.TurnDeadline
+		turnDeadline = &deadline
+	case api.DraftStatePaused, api.DraftStateRecoveryRequired:
+		// Persisted turn evidence stays internal while the server has made the
+		// draft non-actionable. Participants receive an explicit state and no
+		// mutation authority until a fresh active projection arrives.
+		legalCategories = []api.Category{}
+	case api.DraftStateCompleted, api.DraftStateSuperseded:
+		if execution.CurrentActorID != nil || execution.CurrentAction != nil || !execution.TurnDeadline.IsZero() || len(legalCategories) != 0 {
+			return api.Draft{}, domain.ErrInternal
+		}
+		legalCategories = []api.Category{}
+	}
 	actions := make([]api.DraftAction, len(execution.Actions))
 	for index, item := range execution.Actions {
 		action := api.DraftActionType(item.Action)
 		category := api.Category(item.Category)
-		if item.Turn < 1 || item.Turn > math.MaxInt32 || !action.Valid() || !category.Valid() {
+		if item.Turn < 1 || item.Turn > math.MaxInt32 || item.ActorID == uuid.Nil || !action.Valid() || !category.Valid() ||
+			!domain.IsValidServerTime(item.OccurredAt) || !domain.IsValidServerTime(item.ScheduledDeadline) {
+			return api.Draft{}, domain.ErrInternal
+		}
+		decisionEvidence, evidenceErr := participantDraftDecisionEvidence(item.DecisionEvidence)
+		if evidenceErr != nil {
+			return api.Draft{}, evidenceErr
+		}
+		if item.Automatic != (decisionEvidence != nil) {
+			return api.Draft{}, domain.ErrInternal
+		}
+		if item.Automatic && (item.DecisionEvidence.Purpose != domain.DecisionPurposeCategory ||
+			item.DecisionEvidence.OwnerID != execution.ID ||
+			!item.DecisionEvidence.DecidedAt.Equal(item.ScheduledDeadline) ||
+			len(item.DecisionEvidence.Result) == 0 || domain.Category(item.DecisionEvidence.Result[0]) != item.Category) {
 			return api.Draft{}, domain.ErrInternal
 		}
 		actions[index] = api.DraftAction{
-			Turn:         int32(item.Turn),
-			ActorId:      item.ActorID,
-			Action:       action,
-			Category:     category,
-			OccurredAt:   item.OccurredAt,
-			TurnDeadline: item.ScheduledDeadline,
+			Turn:             int32(item.Turn),
+			ActorId:          item.ActorID,
+			Action:           action,
+			Category:         category,
+			OccurredAt:       item.OccurredAt,
+			TurnDeadline:     item.ScheduledDeadline,
+			Automatic:        item.Automatic,
+			DecisionEvidence: decisionEvidence,
 		}
-	}
-	var turnDeadline *time.Time
-	if !execution.TurnDeadline.IsZero() {
-		deadline := execution.TurnDeadline
-		turnDeadline = &deadline
 	}
 	return api.Draft{
 		Id:                  execution.ID,
@@ -308,11 +360,69 @@ func participantDraftResponse(execution usecase.DraftExecutionView) (api.Draft, 
 		Pool:                pool,
 		State:               state,
 		Turn:                int32(execution.Turn),
+		CurrentActorId:      currentActorID,
+		CurrentAction:       currentAction,
 		TurnDeadline:        turnDeadline,
+		LegalCategories:     legalCategoriesForResponse(state, legalCategories),
 		Actions:             actions,
 		SelectedCategories:  selected,
 		Revision:            execution.Revision,
 	}, nil
+}
+
+func participantDraftDecisionEvidence(value *domain.DecisionEvidence) (*api.DraftDecisionEvidence, error) {
+	if value == nil {
+		return nil, nil
+	}
+	if value.Validate() != nil {
+		return nil, domain.ErrInternal
+	}
+	purpose := api.DraftDecisionEvidencePurpose(value.Purpose)
+	algorithm := api.DraftDecisionEvidenceAlgorithmVersion(value.AlgorithmVersion)
+	if !purpose.Valid() || !algorithm.Valid() || !domain.IsValidServerTime(value.DecidedAt) {
+		return nil, domain.ErrInternal
+	}
+	return &api.DraftDecisionEvidence{
+		Id:               value.ID,
+		Purpose:          purpose,
+		AlgorithmVersion: algorithm,
+		NormalizedInputs: append([]string(nil), value.NormalizedInputs...),
+		Result:           append([]string(nil), value.Result...),
+		ReplayDigest:     hex.EncodeToString(value.ReplayDigest[:]),
+		OwnerId:          value.OwnerID,
+		DecidedAt:        value.DecidedAt,
+	}, nil
+}
+
+func legalCategoriesForResponse(state api.DraftState, values []api.Category) []api.Category {
+	if state != api.DraftStateActive {
+		return []api.Category{}
+	}
+	return values
+}
+
+func uniqueParticipantCategories(values []api.Category) bool {
+	seen := make(map[api.Category]struct{}, len(values))
+	for _, value := range values {
+		if _, exists := seen[value]; exists {
+			return false
+		}
+		seen[value] = struct{}{}
+	}
+	return true
+}
+
+func participantCategoriesSubset(values, pool []api.Category) bool {
+	allowed := make(map[api.Category]struct{}, len(pool))
+	for _, value := range pool {
+		allowed[value] = struct{}{}
+	}
+	for _, value := range values {
+		if _, exists := allowed[value]; !exists {
+			return false
+		}
+	}
+	return true
 }
 
 func participantSeriesResponse(series domain.Series) (api.Series, error) {

@@ -306,10 +306,58 @@ func (e DraftActionType) Valid() bool {
 	}
 }
 
+// Defines values for DraftDecisionEvidenceAlgorithmVersion.
+const (
+	DraftDecisionEvidenceAlgorithmVersionHmacSha256OrderV1 DraftDecisionEvidenceAlgorithmVersion = "hmac-sha256-order-v1"
+)
+
+// Valid indicates whether the value is a known member of the DraftDecisionEvidenceAlgorithmVersion enum.
+func (e DraftDecisionEvidenceAlgorithmVersion) Valid() bool {
+	switch e {
+	case DraftDecisionEvidenceAlgorithmVersionHmacSha256OrderV1:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for DraftDecisionEvidencePurpose.
+const (
+	DraftDecisionEvidencePurposeCategory     DraftDecisionEvidencePurpose = "category"
+	DraftDecisionEvidencePurposeDraftOrder   DraftDecisionEvidencePurpose = "draft_order"
+	DraftDecisionEvidencePurposePairing      DraftDecisionEvidencePurpose = "pairing"
+	DraftDecisionEvidencePurposeReserveOrder DraftDecisionEvidencePurpose = "reserve_order"
+	DraftDecisionEvidencePurposeTask         DraftDecisionEvidencePurpose = "task"
+	DraftDecisionEvidencePurposeWaveOrder    DraftDecisionEvidencePurpose = "wave_order"
+)
+
+// Valid indicates whether the value is a known member of the DraftDecisionEvidencePurpose enum.
+func (e DraftDecisionEvidencePurpose) Valid() bool {
+	switch e {
+	case DraftDecisionEvidencePurposeCategory:
+		return true
+	case DraftDecisionEvidencePurposeDraftOrder:
+		return true
+	case DraftDecisionEvidencePurposePairing:
+		return true
+	case DraftDecisionEvidencePurposeReserveOrder:
+		return true
+	case DraftDecisionEvidencePurposeTask:
+		return true
+	case DraftDecisionEvidencePurposeWaveOrder:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for DraftState.
 const (
-	DraftStateActive    DraftState = "active"
-	DraftStateCompleted DraftState = "completed"
+	DraftStateActive           DraftState = "active"
+	DraftStateCompleted        DraftState = "completed"
+	DraftStatePaused           DraftState = "paused"
+	DraftStateRecoveryRequired DraftState = "recovery_required"
+	DraftStateSuperseded       DraftState = "superseded"
 )
 
 // Valid indicates whether the value is a known member of the DraftState enum.
@@ -318,6 +366,12 @@ func (e DraftState) Valid() bool {
 	case DraftStateActive:
 		return true
 	case DraftStateCompleted:
+		return true
+	case DraftStatePaused:
+		return true
+	case DraftStateRecoveryRequired:
+		return true
+	case DraftStateSuperseded:
 		return true
 	default:
 		return false
@@ -1142,13 +1196,13 @@ func (e SwissBuchholzStatus) Valid() bool {
 
 // Defines values for SwissPairingEvidenceAlgorithmVersion.
 const (
-	HmacSha256OrderV1 SwissPairingEvidenceAlgorithmVersion = "hmac-sha256-order-v1"
+	SwissPairingEvidenceAlgorithmVersionHmacSha256OrderV1 SwissPairingEvidenceAlgorithmVersion = "hmac-sha256-order-v1"
 )
 
 // Valid indicates whether the value is a known member of the SwissPairingEvidenceAlgorithmVersion enum.
 func (e SwissPairingEvidenceAlgorithmVersion) Valid() bool {
 	switch e {
-	case HmacSha256OrderV1:
+	case SwissPairingEvidenceAlgorithmVersionHmacSha256OrderV1:
 		return true
 	default:
 		return false
@@ -1157,13 +1211,13 @@ func (e SwissPairingEvidenceAlgorithmVersion) Valid() bool {
 
 // Defines values for SwissPairingEvidencePurpose.
 const (
-	Pairing SwissPairingEvidencePurpose = "pairing"
+	SwissPairingEvidencePurposePairing SwissPairingEvidencePurpose = "pairing"
 )
 
 // Valid indicates whether the value is a known member of the SwissPairingEvidencePurpose enum.
 func (e SwissPairingEvidencePurpose) Valid() bool {
 	switch e {
-	case Pairing:
+	case SwissPairingEvidencePurposePairing:
 		return true
 	default:
 		return false
@@ -1718,34 +1772,69 @@ type Difficulty string
 
 // Draft defines model for Draft.
 type Draft struct {
-	Actions             []DraftAction      `json:"actions"`
-	FirstParticipantId  openapi_types.UUID `json:"first_participant_id"`
-	Format              SeriesFormat       `json:"format"`
-	Id                  openapi_types.UUID `json:"id"`
+	Actions []DraftAction `json:"actions"`
+
+	// CurrentAction Server-authoritative action required on the current turn. Null for terminal states.
+	CurrentAction *DraftActionType `json:"current_action"`
+
+	// CurrentActorId Server-authoritative participant allowed to act on the current turn. Null for terminal states.
+	CurrentActorId     *openapi_types.UUID `json:"current_actor_id"`
+	FirstParticipantId openapi_types.UUID  `json:"first_participant_id"`
+	Format             SeriesFormat        `json:"format"`
+	Id                 openapi_types.UUID  `json:"id"`
+
+	// LegalCategories Categories still legal for the server-authoritative current turn. Empty when no action is actionable.
+	LegalCategories     []Category         `json:"legal_categories"`
 	Pool                []Category         `json:"pool"`
 	Revision            int64              `json:"revision"`
 	SecondParticipantId openapi_types.UUID `json:"second_participant_id"`
 	SelectedCategories  []Category         `json:"selected_categories"`
 	SeriesId            openapi_types.UUID `json:"series_id"`
-	State               DraftState         `json:"state"`
-	Turn                int32              `json:"turn"`
-	TurnDeadline        *time.Time         `json:"turn_deadline"`
+
+	// State Durable draft execution state. Only an active draft accepts participant actions.
+	State DraftState `json:"state"`
+	Turn  int32      `json:"turn"`
+
+	// TurnDeadline Server-authoritative deadline for the current turn. Null when no turn is actionable.
+	TurnDeadline *time.Time `json:"turn_deadline"`
 }
 
 // DraftAction defines model for DraftAction.
 type DraftAction struct {
-	Action       DraftActionType    `json:"action"`
-	ActorId      openapi_types.UUID `json:"actor_id"`
-	Category     Category           `json:"category"`
-	OccurredAt   time.Time          `json:"occurred_at"`
-	Turn         int32              `json:"turn"`
-	TurnDeadline time.Time          `json:"turn_deadline"`
+	Action  DraftActionType    `json:"action"`
+	ActorId openapi_types.UUID `json:"actor_id"`
+
+	// Automatic Whether the server recorded this action automatically after the turn deadline.
+	Automatic        bool                   `json:"automatic"`
+	Category         Category               `json:"category"`
+	DecisionEvidence *DraftDecisionEvidence `json:"decision_evidence"`
+	OccurredAt       time.Time              `json:"occurred_at"`
+	Turn             int32                  `json:"turn"`
+	TurnDeadline     time.Time              `json:"turn_deadline"`
 }
 
 // DraftActionType defines model for DraftActionType.
 type DraftActionType string
 
-// DraftState defines model for DraftState.
+// DraftDecisionEvidence Recorded evidence for an automatic draft decision. The private decision seed is never exposed.
+type DraftDecisionEvidence struct {
+	AlgorithmVersion DraftDecisionEvidenceAlgorithmVersion `json:"algorithm_version"`
+	DecidedAt        time.Time                             `json:"decided_at"`
+	Id               openapi_types.UUID                    `json:"id"`
+	NormalizedInputs []string                              `json:"normalized_inputs"`
+	OwnerId          openapi_types.UUID                    `json:"owner_id"`
+	Purpose          DraftDecisionEvidencePurpose          `json:"purpose"`
+	ReplayDigest     string                                `json:"replay_digest"`
+	Result           []string                              `json:"result"`
+}
+
+// DraftDecisionEvidenceAlgorithmVersion defines model for DraftDecisionEvidence.AlgorithmVersion.
+type DraftDecisionEvidenceAlgorithmVersion string
+
+// DraftDecisionEvidencePurpose defines model for DraftDecisionEvidence.Purpose.
+type DraftDecisionEvidencePurpose string
+
+// DraftState Durable draft execution state. Only an active draft accepts participant actions.
 type DraftState string
 
 // FrozenDeadline defines model for FrozenDeadline.
@@ -2629,8 +2718,10 @@ type PublicLiveDraftResponse struct {
 	ProjectionRevision int64               `json:"projection_revision"`
 	SelectedCategories []Category          `json:"selected_categories"`
 	SeriesId           openapi_types.UUID  `json:"series_id"`
-	State              DraftState          `json:"state"`
-	TournamentId       openapi_types.UUID  `json:"tournament_id"`
+
+	// State Durable draft execution state. Only an active draft accepts participant actions.
+	State        DraftState         `json:"state"`
+	TournamentId openapi_types.UUID `json:"tournament_id"`
 }
 
 // PublicLiveSeries Allowlisted live series display data; participant and task data are excluded.

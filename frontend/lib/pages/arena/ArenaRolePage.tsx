@@ -5,6 +5,8 @@ import { useCallback, useEffect, useState } from "react";
 import { playerModel } from "../../entities/player";
 import {
   buildParticipantPlayerView,
+  type ParticipantDraftIntent,
+  type ParticipantDraftResult,
   type ParticipantReadyIntent,
   type ParticipantReadyResult,
   type ParticipantSubmissionIntent,
@@ -391,6 +393,48 @@ export const ArenaRolePage = ({ role, tournamentId }: ArenaRolePageProps) => {
     };
   }, [tournamentId]);
 
+  const handleParticipantDraft = useCallback(async (
+    intent: ParticipantDraftIntent,
+  ): Promise<ParticipantDraftResult> => {
+    if (intent.tournamentId !== tournamentId || intent.action !== "ban") {
+      return {
+        message: "Ход не относится к текущему турниру.",
+        status: "conflict",
+      };
+    }
+
+    const result = await participantApi.draftAction(
+      tournamentId,
+      intent.seriesId,
+      {
+        action: intent.action,
+        category: intent.category,
+        expected_draft_revision: intent.draftRevision,
+        expected_projection_revision: intent.projectionRevision,
+        expected_turn: intent.expectedTurn,
+      },
+      createParticipantCommandIntent(),
+    );
+
+    if (result.status === "success") {
+      return { status: "accepted" };
+    }
+
+    if (result.status === "rate_limited") {
+      return {
+        message: result.retryAfter
+          ? `Повторите после ${result.retryAfter}.`
+          : undefined,
+        status: "rate_limited",
+      };
+    }
+
+    return {
+      message: "Драфт уже изменился. Сверяем данные с сервером.",
+      status: "conflict",
+    };
+  }, [tournamentId]);
+
   const summary = state.tournament
     ? summaryFor(state.tournament, role, state.tournamentName)
     : undefined;
@@ -416,6 +460,13 @@ export const ArenaRolePage = ({ role, tournamentId }: ArenaRolePageProps) => {
           <TournamentRecoveryPanel role={role} tournamentId={tournamentId}>
             {({ recovery, retry }) => (
               <TournamentPlayerPanel
+                onDraft={async (intent) => {
+                  const result = await handleParticipantDraft(intent);
+                  if (result.status !== "rate_limited") {
+                    retry();
+                  }
+                  return result;
+                }}
                 onReady={async (intent) => {
                   const result = await handleParticipantReady(intent);
                   if (result.status !== "rate_limited") {

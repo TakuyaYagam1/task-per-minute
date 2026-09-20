@@ -2332,11 +2332,30 @@ export interface components {
         };
         /** @enum {string} */
         DraftActionType: "ban" | "pick";
+        /** @description Recorded evidence for an automatic draft decision. The private decision seed is never exposed. */
+        DraftDecisionEvidence: {
+            /** @enum {string} */
+            readonly algorithm_version: "hmac-sha256-order-v1";
+            /** Format: date-time */
+            readonly decided_at: string;
+            /** Format: uuid */
+            readonly id: string;
+            readonly normalized_inputs: string[];
+            /** Format: uuid */
+            readonly owner_id: string;
+            /** @enum {string} */
+            readonly purpose: "category" | "draft_order" | "pairing" | "reserve_order" | "task" | "wave_order";
+            readonly replay_digest: string;
+            readonly result: string[];
+        };
         DraftAction: {
             action: components["schemas"]["DraftActionType"];
             /** Format: uuid */
             actor_id: string;
+            /** @description Whether the server recorded this action automatically after the turn deadline. */
+            readonly automatic: boolean;
             category: components["schemas"]["Category"];
+            readonly decision_evidence: components["schemas"]["DraftDecisionEvidence"] | null;
             /** Format: date-time */
             readonly occurred_at: string;
             /** Format: int32 */
@@ -2344,15 +2363,27 @@ export interface components {
             /** Format: date-time */
             readonly turn_deadline: string;
         };
-        /** @enum {string} */
-        DraftState: "active" | "completed";
+        /**
+         * @description Durable draft execution state. Only an active draft accepts participant actions.
+         * @enum {string}
+         */
+        DraftState: "active" | "paused" | "recovery_required" | "completed" | "superseded";
         Draft: {
             actions: components["schemas"]["DraftAction"][];
+            /** @description Server-authoritative action required on the current turn. Null for terminal states. */
+            readonly current_action: (string & components["schemas"]["DraftActionType"]) | null;
+            /**
+             * Format: uuid
+             * @description Server-authoritative participant allowed to act on the current turn. Null for terminal states.
+             */
+            readonly current_actor_id: string | null;
             /** Format: uuid */
             first_participant_id: string;
             format: components["schemas"]["SeriesFormat"];
             /** Format: uuid */
             id: string;
+            /** @description Categories still legal for the server-authoritative current turn. Empty when no action is actionable. */
+            readonly legal_categories: components["schemas"]["Category"][];
             pool: components["schemas"]["Category"][];
             /** Format: int64 */
             revision: number;
@@ -2363,9 +2394,12 @@ export interface components {
             series_id: string;
             state: components["schemas"]["DraftState"];
             /** Format: int32 */
-            turn: number;
-            /** Format: date-time */
-            turn_deadline: string | null;
+            readonly turn: number;
+            /**
+             * Format: date-time
+             * @description Server-authoritative deadline for the current turn. Null when no turn is actionable.
+             */
+            readonly turn_deadline: string | null;
         };
         /** @enum {string} */
         PauseDeadlineKind: "ready_window" | "game" | "draft";

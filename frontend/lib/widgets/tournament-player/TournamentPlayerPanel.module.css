@@ -80,11 +80,129 @@
 
 .assignment,
 .readiness,
-.gameActions {
+.gameActions,
+.draft {
   display: grid;
   gap: 0.85rem;
   border-top: 1px solid var(--border);
   padding-top: 1.15rem;
+}
+
+.draftHeader {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.draftTitle,
+.draftSubtitle {
+  margin: 0;
+}
+
+.draftTitle {
+  font-size: 1rem;
+}
+
+.draftSubtitle {
+  font-size: 0.9rem;
+}
+
+.draftCopy,
+.draftHint,
+.draftActionMeta,
+.draftEvidence {
+  margin: 0;
+  color: var(--secondary);
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.draftCopy {
+  margin-top: 0.35rem;
+}
+
+.draftFacts {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin: 0;
+}
+
+.draftFacts > div {
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-small);
+  padding: 0.7rem;
+  background: var(--surface-strong);
+}
+
+.draftFacts dt {
+  color: var(--secondary);
+  font-size: 0.74rem;
+}
+
+.draftFacts dd {
+  margin: 0.3rem 0 0;
+  overflow-wrap: anywhere;
+  font-size: 0.86rem;
+  font-weight: 750;
+}
+
+.draftPool,
+.draftHistory {
+  display: grid;
+  gap: 0.7rem;
+}
+
+.draftCategories {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
+.draftCategories button {
+  min-width: 9rem;
+}
+
+.draftCategory {
+  display: inline-flex;
+  min-height: 2.7rem;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-small);
+  padding: 0.55rem 0.9rem;
+  background: var(--surface-strong);
+  color: var(--secondary);
+  font-weight: 700;
+}
+
+.draftActions {
+  display: grid;
+  gap: 0.55rem;
+  margin: 0;
+  padding-left: 1.25rem;
+}
+
+.draftAction {
+  display: grid;
+  gap: 0.2rem;
+  min-width: 0;
+  border-left: 2px solid var(--accent);
+  padding: 0.55rem 0.7rem;
+  background: var(--surface-strong);
+}
+
+.draftAction > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+}
+
+.draftActionMeta,
+.draftEvidence {
+  font-size: 0.76rem;
 }
 
 .submissionForm,
@@ -296,7 +414,8 @@
 
   .header,
   .assignmentHeader,
-  .readinessHeader {
+  .readinessHeader,
+  .draftHeader {
     display: grid;
   }
 
@@ -306,6 +425,10 @@
   }
 
   .assignmentFacts {
+    grid-template-columns: 1fr;
+  }
+
+  .draftFacts {
     grid-template-columns: 1fr;
   }
 
@@ -319,7 +442,8 @@
 
   .readiness button,
   .assignmentLink,
-  .submissionControls button {
+  .submissionControls button,
+  .draftCategories button {
     width: 100%;
   }
 

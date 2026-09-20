@@ -4,11 +4,14 @@ import { useEffect, useMemo, useState, type FormEvent } from "react";
 
 import {
   useParticipantReadiness,
+  useParticipantDraft,
   useParticipantSourceFile,
   useParticipantSubmission,
   useParticipantSurrender,
   type ParticipantSubmissionIntent,
   type ParticipantSubmissionResult,
+  type ParticipantDraftIntent,
+  type ParticipantDraftResult,
   type ParticipantSurrenderIntent,
   type ParticipantSurrenderResult,
   type ParticipantPlayerView,
@@ -16,13 +19,14 @@ import {
   type ParticipantReadyResult,
 } from "../../features/tournament-player";
 import { Button, Message, Status } from "../../shared/ui";
-import { formatGameStatus } from "../../shared/lib";
+import { formatCategory, formatGameStatus } from "../../shared/lib";
 
 import styles from "./TournamentPlayerPanel.module.css";
 
 type TournamentPlayerPanelProps = Readonly<{
   onSubmit: (intent: ParticipantSubmissionIntent) => Promise<ParticipantSubmissionResult>;
   onSurrender: (intent: ParticipantSurrenderIntent) => Promise<ParticipantSurrenderResult>;
+  onDraft: (intent: ParticipantDraftIntent) => Promise<ParticipantDraftResult>;
   view: ParticipantPlayerView | null;
   onReady: (intent: ParticipantReadyIntent) => Promise<ParticipantReadyResult>;
 }>;
@@ -165,12 +169,60 @@ const surrenderTone = (
   }
 };
 
+const draftStatusTone = (
+  status: ReturnType<typeof useParticipantDraft>["status"],
+): "info" | "success" | "warning" | "error" | "loading" => {
+  switch (status) {
+    case "submitting":
+      return "loading";
+    case "accepted":
+      return "success";
+    case "conflict":
+    case "error":
+      return "error";
+    case "rate_limited":
+      return "warning";
+    case "idle":
+      return "info";
+  }
+};
+
+const draftStateLabel = (state: NonNullable<ParticipantPlayerView["draft"]>["state"]): string => {
+  switch (state) {
+    case "active":
+      return "Активен";
+    case "paused":
+      return "На паузе";
+    case "recovery_required":
+      return "Ожидает восстановления";
+    case "completed":
+      return "Завершен";
+    case "superseded":
+      return "Заменен сервером";
+  }
+};
+
+const draftActionLabel = (
+  action: NonNullable<ParticipantPlayerView["draft"]>["currentAction"],
+): string => {
+  switch (action) {
+    case "ban":
+      return "Бан категории";
+    case "pick":
+      return "Выбор категории";
+    case null:
+      return "Действие не требуется";
+  }
+};
+
 export const TournamentPlayerPanel = ({
+  onDraft,
   onReady,
   onSubmit,
   onSurrender,
   view,
 }: TournamentPlayerPanelProps) => {
+  const draft = useParticipantDraft({ onDraft, view });
   const readiness = useParticipantReadiness({ onReady, view });
   const sourceFile = useParticipantSourceFile(view);
   const submission = useParticipantSubmission({ onSubmit, view });
@@ -214,6 +266,7 @@ export const TournamentPlayerPanel = ({
     view.state === "eliminated" ||
     view.state === "completed";
   const showReadinessAction = view.state !== "bye" && view.state !== "eliminated" && view.state !== "completed";
+  const showDraft = view.draft !== null && view.draft.format === "bo1";
 
   return (
     <section
@@ -286,6 +339,131 @@ export const TournamentPlayerPanel = ({
           <dd>{view.requiredAction}</dd>
         </div>
       </dl>
+
+      {showDraft && view.draft !== null && (
+        <section
+          aria-labelledby="participant-draft-title"
+          className={styles.draft}
+          data-draft-revision={view.draft.revision}
+          data-draft-state={view.draft.state}
+          data-testid="participant-draft-panel"
+        >
+          <div className={styles.draftHeader}>
+            <div>
+              <h3 className={styles.draftTitle} id="participant-draft-title">Драфт категории BO1</h3>
+              <p className={styles.draftCopy}>
+                Порядок хода, дедлайн и доступные категории подтверждены сервером.
+              </p>
+            </div>
+            <Status tone={view.draft.state === "active" ? "info" : "neutral"}>
+              {draftStateLabel(view.draft.state)}
+            </Status>
+          </div>
+
+          <dl className={styles.draftFacts} aria-label="Состояние драфта">
+            <div>
+              <dt>Раунд хода</dt>
+              <dd>{view.draft.turn}</dd>
+            </div>
+            <div>
+              <dt>Действие</dt>
+              <dd>{draftActionLabel(view.draft.currentAction)}</dd>
+            </div>
+            <div>
+              <dt>Срок хода</dt>
+              <dd>{formatDeadline(view.draft.turnDeadline)}</dd>
+            </div>
+            <div>
+              <dt>Владелец хода</dt>
+              <dd>
+                {view.draft.currentActorId === null
+                  ? "Не задан сервером"
+                  : view.draft.currentActorId === view.participantId
+                    ? "Ваш ход"
+                    : "Ход соперника"}
+              </dd>
+            </div>
+          </dl>
+
+          <div className={styles.draftPool} data-testid="participant-draft-pool">
+            <h4 className={styles.draftSubtitle}>Категории в пуле</h4>
+            <div className={styles.draftCategories}>
+              {draft.allowed
+                ? view.draft.pool.map((category) => {
+                    const legal = view.draft?.legalCategories.includes(category) ?? false;
+                    return (
+                      <Button
+                        data-testid={`participant-draft-ban-${category}`}
+                        disabled={!legal || draft.status === "submitting"}
+                        key={category}
+                        loading={draft.status === "submitting" && legal}
+                        loadingLabel="Передаем"
+                        onClick={() => draft.ban(category)}
+                        type="button"
+                        variant="secondary"
+                      >
+                        Забанить {formatCategory(category)}
+                      </Button>
+                    );
+                  })
+                : view.draft.pool.map((category) => (
+                    <span className={styles.draftCategory} key={category}>
+                      {formatCategory(category)}
+                    </span>
+                  ))}
+            </div>
+            <p className={styles.draftHint}>
+              {draft.allowed
+                ? "Выберите одну категорию для бана. Подтверждение и следующий ход вернет сервер."
+                : view.draft.state === "paused"
+                  ? "Драфт на паузе. Ходы возобновятся только после решения сервера."
+                  : view.draft.currentActorId !== null && view.draft.currentActorId !== view.participantId
+                    ? "Сейчас ход соперника. Ожидайте обновления сервера."
+                    : "Ход недоступен в текущем серверном состоянии."}
+            </p>
+          </div>
+
+          {view.draft.actions.length > 0 && (
+            <div className={styles.draftHistory} aria-label="История драфта">
+              <h4 className={styles.draftSubtitle}>История ходов</h4>
+              <ol className={styles.draftActions}>
+                {view.draft.actions.map((action) => (
+                  <li
+                    className={styles.draftAction}
+                    data-automatic={action.automatic ? "true" : "false"}
+                    data-testid={`participant-draft-action-${action.turn}`}
+                    key={`${action.turn}-${action.actorId}-${action.category}`}
+                  >
+                    <div>
+                      <strong>{formatCategory(action.category)}</strong>
+                      <span>{action.action === "ban" ? "Бан" : "Выбор"}</span>
+                    </div>
+                    <span className={styles.draftActionMeta}>
+                      {action.automatic ? "Автоматически сервером" : "Ход участника"}
+                    </span>
+                    {action.decisionEvidence !== null && (
+                      <span className={styles.draftEvidence}>
+                        Подтверждено доказательством решения сервера
+                      </span>
+                    )}
+                  </li>
+                ))}
+              </ol>
+            </div>
+          )}
+
+          {draft.message !== null && (
+            <Message
+              data-status={draft.status}
+              data-testid="participant-draft-status"
+              tone={draftStatusTone(draft.status)}
+              title={draft.status === "accepted" ? "Ход принят" : "Драфт"}
+            >
+              <p>{draft.message}</p>
+            </Message>
+          )}
+        </section>
+      )}
 
       <section
         className={styles.assignment}
