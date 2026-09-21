@@ -2585,10 +2585,8 @@ export interface components {
             /** Format: uuid */
             expected_closure_revision_id: string;
         };
-        /** @description Operator-only candidate task snapshot for recovering an exhausted reserve. */
+        /** @description Operator-only task and version candidate for recovering an exhausted reserve. The proposed replacement snapshot is a fresh authority-generated UUID, not an existing candidate snapshot. */
         OperatorRecoveryReserveCandidate: {
-            /** Format: uuid */
-            snapshot_id: string;
             /** Format: uuid */
             task_id: string;
             /** Format: int32 */

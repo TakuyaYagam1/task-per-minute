@@ -2323,11 +2323,10 @@ type OperatorRecoveryReplayDetails struct {
 	ExpectedClosureRevisionId openapi_types.UUID `json:"expected_closure_revision_id"`
 }
 
-// OperatorRecoveryReserveCandidate Operator-only candidate task snapshot for recovering an exhausted reserve.
+// OperatorRecoveryReserveCandidate Operator-only task and version candidate for recovering an exhausted reserve. The proposed replacement snapshot is a fresh authority-generated UUID, not an existing candidate snapshot.
 type OperatorRecoveryReserveCandidate struct {
-	SnapshotId openapi_types.UUID `json:"snapshot_id"`
-	TaskId     openapi_types.UUID `json:"task_id"`
-	Version    int32              `json:"version"`
+	TaskId  openapi_types.UUID `json:"task_id"`
+	Version int32              `json:"version"`
 }
 
 // OperatorRecoveryReserveExhaustedDetails Operator-only reserve exhaustion details and compare-and-set evidence.

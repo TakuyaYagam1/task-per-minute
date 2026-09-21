@@ -600,9 +600,9 @@ OperatorRecoveryReplayDetails:
 
 OperatorRecoveryReserveCandidate:
   type: object
-  description: Operator-only candidate task snapshot for recovering an exhausted reserve.
+  description: Operator-only task and version candidate for recovering an exhausted reserve. The proposed replacement snapshot is a fresh authority-generated UUID, not an existing candidate snapshot.
   additionalProperties: false
-  required: [task_id, version, snapshot_id]
+  required: [task_id, version]
   properties:
     task_id:
       type: string
@@ -611,9 +611,6 @@ OperatorRecoveryReserveCandidate:
       type: integer
       format: int32
       minimum: 1
-    snapshot_id:
-      type: string
-      format: uuid
 
 OperatorRecoveryReserveExhaustedDetails:
   type: object
