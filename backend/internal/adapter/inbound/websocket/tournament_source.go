@@ -297,12 +297,15 @@ func publicSnapshotInput(view usecase.PublicSnapshotView) tournamentws.PublicSna
 			FirstWins:         match.FirstWins,
 			SecondWins:        match.SecondWins,
 			State:             match.State,
+			ScheduledAt:       match.ScheduledAt,
 		}
 	}
 	for index, series := range view.LiveSeries {
 		input.LiveSeries[index] = tournamentws.PublicSeriesInput{
 			TournamentID:        tournamentID,
 			SeriesID:            series.SeriesID,
+			Stage:               series.Stage,
+			RoundNumber:         series.RoundNumber,
 			Format:              series.Format,
 			State:               series.State,
 			FirstDisplayName:    series.FirstDisplayName,
@@ -310,6 +313,7 @@ func publicSnapshotInput(view usecase.PublicSnapshotView) tournamentws.PublicSna
 			FirstWins:           series.FirstWins,
 			SecondWins:          series.SecondWins,
 			CurrentGamePosition: series.CurrentGamePosition,
+			ScheduledAt:         series.ScheduledAt,
 		}
 	}
 	for index, result := range view.OfficialResults {

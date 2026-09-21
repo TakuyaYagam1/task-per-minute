@@ -481,11 +481,22 @@ PublicLiveSeries:
   type: object
   description: Allowlisted live series display data; participant and task data are excluded.
   additionalProperties: false
-  required: [series_id, format, state, first_display_name, second_display_name, score]
+  required: [series_id, stage, round_number, format, state, first_display_name, second_display_name, score, scheduled_at]
   properties:
     series_id:
       type: string
       format: uuid
+    stage:
+      type: string
+      enum: [swiss, golden, semifinal, final]
+      readOnly: true
+    round_number:
+      type: integer
+      format: int32
+      minimum: 1
+      maximum: 4
+      nullable: true
+      readOnly: true
     format:
       $ref: '#/SeriesFormat'
     state:
@@ -503,6 +514,11 @@ PublicLiveSeries:
       format: int32
       minimum: 0
       maximum: 3
+    scheduled_at:
+      type: string
+      format: date-time
+      nullable: true
+      readOnly: true
 
 PublicOfficialResult:
   type: object

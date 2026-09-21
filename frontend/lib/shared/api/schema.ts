@@ -3112,6 +3112,8 @@ export interface components {
             first_display_name: string;
             /** Format: int32 */
             position: number;
+            /** Format: date-time */
+            readonly scheduled_at: string | null;
             score: components["schemas"]["SeriesScore"];
             second_display_name: string;
             /** @enum {string} */
@@ -3167,10 +3169,16 @@ export interface components {
             current_game_position?: number;
             first_display_name: string;
             format: components["schemas"]["SeriesFormat"];
+            /** Format: int32 */
+            readonly round_number: number | null;
+            /** Format: date-time */
+            readonly scheduled_at: string | null;
             score: components["schemas"]["PublicSeriesScore"];
             second_display_name: string;
             /** Format: uuid */
             series_id: string;
+            /** @enum {string} */
+            readonly stage: "swiss" | "golden" | "semifinal" | "final";
             state: components["schemas"]["SeriesState"];
         };
         /** @description Allowlisted official series result display data without participant IDs or private material. */

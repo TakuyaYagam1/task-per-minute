@@ -99,7 +99,13 @@ func TestTournamentProductionSnapshotSourceUsesCompleteRoleReaders(t *testing.T)
 	require.Equal(t, tournamentSourceCursor().EventSequence, public.SnapshotMetadata.Sequence)
 	require.Len(t, public.Snapshot.Scoreboard, 1)
 	require.Len(t, public.Snapshot.Bracket, 1)
+	require.Equal(t, "final", public.Snapshot.Bracket[0].Stage)
+	require.Nil(t, public.Snapshot.Bracket[0].ScheduledAt)
 	require.Len(t, public.Snapshot.LiveSeries, 1)
+	require.Equal(t, "swiss", public.Snapshot.LiveSeries[0].Stage)
+	require.NotNil(t, public.Snapshot.LiveSeries[0].RoundNumber)
+	require.Equal(t, 1, *public.Snapshot.LiveSeries[0].RoundNumber)
+	require.Nil(t, public.Snapshot.LiveSeries[0].ScheduledAt)
 	require.Len(t, public.Snapshot.OfficialResults, 1)
 	require.NotNil(t, public.Snapshot.Draft)
 
@@ -250,6 +256,8 @@ func tournamentSourcePublicView(tournamentID uuid.UUID) tournamentsnapshot.Publi
 		}},
 		LiveSeries: []tournamentsnapshot.PublicSeriesView{{
 			SeriesID:            seriesID,
+			Stage:               "swiss",
+			RoundNumber:         func() *int { value := 1; return &value }(),
 			Format:              "bo3",
 			State:               "active",
 			FirstDisplayName:    "player",

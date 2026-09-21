@@ -48,11 +48,14 @@ type PublicBracketMatchInput struct {
 	FirstWins         int
 	SecondWins        int
 	State             string
+	ScheduledAt       *time.Time
 }
 
 type PublicSeriesInput struct {
 	TournamentID        uuid.UUID
 	SeriesID            uuid.UUID
+	Stage               string
+	RoundNumber         *int
 	Format              string
 	State               string
 	FirstDisplayName    string
@@ -60,6 +63,7 @@ type PublicSeriesInput struct {
 	FirstWins           int
 	SecondWins          int
 	CurrentGamePosition int
+	ScheduledAt         *time.Time
 }
 
 type PublicOfficialResultInput struct {
@@ -131,16 +135,20 @@ type PublicBracketMatch struct {
 	SecondDisplayName string            `json:"second_display_name"`
 	Score             PublicSeriesScore `json:"score"`
 	State             string            `json:"state"`
+	ScheduledAt       *time.Time        `json:"scheduled_at"`
 }
 
 type PublicSeries struct {
 	SeriesID            uuid.UUID         `json:"series_id"`
+	Stage               string            `json:"stage"`
+	RoundNumber         *int              `json:"round_number"`
 	Format              string            `json:"format"`
 	State               string            `json:"state"`
 	FirstDisplayName    string            `json:"first_display_name"`
 	SecondDisplayName   string            `json:"second_display_name"`
 	Score               PublicSeriesScore `json:"score"`
 	CurrentGamePosition int               `json:"current_game_position,omitempty"`
+	ScheduledAt         *time.Time        `json:"scheduled_at"`
 }
 
 type PublicOfficialResult struct {
@@ -200,13 +208,13 @@ func NewPublicSnapshot(tournamentID uuid.UUID, input PublicSnapshotInput) (Publi
 		if match.TournamentID != tournamentID {
 			return PublicSnapshot{}, fmt.Errorf("%w: bracket crosses tournament", ErrInvalidPublicSnapshot)
 		}
-		snapshot.Bracket[index] = PublicBracketMatch{Stage: match.Stage, Position: match.Position, FirstDisplayName: match.FirstDisplayName, SecondDisplayName: match.SecondDisplayName, Score: PublicSeriesScore{FirstWins: match.FirstWins, SecondWins: match.SecondWins}, State: match.State}
+		snapshot.Bracket[index] = PublicBracketMatch{Stage: match.Stage, Position: match.Position, FirstDisplayName: match.FirstDisplayName, SecondDisplayName: match.SecondDisplayName, Score: PublicSeriesScore{FirstWins: match.FirstWins, SecondWins: match.SecondWins}, State: match.State, ScheduledAt: cloneTime(match.ScheduledAt)}
 	}
 	for index, series := range input.LiveSeries {
 		if series.TournamentID != tournamentID {
 			return PublicSnapshot{}, fmt.Errorf("%w: live series crosses tournament", ErrInvalidPublicSnapshot)
 		}
-		snapshot.LiveSeries[index] = PublicSeries{SeriesID: series.SeriesID, Format: series.Format, State: series.State, FirstDisplayName: series.FirstDisplayName, SecondDisplayName: series.SecondDisplayName, Score: PublicSeriesScore{FirstWins: series.FirstWins, SecondWins: series.SecondWins}, CurrentGamePosition: series.CurrentGamePosition}
+		snapshot.LiveSeries[index] = PublicSeries{SeriesID: series.SeriesID, Stage: series.Stage, RoundNumber: cloneInt(series.RoundNumber), Format: series.Format, State: series.State, FirstDisplayName: series.FirstDisplayName, SecondDisplayName: series.SecondDisplayName, Score: PublicSeriesScore{FirstWins: series.FirstWins, SecondWins: series.SecondWins}, CurrentGamePosition: series.CurrentGamePosition, ScheduledAt: cloneTime(series.ScheduledAt)}
 	}
 	for index, result := range input.OfficialResults {
 		if result.TournamentID != tournamentID {
@@ -258,12 +266,12 @@ func (s PublicSnapshot) Validate() error {
 		}
 	}
 	for _, match := range s.Bracket {
-		if match.Position < 1 || !validPublicLabels(match.Stage, match.FirstDisplayName, match.SecondDisplayName, match.State) || !match.Score.valid() {
+		if match.Position < 1 || !validPublicLabels(match.Stage, match.FirstDisplayName, match.SecondDisplayName, match.State) || !match.Score.valid() || !validOptionalUTC(match.ScheduledAt) {
 			return fmt.Errorf("%w: invalid bracket match", ErrInvalidPublicSnapshot)
 		}
 	}
 	for _, series := range s.LiveSeries {
-		if series.SeriesID == uuid.Nil || series.CurrentGamePosition < 0 || !validPublicLabels(series.Format, series.State, series.FirstDisplayName, series.SecondDisplayName) || !series.Score.valid() {
+		if series.SeriesID == uuid.Nil || !validPublicStage(series.Stage) || (series.Stage == "swiss" && (series.RoundNumber == nil || *series.RoundNumber < 1 || *series.RoundNumber > 4)) || (series.Stage != "swiss" && series.RoundNumber != nil) || series.CurrentGamePosition < 0 || !validPublicLabels(series.Format, series.State, series.FirstDisplayName, series.SecondDisplayName) || !series.Score.valid() || !validOptionalUTC(series.ScheduledAt) {
 			return fmt.Errorf("%w: invalid live series", ErrInvalidPublicSnapshot)
 		}
 	}
@@ -290,6 +298,13 @@ func (s PublicSnapshot) clone() PublicSnapshot {
 	clone.Scoreboard = append([]PublicScoreboardEntry{}, s.Scoreboard...)
 	clone.Bracket = append([]PublicBracketMatch{}, s.Bracket...)
 	clone.LiveSeries = append([]PublicSeries{}, s.LiveSeries...)
+	for index := range clone.Bracket {
+		clone.Bracket[index].ScheduledAt = cloneTime(s.Bracket[index].ScheduledAt)
+	}
+	for index := range clone.LiveSeries {
+		clone.LiveSeries[index].RoundNumber = cloneInt(s.LiveSeries[index].RoundNumber)
+		clone.LiveSeries[index].ScheduledAt = cloneTime(s.LiveSeries[index].ScheduledAt)
+	}
 	clone.OfficialResults = append([]PublicOfficialResult{}, s.OfficialResults...)
 	if s.Draft != nil {
 		draft := *s.Draft
@@ -330,4 +345,13 @@ func validPublicLabels(values ...string) bool {
 		}
 	}
 	return true
+}
+
+func validPublicStage(value string) bool {
+	switch value {
+	case "swiss", "golden", "semifinal", "final":
+		return true
+	default:
+		return false
+	}
 }

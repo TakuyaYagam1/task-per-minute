@@ -240,3 +240,26 @@ func TestTournamentReadCursorSQLUsesDurableOutboxWatermark(t *testing.T) {
 	require.Contains(t, cursorQuery, "outbox_cursor.tournament_id = revision.tournament_id")
 	require.NotContains(t, cursorQuery, "MAX(outbox_event.sequence)")
 }
+
+func TestPublicSeriesReadSQLUsesStoredStageLineageAndNullableSchedule(t *testing.T) {
+	t.Parallel()
+
+	contents, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "..", "..", "db", "queries", "tournament_read.sql"))
+	require.NoError(t, err)
+	query := string(contents)
+	start := strings.Index(query, "-- name: ListPublicTournamentReadSeries")
+	require.NotEqual(t, -1, start)
+	end := strings.Index(query[start+1:], "-- name:")
+	if end == -1 {
+		end = len(query) - start - 1
+	}
+	seriesQuery := query[start : start+1+end]
+	require.Contains(t, seriesQuery, "COALESCE(series_stage.stage, 'golden')::TEXT AS stage")
+	require.Contains(t, seriesQuery, "COALESCE(series_stage.round_number, 0)::SMALLINT AS round_number")
+	require.Contains(t, seriesQuery, "FROM wave_series AS linked_series")
+	require.Contains(t, seriesQuery, "FROM tournament_stage_playoff_semifinals AS semifinal")
+	require.Contains(t, seriesQuery, "FROM tournament_stage_playoff_finals AS final_stage")
+	require.Contains(t, seriesQuery, "NULL::TIMESTAMPTZ AS scheduled_at")
+	require.NotContains(t, seriesQuery, "started_at AS scheduled_at")
+	require.NotContains(t, seriesQuery, "created_at AS scheduled_at")
+}

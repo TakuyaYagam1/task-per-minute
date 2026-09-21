@@ -186,10 +186,13 @@ type PublicBracketMatchView struct {
 	FirstWins         int
 	SecondWins        int
 	State             string
+	ScheduledAt       *time.Time
 }
 
 type PublicSeriesView struct {
 	SeriesID            uuid.UUID
+	Stage               string
+	RoundNumber         *int
 	Format              string
 	State               string
 	FirstDisplayName    string
@@ -197,6 +200,7 @@ type PublicSeriesView struct {
 	FirstWins           int
 	SecondWins          int
 	CurrentGamePosition int
+	ScheduledAt         *time.Time
 }
 
 type PublicOfficialResultView struct {

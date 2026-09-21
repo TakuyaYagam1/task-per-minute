@@ -556,7 +556,7 @@ PublicScoreboardResponse:
 PublicBracketMatch:
   type: object
   additionalProperties: false
-  required: [stage, position, first_display_name, second_display_name, score, state]
+  required: [stage, position, first_display_name, second_display_name, score, state, scheduled_at]
   properties:
     stage:
       type: string
@@ -575,6 +575,11 @@ PublicBracketMatch:
       $ref: '#/SeriesScore'
     state:
       $ref: '#/SeriesState'
+    scheduled_at:
+      type: string
+      format: date-time
+      nullable: true
+      readOnly: true
 
 PublicBracketResponse:
   type: object

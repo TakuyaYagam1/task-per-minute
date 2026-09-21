@@ -1041,6 +1041,30 @@ func (e PublicBracketMatchStage) Valid() bool {
 	}
 }
 
+// Defines values for PublicLiveSeriesStage.
+const (
+	PublicLiveSeriesStageFinal     PublicLiveSeriesStage = "final"
+	PublicLiveSeriesStageGolden    PublicLiveSeriesStage = "golden"
+	PublicLiveSeriesStageSemifinal PublicLiveSeriesStage = "semifinal"
+	PublicLiveSeriesStageSwiss     PublicLiveSeriesStage = "swiss"
+)
+
+// Valid indicates whether the value is a known member of the PublicLiveSeriesStage enum.
+func (e PublicLiveSeriesStage) Valid() bool {
+	switch e {
+	case PublicLiveSeriesStageFinal:
+		return true
+	case PublicLiveSeriesStageGolden:
+		return true
+	case PublicLiveSeriesStageSemifinal:
+		return true
+	case PublicLiveSeriesStageSwiss:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ReadinessEventType.
 const (
 	ReadinessEventTypeCleared ReadinessEventType = "cleared"
@@ -2792,6 +2816,7 @@ type ProjectionRevisionProblem struct {
 type PublicBracketMatch struct {
 	FirstDisplayName  string                  `json:"first_display_name"`
 	Position          int32                   `json:"position"`
+	ScheduledAt       *time.Time              `json:"scheduled_at"`
 	Score             SeriesScore             `json:"score"`
 	SecondDisplayName string                  `json:"second_display_name"`
 	Stage             PublicBracketMatchStage `json:"stage"`
@@ -2836,13 +2861,19 @@ type PublicLiveSeries struct {
 	CurrentGamePosition *int32       `json:"current_game_position,omitempty"`
 	FirstDisplayName    string       `json:"first_display_name"`
 	Format              SeriesFormat `json:"format"`
+	RoundNumber         *int32       `json:"round_number"`
+	ScheduledAt         *time.Time   `json:"scheduled_at"`
 
 	// Score Public score fields shared with the tournament WebSocket view.
-	Score             PublicSeriesScore  `json:"score"`
-	SecondDisplayName string             `json:"second_display_name"`
-	SeriesId          openapi_types.UUID `json:"series_id"`
-	State             SeriesState        `json:"state"`
+	Score             PublicSeriesScore     `json:"score"`
+	SecondDisplayName string                `json:"second_display_name"`
+	SeriesId          openapi_types.UUID    `json:"series_id"`
+	Stage             PublicLiveSeriesStage `json:"stage"`
+	State             SeriesState           `json:"state"`
 }
+
+// PublicLiveSeriesStage defines model for PublicLiveSeries.Stage.
+type PublicLiveSeriesStage string
 
 // PublicOfficialResult Allowlisted official series result display data without participant IDs or private material.
 type PublicOfficialResult struct {

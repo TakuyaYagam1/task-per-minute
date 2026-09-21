@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/sqlc"
+	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	usecase "github.com/TakuyaYagam1/task-per-minute/internal/port/inbound"
 )
 
@@ -173,6 +174,7 @@ func tournamentBracket(
 			FirstWins:         match.FirstWins,
 			SecondWins:        match.SecondWins,
 			State:             match.State,
+			ScheduledAt:       nil,
 		}
 	}
 	return view, nil
@@ -189,8 +191,21 @@ func publicTournamentReadSeries(
 	}
 	view := make([]usecase.PublicSeriesView, len(rows))
 	for index, row := range rows {
+		stage := domain.TournamentStage(row.Stage)
+		if !stage.IsValid() || (stage == domain.TournamentStageSwiss &&
+			(row.RoundNumber < 1 || row.RoundNumber > 4)) ||
+			(stage != domain.TournamentStageSwiss && row.RoundNumber != 0) {
+			return nil, tournamentSnapshotInvalidError("series stage")
+		}
+		var roundNumber *int
+		if row.RoundNumber > 0 {
+			value := int(row.RoundNumber)
+			roundNumber = &value
+		}
 		view[index] = usecase.PublicSeriesView{
 			SeriesID:            row.SeriesID,
+			Stage:               row.Stage,
+			RoundNumber:         roundNumber,
 			Format:              row.Format,
 			State:               row.State,
 			FirstDisplayName:    row.FirstDisplayName,
@@ -198,6 +213,7 @@ func publicTournamentReadSeries(
 			FirstWins:           int(row.FirstParticipantWins),
 			SecondWins:          int(row.SecondParticipantWins),
 			CurrentGamePosition: int(row.CurrentGamePosition),
+			ScheduledAt:         utcNullableTime(row.ScheduledAt),
 		}
 	}
 	return view, nil

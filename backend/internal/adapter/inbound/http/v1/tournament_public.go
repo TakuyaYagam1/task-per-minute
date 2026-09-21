@@ -267,7 +267,8 @@ func publicBracketResponse(
 		if item.Position < 1 || item.Position > math.MaxInt32 || item.FirstWins < 0 ||
 			item.FirstWins > math.MaxInt32 || item.SecondWins < 0 || item.SecondWins > math.MaxInt32 ||
 			strings.TrimSpace(item.FirstDisplayName) == "" || strings.TrimSpace(item.SecondDisplayName) == "" ||
-			!stage.Valid() || !state.Valid() {
+			!stage.Valid() || !state.Valid() ||
+			(item.ScheduledAt != nil && !domain.IsValidServerTime(*item.ScheduledAt)) {
 			return api.PublicBracketResponse{}, domain.ErrInternal
 		}
 		matches[index] = api.PublicBracketMatch{
@@ -276,6 +277,7 @@ func publicBracketResponse(
 			FirstDisplayName:  item.FirstDisplayName,
 			SecondDisplayName: item.SecondDisplayName,
 			State:             state,
+			ScheduledAt:       cloneTimePointer(item.ScheduledAt),
 			Score: api.SeriesScore{
 				FirstParticipantWins:  int32(item.FirstWins),
 				SecondParticipantWins: int32(item.SecondWins),
@@ -294,30 +296,83 @@ func publicLiveSeriesResponse(
 ) ([]api.PublicLiveSeries, error) {
 	series := make([]api.PublicLiveSeries, len(view.LiveSeries))
 	for index, item := range view.LiveSeries {
-		format := api.SeriesFormat(item.Format)
-		state := api.SeriesState(item.State)
-		if item.SeriesID == uuid.Nil || !format.Valid() || !state.Valid() ||
-			strings.TrimSpace(item.FirstDisplayName) == "" || strings.TrimSpace(item.SecondDisplayName) == "" ||
-			item.FirstWins < 0 || item.FirstWins > 2 || item.SecondWins < 0 || item.SecondWins > 2 ||
-			item.CurrentGamePosition < 0 || item.CurrentGamePosition > 3 {
-			return nil, domain.ErrInternal
+		mapped, err := publicLiveSeriesItem(item)
+		if err != nil {
+			return nil, err
 		}
-		var currentGamePosition *int32
-		if item.CurrentGamePosition > 0 {
-			value := int32(item.CurrentGamePosition)
-			currentGamePosition = &value
-		}
-		series[index] = api.PublicLiveSeries{
-			SeriesId:            item.SeriesID,
-			Format:              format,
-			State:               state,
-			FirstDisplayName:    item.FirstDisplayName,
-			SecondDisplayName:   item.SecondDisplayName,
-			Score:               api.PublicSeriesScore{FirstWins: int32(item.FirstWins), SecondWins: int32(item.SecondWins)},
-			CurrentGamePosition: currentGamePosition,
-		}
+		series[index] = mapped
 	}
 	return series, nil
+}
+
+func publicLiveSeriesItem(item tournamentsnapshot.PublicSeriesView) (api.PublicLiveSeries, error) {
+	stage := api.PublicLiveSeriesStage(item.Stage)
+	format := api.SeriesFormat(item.Format)
+	state := api.SeriesState(item.State)
+	if !validPublicLiveSeries(item, stage, format, state) {
+		return api.PublicLiveSeries{}, domain.ErrInternal
+	}
+	var currentGamePosition *int32
+	if item.CurrentGamePosition > 0 {
+		value := int32(item.CurrentGamePosition) //nolint:gosec // the public position range is validated immediately above
+		currentGamePosition = &value
+	}
+	var roundNumber *int32
+	if item.RoundNumber != nil {
+		value := int32(*item.RoundNumber) //nolint:gosec // the public round range is validated immediately above
+		roundNumber = &value
+	}
+	firstWins := int32(item.FirstWins)   //nolint:gosec // the public score range is validated immediately above
+	secondWins := int32(item.SecondWins) //nolint:gosec // the public score range is validated immediately above
+	return api.PublicLiveSeries{
+		SeriesId:            item.SeriesID,
+		Stage:               stage,
+		RoundNumber:         roundNumber,
+		Format:              format,
+		State:               state,
+		FirstDisplayName:    item.FirstDisplayName,
+		SecondDisplayName:   item.SecondDisplayName,
+		Score:               api.PublicSeriesScore{FirstWins: firstWins, SecondWins: secondWins},
+		CurrentGamePosition: currentGamePosition,
+		ScheduledAt:         cloneTimePointer(item.ScheduledAt),
+	}, nil
+}
+
+func validPublicLiveSeries(
+	item tournamentsnapshot.PublicSeriesView,
+	stage api.PublicLiveSeriesStage,
+	format api.SeriesFormat,
+	state api.SeriesState,
+) bool {
+	return validPublicLiveSeriesIdentity(item, stage, format, state) &&
+		validPublicLiveSeriesScore(item) &&
+		validPublicLiveSeriesRound(stage, item.RoundNumber) &&
+		(item.ScheduledAt == nil || domain.IsValidServerTime(*item.ScheduledAt))
+}
+
+func validPublicLiveSeriesIdentity(
+	item tournamentsnapshot.PublicSeriesView,
+	stage api.PublicLiveSeriesStage,
+	format api.SeriesFormat,
+	state api.SeriesState,
+) bool {
+	return item.SeriesID != uuid.Nil && stage.Valid() && format.Valid() && state.Valid() &&
+		strings.TrimSpace(item.FirstDisplayName) != "" && strings.TrimSpace(item.SecondDisplayName) != ""
+}
+
+func validPublicLiveSeriesScore(item tournamentsnapshot.PublicSeriesView) bool {
+	return item.FirstWins >= 0 && item.FirstWins <= 2 && item.SecondWins >= 0 && item.SecondWins <= 2 &&
+		item.CurrentGamePosition >= 0 && item.CurrentGamePosition <= 3
+}
+
+func validPublicLiveSeriesRound(stage api.PublicLiveSeriesStage, roundNumber *int) bool {
+	if roundNumber != nil && (*roundNumber < 1 || *roundNumber > 4) {
+		return false
+	}
+	if stage == api.PublicLiveSeriesStageSwiss {
+		return roundNumber != nil
+	}
+	return roundNumber == nil
 }
 
 func publicOfficialResultsResponse(

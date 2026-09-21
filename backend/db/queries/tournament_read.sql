@@ -260,13 +260,16 @@ ORDER BY participant.seed,
 
 -- name: ListPublicTournamentReadSeries :many
 SELECT series.id AS series_id,
+    COALESCE(series_stage.stage, 'golden')::TEXT AS stage,
+    COALESCE(series_stage.round_number, 0)::SMALLINT AS round_number,
     series.format,
     series.state,
     first_player.username AS first_display_name,
     second_player.username AS second_display_name,
     series.first_participant_wins,
     series.second_participant_wins,
-    COALESCE(current_slot.slot_number, 0)::INTEGER AS current_game_position
+    COALESCE(current_slot.slot_number, 0)::INTEGER AS current_game_position,
+    NULL::TIMESTAMPTZ AS scheduled_at
 FROM series
 JOIN participants AS first_participant
     ON first_participant.id = series.first_participant_id
@@ -274,6 +277,57 @@ JOIN players AS first_player ON first_player.id = first_participant.player_id
 JOIN participants AS second_participant
     ON second_participant.id = series.second_participant_id
 JOIN players AS second_player ON second_player.id = second_participant.player_id
+LEFT JOIN LATERAL (
+    SELECT stage.stage,
+        stage.round_number
+    FROM (
+        SELECT 'swiss'::TEXT AS stage,
+            swiss_round.round_number::SMALLINT AS round_number,
+            2 AS stage_rank,
+            swiss_round.updated_at AS evidence_at,
+            swiss_round.id AS evidence_id
+        FROM wave_series AS linked_series
+        JOIN swiss_wave_links AS swiss_link
+            ON swiss_link.wave_id = linked_series.wave_id
+            AND swiss_link.tournament_id = linked_series.tournament_id
+            AND swiss_link.roster_id = linked_series.roster_id
+        JOIN swiss_rounds AS swiss_round
+            ON swiss_round.id = swiss_link.round_id
+            AND swiss_round.roster_id = swiss_link.roster_id
+        WHERE linked_series.series_id = series.id
+            AND linked_series.tournament_id = series.tournament_id
+            AND linked_series.roster_id = series.roster_id
+
+        UNION ALL
+
+        SELECT 'semifinal'::TEXT,
+            NULL::SMALLINT,
+            1,
+            semifinal.created_at,
+            semifinal.command_id
+        FROM tournament_stage_playoff_semifinals AS semifinal
+        WHERE semifinal.tournament_id = series.tournament_id
+            AND semifinal.roster_id = series.roster_id
+            AND semifinal.series_id = series.id
+
+        UNION ALL
+
+        SELECT 'final'::TEXT,
+            NULL::SMALLINT,
+            0,
+            final_stage.created_at,
+            final_stage.command_id
+        FROM tournament_stage_playoff_finals AS final_stage
+        WHERE final_stage.tournament_id = series.tournament_id
+            AND final_stage.roster_id = series.roster_id
+            AND final_stage.final_series_id = series.id
+    ) AS stage
+    ORDER BY stage.stage_rank,
+        stage.round_number DESC NULLS LAST,
+        stage.evidence_at DESC,
+        stage.evidence_id DESC
+    LIMIT 1
+) AS series_stage ON TRUE
 LEFT JOIN LATERAL (
     SELECT slot.slot_number
     FROM game_slots AS slot

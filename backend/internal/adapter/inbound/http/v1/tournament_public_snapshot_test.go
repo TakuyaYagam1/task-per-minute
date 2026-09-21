@@ -45,6 +45,10 @@ func TestGetPublicSnapshotPropagatesCursorAndMapsAllowlistedCollections(t *testi
 	require.Equal(t, int64(7), payload.NextCursor.ProjectionRevision)
 	require.Equal(t, int64(12), payload.NextCursor.EventSequence)
 	require.Len(t, payload.LiveSeries, 1)
+	require.Equal(t, api.PublicLiveSeriesStageSwiss, payload.LiveSeries[0].Stage)
+	require.NotNil(t, payload.LiveSeries[0].RoundNumber)
+	require.Equal(t, int32(1), *payload.LiveSeries[0].RoundNumber)
+	require.Nil(t, payload.LiveSeries[0].ScheduledAt)
 	require.Equal(t, "bo3", string(payload.LiveSeries[0].Format))
 	require.Equal(t, "alice", payload.LiveSeries[0].FirstDisplayName)
 	require.NotNil(t, payload.LiveSeries[0].CurrentGamePosition)
@@ -133,6 +137,8 @@ func publicSnapshotHTTPView(tournamentID uuid.UUID) inbound.PublicSnapshotView {
 		Bracket:    []inbound.PublicBracketMatchView{},
 		LiveSeries: []inbound.PublicSeriesView{{
 			SeriesID:            seriesID,
+			Stage:               "swiss",
+			RoundNumber:         func() *int { value := 1; return &value }(),
 			Format:              "bo3",
 			State:               "active",
 			FirstDisplayName:    "alice",
