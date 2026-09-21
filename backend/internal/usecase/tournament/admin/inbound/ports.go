@@ -61,6 +61,11 @@ type IncidentQuery = incident.IncidentQuery
 type SnapshotQuery = snapshot.SnapshotQuery
 type OperatorCursor = snapshot.OperatorCursor
 type PauseGraphView = snapshot.PauseGraphView
+type RecoveryControlKind = snapshot.RecoveryControlKind
+type RecoveryReplayDetails = snapshot.RecoveryReplayDetails
+type RecoveryReserveCandidate = snapshot.RecoveryReserveCandidate
+type RecoveryReserveExhaustedDetails = snapshot.RecoveryReserveExhaustedDetails
+type RecoveryControl = snapshot.RecoveryControl
 type OperatorSnapshotView = snapshot.OperatorSnapshotView
 
 type AdminService interface {

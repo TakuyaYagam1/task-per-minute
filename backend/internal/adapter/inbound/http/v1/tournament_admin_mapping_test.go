@@ -185,6 +185,38 @@ func TestTournamentSwissMappingDoesNotDropInvalidOptionalRecords(t *testing.T) {
 	require.ErrorIs(t, err, domain.ErrInternal)
 }
 
+func TestTournamentRecoveryControlsResponsePreservesEmptyAndLegalReplay(t *testing.T) {
+	t.Parallel()
+
+	empty, err := tournamentRecoveryControlsResponse(nil)
+	require.NoError(t, err)
+	require.NotNil(t, empty)
+	require.Empty(t, empty)
+
+	assignmentID, seriesID, slotID := uuid.New(), uuid.New(), uuid.New()
+	oldWaveID, closureID, attemptID, resultRevisionID := uuid.New(), uuid.New(), uuid.New(), uuid.New()
+	controls, err := tournamentRecoveryControlsResponse([]inbound.AdminRecoveryControl{{
+		AssignmentID: assignmentID, SeriesID: seriesID, SlotID: slotID, OldWaveID: oldWaveID,
+		Attempts: []domain.Game{{
+			ID: attemptID, SlotID: slotID, AttemptNo: 1, State: domain.GameStateVoid,
+			ResultReason: domain.GameResultReasonNoSolve,
+			ResultRevisionID: func() *domain.OfficialResultRevisionID {
+				value := domain.OfficialResultRevisionID(resultRevisionID)
+				return &value
+			}(),
+		}},
+		Category: domain.CategoryWeb, ExpectedAuthorityRevision: 7,
+		Kind: inbound.AdminRecoveryControlReplay, Reason: "no solve",
+		Replay: &inbound.AdminRecoveryReplayDetails{Available: true, ExpectedClosureRevisionID: closureID},
+	}})
+	require.NoError(t, err)
+	require.Len(t, controls, 1)
+	require.Equal(t, api.Replay, controls[0].Kind)
+	require.Equal(t, closureID, controls[0].Replay.ExpectedClosureRevisionId)
+	require.Len(t, controls[0].Attempts, 1)
+	require.Equal(t, api.GameResultReasonNoSolve, *controls[0].Attempts[0].ResultReason)
+}
+
 func TestWriteTournamentAdminErrorMapsValidatedRevisionConflict(t *testing.T) {
 	t.Parallel()
 

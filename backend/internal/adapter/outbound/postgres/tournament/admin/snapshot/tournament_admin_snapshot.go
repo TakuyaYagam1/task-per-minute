@@ -77,6 +77,7 @@ func (r *TournamentAdminSnapshotPostgres) GetOperatorSnapshot(
 	return view, nil
 }
 
+//nolint:gocyclo // One read transaction assembles the authoritative snapshot graph and controls.
 func (r *TournamentAdminSnapshotPostgres) loadOperatorSnapshot(
 	ctx context.Context,
 	query tournamentadmin.SnapshotQuery,
@@ -135,14 +136,27 @@ func (r *TournamentAdminSnapshotPostgres) loadOperatorSnapshot(
 	if err != nil {
 		return tournamentadmin.OperatorSnapshotView{}, fmt.Errorf("operator snapshot pause graph: %w", err)
 	}
+	recoveryRows, err := querier.ListTournamentAdminRecoveryControls(ctx, query.TournamentID)
+	if err != nil {
+		return tournamentadmin.OperatorSnapshotView{}, tournamentAdminSnapshotQueryError("recovery controls", err)
+	}
+	candidateRows, err := querier.ListTournamentAdminRecoveryReserveCandidates(ctx, query.TournamentID)
+	if err != nil {
+		return tournamentadmin.OperatorSnapshotView{}, tournamentAdminSnapshotQueryError("recovery reserve candidates", err)
+	}
+	recoveryControls, err := tournamentAdminSnapshotRecoveryControls(recoveryRows, candidateRows)
+	if err != nil {
+		return tournamentadmin.OperatorSnapshotView{}, fmt.Errorf("operator snapshot recovery controls: %w", err)
+	}
 
 	return tournamentadmin.OperatorSnapshotView{
-		Tournament: header.tournament,
-		Roster:     roster,
-		Waves:      waves,
-		Series:     seriesGraph.values,
-		PauseGraph: pauseGraph,
-		NextCursor: header.cursor,
+		Tournament:       header.tournament,
+		Roster:           roster,
+		Waves:            waves,
+		Series:           seriesGraph.values,
+		PauseGraph:       pauseGraph,
+		RecoveryControls: recoveryControls,
+		NextCursor:       header.cursor,
 	}, nil
 }
 

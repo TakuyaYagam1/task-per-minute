@@ -2,6 +2,7 @@ package snapshot
 
 import (
 	"context"
+	"strings"
 
 	"github.com/google/uuid"
 
@@ -37,13 +38,64 @@ type PauseGraphView struct {
 	Wave  WaveView
 }
 
+type RecoveryControlKind string
+
+const (
+	RecoveryControlReplay           RecoveryControlKind = "replay"
+	RecoveryControlReserveExhausted RecoveryControlKind = "reserve_exhausted"
+)
+
+type RecoveryReplayDetails struct {
+	Available                 bool
+	ExpectedClosureRevisionID uuid.UUID
+}
+
+type RecoveryReserveCandidate struct {
+	TaskID  uuid.UUID
+	Version int
+}
+
+type RecoveryReserveExhaustedDetails struct {
+	Candidates                    []RecoveryReserveCandidate
+	CurrentSnapshotID             uuid.UUID
+	ExpectedArtifactRevision      int64
+	ExpectedArtifactRevisionID    uuid.UUID
+	ExpectedAssignmentRevision    int64
+	ExpectedCategoryRevision      int64
+	ExpectedCategoryRevisionID    uuid.UUID
+	ExpectedExhaustionCommandID   uuid.UUID
+	ExpectedHistoryRevision       int64
+	ExpectedHistoryRevisionID     uuid.UUID
+	ExpectedPoolRevision          int64
+	ExpectedPoolRevisionID        uuid.UUID
+	ExpectedReservationRevision   int64
+	ExpectedReservationRevisionID uuid.UUID
+	ExpectedSnapshotID            uuid.UUID
+}
+
+type RecoveryControl struct {
+	AssignmentID              uuid.UUID
+	Attempts                  []domain.Game
+	Category                  domain.Category
+	ExpectedAuthorityRevision int64
+	Kind                      RecoveryControlKind
+	OldWaveID                 uuid.UUID
+	PauseReason               *pauseusecase.PauseReason
+	Reason                    string
+	Replay                    *RecoveryReplayDetails
+	ReserveExhausted          *RecoveryReserveExhaustedDetails
+	SeriesID                  uuid.UUID
+	SlotID                    uuid.UUID
+}
+
 type OperatorSnapshotView struct {
-	Tournament inbound.TournamentView
-	Roster     RosterView
-	Waves      []WaveView
-	Series     []domain.Series
-	PauseGraph *PauseGraphView
-	NextCursor OperatorCursor
+	Tournament       inbound.TournamentView
+	Roster           RosterView
+	Waves            []WaveView
+	Series           []domain.Series
+	PauseGraph       *PauseGraphView
+	RecoveryControls []RecoveryControl
+	NextCursor       OperatorCursor
 }
 
 type SnapshotPort interface {
@@ -63,7 +115,8 @@ func ValidOperatorSnapshot(view OperatorSnapshotView, tournamentID uuid.UUID) bo
 		!validSnapshotSeries(view.Series, tournamentID) {
 		return false
 	}
-	return validSnapshotPauseGraph(view.PauseGraph, tournamentID, view.Roster.ID)
+	return validSnapshotPauseGraph(view.PauseGraph, tournamentID, view.Roster.ID) &&
+		validSnapshotRecoveryControls(view.RecoveryControls)
 }
 
 func validSnapshotHeader(view OperatorSnapshotView, tournamentID uuid.UUID) bool {
@@ -105,4 +158,102 @@ func validSnapshotPauseGraph(view *PauseGraphView, tournamentID, rosterID uuid.U
 		graph.Scope.RosterID == rosterID && graph.Revision >= 1 &&
 		executionusecase.ValidWaveView(view.Wave, tournamentID, graph.Wave.Wave.ID) &&
 		view.Wave.Wave.ID == graph.Wave.Wave.ID
+}
+
+func validSnapshotRecoveryControls(controls []RecoveryControl) bool {
+	type controlKey struct {
+		kind       RecoveryControlKind
+		assignment uuid.UUID
+		series     uuid.UUID
+		slot       uuid.UUID
+	}
+	seen := make(map[controlKey]struct{}, len(controls))
+	for _, control := range controls {
+		if !validRecoveryControl(control) {
+			return false
+		}
+		key := controlKey{kind: control.Kind, assignment: control.AssignmentID, series: control.SeriesID, slot: control.SlotID}
+		if _, duplicate := seen[key]; duplicate {
+			return false
+		}
+		seen[key] = struct{}{}
+	}
+	return true
+}
+
+//nolint:gocyclo // Fail-closed control validation keeps each compare-and-set invariant explicit.
+func validRecoveryControl(control RecoveryControl) bool {
+	if control.AssignmentID == uuid.Nil || control.SeriesID == uuid.Nil || control.SlotID == uuid.Nil || control.OldWaveID == uuid.Nil ||
+		!control.Category.IsValid() || control.ExpectedAuthorityRevision < 1 ||
+		strings.TrimSpace(control.Reason) != control.Reason || len(control.Reason) == 0 || len(control.Reason) > 512 || len(control.Attempts) == 0 {
+		return false
+	}
+	if control.PauseReason != nil && !validPauseReason(*control.PauseReason) {
+		return false
+	}
+	for index, attempt := range control.Attempts {
+		if attempt.SlotID != control.SlotID || attempt.Validate() != nil {
+			return false
+		}
+		if attempt.AttemptNo != index+1 {
+			return false
+		}
+	}
+	lastAttempt := control.Attempts[len(control.Attempts)-1]
+	if lastAttempt.State != domain.GameStateVoid || !lastAttempt.ResultReason.IsLegalFor(domain.GameStateVoid) {
+		return false
+	}
+	switch control.Kind {
+	case RecoveryControlReplay:
+		return control.Replay != nil && control.Replay.Available &&
+			control.Replay.ExpectedClosureRevisionID != uuid.Nil && control.ReserveExhausted == nil
+	case RecoveryControlReserveExhausted:
+		return control.Replay == nil && validRecoveryReserveExhausted(control.ReserveExhausted)
+	default:
+		return false
+	}
+}
+
+func validPauseReason(reason pauseusecase.PauseReason) bool {
+	switch reason {
+	case pauseusecase.PauseReasonOperator,
+		pauseusecase.PauseReasonDisconnect,
+		pauseusecase.PauseReasonPlatform,
+		pauseusecase.PauseReasonExecutionEpoch:
+		return true
+	default:
+		return false
+	}
+}
+
+//nolint:gocyclo // Durable reserve evidence has independent revision and identity guards.
+func validRecoveryReserveExhausted(details *RecoveryReserveExhaustedDetails) bool {
+	if details == nil || details.CurrentSnapshotID == uuid.Nil || details.ExpectedSnapshotID == uuid.Nil ||
+		details.ExpectedExhaustionCommandID == uuid.Nil || details.ExpectedAssignmentRevision < 1 ||
+		details.ExpectedPoolRevision < 1 || details.ExpectedHistoryRevision < 1 ||
+		details.ExpectedArtifactRevision < 1 || details.ExpectedReservationRevision < 1 ||
+		details.ExpectedCategoryRevision < 1 || details.ExpectedPoolRevisionID == uuid.Nil ||
+		details.ExpectedHistoryRevisionID == uuid.Nil || details.ExpectedArtifactRevisionID == uuid.Nil ||
+		details.ExpectedReservationRevisionID == uuid.Nil || details.ExpectedCategoryRevisionID == uuid.Nil {
+		return false
+	}
+	if details.CurrentSnapshotID != details.ExpectedSnapshotID {
+		return false
+	}
+	type candidateKey struct {
+		taskID  uuid.UUID
+		version int
+	}
+	seen := make(map[candidateKey]struct{}, len(details.Candidates))
+	for _, candidate := range details.Candidates {
+		if candidate.TaskID == uuid.Nil || candidate.Version < 1 {
+			return false
+		}
+		key := candidateKey{taskID: candidate.TaskID, version: candidate.Version}
+		if _, exists := seen[key]; exists {
+			return false
+		}
+		seen[key] = struct{}{}
+	}
+	return true
 }

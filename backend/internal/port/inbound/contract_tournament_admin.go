@@ -530,11 +530,63 @@ type AdminPauseGraphView struct {
 	DeadlinesSuppressed    bool
 	TerminalActionRevision int64
 }
+
+type AdminRecoveryControlKind string
+
+const (
+	AdminRecoveryControlReplay           AdminRecoveryControlKind = "replay"
+	AdminRecoveryControlReserveExhausted AdminRecoveryControlKind = "reserve_exhausted"
+)
+
+type AdminRecoveryReplayDetails struct {
+	Available                 bool
+	ExpectedClosureRevisionID uuid.UUID
+}
+
+type AdminRecoveryReserveCandidate struct {
+	TaskID  uuid.UUID
+	Version int
+}
+
+type AdminRecoveryReserveExhaustedDetails struct {
+	Candidates                    []AdminRecoveryReserveCandidate
+	CurrentSnapshotID             uuid.UUID
+	ExpectedArtifactRevision      int64
+	ExpectedArtifactRevisionID    uuid.UUID
+	ExpectedAssignmentRevision    int64
+	ExpectedCategoryRevision      int64
+	ExpectedCategoryRevisionID    uuid.UUID
+	ExpectedExhaustionCommandID   uuid.UUID
+	ExpectedHistoryRevision       int64
+	ExpectedHistoryRevisionID     uuid.UUID
+	ExpectedPoolRevision          int64
+	ExpectedPoolRevisionID        uuid.UUID
+	ExpectedReservationRevision   int64
+	ExpectedReservationRevisionID uuid.UUID
+	ExpectedSnapshotID            uuid.UUID
+}
+
+type AdminRecoveryControl struct {
+	AssignmentID              uuid.UUID
+	Attempts                  []domain.Game
+	Category                  domain.Category
+	ExpectedAuthorityRevision int64
+	Kind                      AdminRecoveryControlKind
+	OldWaveID                 uuid.UUID
+	PauseReason               *string
+	Reason                    string
+	Replay                    *AdminRecoveryReplayDetails
+	ReserveExhausted          *AdminRecoveryReserveExhaustedDetails
+	SeriesID                  uuid.UUID
+	SlotID                    uuid.UUID
+}
+
 type AdminOperatorSnapshotView struct {
-	Tournament TournamentView
-	Roster     AdminRosterView
-	Waves      []AdminWaveView
-	Series     []domain.Series
-	PauseGraph *AdminPauseGraphView
-	NextCursor AdminOperatorCursor
+	Tournament       TournamentView
+	Roster           AdminRosterView
+	Waves            []AdminWaveView
+	Series           []domain.Series
+	PauseGraph       *AdminPauseGraphView
+	RecoveryControls []AdminRecoveryControl
+	NextCursor       AdminOperatorCursor
 }

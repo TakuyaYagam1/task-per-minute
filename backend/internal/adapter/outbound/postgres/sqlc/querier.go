@@ -679,6 +679,15 @@ type Querier interface {
 	ListTournamentAdminCorrectionReservations(ctx context.Context, arg ListTournamentAdminCorrectionReservationsParams) ([]ListTournamentAdminCorrectionReservationsRow, error)
 	ListTournamentAdminCorrectionSwissPointLedger(ctx context.Context, arg ListTournamentAdminCorrectionSwissPointLedgerParams) ([]ListTournamentAdminCorrectionSwissPointLedgerRow, error)
 	ListTournamentAdminNormalPauseGameDeadlines(ctx context.Context, waveID uuid.UUID) ([]ListTournamentAdminNormalPauseGameDeadlinesRow, error)
+	// Recovery controls are projected only from durable replay authority and
+	// failure/closure evidence. A replay control is present only while the
+	// persisted operator reserve still has its exact committed replacement edge,
+	// reservation, and snapshot.
+	ListTournamentAdminRecoveryControls(ctx context.Context, tournamentID uuid.UUID) ([]ListTournamentAdminRecoveryControlsRow, error)
+	// Candidate eligibility is read from the same normalized authority sources as
+	// the reserve mutation. The client mutation generates a fresh proposed_snapshot_id,
+	// so this read model exposes only server-validated task/version candidates.
+	ListTournamentAdminRecoveryReserveCandidates(ctx context.Context, tournamentID uuid.UUID) ([]ListTournamentAdminRecoveryReserveCandidatesRow, error)
 	ListTournamentAdminRosterParticipants(ctx context.Context, tournamentID uuid.UUID) ([]ListTournamentAdminRosterParticipantsRow, error)
 	ListTournamentAdminSnapshotActiveDraftIDs(ctx context.Context, waveID uuid.UUID) ([]uuid.UUID, error)
 	ListTournamentAdminSnapshotGameAttempts(ctx context.Context, arg ListTournamentAdminSnapshotGameAttemptsParams) ([]ListTournamentAdminSnapshotGameAttemptsRow, error)

@@ -185,7 +185,51 @@ func operatorSnapshotView(value OperatorSnapshotView) inbound.AdminOperatorSnaps
 	if value.PauseGraph != nil {
 		mapped.PauseGraph = pauseGraphView(*value.PauseGraph)
 	}
+	mapped.RecoveryControls = make([]inbound.AdminRecoveryControl, len(value.RecoveryControls))
+	for index, control := range value.RecoveryControls {
+		mapped.RecoveryControls[index] = adminRecoveryControlView(control)
+	}
 	return mapped
+}
+
+func adminRecoveryControlView(value RecoveryControl) inbound.AdminRecoveryControl {
+	mapped := inbound.AdminRecoveryControl{
+		AssignmentID: value.AssignmentID, Attempts: cloneRecoveryGames(value.Attempts), Category: value.Category,
+		ExpectedAuthorityRevision: value.ExpectedAuthorityRevision, Kind: inbound.AdminRecoveryControlKind(value.Kind),
+		OldWaveID: value.OldWaveID, Reason: value.Reason, SeriesID: value.SeriesID, SlotID: value.SlotID,
+	}
+	if value.PauseReason != nil {
+		reason := string(*value.PauseReason)
+		mapped.PauseReason = &reason
+	}
+	if value.Replay != nil {
+		mapped.Replay = &inbound.AdminRecoveryReplayDetails{Available: value.Replay.Available, ExpectedClosureRevisionID: value.Replay.ExpectedClosureRevisionID}
+	}
+	if value.ReserveExhausted != nil {
+		details := value.ReserveExhausted
+		mapped.ReserveExhausted = &inbound.AdminRecoveryReserveExhaustedDetails{
+			CurrentSnapshotID: details.CurrentSnapshotID, ExpectedArtifactRevision: details.ExpectedArtifactRevision,
+			ExpectedArtifactRevisionID: details.ExpectedArtifactRevisionID, ExpectedAssignmentRevision: details.ExpectedAssignmentRevision,
+			ExpectedCategoryRevision: details.ExpectedCategoryRevision, ExpectedCategoryRevisionID: details.ExpectedCategoryRevisionID,
+			ExpectedExhaustionCommandID: details.ExpectedExhaustionCommandID, ExpectedHistoryRevision: details.ExpectedHistoryRevision,
+			ExpectedHistoryRevisionID: details.ExpectedHistoryRevisionID, ExpectedPoolRevision: details.ExpectedPoolRevision,
+			ExpectedPoolRevisionID: details.ExpectedPoolRevisionID, ExpectedReservationRevision: details.ExpectedReservationRevision,
+			ExpectedReservationRevisionID: details.ExpectedReservationRevisionID, ExpectedSnapshotID: details.ExpectedSnapshotID,
+		}
+		mapped.ReserveExhausted.Candidates = make([]inbound.AdminRecoveryReserveCandidate, len(details.Candidates))
+		for index, candidate := range details.Candidates {
+			mapped.ReserveExhausted.Candidates[index] = inbound.AdminRecoveryReserveCandidate{TaskID: candidate.TaskID, Version: candidate.Version}
+		}
+	}
+	return mapped
+}
+
+func cloneRecoveryGames(value []domain.Game) []domain.Game {
+	cloned := make([]domain.Game, len(value))
+	for index, game := range value {
+		cloned[index] = cloneGame(game)
+	}
+	return cloned
 }
 
 func pauseGraphView(value PauseGraphView) *inbound.AdminPauseGraphView {

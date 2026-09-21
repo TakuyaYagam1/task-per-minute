@@ -1171,6 +1171,496 @@ func (q *Queries) ListPublicTournamentReadSeries(ctx context.Context, tournament
 	return items, nil
 }
 
+const listTournamentAdminRecoveryControls = `-- name: ListTournamentAdminRecoveryControls :many
+WITH replay_controls AS (
+    SELECT 'replay'::TEXT AS control_kind,
+        assignment.id AS assignment_id,
+        slot.series_id,
+        slot.id AS slot_id,
+        slot.category::TEXT AS category,
+        operator_reserve.resulting_series_revision AS expected_authority_revision,
+        old_wave.id AS old_wave_id,
+        NULL::TEXT AS pause_reason,
+        failed.result_reason::TEXT AS reason,
+        old_wave.revision_id AS replay_expected_closure_revision_id,
+        NULL::UUID AS exhaustion_command_id,
+        NULL::UUID AS current_snapshot_id,
+        NULL::BIGINT AS expected_assignment_revision,
+        NULL::BIGINT AS expected_pool_revision,
+        NULL::UUID AS expected_pool_revision_id,
+        NULL::BIGINT AS expected_history_revision,
+        NULL::UUID AS expected_history_revision_id,
+        NULL::BIGINT AS expected_artifact_revision,
+        NULL::UUID AS expected_artifact_revision_id,
+        NULL::BIGINT AS expected_reservation_revision,
+        NULL::UUID AS expected_reservation_revision_id,
+        NULL::BIGINT AS expected_category_revision,
+        NULL::UUID AS expected_category_revision_id,
+        NULL::UUID AS expected_snapshot_id
+    FROM game_attempts AS failed
+    JOIN game_slots AS slot
+        ON slot.id = failed.slot_id
+        AND slot.series_id = failed.series_id
+        AND slot.roster_id = failed.roster_id
+    JOIN series
+        ON series.id = failed.series_id
+        AND series.roster_id = failed.roster_id
+    JOIN assignments AS assignment
+        ON assignment.attempt_id = failed.id
+        AND assignment.series_id = failed.series_id
+        AND assignment.roster_id = failed.roster_id
+        AND assignment.state = 'active'
+    JOIN replay_reserve_authorities AS authority
+        ON authority.assignment_id = assignment.id
+        AND authority.tournament_id = series.tournament_id
+        AND authority.roster_id = series.roster_id
+        AND authority.series_id = series.id
+        AND authority.slot_id = slot.id
+        AND authority.assignment_attempt_id = failed.id
+        AND authority.active_snapshot_id = assignment.snapshot_id
+        AND authority.assignment_revision = assignment.revision
+    JOIN task_version_reservations AS current_reservation
+        ON current_reservation.id = assignment.reservation_id
+        AND current_reservation.plan_id = assignment.plan_id
+        AND current_reservation.branch_id = assignment.branch_id
+        AND current_reservation.state = 'committed'
+    JOIN assignment_plan_edges AS current_edge
+        ON current_edge.id = current_reservation.edge_id
+        AND current_edge.plan_id = assignment.plan_id
+        AND current_edge.branch_id = assignment.branch_id
+    JOIN wave_member_routes AS route
+        ON route.game_attempt_id = failed.id
+        AND route.tournament_id = series.tournament_id
+        AND route.roster_id = series.roster_id
+        AND route.series_id = series.id
+        AND route.slot_id = slot.id
+    JOIN waves AS old_wave
+        ON old_wave.id = route.wave_id
+        AND old_wave.tournament_id = series.tournament_id
+        AND old_wave.roster_id = series.roster_id
+        AND old_wave.state = 'completed'
+    JOIN operator_replay_reserves AS operator_reserve
+        ON operator_reserve.tournament_id = series.tournament_id
+        AND operator_reserve.roster_id = series.roster_id
+        AND operator_reserve.old_wave_id = old_wave.id
+        AND operator_reserve.series_id = series.id
+        AND operator_reserve.slot_id = slot.id
+        AND operator_reserve.assignment_id = assignment.id
+        AND operator_reserve.assignment_attempt_id = failed.id
+        AND operator_reserve.failed_game_id = failed.id
+        AND operator_reserve.closure_revision_id = old_wave.revision_id
+        AND operator_reserve.reserve_position = 4
+        AND operator_reserve.from_snapshot_id = authority.active_snapshot_id
+        AND operator_reserve.resulting_series_revision = series.revision
+    JOIN replay_reserve_exhaustions AS exhaustion
+        ON exhaustion.command_id = operator_reserve.exhaustion_command_id
+        AND exhaustion.tournament_id = series.tournament_id
+        AND exhaustion.roster_id = series.roster_id
+        AND exhaustion.old_wave_id = old_wave.id
+        AND exhaustion.series_id = series.id
+        AND exhaustion.slot_id = slot.id
+        AND exhaustion.assignment_id = assignment.id
+        AND exhaustion.assignment_attempt_id = failed.id
+        AND exhaustion.failed_game_id = failed.id
+        AND exhaustion.closure_revision_id = old_wave.revision_id
+        AND exhaustion.active_snapshot_id = authority.active_snapshot_id
+        AND exhaustion.reserve_position = 3
+        AND exhaustion.category = slot.category
+        AND exhaustion.resulting_series_revision = operator_reserve.source_series_revision
+    JOIN assignment_plan_edges AS replacement_edge
+        ON replacement_edge.id = operator_reserve.edge_id
+        AND replacement_edge.plan_id = assignment.plan_id
+        AND replacement_edge.branch_id = assignment.branch_id
+        AND replacement_edge.operator_reserve_command_id = operator_reserve.command_id
+        AND replacement_edge.position = current_edge.position + 1
+        AND replacement_edge.task_id = operator_reserve.proposed_task_id
+        AND replacement_edge.task_version = operator_reserve.proposed_version
+    JOIN task_version_reservations AS replacement_reservation
+        ON replacement_reservation.id = operator_reserve.reservation_id
+        AND replacement_reservation.edge_id = replacement_edge.id
+        AND replacement_reservation.plan_id = replacement_edge.plan_id
+        AND replacement_reservation.branch_id = replacement_edge.branch_id
+        AND replacement_reservation.task_id = replacement_edge.task_id
+        AND replacement_reservation.task_version = replacement_edge.task_version
+        AND replacement_reservation.state = 'committed'
+        AND replacement_reservation.disclosed_at IS NULL
+    JOIN task_snapshots AS replacement_snapshot
+        ON replacement_snapshot.id = operator_reserve.proposed_snapshot_id
+        AND replacement_snapshot.reservation_id = replacement_reservation.id
+        AND replacement_snapshot.task_id = replacement_reservation.task_id
+        AND replacement_snapshot.task_version = replacement_reservation.task_version
+    JOIN wave_series AS old_membership
+        ON old_membership.wave_id = old_wave.id
+        AND old_membership.series_id = series.id
+    WHERE series.tournament_id = $1
+        AND series.state = 'replay_required'
+        AND failed.state = 'void'
+        AND failed.result_reason IN (
+            'no_solve',
+            'task_failure',
+            'common_platform_failure',
+            'disconnect',
+            'execution_epoch_break'
+        )
+        AND route.category = slot.category
+        AND NOT EXISTS (
+            SELECT 1
+            FROM replay_replacements AS replacement
+            WHERE replacement.assignment_id = assignment.id
+                AND replacement.failed_game_id = failed.id
+        )
+), exhausted_controls AS (
+    SELECT 'reserve_exhausted'::TEXT AS control_kind,
+        exhaustion.assignment_id,
+        exhaustion.series_id,
+        exhaustion.slot_id,
+        exhaustion.category::TEXT AS category,
+        exhaustion.resulting_series_revision AS expected_authority_revision,
+        exhaustion.old_wave_id,
+        NULL::TEXT AS pause_reason,
+        'replay reserves exhausted'::TEXT AS reason,
+        exhaustion.closure_revision_id AS replay_expected_closure_revision_id,
+        exhaustion.command_id AS exhaustion_command_id,
+        authority.active_snapshot_id AS current_snapshot_id,
+        authority.assignment_revision AS expected_assignment_revision,
+        authority.pool_revision AS expected_pool_revision,
+        authority.pool_revision_id AS expected_pool_revision_id,
+        authority.history_revision AS expected_history_revision,
+        authority.history_revision_id AS expected_history_revision_id,
+        authority.artifact_revision AS expected_artifact_revision,
+        authority.artifact_revision_id AS expected_artifact_revision_id,
+        authority.reservation_revision AS expected_reservation_revision,
+        authority.reservation_revision_id AS expected_reservation_revision_id,
+        authority.category_revision AS expected_category_revision,
+        authority.category_revision_id AS expected_category_revision_id,
+        authority.active_snapshot_id AS expected_snapshot_id
+    FROM replay_reserve_exhaustions AS exhaustion
+    JOIN series
+        ON series.id = exhaustion.series_id
+        AND series.tournament_id = exhaustion.tournament_id
+        AND series.roster_id = exhaustion.roster_id
+    JOIN waves AS old_wave
+        ON old_wave.id = exhaustion.old_wave_id
+        AND old_wave.tournament_id = exhaustion.tournament_id
+        AND old_wave.roster_id = exhaustion.roster_id
+        AND old_wave.state = 'completed'
+        AND old_wave.revision_id = exhaustion.closure_revision_id
+    JOIN game_slots AS slot
+        ON slot.id = exhaustion.slot_id
+        AND slot.series_id = exhaustion.series_id
+        AND slot.roster_id = exhaustion.roster_id
+    JOIN game_attempts AS failed
+        ON failed.id = exhaustion.failed_game_id
+        AND failed.slot_id = exhaustion.slot_id
+        AND failed.series_id = exhaustion.series_id
+        AND failed.roster_id = exhaustion.roster_id
+        AND failed.state = 'void'
+        AND failed.result_reason IN (
+            'no_solve',
+            'task_failure',
+            'common_platform_failure',
+            'disconnect',
+            'execution_epoch_break'
+        )
+    JOIN assignments AS assignment
+        ON assignment.id = exhaustion.assignment_id
+        AND assignment.attempt_id = exhaustion.assignment_attempt_id
+        AND assignment.series_id = exhaustion.series_id
+        AND assignment.roster_id = exhaustion.roster_id
+        AND assignment.state = 'active'
+    JOIN replay_reserve_authorities AS authority
+        ON authority.assignment_id = exhaustion.assignment_id
+        AND authority.tournament_id = exhaustion.tournament_id
+        AND authority.roster_id = exhaustion.roster_id
+        AND authority.series_id = exhaustion.series_id
+        AND authority.slot_id = exhaustion.slot_id
+        AND authority.assignment_attempt_id = exhaustion.assignment_attempt_id
+        AND authority.active_snapshot_id = exhaustion.active_snapshot_id
+        AND authority.assignment_revision = assignment.revision
+        AND authority.required_category = exhaustion.category
+    JOIN wave_member_routes AS route
+        ON route.game_attempt_id = failed.id
+        AND route.wave_id = exhaustion.old_wave_id
+        AND route.tournament_id = exhaustion.tournament_id
+        AND route.roster_id = exhaustion.roster_id
+        AND route.series_id = exhaustion.series_id
+        AND route.slot_id = exhaustion.slot_id
+    WHERE exhaustion.tournament_id = $1
+        AND exhaustion.reserve_position = 3
+        AND series.state = 'technical_pause'
+        AND series.revision = exhaustion.resulting_series_revision
+        AND exhaustion.category = slot.category
+        AND route.category = slot.category
+)
+SELECT control.control_kind,
+    control.assignment_id,
+    control.series_id,
+    control.slot_id,
+    control.category,
+    control.expected_authority_revision,
+    control.old_wave_id,
+    control.pause_reason,
+    control.reason,
+    control.replay_expected_closure_revision_id,
+    control.exhaustion_command_id,
+    control.current_snapshot_id,
+    control.expected_assignment_revision,
+    control.expected_pool_revision,
+    control.expected_pool_revision_id,
+    control.expected_history_revision,
+    control.expected_history_revision_id,
+    control.expected_artifact_revision,
+    control.expected_artifact_revision_id,
+    control.expected_reservation_revision,
+    control.expected_reservation_revision_id,
+    control.expected_category_revision,
+    control.expected_category_revision_id,
+    control.expected_snapshot_id,
+    attempt.id AS attempt_id,
+    attempt.slot_id AS attempt_slot_id,
+    attempt.attempt_number AS attempt_number,
+    attempt.state AS attempt_state,
+    attempt.result_reason AS attempt_result_reason,
+    attempt.winner_id AS attempt_winner_id,
+    attempt.result_revision_id AS attempt_result_revision_id
+FROM (
+    SELECT control_kind, assignment_id, series_id, slot_id, category, expected_authority_revision, old_wave_id, pause_reason, reason, replay_expected_closure_revision_id, exhaustion_command_id, current_snapshot_id, expected_assignment_revision, expected_pool_revision, expected_pool_revision_id, expected_history_revision, expected_history_revision_id, expected_artifact_revision, expected_artifact_revision_id, expected_reservation_revision, expected_reservation_revision_id, expected_category_revision, expected_category_revision_id, expected_snapshot_id FROM replay_controls
+    UNION ALL
+    SELECT control_kind, assignment_id, series_id, slot_id, category, expected_authority_revision, old_wave_id, pause_reason, reason, replay_expected_closure_revision_id, exhaustion_command_id, current_snapshot_id, expected_assignment_revision, expected_pool_revision, expected_pool_revision_id, expected_history_revision, expected_history_revision_id, expected_artifact_revision, expected_artifact_revision_id, expected_reservation_revision, expected_reservation_revision_id, expected_category_revision, expected_category_revision_id, expected_snapshot_id FROM exhausted_controls
+) AS control
+JOIN game_attempts AS attempt
+    ON attempt.slot_id = control.slot_id
+    AND attempt.series_id = control.series_id
+ORDER BY control.control_kind,
+    control.series_id,
+    control.slot_id,
+    attempt.attempt_number,
+    attempt.id
+`
+
+type ListTournamentAdminRecoveryControlsRow struct {
+	ControlKind                     string
+	AssignmentID                    uuid.UUID
+	SeriesID                        uuid.UUID
+	SlotID                          uuid.UUID
+	Category                        string
+	ExpectedAuthorityRevision       int64
+	OldWaveID                       uuid.UUID
+	PauseReason                     *string
+	Reason                          string
+	ReplayExpectedClosureRevisionID uuid.UUID
+	ExhaustionCommandID             uuid.NullUUID
+	CurrentSnapshotID               uuid.NullUUID
+	ExpectedAssignmentRevision      *int64
+	ExpectedPoolRevision            *int64
+	ExpectedPoolRevisionID          uuid.NullUUID
+	ExpectedHistoryRevision         *int64
+	ExpectedHistoryRevisionID       uuid.NullUUID
+	ExpectedArtifactRevision        *int64
+	ExpectedArtifactRevisionID      uuid.NullUUID
+	ExpectedReservationRevision     *int64
+	ExpectedReservationRevisionID   uuid.NullUUID
+	ExpectedCategoryRevision        *int64
+	ExpectedCategoryRevisionID      uuid.NullUUID
+	ExpectedSnapshotID              uuid.NullUUID
+	AttemptID                       uuid.UUID
+	AttemptSlotID                   uuid.UUID
+	AttemptNumber                   int32
+	AttemptState                    string
+	AttemptResultReason             *string
+	AttemptWinnerID                 uuid.NullUUID
+	AttemptResultRevisionID         uuid.NullUUID
+}
+
+// Recovery controls are projected only from durable replay authority and
+// failure/closure evidence. A replay control is present only while the
+// persisted operator reserve still has its exact committed replacement edge,
+// reservation, and snapshot.
+func (q *Queries) ListTournamentAdminRecoveryControls(ctx context.Context, tournamentID uuid.UUID) ([]ListTournamentAdminRecoveryControlsRow, error) {
+	rows, err := q.db.Query(ctx, listTournamentAdminRecoveryControls, tournamentID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListTournamentAdminRecoveryControlsRow{}
+	for rows.Next() {
+		var i ListTournamentAdminRecoveryControlsRow
+		if err := rows.Scan(
+			&i.ControlKind,
+			&i.AssignmentID,
+			&i.SeriesID,
+			&i.SlotID,
+			&i.Category,
+			&i.ExpectedAuthorityRevision,
+			&i.OldWaveID,
+			&i.PauseReason,
+			&i.Reason,
+			&i.ReplayExpectedClosureRevisionID,
+			&i.ExhaustionCommandID,
+			&i.CurrentSnapshotID,
+			&i.ExpectedAssignmentRevision,
+			&i.ExpectedPoolRevision,
+			&i.ExpectedPoolRevisionID,
+			&i.ExpectedHistoryRevision,
+			&i.ExpectedHistoryRevisionID,
+			&i.ExpectedArtifactRevision,
+			&i.ExpectedArtifactRevisionID,
+			&i.ExpectedReservationRevision,
+			&i.ExpectedReservationRevisionID,
+			&i.ExpectedCategoryRevision,
+			&i.ExpectedCategoryRevisionID,
+			&i.ExpectedSnapshotID,
+			&i.AttemptID,
+			&i.AttemptSlotID,
+			&i.AttemptNumber,
+			&i.AttemptState,
+			&i.AttemptResultReason,
+			&i.AttemptWinnerID,
+			&i.AttemptResultRevisionID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listTournamentAdminRecoveryReserveCandidates = `-- name: ListTournamentAdminRecoveryReserveCandidates :many
+WITH exhausted AS (
+    SELECT exhaustion.command_id,
+        exhaustion.assignment_id,
+        exhaustion.tournament_id,
+        exhaustion.roster_id,
+        exhaustion.series_id,
+        authority.required_category,
+        assignment.plan_id,
+        assignment.branch_id,
+        series.first_participant_id,
+        series.second_participant_id
+    FROM replay_reserve_exhaustions AS exhaustion
+    JOIN series
+        ON series.id = exhaustion.series_id
+        AND series.tournament_id = exhaustion.tournament_id
+        AND series.roster_id = exhaustion.roster_id
+        AND series.state = 'technical_pause'
+        AND series.revision = exhaustion.resulting_series_revision
+    JOIN assignments AS assignment
+        ON assignment.id = exhaustion.assignment_id
+        AND assignment.attempt_id = exhaustion.assignment_attempt_id
+        AND assignment.state = 'active'
+        AND assignment.snapshot_id = exhaustion.active_snapshot_id
+    JOIN replay_reserve_authorities AS authority
+        ON authority.assignment_id = exhaustion.assignment_id
+        AND authority.tournament_id = exhaustion.tournament_id
+        AND authority.roster_id = exhaustion.roster_id
+        AND authority.series_id = exhaustion.series_id
+        AND authority.slot_id = exhaustion.slot_id
+        AND authority.assignment_attempt_id = exhaustion.assignment_attempt_id
+        AND authority.active_snapshot_id = exhaustion.active_snapshot_id
+        AND authority.assignment_revision = assignment.revision
+        AND authority.required_category = exhaustion.category
+    WHERE exhaustion.tournament_id = $1
+        AND exhaustion.reserve_position = 3
+), eligible AS (
+    SELECT DISTINCT
+        exhausted.command_id AS exhaustion_command_id,
+        pool.task_id,
+        pool.task_version
+    FROM exhausted
+    JOIN replay_reserve_authority_pool_versions AS pool
+        ON pool.assignment_id = exhausted.assignment_id
+    JOIN task_versions AS candidate_version
+        ON candidate_version.task_id = pool.task_id
+        AND candidate_version.version = pool.task_version
+        AND candidate_version.category = exhausted.required_category
+    JOIN tasks AS candidate_task
+        ON candidate_task.id = candidate_version.task_id
+        AND candidate_task.enabled
+        AND candidate_task.deleted_at IS NULL
+    LEFT JOIN LATERAL (
+        SELECT attestation.healthy
+        FROM task_version_health_attestations AS attestation
+        WHERE attestation.task_id = candidate_version.task_id
+            AND attestation.task_version = candidate_version.version
+        ORDER BY attestation.revision DESC
+        LIMIT 1
+    ) AS health ON TRUE
+    WHERE COALESCE(health.healthy, false)
+        AND NOT EXISTS (
+            SELECT 1
+            FROM task_public_exposures AS exposure
+            WHERE exposure.task_id = pool.task_id
+                AND exposure.task_version = pool.task_version
+        )
+        AND NOT EXISTS (
+            SELECT 1
+            FROM task_delivery_receipts AS receipt
+            JOIN assignments AS receipt_assignment
+                ON receipt_assignment.id = receipt.assignment_id
+            JOIN series AS receipt_series
+                ON receipt_series.id = receipt_assignment.series_id
+                AND receipt_series.roster_id = receipt_assignment.roster_id
+            WHERE receipt.task_id = pool.task_id
+                AND receipt.task_version = pool.task_version
+                AND receipt_series.tournament_id = exhausted.tournament_id
+                AND receipt_series.roster_id = exhausted.roster_id
+                AND receipt.participant_id IN (
+                    exhausted.first_participant_id,
+                    exhausted.second_participant_id
+                )
+        )
+        AND NOT EXISTS (
+            SELECT 1
+            FROM task_version_reservations AS used_reservation
+            WHERE used_reservation.tournament_id = exhausted.tournament_id
+                AND used_reservation.plan_id = exhausted.plan_id
+                AND used_reservation.branch_id = exhausted.branch_id
+                AND used_reservation.task_id = pool.task_id
+                AND used_reservation.task_version = pool.task_version
+                AND used_reservation.state = 'committed'
+        )
+)
+SELECT exhaustion_command_id,
+    task_id,
+    task_version
+FROM eligible
+ORDER BY exhaustion_command_id,
+    task_id,
+    task_version
+`
+
+type ListTournamentAdminRecoveryReserveCandidatesRow struct {
+	ExhaustionCommandID uuid.UUID
+	TaskID              uuid.UUID
+	TaskVersion         int32
+}
+
+// Candidate eligibility is read from the same normalized authority sources as
+// the reserve mutation. The client mutation generates a fresh proposed_snapshot_id,
+// so this read model exposes only server-validated task/version candidates.
+func (q *Queries) ListTournamentAdminRecoveryReserveCandidates(ctx context.Context, tournamentID uuid.UUID) ([]ListTournamentAdminRecoveryReserveCandidatesRow, error) {
+	rows, err := q.db.Query(ctx, listTournamentAdminRecoveryReserveCandidates, tournamentID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListTournamentAdminRecoveryReserveCandidatesRow{}
+	for rows.Next() {
+		var i ListTournamentAdminRecoveryReserveCandidatesRow
+		if err := rows.Scan(&i.ExhaustionCommandID, &i.TaskID, &i.TaskVersion); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listTournamentReadParticipants = `-- name: ListTournamentReadParticipants :many
 SELECT participant.id AS participant_id,
     player.username AS display_name
