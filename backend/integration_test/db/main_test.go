@@ -20,6 +20,7 @@ var postgresPool *pgxpool.Pool
 
 func TestMain(m *testing.M) {
 	pool, teardown, err := testkit.StartPostgres(testkit.PostgresConfig{
+		DSN:            os.Getenv("TPM_TEST_POSTGRES_DSN"),
 		MigrationsDir:  filepath.Join("..", "..", "db", "migrations"),
 		StartupTimeout: 2 * time.Minute,
 	})

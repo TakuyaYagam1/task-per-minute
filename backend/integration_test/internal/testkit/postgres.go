@@ -7,10 +7,10 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	// Register pgx as the database/sql driver used by Goose.
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/pressly/goose/v3"
 	"github.com/testcontainers/testcontainers-go"
@@ -30,13 +30,13 @@ type PostgresConfig struct {
 // externally managed database. The returned teardown owns the pool and
 // container lifecycle for container-backed fixtures.
 func StartPostgres(config PostgresConfig) (*pgxpool.Pool, func(), error) {
-	if strings.TrimSpace(config.DSN) != "" {
+	if config.DSN != "" {
 		return StartExternalPostgres(config)
 	}
 	ctx := context.Background()
 
 	pgC, err := postgres.Run(ctx, "postgres:18-alpine",
-		postgres.WithDatabase("tpm_test"),
+		postgres.WithDatabase("postgres"),
 		postgres.WithUsername("tpm"),
 		postgres.WithPassword("tpm"),
 		testcontainers.WithWaitStrategy(
@@ -54,24 +54,14 @@ func StartPostgres(config PostgresConfig) (*pgxpool.Pool, func(), error) {
 		return nil, nil, errors.Join(err, pgC.Terminate(ctx))
 	}
 
-	if err := RunMigrations(ctx, PostgresConfig{
-		DSN: dsn, MigrationsDir: config.MigrationsDir, StartupTimeout: config.StartupTimeout,
-	}); err != nil {
-		return nil, nil, errors.Join(err, pgC.Terminate(ctx))
-	}
-
-	poolCfg, err := pgxpool.ParseConfig(dsn)
-	if err != nil {
-		return nil, nil, errors.Join(err, pgC.Terminate(ctx))
-	}
-	poolCfg.MaxConns = 50
-	pool, err := pgxpool.NewWithConfig(ctx, poolCfg)
+	config.DSN = dsn
+	pool, cleanupDatabase, err := startTemplateClone(ctx, config)
 	if err != nil {
 		return nil, nil, errors.Join(err, pgC.Terminate(ctx))
 	}
 
 	teardown := func() {
-		pool.Close()
+		cleanupDatabase()
 		termCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 		_ = pgC.Terminate(termCtx)
@@ -79,26 +69,13 @@ func StartPostgres(config PostgresConfig) (*pgxpool.Pool, func(), error) {
 	return pool, teardown, nil
 }
 
-// StartExternalPostgres connects to a caller-owned disposable database
-// without applying migrations or resetting its state.
+// StartExternalPostgres uses a caller-owned disposable PostgreSQL server. It
+// leaves the database named by config.DSN untouched, prepares one immutable
+// migration template beside it, and returns a test-owned clone.
 func StartExternalPostgres(config PostgresConfig) (*pgxpool.Pool, func(), error) {
 	ctx, cancel := context.WithTimeout(context.Background(), config.StartupTimeout)
 	defer cancel()
-
-	poolCfg, err := pgxpool.ParseConfig(config.DSN)
-	if err != nil {
-		return nil, nil, fmt.Errorf("parse external postgres configuration: %w", err)
-	}
-	poolCfg.MaxConns = 50
-	pool, err := pgxpool.NewWithConfig(ctx, poolCfg)
-	if err != nil {
-		return nil, nil, fmt.Errorf("connect external postgres: %w", err)
-	}
-	if err := pool.Ping(ctx); err != nil {
-		pool.Close()
-		return nil, nil, fmt.Errorf("ping external postgres: %w", err)
-	}
-	return pool, pool.Close, nil
+	return startTemplateClone(ctx, config)
 }
 
 // RunMigrations applies the repository migrations to config.DSN.
@@ -107,7 +84,9 @@ func RunMigrations(ctx context.Context, config PostgresConfig) error {
 	if err != nil {
 		return fmt.Errorf("open sql.DB: %w", err)
 	}
-	defer sqlDB.Close()
+	defer func() {
+		_ = sqlDB.Close()
+	}()
 
 	if err := goose.SetDialect("postgres"); err != nil {
 		return fmt.Errorf("goose dialect: %w", err)

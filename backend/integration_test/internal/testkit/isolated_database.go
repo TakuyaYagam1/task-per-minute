@@ -32,25 +32,17 @@ func (MigrationLock) Unlock() {
 	parallelDatabaseMigrationMu.Unlock()
 }
 
-// NewParallelDatabase provisions one isolated database, applies migrations,
-// and registers cleanup for the pool and database. Goose's dialect state is
-// process-global, so migrations are serialized while test databases remain
-// independent and can be used in parallel afterwards.
+// NewParallelDatabase provisions one isolated database from the immutable
+// migration template and registers cleanup for the pool and database.
 func NewParallelDatabase(tb testing.TB, adminPool *pgxpool.Pool, config PostgresConfig) *pgxpool.Pool {
 	tb.Helper()
 
 	ctx, cancel := context.WithTimeout(context.Background(), config.StartupTimeout)
 	defer cancel()
 
-	pool, _ := CreateIsolatedDatabase(ctx, tb, adminPool, "parallel")
-	parallelDatabaseMigrationMu.Lock()
-	err := func() error {
-		defer parallelDatabaseMigrationMu.Unlock()
-		migrationConfig := config
-		migrationConfig.DSN = MigrationDSN(tb, pool, "public")
-		return RunMigrations(ctx, migrationConfig)
-	}()
+	templateName, err := migrationTemplateDatabaseName(config.MigrationsDir)
 	require.NoError(tb, err)
+	pool, _ := createIsolatedDatabase(ctx, tb, adminPool, "parallel", templateName)
 	return pool
 }
 
@@ -87,10 +79,28 @@ func CreateIsolatedDatabase(
 	label string,
 ) (*pgxpool.Pool, *sql.DB) {
 	tb.Helper()
+	return createIsolatedDatabase(ctx, tb, adminPool, label, "template0")
+}
+
+func createIsolatedDatabase(
+	ctx context.Context, tb testing.TB,
+	adminPool *pgxpool.Pool,
+	label string,
+	templateName string,
+) (*pgxpool.Pool, *sql.DB) {
+	tb.Helper()
 
 	databaseName := "schema_migration_" + label + "_" + uuid.NewString()[:16]
 	identifier := pgx.Identifier{databaseName}.Sanitize()
-	_, err := adminPool.Exec(ctx, "CREATE DATABASE "+identifier+" TEMPLATE template0")
+	templateIdentifier := pgx.Identifier{templateName}.Sanitize()
+	adminConfig := adminPool.Config().ConnConfig.Copy()
+	adminConfig.Database = "postgres"
+	adminConnection, err := pgx.ConnectConfig(ctx, adminConfig)
+	require.NoError(tb, err)
+	_, err = adminConnection.Exec(ctx, "CREATE DATABASE "+identifier+" TEMPLATE "+templateIdentifier)
+	if err != nil {
+		_ = adminConnection.Close(context.WithoutCancel(ctx))
+	}
 	require.NoError(tb, err)
 
 	var (
@@ -105,14 +115,16 @@ func CreateIsolatedDatabase(
 			_ = database.Close()
 		}
 
-		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 15*time.Second)
+		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 		defer cancel()
-		_, dropErr := adminPool.Exec(cleanupCtx, "DROP DATABASE "+identifier+" WITH (FORCE)")
+		_, dropErr := adminConnection.Exec(cleanupCtx, "DROP DATABASE "+identifier+" WITH (FORCE)")
+		_ = adminConnection.Close(cleanupCtx)
 		require.NoError(tb, dropErr)
 	})
 
 	config := adminPool.Config().Copy()
 	config.ConnConfig.Database = databaseName
+	config.MaxConns = 10
 	database = stdlib.OpenDB(*config.ConnConfig)
 	database.SetMaxOpenConns(1)
 	database.SetMaxIdleConns(1)

@@ -124,9 +124,17 @@ fmt: ## golangci-lint fmt
 test: test-migration-create ## Unit tests with race detector (skips integration_test/)
 	go test -race -count=1 -parallel=5 $$(go list ./... | grep -v /integration_test)
 
+.PHONY: test-fast
+test-fast: test-migration-create ## Cached unit tests without race instrumentation for the local edit loop
+	go test -parallel=5 $$(go list ./... | grep -v /integration_test)
+
+.PHONY: test-int-fast
+test-int-fast: ## Integration tests without race instrumentation, sharing one PostgreSQL container
+	bash scripts/test-integration.sh --suite-fast
+
 .PHONY: test-int
-test-int: ## Integration tests (testcontainers - one package, up to 5 parallel tests)
-	go test -race -count=1 -p=1 -parallel=5 -timeout=20m -tags=integration ./integration_test/...
+test-int: ## Integration tests with race detector, 5 packages and 5 tests per package in parallel
+	bash scripts/test-integration.sh --suite-race
 
 .PHONY: test-int-compile
 test-int-compile: ## Compile the integration package with race instrumentation without starting fixtures
