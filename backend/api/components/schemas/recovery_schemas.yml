@@ -586,6 +586,176 @@ OperatorRecoveryCursor:
       minimum: 0
       description: Number of append-only tournament audit events visible in the snapshot.
 
+OperatorRecoveryReplayDetails:
+  type: object
+  description: Operator-only replay control details. The closure revision is the compare-and-set guard for replay.
+  additionalProperties: false
+  required: [expected_closure_revision_id, available]
+  properties:
+    expected_closure_revision_id:
+      type: string
+      format: uuid
+    available:
+      type: boolean
+
+OperatorRecoveryReserveCandidate:
+  type: object
+  description: Operator-only candidate task snapshot for recovering an exhausted reserve.
+  additionalProperties: false
+  required: [task_id, version, snapshot_id]
+  properties:
+    task_id:
+      type: string
+      format: uuid
+    version:
+      type: integer
+      format: int32
+      minimum: 1
+    snapshot_id:
+      type: string
+      format: uuid
+
+OperatorRecoveryReserveExhaustedDetails:
+  type: object
+  description: Operator-only reserve exhaustion details and compare-and-set evidence.
+  additionalProperties: false
+  required:
+    - expected_exhaustion_command_id
+    - expected_assignment_revision
+    - expected_pool_revision_id
+    - expected_pool_revision
+    - expected_history_revision_id
+    - expected_history_revision
+    - expected_artifact_revision_id
+    - expected_artifact_revision
+    - expected_reservation_revision_id
+    - expected_reservation_revision
+    - expected_category_revision_id
+    - expected_category_revision
+    - expected_snapshot_id
+    - current_snapshot_id
+    - candidates
+  properties:
+    expected_exhaustion_command_id:
+      type: string
+      format: uuid
+    expected_assignment_revision:
+      type: integer
+      format: int64
+      minimum: 1
+    expected_pool_revision_id:
+      type: string
+      format: uuid
+    expected_pool_revision:
+      type: integer
+      format: int64
+      minimum: 1
+    expected_history_revision_id:
+      type: string
+      format: uuid
+    expected_history_revision:
+      type: integer
+      format: int64
+      minimum: 1
+    expected_artifact_revision_id:
+      type: string
+      format: uuid
+    expected_artifact_revision:
+      type: integer
+      format: int64
+      minimum: 1
+    expected_reservation_revision_id:
+      type: string
+      format: uuid
+    expected_reservation_revision:
+      type: integer
+      format: int64
+      minimum: 1
+    expected_category_revision_id:
+      type: string
+      format: uuid
+    expected_category_revision:
+      type: integer
+      format: int64
+      minimum: 1
+    expected_snapshot_id:
+      type: string
+      format: uuid
+    current_snapshot_id:
+      type: string
+      format: uuid
+    candidates:
+      type: array
+      items:
+        $ref: '#/OperatorRecoveryReserveCandidate'
+
+OperatorRecoveryControl:
+  type: object
+  description: >-
+    Strict operator-only recovery control. For kind replay, replay must contain
+    details and reserve_exhausted must be null. For kind reserve_exhausted,
+    reserve_exhausted must contain details and replay must be null. The runtime
+    validator enforces this kind-to-detail relationship.
+  additionalProperties: false
+  required:
+    - kind
+    - reason
+    - pause_reason
+    - series_id
+    - slot_id
+    - category
+    - attempts
+    - old_wave_id
+    - assignment_id
+    - expected_authority_revision
+    - replay
+    - reserve_exhausted
+  properties:
+    kind:
+      type: string
+      enum: [replay, reserve_exhausted]
+    reason:
+      type: string
+      minLength: 1
+      maxLength: 512
+    pause_reason:
+      type: string
+      nullable: true
+      allOf:
+        - $ref: '#/PauseReason'
+    series_id:
+      type: string
+      format: uuid
+    slot_id:
+      type: string
+      format: uuid
+    category:
+      $ref: '#/Category'
+    attempts:
+      type: array
+      items:
+        $ref: '#/Game'
+    old_wave_id:
+      type: string
+      format: uuid
+    assignment_id:
+      type: string
+      format: uuid
+    expected_authority_revision:
+      type: integer
+      format: int64
+      minimum: 1
+    replay:
+      type: object
+      nullable: true
+      allOf:
+        - $ref: '#/OperatorRecoveryReplayDetails'
+    reserve_exhausted:
+      type: object
+      nullable: true
+      allOf:
+        - $ref: '#/OperatorRecoveryReserveExhaustedDetails'
+
 PublicRecoverySnapshot:
   type: object
   additionalProperties: false
@@ -842,7 +1012,7 @@ ParticipantRecoverySnapshot:
 OperatorRecoverySnapshot:
   type: object
   additionalProperties: false
-  required: [tournament, roster, waves, series, pause_graph, next_cursor]
+  required: [tournament, roster, waves, series, pause_graph, recovery_controls, next_cursor]
   properties:
     tournament:
       $ref: '#/Tournament'
@@ -861,5 +1031,9 @@ OperatorRecoverySnapshot:
       nullable: true
       allOf:
         - $ref: '#/PauseGraph'
+    recovery_controls:
+      type: array
+      items:
+        $ref: '#/OperatorRecoveryControl'
     next_cursor:
       $ref: '#/OperatorRecoveryCursor'

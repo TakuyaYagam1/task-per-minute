@@ -2577,9 +2577,80 @@ export interface components {
             tournament_id: string;
             wave: components["schemas"]["Wave"];
         };
+        /** @enum {string} */
+        PauseReason: "operator" | "disconnect" | "platform" | "execution_epoch";
+        /** @description Operator-only replay control details. The closure revision is the compare-and-set guard for replay. */
+        OperatorRecoveryReplayDetails: {
+            available: boolean;
+            /** Format: uuid */
+            expected_closure_revision_id: string;
+        };
+        /** @description Operator-only candidate task snapshot for recovering an exhausted reserve. */
+        OperatorRecoveryReserveCandidate: {
+            /** Format: uuid */
+            snapshot_id: string;
+            /** Format: uuid */
+            task_id: string;
+            /** Format: int32 */
+            version: number;
+        };
+        /** @description Operator-only reserve exhaustion details and compare-and-set evidence. */
+        OperatorRecoveryReserveExhaustedDetails: {
+            candidates: components["schemas"]["OperatorRecoveryReserveCandidate"][];
+            /** Format: uuid */
+            current_snapshot_id: string;
+            /** Format: int64 */
+            expected_artifact_revision: number;
+            /** Format: uuid */
+            expected_artifact_revision_id: string;
+            /** Format: int64 */
+            expected_assignment_revision: number;
+            /** Format: int64 */
+            expected_category_revision: number;
+            /** Format: uuid */
+            expected_category_revision_id: string;
+            /** Format: uuid */
+            expected_exhaustion_command_id: string;
+            /** Format: int64 */
+            expected_history_revision: number;
+            /** Format: uuid */
+            expected_history_revision_id: string;
+            /** Format: int64 */
+            expected_pool_revision: number;
+            /** Format: uuid */
+            expected_pool_revision_id: string;
+            /** Format: int64 */
+            expected_reservation_revision: number;
+            /** Format: uuid */
+            expected_reservation_revision_id: string;
+            /** Format: uuid */
+            expected_snapshot_id: string;
+        };
+        /** @description Strict operator-only recovery control. For kind replay, replay must contain details and reserve_exhausted must be null. For kind reserve_exhausted, reserve_exhausted must contain details and replay must be null. The runtime validator enforces this kind-to-detail relationship. */
+        OperatorRecoveryControl: {
+            /** Format: uuid */
+            assignment_id: string;
+            attempts: components["schemas"]["Game"][];
+            category: components["schemas"]["Category"];
+            /** Format: int64 */
+            expected_authority_revision: number;
+            /** @enum {string} */
+            kind: "replay" | "reserve_exhausted";
+            /** Format: uuid */
+            old_wave_id: string;
+            pause_reason: (string & components["schemas"]["PauseReason"]) | null;
+            reason: string;
+            replay: components["schemas"]["OperatorRecoveryReplayDetails"] | null;
+            reserve_exhausted: components["schemas"]["OperatorRecoveryReserveExhaustedDetails"] | null;
+            /** Format: uuid */
+            series_id: string;
+            /** Format: uuid */
+            slot_id: string;
+        };
         OperatorRecoverySnapshot: {
             next_cursor: components["schemas"]["OperatorRecoveryCursor"];
             pause_graph: components["schemas"]["PauseGraph"] | null;
+            recovery_controls: components["schemas"]["OperatorRecoveryControl"][];
             roster: components["schemas"]["Roster"];
             series: components["schemas"]["Series"][];
             tournament: components["schemas"]["Tournament"];
@@ -2915,8 +2986,6 @@ export interface components {
             /** Format: int64 */
             projection_revision: number;
         };
-        /** @enum {string} */
-        PauseReason: "operator" | "disconnect" | "platform" | "execution_epoch";
         /** @enum {string} */
         PauseState: "active" | "resumed" | "cancelled";
         ParticipantRuntimePause: {

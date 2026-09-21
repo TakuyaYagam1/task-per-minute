@@ -675,6 +675,24 @@ func (e OperatorForfeitRequestBasis) Valid() bool {
 	}
 }
 
+// Defines values for OperatorRecoveryControlKind.
+const (
+	Replay           OperatorRecoveryControlKind = "replay"
+	ReserveExhausted OperatorRecoveryControlKind = "reserve_exhausted"
+)
+
+// Valid indicates whether the value is a known member of the OperatorRecoveryControlKind enum.
+func (e OperatorRecoveryControlKind) Valid() bool {
+	switch e {
+	case Replay:
+		return true
+	case ReserveExhausted:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for PairingConfigurationRequestPairingMode.
 const (
 	Automatic PairingConfigurationRequestPairingMode = "automatic"
@@ -2268,6 +2286,25 @@ type OperatorNoShowRequest struct {
 	WindowId                  openapi_types.UUID   `json:"window_id"`
 }
 
+// OperatorRecoveryControl Strict operator-only recovery control. For kind replay, replay must contain details and reserve_exhausted must be null. For kind reserve_exhausted, reserve_exhausted must contain details and replay must be null. The runtime validator enforces this kind-to-detail relationship.
+type OperatorRecoveryControl struct {
+	AssignmentId              openapi_types.UUID                       `json:"assignment_id"`
+	Attempts                  []Game                                   `json:"attempts"`
+	Category                  Category                                 `json:"category"`
+	ExpectedAuthorityRevision int64                                    `json:"expected_authority_revision"`
+	Kind                      OperatorRecoveryControlKind              `json:"kind"`
+	OldWaveId                 openapi_types.UUID                       `json:"old_wave_id"`
+	PauseReason               *PauseReason                             `json:"pause_reason"`
+	Reason                    string                                   `json:"reason"`
+	Replay                    *OperatorRecoveryReplayDetails           `json:"replay"`
+	ReserveExhausted          *OperatorRecoveryReserveExhaustedDetails `json:"reserve_exhausted"`
+	SeriesId                  openapi_types.UUID                       `json:"series_id"`
+	SlotId                    openapi_types.UUID                       `json:"slot_id"`
+}
+
+// OperatorRecoveryControlKind defines model for OperatorRecoveryControl.Kind.
+type OperatorRecoveryControlKind string
+
 // OperatorRecoveryCursor Watermark captured from one authoritative operator recovery snapshot.
 type OperatorRecoveryCursor struct {
 	// AuditSequence Number of append-only tournament audit events visible in the snapshot.
@@ -2280,11 +2317,44 @@ type OperatorRecoveryCursor struct {
 	ProjectionRevision int64 `json:"projection_revision"`
 }
 
+// OperatorRecoveryReplayDetails Operator-only replay control details. The closure revision is the compare-and-set guard for replay.
+type OperatorRecoveryReplayDetails struct {
+	Available                 bool               `json:"available"`
+	ExpectedClosureRevisionId openapi_types.UUID `json:"expected_closure_revision_id"`
+}
+
+// OperatorRecoveryReserveCandidate Operator-only candidate task snapshot for recovering an exhausted reserve.
+type OperatorRecoveryReserveCandidate struct {
+	SnapshotId openapi_types.UUID `json:"snapshot_id"`
+	TaskId     openapi_types.UUID `json:"task_id"`
+	Version    int32              `json:"version"`
+}
+
+// OperatorRecoveryReserveExhaustedDetails Operator-only reserve exhaustion details and compare-and-set evidence.
+type OperatorRecoveryReserveExhaustedDetails struct {
+	Candidates                    []OperatorRecoveryReserveCandidate `json:"candidates"`
+	CurrentSnapshotId             openapi_types.UUID                 `json:"current_snapshot_id"`
+	ExpectedArtifactRevision      int64                              `json:"expected_artifact_revision"`
+	ExpectedArtifactRevisionId    openapi_types.UUID                 `json:"expected_artifact_revision_id"`
+	ExpectedAssignmentRevision    int64                              `json:"expected_assignment_revision"`
+	ExpectedCategoryRevision      int64                              `json:"expected_category_revision"`
+	ExpectedCategoryRevisionId    openapi_types.UUID                 `json:"expected_category_revision_id"`
+	ExpectedExhaustionCommandId   openapi_types.UUID                 `json:"expected_exhaustion_command_id"`
+	ExpectedHistoryRevision       int64                              `json:"expected_history_revision"`
+	ExpectedHistoryRevisionId     openapi_types.UUID                 `json:"expected_history_revision_id"`
+	ExpectedPoolRevision          int64                              `json:"expected_pool_revision"`
+	ExpectedPoolRevisionId        openapi_types.UUID                 `json:"expected_pool_revision_id"`
+	ExpectedReservationRevision   int64                              `json:"expected_reservation_revision"`
+	ExpectedReservationRevisionId openapi_types.UUID                 `json:"expected_reservation_revision_id"`
+	ExpectedSnapshotId            openapi_types.UUID                 `json:"expected_snapshot_id"`
+}
+
 // OperatorRecoverySnapshot defines model for OperatorRecoverySnapshot.
 type OperatorRecoverySnapshot struct {
 	// NextCursor Watermark captured from one authoritative operator recovery snapshot.
-	NextCursor OperatorRecoveryCursor `json:"next_cursor"`
-	PauseGraph *PauseGraph            `json:"pause_graph"`
+	NextCursor       OperatorRecoveryCursor    `json:"next_cursor"`
+	PauseGraph       *PauseGraph               `json:"pause_graph"`
+	RecoveryControls []OperatorRecoveryControl `json:"recovery_controls"`
 
 	// Roster Full tournament roster. Execution can start only while locked, and a started roster cannot be unlocked.
 	Roster     Roster     `json:"roster"`
