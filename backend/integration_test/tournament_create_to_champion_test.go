@@ -214,6 +214,9 @@ func TestTournamentCreateToChampionThroughProductionHandlers(t *testing.T) {
 			content := getTournamentContentThroughREST(t, fixture, adminToken)
 			players := joinTournamentFlowPlayers(t, fixture, 4)
 			created := createTournamentThroughREST(t, fixture, adminToken, content.ContentRevision, name)
+			setTournamentReserveCountThroughREST(
+				t, fixture, adminToken, created.Id, domain.AssignmentReserveCount,
+			)
 			openRegistrationThroughREST(t, fixture, adminToken, created.Id, created.Revision)
 			roster := replaceTournamentRosterThroughREST(t, fixture, adminToken, created.Id, players)
 			preflight := runTournamentRosterPreflightThroughREST(t, fixture, adminToken, created.Id)
@@ -242,6 +245,44 @@ func TestTournamentCreateToChampionThroughProductionHandlers(t *testing.T) {
 			assertTournamentRealtimeThroughProduction(t, fixture, adminToken, created.Id, players[0])
 		})
 	}
+}
+
+func setTournamentReserveCountThroughREST(
+	t *testing.T,
+	fixture *restFixture,
+	adminToken string,
+	tournamentID uuid.UUID,
+	reserveCount int,
+) {
+	t.Helper()
+	path := "/api/v1/admin/tournaments/" + tournamentID.String() + "/configuration"
+	req, resp := doTournamentFlowJSON(
+		t, fixture, http.MethodGet, path, "", adminSession(adminToken), uuid.New(), "",
+	)
+	require.Equal(t, http.StatusOK, resp.Code, resp.Body.String())
+	fixture.validateResponse(t, req, resp)
+	configuration := decodeJSON[api.TournamentConfiguration](t, resp)
+
+	body, err := json.Marshal(api.UpdateTournamentConfigurationRequest{
+		ExpectedProjectionRevision:    configuration.ProjectionRevision,
+		ExpectedConfigurationRevision: configuration.ConfigurationRevision,
+		ReserveCount:                  int32(reserveCount),
+		Confirmed:                     api.UpdateTournamentConfigurationRequestConfirmed(true),
+		Reason:                        "exercise reserve continuation in the full lifecycle",
+		SwissDefault: api.TournamentConfigurationStageDefaultInput{
+			Mode: configuration.SwissDefault.Mode, Categories: configuration.SwissDefault.Categories,
+		},
+		SemifinalDefault: api.TournamentConfigurationStageDefaultInput{
+			Mode: configuration.SemifinalDefault.Mode, Categories: configuration.SemifinalDefault.Categories,
+		},
+		UnlockIntents: []api.ConfigurationUnlockIntent{},
+	})
+	require.NoError(t, err)
+	req, resp = doTournamentFlowJSON(
+		t, fixture, http.MethodPatch, path, string(body), adminSession(adminToken), uuid.New(), "",
+	)
+	require.Equal(t, http.StatusOK, resp.Code, resp.Body.String())
+	fixture.validateResponse(t, req, resp)
 }
 
 func TestTournamentRuntimeDurationAcrossPlayoffStages(t *testing.T) {

@@ -13,7 +13,7 @@ import (
 
 func validateConservativePlanInput(in ConservativePlanInput) ([]byte, []byte, error) {
 	if in.ID == uuid.Nil || in.TournamentID == uuid.Nil || in.RosterID == uuid.Nil || in.RevisionID == uuid.Nil ||
-		in.SourceRosterRevision < 1 || in.SourcePoolRevisionID == uuid.Nil || !validServerTime(in.CreatedAt) {
+		!domain.IsValidAssignmentReserveCount(in.ReserveCount) || in.SourceRosterRevision < 1 || in.SourcePoolRevisionID == uuid.Nil || !validServerTime(in.CreatedAt) {
 		return nil, nil, domain.ErrValidation
 	}
 	constraintGraph, err := requiredJSONObject(in.ConstraintGraph)
@@ -41,7 +41,7 @@ func validateExactPlanInput(in ExactPlanInput) ([]byte, []byte, error) {
 	}
 	tracker := newExactPlanIdentityTracker(len(in.Branches))
 	for _, branch := range in.Branches {
-		if err := tracker.validateBranch(in.SourceDraftRevision, branch); err != nil {
+		if err := tracker.validateBranch(in.SourceDraftRevision, in.ReserveCount, branch); err != nil {
 			return nil, nil, err
 		}
 	}
@@ -66,7 +66,7 @@ func newExactPlanIdentityTracker(branchCount int) *exactPlanIdentityTracker {
 
 func validExactPlanMetadata(in ExactPlanInput) bool {
 	return in.ID != uuid.Nil && in.TournamentID != uuid.Nil && in.RosterID != uuid.Nil &&
-		in.ParentPlanID != uuid.Nil && in.RevisionID != uuid.Nil && in.SourceRosterRevision >= 1 &&
+		domain.IsValidAssignmentReserveCount(in.ReserveCount) && in.ParentPlanID != uuid.Nil && in.RevisionID != uuid.Nil && in.SourceRosterRevision >= 1 &&
 		in.SourcePoolRevisionID != uuid.Nil && in.SourceDraftRevision != uuid.Nil && len(in.Branches) > 0 &&
 		len(in.Branches) <= math.MaxInt32 && validServerTime(in.CreatedAt)
 }
@@ -81,12 +81,13 @@ func validExactPlanDecision(in ExactPlanInput) bool {
 
 func (tracker *exactPlanIdentityTracker) validateBranch(
 	sourceDraftRevision uuid.UUID,
+	reserveCount int,
 	branch AssignmentBranchInput,
 ) error {
 	key := strings.TrimSpace(branch.Key)
 	if branch.ID == uuid.Nil || branch.DraftID == uuid.Nil || branch.DraftRevisionID != sourceDraftRevision ||
 		key == "" || key != branch.Key || len(branch.Categories) == 0 || len(branch.Categories) > 3 ||
-		len(branch.Edges) != domain.AssignmentReserveCount+1 {
+		len(branch.Edges) != reserveCount+1 {
 		return domain.ErrValidation
 	}
 	if tracker.hasBranchIdentity(branch.ID, branch.Key) || !validAssignmentCategories(branch.Categories) {
@@ -94,7 +95,7 @@ func (tracker *exactPlanIdentityTracker) validateBranch(
 	}
 	tracker.branchIDs[branch.ID] = struct{}{}
 	tracker.branchKeys[branch.Key] = struct{}{}
-	positions := make(map[int]struct{}, domain.AssignmentReserveCount+1)
+	positions := make(map[int]struct{}, reserveCount+1)
 	for _, edge := range branch.Edges {
 		if err := tracker.validateEdge(edge, positions); err != nil {
 			return err

@@ -318,7 +318,7 @@ func classifyGoldenFailureValidatedPlan(
 	active GoldenFailureActiveExecution,
 ) (GoldenFailureClassification, error) {
 	group := goldenFailurePlanGroup(plan, active.Scope.State)
-	if group == nil || len(group.Edges) != domain.AssignmentReserveCount+1 {
+	if group == nil || len(group.Edges) < 1 || len(group.Edges) > domain.MaxAssignmentReserveCount+1 {
 		return GoldenFailureClassification{}, goldenFailureError("locked group chain is missing")
 	}
 	failedIndex := active.Attempt.AttemptNo - 1

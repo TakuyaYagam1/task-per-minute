@@ -4,6 +4,7 @@ INSERT INTO assignment_plans (
     tournament_id,
     roster_id,
     kind,
+    reserve_count,
     revision_id,
     source_roster_revision,
     source_pool_revision_id,
@@ -18,6 +19,7 @@ VALUES (
     sqlc.arg(tournament_id),
     sqlc.arg(roster_id),
     'conservative',
+    sqlc.arg(reserve_count),
     sqlc.arg(revision_id),
     sqlc.arg(source_roster_revision),
     sqlc.arg(source_pool_revision_id),
@@ -31,6 +33,7 @@ RETURNING id,
     tournament_id,
     roster_id,
     kind,
+    reserve_count,
     parent_plan_id,
     revision_id,
     source_roster_revision,
@@ -60,6 +63,7 @@ INSERT INTO assignment_plans (
     tournament_id,
     roster_id,
     kind,
+    reserve_count,
     parent_plan_id,
     revision_id,
     source_roster_revision,
@@ -84,6 +88,7 @@ VALUES (
     sqlc.arg(tournament_id),
     sqlc.arg(roster_id),
     'exact',
+    sqlc.arg(reserve_count),
     sqlc.arg(parent_plan_id),
     sqlc.arg(revision_id),
     sqlc.arg(source_roster_revision),
@@ -107,6 +112,7 @@ RETURNING id,
     tournament_id,
     roster_id,
     kind,
+    reserve_count,
     parent_plan_id,
     revision_id,
     source_roster_revision,
@@ -173,13 +179,6 @@ RETURNING id,
 WITH locked_task_version AS (
     SELECT task.id
     FROM assignment_plans AS plan
-    JOIN tournament_content_configurations AS configuration
-        ON configuration.tournament_id = plan.tournament_id
-        AND configuration.state = 'published'
-        AND plan.source_pool_revision_id IN (
-            configuration.normal_pool_revision_id,
-            configuration.golden_pool_revision_id
-        )
     JOIN task_pool_version_memberships AS membership
         ON membership.task_pool_revision_id = plan.source_pool_revision_id
         AND membership.task_id = sqlc.arg(task_id)
@@ -194,6 +193,16 @@ WITH locked_task_version AS (
         LIMIT 1
     ) AS health ON true
     WHERE plan.id = sqlc.arg(plan_id)
+        AND EXISTS (
+            SELECT 1
+            FROM tournament_content_configurations AS configuration
+            WHERE configuration.tournament_id = plan.tournament_id
+                AND configuration.state = 'published'
+                AND plan.source_pool_revision_id IN (
+                    configuration.normal_pool_revision_id,
+                    configuration.golden_pool_revision_id
+                )
+        )
         AND task.enabled
         AND task.deleted_at IS NULL
         AND COALESCE(health.healthy, false)
@@ -340,6 +349,7 @@ SELECT id,
     tournament_id,
     roster_id,
     kind,
+    reserve_count,
     parent_plan_id,
     revision_id,
     source_roster_revision,
@@ -449,6 +459,7 @@ RETURNING id,
     tournament_id,
     roster_id,
     kind,
+    reserve_count,
     parent_plan_id,
     revision_id,
     source_roster_revision,
@@ -477,6 +488,7 @@ SELECT id,
     tournament_id,
     roster_id,
     kind,
+    reserve_count,
     parent_plan_id,
     revision_id,
     source_roster_revision,
@@ -616,6 +628,7 @@ INSERT INTO assignments (
     series_id,
     roster_id,
     plan_id,
+    reserve_count,
     branch_id,
     reservation_id,
     snapshot_id,
@@ -633,6 +646,7 @@ VALUES (
     sqlc.arg(series_id),
     sqlc.arg(roster_id),
     sqlc.arg(plan_id),
+    sqlc.arg(reserve_count),
     sqlc.arg(branch_id),
     sqlc.arg(reservation_id),
     sqlc.arg(snapshot_id),
@@ -649,6 +663,7 @@ RETURNING id,
     series_id,
     roster_id,
     plan_id,
+    reserve_count,
     branch_id,
     reservation_id,
     snapshot_id,
@@ -669,6 +684,7 @@ SELECT id,
     series_id,
     roster_id,
     plan_id,
+    reserve_count,
     branch_id,
     reservation_id,
     snapshot_id,
@@ -692,6 +708,7 @@ SELECT id,
     series_id,
     roster_id,
     plan_id,
+    reserve_count,
     branch_id,
     reservation_id,
     snapshot_id,
@@ -823,6 +840,7 @@ RETURNING id,
     series_id,
     roster_id,
     plan_id,
+    reserve_count,
     branch_id,
     reservation_id,
     snapshot_id,
@@ -1147,7 +1165,7 @@ FOR UPDATE OF membership, task_version, task;
 
 -- name: CreateExactNormalAssignmentPlan :exec
 INSERT INTO assignment_plans (
-    id, tournament_id, roster_id, kind, parent_plan_id, revision_id,
+    id, tournament_id, roster_id, kind, reserve_count, parent_plan_id, revision_id,
     source_roster_revision, source_pool_revision_id, reachable_branch_count,
     constraint_graph, proof_evidence, proof_hash, decision_evidence_id,
     decision_algorithm_version, decision_inputs, decision_seed,
@@ -1156,7 +1174,7 @@ INSERT INTO assignment_plans (
 )
 VALUES (
     sqlc.arg(id), sqlc.arg(tournament_id), sqlc.arg(roster_id), 'exact_normal',
-    NULL, sqlc.arg(revision_id), sqlc.arg(source_roster_revision),
+    sqlc.arg(reserve_count), NULL, sqlc.arg(revision_id), sqlc.arg(source_roster_revision),
     sqlc.arg(source_pool_revision_id), 1, sqlc.arg(constraint_graph),
     sqlc.arg(proof_evidence), sqlc.arg(proof_hash), sqlc.arg(decision_evidence_id),
     sqlc.arg(decision_algorithm_version), sqlc.arg(decision_inputs),

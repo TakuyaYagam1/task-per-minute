@@ -57,6 +57,7 @@ const configuration = (): TournamentConfiguration => ({
   projection_revision_id: "55555555-5555-4555-8555-555555555555",
   projection_revision: 9,
   configuration_revision: 4,
+  reserve_count: 2,
   category_pools: [
     { id: poolBo1Id, revision: 2, format: "bo1", categories: ["web", "crypto", "pwn"] },
     {
@@ -127,6 +128,7 @@ const evidence = (): TournamentConfigurationMutationEvidence => ({
 const configurationUpdate = (): UpdateTournamentConfigurationRequest => ({
   expected_projection_revision: 9,
   expected_configuration_revision: 4,
+  reserve_count: 1,
   confirmed: true,
   reason: "Update defaults",
   unlock_intents: [],
@@ -185,6 +187,7 @@ test("rejects malformed configuration readback", async () => {
     },
   };
   expect(isTournamentConfiguration(malformed)).toBe(false);
+  expect(isTournamentConfiguration({ ...configuration(), reserve_count: 3 })).toBe(false);
 
   await withFetchStub(
     () => jsonResponse(200, { ...configuration(), extra: true }),

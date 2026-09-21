@@ -132,6 +132,7 @@ INSERT INTO tournament_content_configurations (
     id,
     tournament_id,
     revision,
+    reserve_count,
     pool_publication_id,
     normal_pool_revision_id,
     golden_pool_revision_id,
@@ -144,7 +145,8 @@ VALUES (
     $4,
     $5,
     $6,
-    $7
+    $7,
+    $8
 )
 RETURNING id
 `
@@ -153,6 +155,7 @@ type CreateTournamentContentConfigurationParams struct {
 	ID                   uuid.UUID
 	TournamentID         uuid.UUID
 	Revision             int64
+	ReserveCount         int16
 	PoolPublicationID    uuid.UUID
 	NormalPoolRevisionID uuid.UUID
 	GoldenPoolRevisionID uuid.UUID
@@ -164,6 +167,7 @@ func (q *Queries) CreateTournamentContentConfiguration(ctx context.Context, arg 
 		arg.ID,
 		arg.TournamentID,
 		arg.Revision,
+		arg.ReserveCount,
 		arg.PoolPublicationID,
 		arg.NormalPoolRevisionID,
 		arg.GoldenPoolRevisionID,
@@ -226,6 +230,7 @@ const getCurrentTournamentContentConfiguration = `-- name: GetCurrentTournamentC
 SELECT configuration.id,
     configuration.tournament_id,
     configuration.revision,
+    configuration.reserve_count,
     configuration.pool_publication_id,
     configuration.normal_pool_revision_id,
     normal_pool.revision AS normal_pool_revision,
@@ -245,6 +250,7 @@ type GetCurrentTournamentContentConfigurationRow struct {
 	ID                   uuid.UUID
 	TournamentID         uuid.UUID
 	Revision             int64
+	ReserveCount         int16
 	PoolPublicationID    uuid.UUID
 	NormalPoolRevisionID uuid.UUID
 	NormalPoolRevision   int64
@@ -260,6 +266,7 @@ func (q *Queries) GetCurrentTournamentContentConfiguration(ctx context.Context, 
 		&i.ID,
 		&i.TournamentID,
 		&i.Revision,
+		&i.ReserveCount,
 		&i.PoolPublicationID,
 		&i.NormalPoolRevisionID,
 		&i.NormalPoolRevision,

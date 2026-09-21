@@ -59,7 +59,7 @@ func TestPlayoffSemifinalExactNormalCommandScopesEveryIdentity(t *testing.T) {
 	}}
 	categoryRevisionID, slotID, planID := uuid.New(), uuid.New(), uuid.New()
 	exact := playoffSemifinalExactNormalCommand(command, match, categoryRevisionID, slotID, planID,
-		time.Date(2026, time.September, 11, 12, 0, 0, 0, time.UTC), 1)
+		domain.AssignmentReserveCount, time.Date(2026, time.September, 11, 12, 0, 0, 0, time.UTC), 1)
 
 	require.Equal(t, command.TournamentID, exact.Scope.TournamentID)
 	require.Equal(t, command.RosterID, exact.Scope.RosterID)

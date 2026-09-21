@@ -3347,12 +3347,15 @@ type TournamentConfiguration struct {
 	GoldenDefault        TournamentConfigurationStageDefault `json:"golden_default"`
 	ProjectionRevision   int64                               `json:"projection_revision"`
 	ProjectionRevisionId openapi_types.UUID                  `json:"projection_revision_id"`
-	Rounds               []TournamentConfigurationRound      `json:"rounds"`
-	SemifinalDefault     TournamentConfigurationStageDefault `json:"semifinal_default"`
-	Series               []TournamentConfigurationSeries     `json:"series"`
-	SwissDefault         TournamentConfigurationStageDefault `json:"swiss_default"`
-	TournamentId         openapi_types.UUID                  `json:"tournament_id"`
-	UpdatedAt            time.Time                           `json:"updated_at"`
+
+	// ReserveCount Immutable normal and Golden reserve count selected for this published configuration.
+	ReserveCount     int32                               `json:"reserve_count"`
+	Rounds           []TournamentConfigurationRound      `json:"rounds"`
+	SemifinalDefault TournamentConfigurationStageDefault `json:"semifinal_default"`
+	Series           []TournamentConfigurationSeries     `json:"series"`
+	SwissDefault     TournamentConfigurationStageDefault `json:"swiss_default"`
+	TournamentId     openapi_types.UUID                  `json:"tournament_id"`
+	UpdatedAt        time.Time                           `json:"updated_at"`
 }
 
 // TournamentConfigurationCategoryPool Immutable category pool revision available to tournament stages.
@@ -3534,6 +3537,7 @@ type UpdateTournamentConfigurationRequest struct {
 	ExpectedConfigurationRevision int64                                         `json:"expected_configuration_revision"`
 	ExpectedProjectionRevision    int64                                         `json:"expected_projection_revision"`
 	Reason                        string                                        `json:"reason"`
+	ReserveCount                  int32                                         `json:"reserve_count"`
 	SemifinalDefault              TournamentConfigurationStageDefaultInput      `json:"semifinal_default"`
 	SwissDefault                  TournamentConfigurationStageDefaultInput      `json:"swiss_default"`
 	UnlockIntents                 []ConfigurationUnlockIntent                   `json:"unlock_intents"`

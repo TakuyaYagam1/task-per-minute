@@ -185,7 +185,8 @@ func (c *TerminalCoordinator) advanceSemifinals(
 	}
 	plan := FinalDraftPlan{
 		StageCommandID: authority.StageCommandID, RosterID: authority.RosterID,
-		Advancement: advancement.Results(), Series: series, Category: category, Draft: draft,
+		ReserveCount: authority.Configuration.ReserveCount,
+		Advancement:  advancement.Results(), Series: series, Category: category, Draft: draft,
 		IDs: ids, CreatedAt: authority.RecordedAt,
 	}
 	if err := plan.valid(); err != nil {

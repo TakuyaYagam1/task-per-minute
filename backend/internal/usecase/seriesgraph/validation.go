@@ -411,7 +411,8 @@ func validateAssignmentState(graph SeriesGraph, aggregate AssignmentAggregate) e
 		return invalidSeriesGraph("assignment aggregate: %v", err)
 	}
 	if aggregate.Assignment.ID() != aggregate.ID || aggregate.Assignment.AttemptID() != aggregate.AttemptID ||
-		aggregate.Assignment.UndisclosedReserveCount() != domain.AssignmentReserveCount {
+		aggregate.Assignment.ReserveCount() != len(aggregate.Plan.SelectedEdges)-1 ||
+		aggregate.Assignment.UndisclosedReserveCount() != aggregate.Assignment.ReserveCount() {
 		return invalidSeriesGraph("assignment aggregate identity does not match attempt")
 	}
 	if !reflect.DeepEqual(aggregate.Assignment.ActiveSnapshot(), aggregate.Plan.SelectedEdges[0].Snapshot) {

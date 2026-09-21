@@ -39,6 +39,7 @@ type Assignment struct {
 	CompletedAt            pgtype.Timestamptz
 	SupersededAt           pgtype.Timestamptz
 	SupersessionReason     *string
+	ReserveCount           int16
 }
 
 type AssignmentBranch struct {
@@ -101,6 +102,7 @@ type AssignmentPlan struct {
 	SupersededAt              pgtype.Timestamptz
 	SupersessionReason        *string
 	CreatedAt                 pgtype.Timestamptz
+	ReserveCount              int16
 }
 
 type AssignmentPlanEdge struct {
@@ -2726,6 +2728,7 @@ type TournamentContentConfiguration struct {
 	GoldenPoolRevisionID uuid.UUID
 	CreatedAt            pgtype.Timestamptz
 	PublishedAt          pgtype.Timestamptz
+	ReserveCount         int16
 }
 
 type TournamentContentConfigurationHead struct {

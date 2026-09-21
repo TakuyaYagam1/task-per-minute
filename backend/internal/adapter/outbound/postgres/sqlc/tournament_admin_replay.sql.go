@@ -2251,9 +2251,9 @@ SELECT tournament.id, tournament.preset, tournament.state, tournament.paused_fro
     score_head.series_id, score_head.roster_id, score_head.current_revision_id, score_head.revision, score_head.updated_at,
     slot.id, slot.series_id, slot.roster_id, slot.slot_number, slot.category, slot.first_participant_wins_before, slot.second_participant_wins_before, slot.revision, slot.created_at, slot.updated_at,
     failed_game.id, failed_game.slot_id, failed_game.series_id, failed_game.roster_id, failed_game.attempt_number, failed_game.state, failed_game.result_reason, failed_game.winner_id, failed_game.result_revision_id, failed_game.revision, failed_game.created_at, failed_game.updated_at, failed_game.started_at, failed_game.finished_at, failed_game.result_event_sequence, failed_game.submission_event_sequence,
-    assignment.id, assignment.attempt_id, assignment.series_id, assignment.roster_id, assignment.plan_id, assignment.branch_id, assignment.reservation_id, assignment.snapshot_id, assignment.task_id, assignment.task_version, assignment.supersedes_assignment_id, assignment.state, assignment.revision, assignment.created_at, assignment.updated_at, assignment.completed_at, assignment.superseded_at, assignment.supersession_reason,
+    assignment.id, assignment.attempt_id, assignment.series_id, assignment.roster_id, assignment.plan_id, assignment.branch_id, assignment.reservation_id, assignment.snapshot_id, assignment.task_id, assignment.task_version, assignment.supersedes_assignment_id, assignment.state, assignment.revision, assignment.created_at, assignment.updated_at, assignment.completed_at, assignment.superseded_at, assignment.supersession_reason, assignment.reserve_count,
     snapshot.id, snapshot.reservation_id, snapshot.task_id, snapshot.task_version, snapshot.kind, snapshot.title, snapshot.description, snapshot.category, snapshot.difficulty, snapshot.time_limit, snapshot.flag, snapshot.hints, snapshot.task_url, snapshot.source_file_url, snapshot.content_digest, snapshot.created_at,
-    plan.id, plan.tournament_id, plan.roster_id, plan.kind, plan.parent_plan_id, plan.revision_id, plan.source_roster_revision, plan.source_pool_revision_id, plan.source_draft_revision_id, plan.reachable_branch_count, plan.constraint_graph, plan.proof_evidence, plan.proof_hash, plan.decision_evidence_id, plan.decision_algorithm_version, plan.decision_inputs, plan.decision_seed, plan.decision_result, plan.decision_replay_digest, plan.decision_owner_id, plan.decided_at, plan.state, plan.active_branch_id, plan.active_draft_branch_id, plan.completion_draft_revision_id, plan.completion_draft_revision, plan.activation_command_id, plan.completed_categories, plan.committed_at, plan.superseded_at, plan.supersession_reason, plan.created_at,
+    plan.id, plan.tournament_id, plan.roster_id, plan.kind, plan.parent_plan_id, plan.revision_id, plan.source_roster_revision, plan.source_pool_revision_id, plan.source_draft_revision_id, plan.reachable_branch_count, plan.constraint_graph, plan.proof_evidence, plan.proof_hash, plan.decision_evidence_id, plan.decision_algorithm_version, plan.decision_inputs, plan.decision_seed, plan.decision_result, plan.decision_replay_digest, plan.decision_owner_id, plan.decided_at, plan.state, plan.active_branch_id, plan.active_draft_branch_id, plan.completion_draft_revision_id, plan.completion_draft_revision, plan.activation_command_id, plan.completed_categories, plan.committed_at, plan.superseded_at, plan.supersession_reason, plan.created_at, plan.reserve_count,
     branch.id, branch.plan_id, branch.draft_id, branch.draft_revision_id, branch.branch_key, branch.category_sequence, branch.exact_draft_branch_id, branch.exact_draft_position, branch.decision_evidence_id, branch.decision_algorithm_version, branch.decision_inputs, branch.decision_seed, branch.decision_result, branch.decision_replay_digest, branch.decision_owner_id, branch.decided_at, branch.state, branch.disclosed_at, branch.activated_at, branch.released_at, branch.release_reason, branch.superseded_at, branch.supersession_reason, branch.created_at
 FROM tournaments AS tournament
 JOIN rosters AS roster ON roster.tournament_id = tournament.id
@@ -2444,6 +2444,7 @@ func (q *Queries) LockReplayWorkflowSource(ctx context.Context, arg LockReplayWo
 		&i.Assignment.CompletedAt,
 		&i.Assignment.SupersededAt,
 		&i.Assignment.SupersessionReason,
+		&i.Assignment.ReserveCount,
 		&i.TaskSnapshot.ID,
 		&i.TaskSnapshot.ReservationID,
 		&i.TaskSnapshot.TaskID,
@@ -2492,6 +2493,7 @@ func (q *Queries) LockReplayWorkflowSource(ctx context.Context, arg LockReplayWo
 		&i.AssignmentPlan.SupersededAt,
 		&i.AssignmentPlan.SupersessionReason,
 		&i.AssignmentPlan.CreatedAt,
+		&i.AssignmentPlan.ReserveCount,
 		&i.AssignmentBranch.ID,
 		&i.AssignmentBranch.PlanID,
 		&i.AssignmentBranch.DraftID,

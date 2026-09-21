@@ -551,6 +551,7 @@ INSERT INTO assignment_plans (
     tournament_id,
     roster_id,
     kind,
+    reserve_count,
     parent_plan_id,
     revision_id,
     source_roster_revision,
@@ -568,8 +569,8 @@ VALUES (
     $2,
     $3,
     'exact_draft',
-    NULL,
     $4,
+    NULL,
     $5,
     $6,
     $7,
@@ -577,8 +578,9 @@ VALUES (
     $9,
     $10,
     $11,
+    $12,
     'planned',
-    $12
+    $13
 )
 `
 
@@ -586,6 +588,7 @@ type CreateExactDraftAssignmentPlanParams struct {
 	ID                    uuid.UUID
 	TournamentID          uuid.UUID
 	RosterID              uuid.UUID
+	ReserveCount          int16
 	RevisionID            uuid.UUID
 	SourceRosterRevision  int64
 	SourcePoolRevisionID  uuid.UUID
@@ -602,6 +605,7 @@ func (q *Queries) CreateExactDraftAssignmentPlan(ctx context.Context, arg Create
 		arg.ID,
 		arg.TournamentID,
 		arg.RosterID,
+		arg.ReserveCount,
 		arg.RevisionID,
 		arg.SourceRosterRevision,
 		arg.SourcePoolRevisionID,

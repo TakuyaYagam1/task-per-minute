@@ -341,7 +341,7 @@ func exactNormalHistory(
 func exactNormalCandidates(
 	rows []sqlc.LockExactNormalAssignmentCandidatesRow,
 ) (domain.TaskPoolRevision, []assignmentusecase.ExactNormalTaskVersion, error) {
-	if len(rows) < domain.AssignmentReserveCount+1 {
+	if len(rows) == 0 {
 		return domain.TaskPoolRevision{}, nil, domain.ErrConflict
 	}
 	pool := domain.TaskPoolRevision{
@@ -451,7 +451,8 @@ func (r *ExactNormalAssignmentPostgres) commitExactNormalAssignmentTx(
 	evidence := plan.DecisionEvidence
 	if err := querier.CreateExactNormalAssignmentPlan(ctx, sqlc.CreateExactNormalAssignmentPlanParams{
 		ID: plan.PlanID, TournamentID: plan.Scope.TournamentID, RosterID: plan.Scope.RosterID,
-		RevisionID: plan.PlanRevisionID, SourceRosterRevision: plan.Revisions.RosterRevision,
+		ReserveCount: int16(len(plan.SelectedEdges) - 1), //nolint:gosec // exact-plan validation bounds the chain to 1..3.
+		RevisionID:   plan.PlanRevisionID, SourceRosterRevision: plan.Revisions.RosterRevision,
 		SourcePoolRevisionID: plan.Revisions.PoolRevisionID, ConstraintGraph: constraintGraph,
 		ProofEvidence: proofEvidence, ProofHash: &proofHash,
 		DecisionEvidenceID:       uuid.NullUUID{UUID: evidence.ID, Valid: true},
@@ -483,12 +484,15 @@ func (r *ExactNormalAssignmentPostgres) commitExactNormalAssignmentTx(
 		}
 		if _, err := querier.CreateAssignmentPlanEdge(ctx, sqlc.CreateAssignmentPlanEdgeParams{
 			ID: edge.ID, PlanID: plan.PlanID, BranchID: plan.BranchID,
-			Position:          int16(edge.Position), //nolint:gosec // Exact-plan validation bounds positions to the three reserved edges.
+			Position:          int16(edge.Position), //nolint:gosec // Exact-plan validation bounds the configured edge chain.
 			TaskID:            edge.Snapshot.TaskID,
 			TaskVersion:       int32(edge.Snapshot.Version), //nolint:gosec // Candidate versions originate from PostgreSQL int4 rows.
 			SelectionEvidence: selectionEvidence, CreatedAt: tstz(plan.CreatedAt),
 		}); err != nil {
-			return assignmentusecase.ExactNormalAssignmentPlan{}, false, err
+			return assignmentusecase.ExactNormalAssignmentPlan{}, false, fmt.Errorf(
+				"create exact normal edge at position %d for branch %s: %w",
+				edge.Position, plan.BranchID, err,
+			)
 		}
 		if _, err := querier.CreateAssignmentTaskVersionReservation(ctx, sqlc.CreateAssignmentTaskVersionReservationParams{
 			ID: edge.ReservationID, EdgeID: edge.ID, PlanID: plan.PlanID, BranchID: plan.BranchID,
@@ -514,7 +518,7 @@ func (r *ExactNormalAssignmentPostgres) commitExactNormalAssignmentTx(
 	committed, err := querier.CommitAssignmentBranchReservations(ctx, sqlc.CommitAssignmentBranchReservationsParams{
 		CommittedAt: tstz(plan.CreatedAt), PlanID: plan.PlanID, BranchID: plan.BranchID,
 	})
-	if err != nil || len(committed) != domain.AssignmentReserveCount+1 {
+	if err != nil || len(committed) != len(plan.SelectedEdges) {
 		if err != nil {
 			return assignmentusecase.ExactNormalAssignmentPlan{}, false, err
 		}
@@ -643,7 +647,7 @@ func exactNormalAuthorityFromSource(
 		return authority, domain.ErrConflict
 	}
 	if authority.Pool.Kind != domain.AssignmentTaskKindNormal || len(authority.ParticipantIDs) != 2 ||
-		len(authority.Candidates) < domain.AssignmentReserveCount+1 {
+		len(authority.Candidates) == 0 {
 		return assignmentusecase.ExactNormalAssignmentAuthority{}, domain.ErrConflict
 	}
 	normalizedPool, err := domain.NormalizeTaskPoolRevision(authority.Pool, domain.AssignmentTaskKindNormal)

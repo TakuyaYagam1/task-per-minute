@@ -127,6 +127,7 @@ func preflightNormalCapacityInput(rosterSize int) capacity.NormalInput {
 
 	return capacity.NormalInput{
 		Preset:         domain.TournamentPresetV1,
+		ReserveCount:   domain.AssignmentReserveCount,
 		ParticipantIDs: participants,
 		CategoryPools:  categoryPools,
 		NormalPool: domain.TaskPoolRevision{
@@ -157,6 +158,7 @@ func preflightGoldenCapacityInput(rosterSize int) capacity.GoldenInput {
 	}
 	return capacity.GoldenInput{
 		Preset:         domain.TournamentPresetV1,
+		ReserveCount:   domain.AssignmentReserveCount,
 		ParticipantIDs: participants,
 		NormalPool: domain.TaskPoolRevision{
 			ID: preflightCapacityID(20), Revision: 7, Kind: domain.AssignmentTaskKindNormal,

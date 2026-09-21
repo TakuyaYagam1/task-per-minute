@@ -66,7 +66,11 @@ func (repository *GoldenRuntimePostgres) materializeGoldenRuntimePlan(
 	if err != nil {
 		return err
 	}
-	requiredCandidates := len(groups) * (domain.AssignmentReserveCount + 1)
+	if !domain.IsValidAssignmentReserveCount(int(content.ReserveCount)) {
+		return domain.ErrConflict
+	}
+	chainSize := int(content.ReserveCount) + 1
+	requiredCandidates := len(groups) * chainSize
 	if len(candidates) < requiredCandidates {
 		return domain.ErrConflict
 	}
@@ -82,7 +86,7 @@ func (repository *GoldenRuntimePostgres) materializeGoldenRuntimePlan(
 			group.sourceProjectionRevision != first.sourceProjectionRevision {
 			return domain.ErrConflict
 		}
-		selected := candidates[groupIndex*(domain.AssignmentReserveCount+1) : (groupIndex+1)*(domain.AssignmentReserveCount+1)]
+		selected := candidates[groupIndex*chainSize : (groupIndex+1)*chainSize]
 		categories := make([]domain.Category, 0, len(selected))
 		for _, candidate := range selected {
 			if !slices.Contains(categories, candidate.snapshot.Category) {
@@ -119,7 +123,7 @@ func (repository *GoldenRuntimePostgres) materializeGoldenRuntimePlan(
 	}
 	if err := repository.persistGoldenRuntimeAssignmentPlan(
 		ctx, querier, first, source.RosterRevision, content.GoldenPoolRevisionID,
-		exactPlanID, exactRevisionID, decision, branches, now,
+		exactPlanID, exactRevisionID, int(content.ReserveCount), decision, branches, now,
 	); err != nil {
 		return err
 	}
@@ -203,6 +207,7 @@ func (repository *GoldenRuntimePostgres) persistGoldenRuntimeAssignmentPlan(
 	poolRevisionID uuid.UUID,
 	planID uuid.UUID,
 	planRevisionID uuid.UUID,
+	reserveCount int,
 	decision domain.DecisionEvidence,
 	branches []assignmentrepo.AssignmentBranchInput,
 	now time.Time,
@@ -231,7 +236,8 @@ func (repository *GoldenRuntimePostgres) persistGoldenRuntimeAssignmentPlan(
 	proofHash := hex.EncodeToString(proofDigest[:])
 	if err := querier.CreateGoldenRuntimeAssignmentPlan(ctx, sqlc.CreateGoldenRuntimeAssignmentPlanParams{
 		ID: planID, TournamentID: group.tournamentID, RosterID: group.rosterID,
-		RevisionID: planRevisionID, SourceRosterRevision: rosterRevision,
+		ReserveCount: int16(reserveCount), //nolint:gosec // validated as 0..2 above.
+		RevisionID:   planRevisionID, SourceRosterRevision: rosterRevision,
 		SourcePoolRevisionID: poolRevisionID, ReachableBranchCount: int32(len(branches)), //nolint:gosec // Golden groups are bounded by the roster size.
 		ConstraintGraph: constraintGraph, ProofEvidence: proofEvidence, ProofHash: &proofHash,
 		DecisionEvidenceID:       uuid.NullUUID{UUID: decision.ID, Valid: true},

@@ -84,6 +84,7 @@ type NormalCategoryProof struct {
 
 type NormalProof struct {
 	Certified      bool
+	ReserveCount   int
 	PoolRevisionID uuid.UUID
 	PoolRevision   int64
 	RosterSize     int
@@ -95,6 +96,7 @@ type NormalProof struct {
 
 type NormalInput struct {
 	Preset         domain.TournamentPreset
+	ReserveCount   int
 	ParticipantIDs []uuid.UUID
 	CategoryPools  []domain.CategoryPoolRevision
 	NormalPool     domain.TaskPoolRevision
@@ -121,7 +123,7 @@ func ProveNormal(in NormalInput) NormalProof {
 		return failedNormal(Failure{Code: FailureNormalInvalidInput})
 	}
 
-	demands := normalCategoryDemands(len(participants), rounds, categoryPools, versions)
+	demands := normalCategoryDemands(len(participants), rounds, categoryPools, versions, in.ReserveCount)
 	for i := range demands {
 		demand := &demands[i]
 		if len(demand.versions) < demand.required {
@@ -159,6 +161,7 @@ func ProveNormal(in NormalInput) NormalProof {
 
 	proof := NormalProof{
 		Certified:      true,
+		ReserveCount:   in.ReserveCount,
 		PoolRevisionID: pool.ID,
 		PoolRevision:   pool.Revision,
 		RosterSize:     len(participants),
@@ -201,6 +204,9 @@ func ProveNormal(in NormalInput) NormalProof {
 func normalizeNormalInput(
 	in NormalInput,
 ) ([]uuid.UUID, []domain.CategoryPoolRevision, domain.TaskPoolRevision, []TaskVersion, map[uuid.UUID]map[domain.TaskVersionRef]struct{}, bool) {
+	if !domain.IsValidAssignmentReserveCount(in.ReserveCount) {
+		return nil, nil, domain.TaskPoolRevision{}, nil, nil, false
+	}
 	participants, ok := normalizedParticipants(in.Preset, in.ParticipantIDs)
 	if !ok {
 		return nil, nil, domain.TaskPoolRevision{}, nil, nil, false
@@ -286,6 +292,7 @@ func normalCategoryDemands(
 	swissRounds int,
 	pools []domain.CategoryPoolRevision,
 	versions []TaskVersion,
+	reserveCount int,
 ) []normalCategoryDemand {
 	bo1 := make(map[domain.Category]struct{})
 	bo3 := make(map[domain.Category]struct{})
@@ -315,7 +322,7 @@ func normalCategoryDemands(
 	for _, version := range versions {
 		byCategory[version.Category] = append(byCategory[version.Category], version)
 	}
-	chainSize := domain.AssignmentReserveCount + 1
+	chainSize := reserveCount + 1
 	demands := make([]normalCategoryDemand, 0, len(categories))
 	for _, category := range categories {
 		occurrences, retainedChains := 0, 0
@@ -442,6 +449,7 @@ func graphDigest(graph ConstraintGraph) string {
 func normalDigest(proof NormalProof) string {
 	hash := sha256.New()
 	writeField(hash, NormalGraphAlgorithmV2)
+	writeField(hash, fmt.Sprintf("reserve_count:%d", proof.ReserveCount))
 	writeField(hash, proof.PoolRevisionID.String())
 	writeField(hash, fmt.Sprintf("pool_revision:%d", proof.PoolRevision))
 	writeField(hash, fmt.Sprintf("roster:%d", proof.RosterSize))

@@ -1210,6 +1210,8 @@ WITH replay_controls AS (
         AND assignment.series_id = failed.series_id
         AND assignment.roster_id = failed.roster_id
         AND assignment.state = 'active'
+    JOIN assignment_plans AS plan
+        ON plan.id = assignment.plan_id
     JOIN replay_reserve_authorities AS authority
         ON authority.assignment_id = assignment.id
         AND authority.tournament_id = series.tournament_id
@@ -1249,7 +1251,7 @@ WITH replay_controls AS (
         AND operator_reserve.assignment_attempt_id = failed.id
         AND operator_reserve.failed_game_id = failed.id
         AND operator_reserve.closure_revision_id = old_wave.revision_id
-        AND operator_reserve.reserve_position = 4
+        AND operator_reserve.reserve_position > COALESCE(plan.reserve_count::integer, 2) + 1
         AND operator_reserve.from_snapshot_id = authority.active_snapshot_id
         AND operator_reserve.resulting_series_revision = series.revision
     JOIN replay_reserve_exhaustions AS exhaustion
@@ -1264,7 +1266,7 @@ WITH replay_controls AS (
         AND exhaustion.failed_game_id = failed.id
         AND exhaustion.closure_revision_id = old_wave.revision_id
         AND exhaustion.active_snapshot_id = authority.active_snapshot_id
-        AND exhaustion.reserve_position = 3
+        AND exhaustion.reserve_position = COALESCE(plan.reserve_count::integer, 2) + 1
         AND exhaustion.category = slot.category
         AND exhaustion.resulting_series_revision = operator_reserve.source_series_revision
     JOIN assignment_plan_edges AS replacement_edge
@@ -1368,6 +1370,8 @@ WITH replay_controls AS (
         AND assignment.series_id = exhaustion.series_id
         AND assignment.roster_id = exhaustion.roster_id
         AND assignment.state = 'active'
+    JOIN assignment_plans AS plan
+        ON plan.id = assignment.plan_id
     JOIN replay_reserve_authorities AS authority
         ON authority.assignment_id = exhaustion.assignment_id
         AND authority.tournament_id = exhaustion.tournament_id
@@ -1386,7 +1390,7 @@ WITH replay_controls AS (
         AND route.series_id = exhaustion.series_id
         AND route.slot_id = exhaustion.slot_id
     WHERE exhaustion.tournament_id = $1
-        AND exhaustion.reserve_position = 3
+        AND exhaustion.reserve_position = COALESCE(plan.reserve_count::integer, 2) + 1
         AND series.state = 'technical_pause'
         AND series.revision = exhaustion.resulting_series_revision
         AND exhaustion.category = slot.category
@@ -1552,6 +1556,8 @@ WITH exhausted AS (
         AND assignment.attempt_id = exhaustion.assignment_attempt_id
         AND assignment.state = 'active'
         AND assignment.snapshot_id = exhaustion.active_snapshot_id
+    JOIN assignment_plans AS plan
+        ON plan.id = assignment.plan_id
     JOIN replay_reserve_authorities AS authority
         ON authority.assignment_id = exhaustion.assignment_id
         AND authority.tournament_id = exhaustion.tournament_id
@@ -1563,7 +1569,7 @@ WITH exhausted AS (
         AND authority.assignment_revision = assignment.revision
         AND authority.required_category = exhaustion.category
     WHERE exhaustion.tournament_id = $1
-        AND exhaustion.reserve_position = 3
+        AND exhaustion.reserve_position = COALESCE(plan.reserve_count::integer, 2) + 1
 ), eligible AS (
     SELECT DISTINCT
         exhausted.command_id AS exhaustion_command_id,

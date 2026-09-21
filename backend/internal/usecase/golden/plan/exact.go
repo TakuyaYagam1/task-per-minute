@@ -153,7 +153,8 @@ func goldenExactPlanBaseMatchesCommand(plan ExactPlan, command Command) bool {
 }
 
 func goldenExactGroupMatchesCommand(group Group, command GroupCommand) bool {
-	if command.GroupRevisionID != group.GroupRevisionID || len(group.Edges) != len(command.EdgeIDs) {
+	reserveCount, err := goldenGroupCommandReserveCount(command)
+	if err != nil || command.GroupRevisionID != group.GroupRevisionID || len(group.Edges) != reserveCount+1 {
 		return false
 	}
 	for index, edge := range group.Edges {
@@ -183,11 +184,15 @@ func BuildExactPlan(
 	if err := validateGoldenCommandAuthorityAliases(command, canonical); err != nil {
 		return ExactPlan{}, err
 	}
+	reserveCount, err := goldenCommandReserveCount(command)
+	if err != nil {
+		return ExactPlan{}, err
+	}
 	commands, err := canonicalGoldenGroupCommands(command.GroupCommands, canonical.Groups)
 	if err != nil {
 		return ExactPlan{}, err
 	}
-	matching, err := goldenExactMatching(canonical)
+	matching, err := goldenExactMatching(canonical, reserveCount)
 	if err != nil {
 		return ExactPlan{}, err
 	}
@@ -203,7 +208,7 @@ func BuildExactPlan(
 			SourceProjectionRevisionID: group.Revision.SourceProjectionRevisionID(),
 			PositionFrom:               from, PositionTo: to,
 			ParticipantIDs: append([]uuid.UUID(nil), group.ActiveParticipantIDs...),
-			Edges:          make([]Edge, domain.AssignmentReserveCount+1),
+			Edges:          make([]Edge, reserveCount+1),
 		}
 		for edgeIndex := range groupPlan.Edges {
 			candidate := canonical.Candidates[matching[groupIndex][edgeIndex]]

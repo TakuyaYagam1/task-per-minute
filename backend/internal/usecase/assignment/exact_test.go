@@ -44,6 +44,26 @@ func TestExactNormalAssignmentCommitsPrimaryAndTwoReserves(t *testing.T) {
 	require.Equal(t, 1, state.commitCount())
 }
 
+func TestExactNormalAssignmentSupportsPrimaryOnlyCommands(t *testing.T) {
+	t.Parallel()
+
+	authority, command := exactNormalAssignmentFixture()
+	for index := 1; index < domain.AssignmentReserveCount+1; index++ {
+		command.EdgeIDs[index] = uuid.Nil
+		command.ReservationIDs[index] = uuid.Nil
+		command.SnapshotIDs[index] = uuid.Nil
+	}
+	repository, _ := newExactNormalAssignmentRepository(t, []assignmentusecase.ExactNormalAssignmentAuthority{authority}, 0)
+	plan, changed, err := assignmentusecase.NewExactNormalAssignmentUseCase(repository).PlanAndCommit(t.Context(), command)
+	require.NoError(t, err)
+	require.True(t, changed)
+	require.NoError(t, plan.Validate())
+	require.Len(t, plan.SelectedEdges, 1)
+	require.NotEqual(t, uuid.Nil, plan.SelectedEdges[0].ID)
+	require.NotEqual(t, uuid.Nil, plan.SelectedEdges[0].ReservationID)
+	require.NotEqual(t, uuid.Nil, plan.SelectedEdges[0].Snapshot.SnapshotID)
+}
+
 func TestExactNormalLegacyHistoryProofSurvivesVersionlessJSON(t *testing.T) {
 	t.Parallel()
 

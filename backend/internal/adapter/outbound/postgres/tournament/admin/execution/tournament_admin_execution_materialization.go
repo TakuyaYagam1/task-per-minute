@@ -375,7 +375,7 @@ func (r *TournamentAdminExecutionPostgres) materializeSwissLockedSeriesConcrete(
 	var edgeIDs [domain.AssignmentReserveCount + 1]uuid.UUID
 	var reservationIDs [domain.AssignmentReserveCount + 1]uuid.UUID
 	var snapshotIDs [domain.AssignmentReserveCount + 1]uuid.UUID
-	for index := range edgeIDs {
+	for index := 0; index <= configuration.ReserveCount; index++ {
 		edgeIDs[index] = tournamentAdminExecutionID(planID, fmt.Sprintf("swiss-exact-normal-edge-%d", index+1))
 		reservationIDs[index] = tournamentAdminExecutionID(planID, fmt.Sprintf("swiss-exact-normal-reservation-%d", index+1))
 		snapshotIDs[index] = tournamentAdminExecutionID(planID, fmt.Sprintf("swiss-exact-normal-snapshot-%d", index+1))

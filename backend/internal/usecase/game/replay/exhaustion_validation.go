@@ -36,7 +36,8 @@ func validReplayReserveExhaustionHeader(record ReplayReserveExhaustion) bool {
 		record.ExpectedAuthorityRevision >= 1 && !record.ClosureRevisionID.IsZero() &&
 		record.FailedAttemptCommandID != uuid.Nil && record.AssignmentAttemptID != uuid.Nil &&
 		record.GameID != uuid.Nil && record.ActiveSnapshotID != uuid.Nil &&
-		record.ReservePosition == domain.AssignmentReserveCount+1 && record.Category.IsValid()
+		record.ReservePosition >= minReplayReserveSnapshots &&
+		record.ReservePosition <= maxReplayReserveSnapshots && record.Category.IsValid()
 }
 
 func validateReplayReserveExhaustionCommand(command ReplayReserveExhaustionCommand) error {
@@ -64,7 +65,6 @@ func validateReplayReserveExhaustionAuthority(authority ReplayReserveExhaustionA
 		return err
 	}
 	if authority.ReserveChain.AssignmentID != authority.Scope.AssignmentID ||
-		authority.ReserveChain.ActiveIndex != domain.AssignmentReserveCount ||
 		authority.ReserveChain.ActiveIndex != len(authority.ReserveChain.Snapshots)-1 ||
 		authority.ReserveChain.Snapshots[authority.ReserveChain.ActiveIndex].SnapshotID !=
 			authority.FailedAttempt.ActiveSnapshotID {

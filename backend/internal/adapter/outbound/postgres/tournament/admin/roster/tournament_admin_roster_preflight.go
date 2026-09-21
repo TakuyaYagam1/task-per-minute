@@ -137,6 +137,7 @@ func loadTournamentPreflightContent(
 	}
 	content, err := domain.CreateContentConfiguration(domain.ContentConfigurationInput{
 		TournamentID:  tournamentID,
+		ReserveCount:  int(configuration.ReserveCount),
 		CategoryPools: categoryPools,
 		NormalPool:    normalPool,
 		GoldenPool:    goldenPool,
@@ -478,11 +479,13 @@ func tournamentPreflightCertification(
 	goldenVersions := taskVersionsForPool(taskVersions, domain.AssignmentTaskKindGolden)
 	normal := capacity.ProveNormal(capacity.NormalInput{
 		Preset: authority.TournamentPreset, ParticipantIDs: participantIDs,
+		ReserveCount:  content.ReserveCount,
 		CategoryPools: content.CategoryPools, NormalPool: content.NormalPool, Versions: normalVersions,
 	})
 	golden := capacity.ProveGolden(capacity.GoldenInput{
 		Preset: authority.TournamentPreset, ParticipantIDs: participantIDs,
-		NormalPool: content.NormalPool, GoldenPool: content.GoldenPool, Versions: goldenVersions,
+		ReserveCount: content.ReserveCount,
+		NormalPool:   content.NormalPool, GoldenPool: content.GoldenPool, Versions: goldenVersions,
 	})
 	if !normal.Certified || !golden.Certified {
 		return nil

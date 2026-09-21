@@ -39,6 +39,52 @@ func TestTournamentConfigurationLoadUsesPublishedStandingsAndParticipantSeeds(t 
 	}
 }
 
+func TestTournamentConfigurationReserveCountIsVersionedAndCopied(t *testing.T) {
+	t.Parallel()
+
+	root := filepath.Join("..", "..", "..", "..", "..", "..")
+	migration, err := os.ReadFile(filepath.Join(root, "db", "migrations", "000027_configurable_assignment_reserves.sql"))
+	require.NoError(t, err)
+	contentQueries, err := os.ReadFile(filepath.Join(root, "db", "queries", "task_content.sql"))
+	require.NoError(t, err)
+	editQueries, err := os.ReadFile(filepath.Join(root, "db", "queries", "tournament_configuration_edits.sql"))
+	require.NoError(t, err)
+	schema, err := os.ReadFile(filepath.Join(root, "api", "components", "schemas", "tournament_configuration_schemas.yml"))
+	require.NoError(t, err)
+
+	for _, fragment := range []string{
+		"ALTER TABLE public.tournament_content_configurations",
+		"ALTER TABLE public.assignment_plans",
+		"ALTER TABLE public.assignments",
+		"ADD COLUMN reserve_count smallint NOT NULL DEFAULT 2",
+		"ALTER COLUMN reserve_count SET DEFAULT 0",
+		"CHECK (reserve_count BETWEEN 0 AND 2)",
+	} {
+		require.Contains(t, string(migration), fragment)
+	}
+	for _, fragment := range []string{
+		"configuration.reserve_count",
+		"sqlc.arg(reserve_count)",
+	} {
+		require.Contains(t, string(contentQueries), fragment)
+	}
+	for _, fragment := range []string{
+		"sqlc.arg(reserve_count)::SMALLINT",
+		"JOIN tournament_content_configurations AS current_configuration",
+		"RETURNING id,\n    tournament_id,\n    revision,\n    state,\n    reserve_count",
+	} {
+		require.Contains(t, string(editQueries), fragment)
+	}
+	for _, fragment := range []string{
+		"reserve_count:",
+		"minimum: 0",
+		"maximum: 2",
+		"readOnly: true",
+	} {
+		require.Contains(t, string(schema), fragment)
+	}
+}
+
 func TestTournamentConfigurationSwissByeCASRequiresExactPreStartFence(t *testing.T) {
 	t.Parallel()
 

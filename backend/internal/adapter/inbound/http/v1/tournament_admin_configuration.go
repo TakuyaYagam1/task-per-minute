@@ -86,7 +86,8 @@ func (c *tournamentController) UpdateTournamentConfiguration(
 		return
 	}
 	unlockIntents, err := tournamentConfigurationUnlockIntents(body.UnlockIntents)
-	if err != nil || !validConfigurationMutation(body.ExpectedProjectionRevision, body.ExpectedConfigurationRevision, bool(body.Confirmed), body.Reason) {
+	if err != nil || !domain.IsValidAssignmentReserveCount(int(body.ReserveCount)) ||
+		!validConfigurationMutation(body.ExpectedProjectionRevision, body.ExpectedConfigurationRevision, bool(body.Confirmed), body.Reason) {
 		errmap.HandleError(w, r, domain.ErrValidation)
 		return
 	}
@@ -96,6 +97,7 @@ func (c *tournamentController) UpdateTournamentConfiguration(
 		CommandID:                     params.IdempotencyKey,
 		ExpectedProjectionRevision:    body.ExpectedProjectionRevision,
 		ExpectedConfigurationRevision: body.ExpectedConfigurationRevision,
+		ReserveCount:                  int(body.ReserveCount),
 		Confirmed:                     bool(body.Confirmed),
 		Reason:                        body.Reason,
 		SwissDefault:                  swiss,

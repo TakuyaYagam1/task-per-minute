@@ -19,7 +19,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/bootstrap"
 )
 
-const schemaHeadVersion int64 = 26
+const schemaHeadVersion int64 = 27
 
 func TestSchemaMigration(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
@@ -233,7 +233,7 @@ func TestSchemaMigration(t *testing.T) {
 			))::INT`,
 	).Scan(&removedLegacy))
 	require.Equal(t, 200, applicationTables)
-	require.Equal(t, 200, applicationFunctions)
+	require.Equal(t, 201, applicationFunctions)
 	require.Equal(t, 295, triggers)
 	require.Equal(t, 102, explicitIndexes)
 	require.Equal(t, 631, foreignKeys)

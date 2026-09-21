@@ -194,7 +194,7 @@ TournamentConfigurationRound:
 TournamentConfiguration:
   type: object
   additionalProperties: false
-  required: [tournament_id, projection_revision_id, projection_revision, configuration_revision, category_pools, swiss_default, golden_default, semifinal_default, final_default, series, rounds, updated_at]
+  required: [tournament_id, projection_revision_id, projection_revision, configuration_revision, reserve_count, category_pools, swiss_default, golden_default, semifinal_default, final_default, series, rounds, updated_at]
   properties:
     tournament_id:
       type: string
@@ -214,6 +214,13 @@ TournamentConfiguration:
       format: int64
       minimum: 1
       readOnly: true
+    reserve_count:
+      type: integer
+      format: int32
+      minimum: 0
+      maximum: 2
+      readOnly: true
+      description: Immutable normal and Golden reserve count selected for this published configuration.
     category_pools:
       type: array
       minItems: 2
@@ -374,7 +381,7 @@ TournamentConfigurationMutationEvidence:
 UpdateTournamentConfigurationRequest:
   type: object
   additionalProperties: false
-  required: [expected_projection_revision, expected_configuration_revision, confirmed, reason, unlock_intents, swiss_default, semifinal_default]
+  required: [expected_projection_revision, expected_configuration_revision, reserve_count, confirmed, reason, unlock_intents, swiss_default, semifinal_default]
   properties:
     expected_projection_revision:
       type: integer
@@ -384,6 +391,11 @@ UpdateTournamentConfigurationRequest:
       type: integer
       format: int64
       minimum: 1
+    reserve_count:
+      type: integer
+      format: int32
+      minimum: 0
+      maximum: 2
     confirmed:
       type: boolean
       enum: [true]

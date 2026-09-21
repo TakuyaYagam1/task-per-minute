@@ -65,6 +65,7 @@ func TestTournamentConfigurationResponseMapsRevisionAndSeriesEvidence(t *testing
 	t.Parallel()
 
 	view := validTournamentConfigurationView()
+	view.ReserveCount = 1
 	seriesID := uuid.New()
 	view.Series = []inbound.AdminConfigurationSeriesView{{
 		ID:                     seriesID,
@@ -83,10 +84,20 @@ func TestTournamentConfigurationResponseMapsRevisionAndSeriesEvidence(t *testing
 	payload, err := tournamentConfigurationResponse(view)
 	require.NoError(t, err)
 	require.Equal(t, view.ConfigurationRevision, payload.ConfigurationRevision)
+	require.Equal(t, int32(view.ReserveCount), payload.ReserveCount)
 	require.Len(t, payload.CategoryPools, 2)
 	require.Len(t, payload.Series, 1)
 	require.Equal(t, seriesID, payload.Series[0].Id)
 	require.Equal(t, int64(8), payload.Series[0].Revision)
+}
+
+func TestTournamentConfigurationResponseRejectsInvalidReserveCount(t *testing.T) {
+	t.Parallel()
+
+	view := validTournamentConfigurationView()
+	view.ReserveCount = 3
+	_, err := tournamentConfigurationResponse(view)
+	require.ErrorIs(t, err, domain.ErrInternal)
 }
 
 func validTournamentConfigurationView() inbound.AdminTournamentConfigurationView {

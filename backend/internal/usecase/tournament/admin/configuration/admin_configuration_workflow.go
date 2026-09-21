@@ -46,6 +46,7 @@ type ConfigurationUpdateCommand struct {
 
 	ExpectedProjectionRevision    int64
 	ExpectedConfigurationRevision int64
+	ReserveCount                  int
 	Confirmed                     bool
 	Reason                        string
 	SwissDefault                  inbound.AdminConfigurationStageDefault
@@ -285,7 +286,7 @@ func (w *TournamentConfigurationWorkflow) UpdateTournamentConfiguration(
 			Operator: OperatorIdentity{ActorID: command.Operator.ActorID}, TournamentID: command.TournamentID, CommandID: command.CommandID,
 		},
 		ExpectedProjectionRevision: command.ExpectedProjectionRevision, ExpectedConfigurationRevision: command.ExpectedConfigurationRevision,
-		Confirmed: command.Confirmed, Reason: command.Reason, SwissDefault: cloneStageDefault(command.SwissDefault),
+		ReserveCount: command.ReserveCount, Confirmed: command.Confirmed, Reason: command.Reason, SwissDefault: cloneStageDefault(command.SwissDefault),
 		SemifinalDefault: cloneStageDefault(command.SemifinalDefault), UnlockIntents: cloneUnlockIntents(command.UnlockIntents),
 	})
 }
@@ -322,13 +323,17 @@ func (w *TournamentConfigurationWorkflow) updateTournamentConfigurationInternal(
 		return inbound.AdminConfigurationMutationEvidence{}, err
 	}
 	if sameStageDefault(authority.SwissDefault, command.SwissDefault) &&
-		sameStageDefault(authority.SemifinalDefault, command.SemifinalDefault) {
+		sameStageDefault(authority.SemifinalDefault, command.SemifinalDefault) &&
+		authority.Configuration.ReserveCount == command.ReserveCount {
 		if len(command.UnlockIntents) != 0 {
 			return inbound.AdminConfigurationMutationEvidence{}, domain.ErrValidation
 		}
 		return configurationEvidence(command.CommandScope, digest, authority, authority.Configuration.Revision, nil, nil, command.Reason, authority.UpdatedAt), nil
 	}
 	affected := authority.affectedForDefaults(command.SwissDefault, command.SemifinalDefault)
+	if authority.Configuration.ReserveCount != command.ReserveCount {
+		affected = authority.configurationArtifacts()
+	}
 	if err := validateEditableArtifacts(affected); err != nil {
 		return inbound.AdminConfigurationMutationEvidence{}, err
 	}
@@ -339,6 +344,7 @@ func (w *TournamentConfigurationWorkflow) updateTournamentConfigurationInternal(
 	next.Revision++
 	next.PlanRevisionID = uuid.Nil
 	next.PreflightRevisionID = uuid.Nil
+	next.ReserveCount = command.ReserveCount
 	setStageMode(&next, domain.TournamentStageSwiss, command.SwissDefault.Mode)
 	setStageMode(&next, domain.TournamentStageSemifinal, command.SemifinalDefault.Mode)
 	rebuilt, superseded := successorArtifacts(command.CommandID, affected)
@@ -780,13 +786,43 @@ func (a ConfigurationAuthority) affectedForDefaults(swiss, semifinal Configurati
 	return result
 }
 
+// configurationArtifacts returns every pre-start artifact that depends on the
+// published configuration. Reserve count is shared by normal and Golden
+// chains, so changing it must use the same cutoff and unlock checks for every
+// materialized artifact, not only the stages whose category defaults changed.
+func (a ConfigurationAuthority) configurationArtifacts() []ConfigurationArtifact {
+	seen := make(map[uuid.UUID]struct{}, len(a.Artifacts)+len(a.Series)+len(a.Rounds))
+	result := make([]ConfigurationArtifact, 0, len(seen))
+	appendArtifact := func(artifact ConfigurationArtifact) {
+		if artifact.ID == uuid.Nil {
+			return
+		}
+		if _, duplicate := seen[artifact.ID]; duplicate {
+			return
+		}
+		seen[artifact.ID] = struct{}{}
+		result = append(result, cloneConfigurationArtifact(artifact))
+	}
+	for _, artifact := range a.Artifacts {
+		appendArtifact(artifact)
+	}
+	for _, series := range a.Series {
+		appendArtifact(seriesArtifact(series))
+	}
+	for _, round := range a.Rounds {
+		appendArtifact(roundArtifact(round))
+	}
+	return result
+}
+
 func validConfigurationQuery(query ConfigurationQuery) bool {
 	return query.Operator.ActorID != uuid.Nil && query.TournamentID != uuid.Nil
 }
 
 func validConfigurationUpdateCommand(command ConfigurationUpdateCommand) bool {
 	return validCommandScope(command.CommandScope) && command.ExpectedProjectionRevision >= 1 &&
-		command.ExpectedConfigurationRevision >= 1 && command.Confirmed && validConfigurationReason(command.Reason)
+		command.ExpectedConfigurationRevision >= 1 && domain.IsValidAssignmentReserveCount(command.ReserveCount) &&
+		command.Confirmed && validConfigurationReason(command.Reason)
 }
 
 func validUnstartedSeriesCommand(command UnstartedSeriesUpdateCommand) bool {
@@ -1175,6 +1211,7 @@ func configurationView(authority ConfigurationAuthority) inbound.AdminTournament
 	view := inbound.AdminTournamentConfigurationView{
 		TournamentID: authority.TournamentID, ProjectionRevisionID: authority.ProjectionRevisionID,
 		ProjectionRevision: authority.ProjectionRevision, ConfigurationRevision: authority.Configuration.Revision,
+		ReserveCount:     authority.Configuration.ReserveCount,
 		SwissDefault:     authority.effectiveStageDefault(domain.TournamentStageSwiss, authority.SwissDefault),
 		GoldenDefault:    authority.effectiveStageDefault(domain.TournamentStageGolden, authority.GoldenDefault),
 		SemifinalDefault: authority.effectiveStageDefault(domain.TournamentStageSemifinal, authority.SemifinalDefault),

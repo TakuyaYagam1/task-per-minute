@@ -49,7 +49,11 @@ func validateGoldenExactPlanAuthority(
 	if err := validateGoldenCommandAuthorityAliases(retainedCommand, canonical); err != nil {
 		return Authority{}, nil, err
 	}
-	matching, err := goldenExactMatching(canonical)
+	reserveCount, err := goldenPlanReserveCount(plan.Groups)
+	if err != nil {
+		return Authority{}, nil, err
+	}
+	matching, err := goldenExactMatching(canonical, reserveCount)
 	if err != nil {
 		return Authority{}, nil, err
 	}
@@ -69,7 +73,7 @@ func validateGoldenExactPlanGroups(
 	authority Authority,
 	matching [][]int,
 ) error {
-	selected := make(map[domain.TaskVersionRef]struct{}, len(groups)*(domain.AssignmentReserveCount+1))
+	selected := make(map[domain.TaskVersionRef]struct{}, len(groups))
 	for groupIndex, group := range groups {
 		if err := validateGoldenExactGroupPlan(groupIndex, group, authority, matching, selected); err != nil {
 			return err
@@ -86,7 +90,7 @@ func validateGoldenExactGroupPlan(
 	selected map[domain.TaskVersionRef]struct{},
 ) error {
 	authorityGroup := authority.Groups[groupIndex]
-	if !goldenExactGroupMatchesAuthority(group, authorityGroup) {
+	if groupIndex >= len(matching) || !goldenExactGroupMatchesAuthority(group, authorityGroup, len(matching[groupIndex])) {
 		return goldenExactPlanError("group plan does not match current membership")
 	}
 	for edgeIndex, edge := range group.Edges {
@@ -100,6 +104,7 @@ func validateGoldenExactGroupPlan(
 func goldenExactGroupMatchesAuthority(
 	group Group,
 	authority GroupAuthority,
+	edgeCount int,
 ) bool {
 	from, to := authority.Revision.Positions()
 	return group.GroupID == authority.Revision.GroupID() &&
@@ -107,7 +112,7 @@ func goldenExactGroupMatchesAuthority(
 		group.SourceProjectionRevisionID == authority.Revision.SourceProjectionRevisionID() &&
 		group.PositionFrom == from && group.PositionTo == to &&
 		reflect.DeepEqual(group.ParticipantIDs, authority.ActiveParticipantIDs) &&
-		len(group.Edges) == domain.AssignmentReserveCount+1
+		edgeCount >= 1 && len(group.Edges) == edgeCount
 }
 
 func validateGoldenExactPlanEdge(
@@ -152,18 +157,20 @@ func validGoldenExactPlanEdgeIdentity(edgeIndex int, edge Edge) bool {
 }
 
 func goldenExactPlanCommandFromPlan(plan ExactPlan) (Command, error) {
+	reserveCount, err := goldenPlanReserveCount(plan.Groups)
+	if err != nil {
+		return Command{}, err
+	}
 	command := Command{
 		Scope: plan.Scope, PlanID: plan.PlanID, PlanRevisionID: plan.PlanRevisionID,
 		Expected: plan.Expected, CreatedAt: plan.CreatedAt,
 		GroupCommands: make([]GroupCommand, len(plan.Groups)),
 	}
 	for groupIndex, group := range plan.Groups {
-		if len(group.Edges) != domain.AssignmentReserveCount+1 {
-			return Command{}, goldenExactPlanError("group does not contain one primary and two reserves")
-		}
 		command.GroupCommands[groupIndex].GroupID = group.GroupID
 		command.GroupCommands[groupIndex].GroupRevisionID = group.GroupRevisionID
-		for edgeIndex, edge := range group.Edges {
+		for edgeIndex := 0; edgeIndex <= reserveCount; edgeIndex++ {
+			edge := group.Edges[edgeIndex]
 			command.GroupCommands[groupIndex].EdgeIDs[edgeIndex] = edge.ID
 			command.GroupCommands[groupIndex].ReservationIDs[edgeIndex] = edge.ReservationID
 			command.GroupCommands[groupIndex].SnapshotIDs[edgeIndex] = edge.Snapshot.SnapshotID
@@ -176,6 +183,10 @@ func validateGoldenCommandAuthorityAliases(
 	command Command,
 	authority Authority,
 ) error {
+	reserveCount, err := goldenCommandReserveCount(command)
+	if err != nil {
+		return err
+	}
 	seen := make(map[uuid.UUID]struct{})
 	for _, id := range AuthorityIdentityIDs(authority) {
 		seen[id] = struct{}{}
@@ -186,7 +197,7 @@ func validateGoldenCommandAuthorityAliases(
 	}
 	stable := []uuid.UUID{command.PlanID, command.PlanRevisionID}
 	for _, group := range command.GroupCommands {
-		for index := range group.EdgeIDs {
+		for index := 0; index <= reserveCount; index++ {
 			stable = append(stable, group.EdgeIDs[index], group.ReservationIDs[index], group.SnapshotIDs[index])
 		}
 	}
@@ -210,7 +221,11 @@ func validateGoldenExactPlanCommandIdentity(command Command) error {
 	}
 	seenGroups := make(map[uuid.UUID]struct{}, len(command.GroupCommands))
 	for _, group := range command.GroupCommands {
-		if err := validateGoldenExactGroupCommandIdentity(group, seenGroups, seenStable); err != nil {
+		reserveCount, reserveErr := goldenGroupCommandReserveCount(group)
+		if reserveErr != nil {
+			return reserveErr
+		}
+		if err := validateGoldenExactGroupCommandIdentity(group, reserveCount, seenGroups, seenStable); err != nil {
 			return err
 		}
 	}
@@ -241,6 +256,7 @@ func goldenExactPlanCommandBoundIDs(command Command) []uuid.UUID {
 
 func validateGoldenExactGroupCommandIdentity(
 	group GroupCommand,
+	reserveCount int,
 	seenGroups map[uuid.UUID]struct{},
 	seenStable map[uuid.UUID]struct{},
 ) error {
@@ -258,7 +274,7 @@ func validateGoldenExactGroupCommandIdentity(
 	); err != nil {
 		return err
 	}
-	for index := range group.EdgeIDs {
+	for index := 0; index <= reserveCount; index++ {
 		if err := addGoldenCommandStableIDs(
 			seenStable,
 			[]uuid.UUID{group.EdgeIDs[index], group.ReservationIDs[index], group.SnapshotIDs[index]},

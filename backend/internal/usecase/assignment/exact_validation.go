@@ -19,8 +19,8 @@ func (p ExactNormalAssignmentPlan) Validate() error {
 		Scope: p.Scope, PlanID: p.PlanID, PlanRevisionID: p.PlanRevisionID,
 		BranchID: p.BranchID, DecisionEvidenceID: p.DecisionEvidence.ID, CreatedAt: p.CreatedAt,
 	}
-	if len(p.SelectedEdges) != len(command.EdgeIDs) {
-		return exactNormalAssignmentError("exactly three selected edges are required")
+	if len(p.SelectedEdges) < 1 || len(p.SelectedEdges) > domain.MaxAssignmentReserveCount+1 {
+		return exactNormalAssignmentError("selected edge count is outside the supported reserve range")
 	}
 	for index, edge := range p.SelectedEdges {
 		command.EdgeIDs[index] = edge.ID
@@ -74,9 +74,6 @@ func normalizeExactNormalAssignmentAuthority(
 		return ExactNormalAssignmentAuthority{}, nil, err
 	}
 	eligible := exactNormalEligibleTaskVersions(candidates, authority.Category, participants, history)
-	if len(eligible) < domain.AssignmentReserveCount+1 {
-		return ExactNormalAssignmentAuthority{}, nil, exactNormalCapacityError("fewer than three eligible task versions")
-	}
 	canonical := authority
 	canonical.Pool = pool
 	canonical.ParticipantIDs = participants
@@ -225,7 +222,7 @@ func RestoreExactNormalDecisionCandidates(pool domain.TaskPoolRevision, evidence
 			refs = append(refs, ref)
 		}
 	}
-	if len(refs) != len(inputs) || len(refs) < domain.AssignmentReserveCount+1 {
+	if len(refs) != len(inputs) || len(refs) == 0 {
 		return nil, exactNormalAssignmentError("retained candidates are not covered by the immutable pool")
 	}
 	return refs, nil
@@ -252,11 +249,15 @@ func validateExactNormalAssignmentCommand(command ExactNormalAssignmentCommand) 
 		command.CreatedAt.Location() != time.UTC {
 		return exactNormalAssignmentError("invalid command identity or timestamp")
 	}
-	seen := make(map[uuid.UUID]struct{}, 12)
+	reserveCount, err := command.ReserveCount()
+	if err != nil {
+		return err
+	}
+	seen := make(map[uuid.UUID]struct{}, 4+(reserveCount+1)*3)
 	for _, id := range []uuid.UUID{command.PlanID, command.PlanRevisionID, command.BranchID, command.DecisionEvidenceID} {
 		seen[id] = struct{}{}
 	}
-	for index := range command.EdgeIDs {
+	for index := 0; index <= reserveCount; index++ {
 		for _, id := range []uuid.UUID{command.EdgeIDs[index], command.ReservationIDs[index], command.SnapshotIDs[index]} {
 			if id == uuid.Nil {
 				return exactNormalAssignmentError("missing edge identity")
@@ -340,7 +341,8 @@ func validateExactNormalPlanParticipants(plan ExactNormalAssignmentPlan) error {
 }
 
 func validateExactNormalPlanCandidates(plan ExactNormalAssignmentPlan) error {
-	if len(plan.CandidateTaskVersions) < domain.AssignmentReserveCount+1 ||
+	if len(plan.SelectedEdges) < 1 || len(plan.SelectedEdges) > domain.MaxAssignmentReserveCount+1 ||
+		len(plan.CandidateTaskVersions) < len(plan.SelectedEdges) ||
 		!slices.IsSortedFunc(plan.CandidateTaskVersions, domain.CompareTaskVersionRefs) {
 		return exactNormalAssignmentError("candidate task versions are not canonical")
 	}
@@ -365,6 +367,9 @@ func validateExactNormalAssignmentDecision(plan ExactNormalAssignmentPlan) error
 }
 
 func validateExactNormalAssignmentEdges(plan ExactNormalAssignmentPlan) error {
+	if len(plan.DecisionEvidence.Result) < len(plan.SelectedEdges) {
+		return exactNormalAssignmentError("decision result does not contain selected edges")
+	}
 	selectedTasks := make(map[uuid.UUID]struct{}, len(plan.SelectedEdges))
 	for index, edge := range plan.SelectedEdges {
 		if edge.Position != index+1 || edge.Snapshot.Kind != domain.AssignmentTaskKindNormal ||

@@ -8,8 +8,12 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 )
 
-func goldenExactMatching(authority Authority) ([][]int, error) {
-	demandCount := len(authority.Groups) * (domain.AssignmentReserveCount + 1)
+func goldenExactMatching(authority Authority, reserveCount int) ([][]int, error) {
+	if !domain.IsValidAssignmentReserveCount(reserveCount) {
+		return nil, fmt.Errorf("%w: invalid reserve count", ErrExactPlanInsufficient)
+	}
+	chainSize := reserveCount + 1
+	demandCount := len(authority.Groups) * chainSize
 	assignedCandidate := make([]int, demandCount)
 	assignedDemand := make([]int, len(authority.Candidates))
 	for index := range assignedCandidate {
@@ -20,7 +24,7 @@ func goldenExactMatching(authority Authority) ([][]int, error) {
 	}
 	var assign func(int, []bool) bool
 	assign = func(demand int, seen []bool) bool {
-		groupIndex := demand / (domain.AssignmentReserveCount + 1)
+		groupIndex := demand / chainSize
 		for candidateIndex := range authority.Candidates {
 			if seen[candidateIndex] || !goldenCandidateEligibleForGroup(authority, groupIndex, candidateIndex) {
 				continue
@@ -42,7 +46,7 @@ func goldenExactMatching(authority Authority) ([][]int, error) {
 	}
 	result := make([][]int, len(authority.Groups))
 	for groupIndex := range result {
-		result[groupIndex] = append([]int(nil), assignedCandidate[groupIndex*(domain.AssignmentReserveCount+1):(groupIndex+1)*(domain.AssignmentReserveCount+1)]...)
+		result[groupIndex] = append([]int(nil), assignedCandidate[groupIndex*chainSize:(groupIndex+1)*chainSize]...)
 	}
 	return result, nil
 }

@@ -98,7 +98,7 @@ type Querier interface {
 	CountWaveMembers(ctx context.Context, waveID uuid.UUID) (int64, error)
 	CountWaveReadiness(ctx context.Context, readyWindowID uuid.NullUUID) (int64, error)
 	CreateAdminPlayerAuditEvent(ctx context.Context, arg CreateAdminPlayerAuditEventParams) error
-	CreateAssignment(ctx context.Context, arg CreateAssignmentParams) (Assignment, error)
+	CreateAssignment(ctx context.Context, arg CreateAssignmentParams) (CreateAssignmentRow, error)
 	CreateAssignmentBranch(ctx context.Context, arg CreateAssignmentBranchParams) (CreateAssignmentBranchRow, error)
 	// Assignment plans are pool-scoped. The normal pool is intentionally shared
 	// by Swiss, semifinal, and final workflows; stage authority is resolved before
@@ -317,7 +317,7 @@ type Querier interface {
 	CreateTournamentConfigurationEditCommand(ctx context.Context, arg CreateTournamentConfigurationEditCommandParams) (CreateTournamentConfigurationEditCommandRow, error)
 	// The draft revision is derived from the locked active head.  Existing
 	// published configurations are never updated or deleted.
-	CreateTournamentConfigurationEditDraft(ctx context.Context, arg CreateTournamentConfigurationEditDraftParams) (TournamentContentConfiguration, error)
+	CreateTournamentConfigurationEditDraft(ctx context.Context, arg CreateTournamentConfigurationEditDraftParams) (CreateTournamentConfigurationEditDraftRow, error)
 	CreateTournamentConfigurationEditInvalidation(ctx context.Context, arg CreateTournamentConfigurationEditInvalidationParams) (CreateTournamentConfigurationEditInvalidationRow, error)
 	CreateTournamentConfigurationEditPoolMembership(ctx context.Context, arg CreateTournamentConfigurationEditPoolMembershipParams) (TournamentCategoryPoolMembership, error)
 	CreateTournamentConfigurationEditPoolRevision(ctx context.Context, arg CreateTournamentConfigurationEditPoolRevisionParams) (TournamentCategoryPoolRevision, error)
@@ -421,7 +421,7 @@ type Querier interface {
 	GetActiveTournament(ctx context.Context) (Tournament, error)
 	GetAdminPlayer(ctx context.Context, id uuid.UUID) (GetAdminPlayerRow, error)
 	GetAdminPlayerIncludingDeleted(ctx context.Context, id uuid.UUID) (GetAdminPlayerIncludingDeletedRow, error)
-	GetAssignment(ctx context.Context, id uuid.UUID) (Assignment, error)
+	GetAssignment(ctx context.Context, id uuid.UUID) (GetAssignmentRow, error)
 	GetAssignmentPlan(ctx context.Context, id uuid.UUID) (GetAssignmentPlanRow, error)
 	GetAssignmentTaskSnapshot(ctx context.Context, id uuid.UUID) (TaskSnapshot, error)
 	GetCorrectionCutoff(ctx context.Context, arg GetCorrectionCutoffParams) (string, error)
@@ -741,7 +741,7 @@ type Querier interface {
 	LoadGoldenRepositoryHead(ctx context.Context, scopeID uuid.UUID) (LoadGoldenRepositoryHeadRow, error)
 	LoadGoldenRepositoryScope(ctx context.Context, id uuid.UUID) (GoldenRepositoryScope, error)
 	LoadGoldenRuntimePlanRoster(ctx context.Context, tournamentID uuid.UUID) (LoadGoldenRuntimePlanRosterRow, error)
-	LockAssignment(ctx context.Context, id uuid.UUID) (Assignment, error)
+	LockAssignment(ctx context.Context, id uuid.UUID) (LockAssignmentRow, error)
 	LockAssignmentDraftChildScope(ctx context.Context, arg LockAssignmentDraftChildScopeParams) ([]LockAssignmentDraftChildScopeRow, error)
 	LockAssignmentPlan(ctx context.Context, id uuid.UUID) (LockAssignmentPlanRow, error)
 	LockCorrectionAssignments(ctx context.Context, arg LockCorrectionAssignmentsParams) ([]uuid.UUID, error)
@@ -1230,7 +1230,7 @@ type Querier interface {
 	StartWaveCAS(ctx context.Context, arg StartWaveCASParams) (Wave, error)
 	StartWaveGameCAS(ctx context.Context, arg StartWaveGameCASParams) (StartWaveGameCASRow, error)
 	StartWaveSeriesCAS(ctx context.Context, arg StartWaveSeriesCASParams) (StartWaveSeriesCASRow, error)
-	SupersedeAssignmentCAS(ctx context.Context, arg SupersedeAssignmentCASParams) (Assignment, error)
+	SupersedeAssignmentCAS(ctx context.Context, arg SupersedeAssignmentCASParams) (SupersedeAssignmentCASRow, error)
 	SupersedeProjectionRevisionCAS(ctx context.Context, arg SupersedeProjectionRevisionCASParams) (ProjectionRevision, error)
 	SupersedeReplaySourceWaveCAS(ctx context.Context, arg SupersedeReplaySourceWaveCASParams) (uuid.UUID, error)
 	// Wave/readiness evidence cannot be deleted. These mutations close an

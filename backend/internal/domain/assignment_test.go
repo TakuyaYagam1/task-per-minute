@@ -124,6 +124,43 @@ func TestAssignmentKeepsTwoUndisclosedReservesInOrder(t *testing.T) {
 	}
 }
 
+func TestAssignmentSupportsConfiguredReserveCountsWithoutEmptySnapshots(t *testing.T) {
+	t.Parallel()
+
+	for _, reserveCount := range []int{0, 1, 2} {
+		primary := assignmentTaskSnapshot(t, domain.AssignmentTaskKindNormal, "primary")
+		reserves := make([]domain.AssignmentTaskSnapshot, reserveCount)
+		for index := range reserves {
+			reserves[index] = assignmentTaskSnapshot(t, domain.AssignmentTaskKindNormal, "reserve-"+string(rune('1'+index)))
+		}
+		firstID, secondID := uuid.New(), uuid.New()
+		assignment, err := domain.NewAssignmentWithReserveCount(
+			uuid.New(), uuid.New(), firstID, secondID, primary, reserves, reserveCount,
+		)
+		if err != nil {
+			t.Fatalf("reserve_count=%d: new assignment error = %v", reserveCount, err)
+		}
+		if assignment.ReserveCount() != reserveCount || assignment.UndisclosedReserveCount() != reserveCount {
+			t.Fatalf("reserve_count=%d: counts = %d/%d", reserveCount, assignment.ReserveCount(), assignment.UndisclosedReserveCount())
+		}
+		if assignment.ActiveSnapshot().SnapshotID == uuid.Nil {
+			t.Fatalf("reserve_count=%d: primary snapshot is empty", reserveCount)
+		}
+		for index := 0; index < reserveCount; index++ {
+			next, promoteErr := assignment.PromoteNextReserve()
+			if promoteErr != nil {
+				t.Fatalf("reserve_count=%d: promote %d: %v", reserveCount, index, promoteErr)
+			}
+			if next.SnapshotID == uuid.Nil || assignment.ActiveSnapshot().SnapshotID != next.SnapshotID {
+				t.Fatalf("reserve_count=%d: empty or out-of-order snapshot at %d", reserveCount, index)
+			}
+		}
+		if assignment.UndisclosedReserveCount() != 0 {
+			t.Fatalf("reserve_count=%d: undisclosed reserves remain", reserveCount)
+		}
+	}
+}
+
 func TestAssignmentRequiresExactlyTwoDistinctReserves(t *testing.T) {
 	primary := assignmentTaskSnapshot(t, domain.AssignmentTaskKindNormal, "primary")
 	participantA := uuid.New()

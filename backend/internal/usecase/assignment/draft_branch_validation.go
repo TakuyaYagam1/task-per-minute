@@ -127,12 +127,18 @@ func validateExactDraftCommandIdentity(
 }
 
 func exactDraftCommandEvidenceIDs(command ExactNormalAssignmentCommand) []uuid.UUID {
-	capacity := 1 + len(command.EdgeIDs) + len(command.ReservationIDs) + len(command.SnapshotIDs)
+	reserveCount, err := command.ReserveCount()
+	if err != nil {
+		// Keep the nil identity visible to the caller. The surrounding validator
+		// will fail closed without silently dropping malformed trailing slots.
+		return []uuid.UUID{uuid.Nil}
+	}
+	capacity := 1 + (reserveCount+1)*3
 	ids := make([]uuid.UUID, 0, capacity)
 	ids = append(ids, command.DecisionEvidenceID)
-	ids = append(ids, command.EdgeIDs[:]...)
-	ids = append(ids, command.ReservationIDs[:]...)
-	return append(ids, command.SnapshotIDs[:]...)
+	ids = append(ids, command.EdgeIDs[:reserveCount+1]...)
+	ids = append(ids, command.ReservationIDs[:reserveCount+1]...)
+	return append(ids, command.SnapshotIDs[:reserveCount+1]...)
 }
 
 func validateExactDraftBranchSource(

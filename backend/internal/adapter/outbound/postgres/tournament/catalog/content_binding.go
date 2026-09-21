@@ -19,6 +19,7 @@ import (
 type ContentBinding struct {
 	TournamentID         uuid.UUID
 	ConfigurationID      uuid.UUID
+	ReserveCount         int16
 	PublicationID        uuid.UUID
 	NormalPoolRevisionID uuid.UUID
 	GoldenPoolRevisionID uuid.UUID
@@ -54,6 +55,7 @@ func ContentBindingFromPools(
 	binding := ContentBinding{
 		TournamentID:      tournamentID,
 		ConfigurationID:   ContentID(tournamentID, rosterID, "configuration"),
+		ReserveCount:      0,
 		BO1CategoryPoolID: ContentID(tournamentID, rosterID, "category-pool:bo1"),
 		BO3CategoryPoolID: ContentID(tournamentID, rosterID, "category-pool:bo3"),
 	}
@@ -212,6 +214,7 @@ func PersistContentBinding(
 			ID:                   binding.ConfigurationID,
 			TournamentID:         binding.TournamentID,
 			Revision:             1,
+			ReserveCount:         binding.ReserveCount,
 			PoolPublicationID:    binding.PublicationID,
 			NormalPoolRevisionID: binding.NormalPoolRevisionID,
 			GoldenPoolRevisionID: binding.GoldenPoolRevisionID,

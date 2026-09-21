@@ -51,6 +51,30 @@ func TestGoldenExactPlan(t *testing.T) {
 		require.Equal(t, 1, repository.state.writeCount())
 	})
 
+	t.Run("supports a primary-only chain without materializing empty reserves", func(t *testing.T) {
+		t.Parallel()
+
+		authority, command := planGoldenPlanExact(t)
+		for index := range command.GroupCommands {
+			for slot := 1; slot < domain.AssignmentReserveCount+1; slot++ {
+				command.GroupCommands[index].EdgeIDs[slot] = uuid.Nil
+				command.GroupCommands[index].ReservationIDs[slot] = uuid.Nil
+				command.GroupCommands[index].SnapshotIDs[slot] = uuid.Nil
+			}
+		}
+		plan, changed, err := goldenusecase.NewUseCase(newGoldenExactPlanRepository(t, authority).mock).
+			PlanAndCommit(t.Context(), command)
+		require.NoError(t, err)
+		require.True(t, changed)
+		require.NoError(t, plan.Validate())
+		for _, group := range plan.Groups {
+			require.Len(t, group.Edges, 1)
+			require.NotEqual(t, uuid.Nil, group.Edges[0].ID)
+			require.NotEqual(t, uuid.Nil, group.Edges[0].ReservationID)
+			require.NotEqual(t, uuid.Nil, group.Edges[0].Snapshot.SnapshotID)
+		}
+	})
+
 	t.Run("selects only eligible Golden content when capacity remains", func(t *testing.T) {
 		t.Parallel()
 

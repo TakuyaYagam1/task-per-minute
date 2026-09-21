@@ -335,7 +335,7 @@ func exactDraftCandidates(
 	stage sqlc.LockExactDraftPlanningStageRow,
 	rows []sqlc.LockExactDraftPlanningCandidatesRow,
 ) (domain.TaskPoolRevision, []assignmentusecase.ExactNormalTaskVersion, error) {
-	if len(rows) < domain.AssignmentReserveCount+1 {
+	if len(rows) == 0 {
 		return domain.TaskPoolRevision{}, nil, domain.ErrConflict
 	}
 	pool := domain.TaskPoolRevision{
@@ -503,6 +503,7 @@ func (r *ExactDraftBranchPlanPostgres) insertExactDraftBranchPlanTx(
 		ID:                    plan.ID,
 		TournamentID:          stage.TournamentID,
 		RosterID:              stage.RosterID,
+		ReserveCount:          int16(len(plan.Branches[0].Assignments[0].Plan.SelectedEdges) - 1), //nolint:gosec // domain validation bounds the chain to 1..3.
 		RevisionID:            plan.RevisionID,
 		SourceRosterRevision:  stage.RosterRevision,
 		SourcePoolRevisionID:  stage.SourcePoolRevisionID,
@@ -968,7 +969,8 @@ func (r *ExactDraftBranchPlanPostgres) commitExactDraftBranchActivationTx(
 		ReleasedAt: tstz(next.CommittedAt), ReleaseReason: &releaseReason,
 		PlanID: next.ID, ExactDraftBranchID: activeGroupID,
 	})
-	if err != nil || len(releasedReservations) != (len(next.Branches)-1)*exactDraftCategoryCount(next.SourceDraft.Format)*(domain.AssignmentReserveCount+1) {
+	expectedReservations, expectedErr := exactDraftReservationCount(next, len(next.Branches)-1)
+	if err != nil || expectedErr != nil || len(releasedReservations) != expectedReservations {
 		return nil, false, exactDraftRowsError(err)
 	}
 	releasedChildren, err := querier.ReleaseLosingExactDraftChildren(ctx, sqlc.ReleaseLosingExactDraftChildrenParams{
@@ -988,7 +990,8 @@ func (r *ExactDraftBranchPlanPostgres) commitExactDraftBranchActivationTx(
 	committedReservations, err := querier.CommitExactDraftChildReservations(ctx, sqlc.CommitExactDraftChildReservationsParams{
 		CommittedAt: tstz(next.CommittedAt), PlanID: next.ID, ExactDraftBranchID: activeGroupID,
 	})
-	if err != nil || len(committedReservations) != exactDraftCategoryCount(next.SourceDraft.Format)*(domain.AssignmentReserveCount+1) {
+	committedExpected, committedExpectedErr := exactDraftReservationCount(next, 1)
+	if err != nil || committedExpectedErr != nil || len(committedReservations) != committedExpected {
 		return nil, false, exactDraftRowsError(err)
 	}
 	activatedChildren, err := querier.ActivateExactDraftChildren(ctx, sqlc.ActivateExactDraftChildrenParams{
@@ -1065,6 +1068,37 @@ func exactDraftRowsError(err error) error {
 		return err
 	}
 	return domain.ErrConflict
+}
+
+func exactDraftReservationCount(plan assignmentusecase.ExactDraftBranchPlan, branchCount int) (int, error) {
+	if branchCount < 0 || len(plan.Branches) == 0 {
+		return 0, domain.ErrConflict
+	}
+	perBranch := exactDraftCategoryCount(plan.SourceDraft.Format)
+	if perBranch < 1 {
+		return 0, domain.ErrConflict
+	}
+	reserveChain := 0
+	for branchIndex, branch := range plan.Branches {
+		if len(branch.Assignments) != perBranch {
+			return 0, domain.ErrConflict
+		}
+		for assignmentIndex, assignment := range branch.Assignments {
+			chain := len(assignment.Plan.SelectedEdges)
+			if chain < 1 || chain > domain.MaxAssignmentReserveCount+1 ||
+				(branchIndex > 0 && len(plan.Branches[0].Assignments) > assignmentIndex &&
+					chain != len(plan.Branches[0].Assignments[assignmentIndex].Plan.SelectedEdges)) {
+				return 0, domain.ErrConflict
+			}
+			if reserveChain == 0 {
+				reserveChain = chain
+			}
+			if chain != reserveChain {
+				return 0, domain.ErrConflict
+			}
+		}
+	}
+	return branchCount * perBranch * reserveChain, nil
 }
 
 //nolint:gocyclo // One transactional workflow keeps ordering, rollback, and fail-closed branches explicit.
@@ -1445,7 +1479,7 @@ func rehydrateExactDraftChild(
 		source.ChildBranchID != child.ID || source.PlanID != plan.ID ||
 		source.TournamentID == uuid.Nil || source.RosterID == uuid.Nil || source.SeriesID != plan.SourceDraft.SeriesID ||
 		source.ProofHash == "" || !source.CreatedAt.Valid || !source.CreatedAt.Time.UTC().Equal(plan.CreatedAt) ||
-		len(edgeRows) != domain.AssignmentReserveCount+1 {
+		len(edgeRows) == 0 || len(edgeRows) > domain.MaxAssignmentReserveCount+1 {
 		return assignmentusecase.ExactNormalAssignmentPlan{}, "", time.Time{}, domain.ErrConflict
 	}
 	childCategories, err := exactDraftCategories(child.CategorySequence)
@@ -1617,7 +1651,7 @@ func rehydrateExactDraftCandidates(
 	rows []sqlc.ExactDraftAssignmentChildCandidate,
 	source sqlc.ExactDraftAssignmentChildSource,
 ) (domain.TaskPoolRevision, []domain.TaskVersionRef, error) {
-	if len(rows) < domain.AssignmentReserveCount+1 {
+	if len(rows) == 0 {
 		return domain.TaskPoolRevision{}, nil, domain.ErrConflict
 	}
 	pool := domain.TaskPoolRevision{

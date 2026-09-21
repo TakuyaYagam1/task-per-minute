@@ -40,6 +40,31 @@ func TestNormalAssignmentSolver(t *testing.T) {
 		}
 	})
 
+	t.Run("scales the complete 4-player proof with the shared reserve count", func(t *testing.T) {
+		t.Parallel()
+
+		for _, test := range []struct {
+			reserveCount int
+			wantTotal    int
+		}{
+			{reserveCount: 0, wantTotal: 29},
+			{reserveCount: 1, wantTotal: 58},
+			{reserveCount: 2, wantTotal: 87},
+		} {
+			proof := capacity.ProveNormal(task021NormalCapacityInputWithReserveCount(4, test.reserveCount))
+			if !proof.Certified || proof.ReserveCount != test.reserveCount {
+				t.Fatalf("reserve_count=%d proof = %+v, want certified", test.reserveCount, proof)
+			}
+			total := 0
+			for _, category := range proof.Categories {
+				total += category.RequiredTaskVersions
+			}
+			if total != test.wantTotal {
+				t.Fatalf("reserve_count=%d total required versions = %d, want %d", test.reserveCount, total, test.wantTotal)
+			}
+		}
+	})
+
 	t.Run("certifies every reachable normal category with a reproducible constraint graph", func(t *testing.T) {
 		t.Parallel()
 
@@ -189,6 +214,10 @@ func TestNormalizeHistoryKeepsTaskVersionsDistinctAndLegacyEntriesWildcard(t *te
 }
 
 func task021NormalCapacityInput(rosterSize int) capacity.NormalInput {
+	return task021NormalCapacityInputWithReserveCount(rosterSize, domain.AssignmentReserveCount)
+}
+
+func task021NormalCapacityInputWithReserveCount(rosterSize, reserveCount int) capacity.NormalInput {
 	participants := make([]uuid.UUID, rosterSize)
 	for i := range participants {
 		participants[i] = task021ID(100 + i)
@@ -218,7 +247,7 @@ func task021NormalCapacityInput(rosterSize int) capacity.NormalInput {
 	if err != nil {
 		panic(err)
 	}
-	sharedCategoryCount := (rosterSize/2*swissRounds + 3) * (domain.AssignmentReserveCount + 1)
+	sharedCategoryCount := (rosterSize/2*swissRounds + 3) * (reserveCount + 1)
 	versions := make([]capacity.TaskVersion, 0, sharedCategoryCount*3+6)
 	for _, category := range []struct {
 		category domain.Category
@@ -246,6 +275,7 @@ func task021NormalCapacityInput(rosterSize int) capacity.NormalInput {
 
 	return capacity.NormalInput{
 		Preset:         domain.TournamentPresetV1,
+		ReserveCount:   reserveCount,
 		ParticipantIDs: participants,
 		CategoryPools:  categoryPools,
 		NormalPool: domain.TaskPoolRevision{

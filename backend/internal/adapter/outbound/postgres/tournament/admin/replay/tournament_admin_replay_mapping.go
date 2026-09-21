@@ -26,8 +26,18 @@ func replayWorkflowReserveChain(
 	rows []sqlc.LockReplayWorkflowReserveChainRow,
 	operatorCommandID *uuid.UUID,
 ) (gamereplayusecase.ReplayReserveChain, []sqlc.TaskVersionReservation, error) {
-	if assignmentID == uuid.Nil || activeSnapshotID == uuid.Nil ||
-		(len(rows) != domain.AssignmentReserveCount+1 && len(rows) != domain.AssignmentReserveCount+2) {
+	if assignmentID == uuid.Nil || activeSnapshotID == uuid.Nil || len(rows) == 0 || len(rows) > 4 {
+		return gamereplayusecase.ReplayReserveChain{}, nil, errReplayWorkflowAuthority
+	}
+	// The immutable plan may contain one primary and zero, one, or two
+	// reserves. An operator extension is allowed only as the final edge, so
+	// its presence is detected from the persisted command marker rather than
+	// inferred from a fixed position.
+	operatorExtension := operatorCommandID != nil
+	if operatorExtension && (*operatorCommandID == uuid.Nil || len(rows) < 2) {
+		return gamereplayusecase.ReplayReserveChain{}, nil, errReplayWorkflowAuthority
+	}
+	if !operatorExtension && len(rows) > 3 {
 		return gamereplayusecase.ReplayReserveChain{}, nil, errReplayWorkflowAuthority
 	}
 
@@ -36,6 +46,7 @@ func replayWorkflowReserveChain(
 	seenTasks := make(map[uuid.UUID]struct{}, len(rows))
 	seenSnapshots := make(map[uuid.UUID]struct{}, len(rows))
 	activeIndex := -1
+	operatorMarkerSeen := false
 	for index, row := range rows {
 		position := index + 1
 		edge := row.AssignmentPlanEdge
@@ -51,12 +62,13 @@ func replayWorkflowReserveChain(
 			snapshotRow.TaskID != edge.TaskID || snapshotRow.TaskVersion != edge.TaskVersion {
 			return gamereplayusecase.ReplayReserveChain{}, nil, errReplayWorkflowAuthority
 		}
-		if position <= domain.AssignmentReserveCount+1 {
-			if edge.OperatorReserveCommandID.Valid {
+		if edge.OperatorReserveCommandID.Valid {
+			if !operatorExtension || operatorMarkerSeen || position != len(rows) ||
+				edge.OperatorReserveCommandID.UUID != *operatorCommandID {
 				return gamereplayusecase.ReplayReserveChain{}, nil, errReplayWorkflowAuthority
 			}
-		} else if operatorCommandID == nil || *operatorCommandID == uuid.Nil ||
-			!edge.OperatorReserveCommandID.Valid || edge.OperatorReserveCommandID.UUID != *operatorCommandID {
+			operatorMarkerSeen = true
+		} else if operatorMarkerSeen {
 			return gamereplayusecase.ReplayReserveChain{}, nil, errReplayWorkflowAuthority
 		}
 		snapshot, err := replayWorkflowSnapshot(snapshotRow)
@@ -77,7 +89,7 @@ func replayWorkflowReserveChain(
 		snapshots = append(snapshots, snapshot)
 		reservations = append(reservations, reservation)
 	}
-	if activeIndex < 0 {
+	if activeIndex < 0 || (operatorExtension && !operatorMarkerSeen) {
 		return gamereplayusecase.ReplayReserveChain{}, nil, errReplayWorkflowAuthority
 	}
 	chain := gamereplayusecase.ReplayReserveChain{

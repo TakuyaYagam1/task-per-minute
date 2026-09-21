@@ -359,10 +359,10 @@ WITH locked_head AS (
     SELECT head.tournament_id,
         head.configuration_revision
     FROM tournament_content_configuration_heads AS head
-    WHERE head.tournament_id = $6::UUID
+    WHERE head.tournament_id = $8::UUID
         AND head.configuration_id = $7::UUID
-        AND head.configuration_revision = $8::BIGINT
-        AND head.revision = $9::BIGINT
+        AND head.configuration_revision = $9::BIGINT
+        AND head.revision = $10::BIGINT
     FOR UPDATE
 )
 INSERT INTO tournament_content_configurations (
@@ -370,6 +370,7 @@ INSERT INTO tournament_content_configurations (
     tournament_id,
     revision,
     state,
+    reserve_count,
     pool_publication_id,
     normal_pool_revision_id,
     golden_pool_revision_id,
@@ -379,15 +380,21 @@ SELECT $1::UUID,
     locked_head.tournament_id,
     locked_head.configuration_revision + 1,
     'draft',
-    $2::UUID,
+    $2::SMALLINT,
     $3::UUID,
     $4::UUID,
-    $5::TIMESTAMPTZ
+    $5::UUID,
+    $6::TIMESTAMPTZ
 FROM locked_head
+JOIN tournament_content_configurations AS current_configuration
+    ON current_configuration.tournament_id = locked_head.tournament_id
+    AND current_configuration.id = $7::UUID
+    AND current_configuration.revision = locked_head.configuration_revision
 RETURNING id,
     tournament_id,
     revision,
     state,
+    reserve_count,
     pool_publication_id,
     normal_pool_revision_id,
     golden_pool_revision_id,
@@ -397,36 +404,52 @@ RETURNING id,
 
 type CreateTournamentConfigurationEditDraftParams struct {
 	ConfigurationID                 uuid.UUID
+	ReserveCount                    int16
 	PoolPublicationID               uuid.UUID
 	NormalPoolRevisionID            uuid.UUID
 	GoldenPoolRevisionID            uuid.UUID
 	CreatedAt                       pgtype.Timestamptz
-	TournamentID                    uuid.UUID
 	SourceConfigurationID           uuid.UUID
+	TournamentID                    uuid.UUID
 	SourceConfigurationRevision     int64
 	SourceConfigurationHeadRevision int64
 }
 
+type CreateTournamentConfigurationEditDraftRow struct {
+	ID                   uuid.UUID
+	TournamentID         uuid.UUID
+	Revision             int64
+	State                string
+	ReserveCount         int16
+	PoolPublicationID    uuid.UUID
+	NormalPoolRevisionID uuid.UUID
+	GoldenPoolRevisionID uuid.UUID
+	CreatedAt            pgtype.Timestamptz
+	PublishedAt          pgtype.Timestamptz
+}
+
 // The draft revision is derived from the locked active head.  Existing
 // published configurations are never updated or deleted.
-func (q *Queries) CreateTournamentConfigurationEditDraft(ctx context.Context, arg CreateTournamentConfigurationEditDraftParams) (TournamentContentConfiguration, error) {
+func (q *Queries) CreateTournamentConfigurationEditDraft(ctx context.Context, arg CreateTournamentConfigurationEditDraftParams) (CreateTournamentConfigurationEditDraftRow, error) {
 	row := q.db.QueryRow(ctx, createTournamentConfigurationEditDraft,
 		arg.ConfigurationID,
+		arg.ReserveCount,
 		arg.PoolPublicationID,
 		arg.NormalPoolRevisionID,
 		arg.GoldenPoolRevisionID,
 		arg.CreatedAt,
-		arg.TournamentID,
 		arg.SourceConfigurationID,
+		arg.TournamentID,
 		arg.SourceConfigurationRevision,
 		arg.SourceConfigurationHeadRevision,
 	)
-	var i TournamentContentConfiguration
+	var i CreateTournamentConfigurationEditDraftRow
 	err := row.Scan(
 		&i.ID,
 		&i.TournamentID,
 		&i.Revision,
 		&i.State,
+		&i.ReserveCount,
 		&i.PoolPublicationID,
 		&i.NormalPoolRevisionID,
 		&i.GoldenPoolRevisionID,
@@ -1108,6 +1131,7 @@ SELECT configuration.id,
     configuration.tournament_id,
     configuration.revision,
     configuration.state,
+    configuration.reserve_count,
     configuration.pool_publication_id,
     configuration.normal_pool_revision_id,
     normal_pool.revision AS normal_pool_revision,
@@ -1134,6 +1158,7 @@ type GetTournamentConfigurationEditConfigurationRow struct {
 	TournamentID         uuid.UUID
 	Revision             int64
 	State                string
+	ReserveCount         int16
 	PoolPublicationID    uuid.UUID
 	NormalPoolRevisionID uuid.UUID
 	NormalPoolRevision   int64
@@ -1151,6 +1176,7 @@ func (q *Queries) GetTournamentConfigurationEditConfiguration(ctx context.Contex
 		&i.TournamentID,
 		&i.Revision,
 		&i.State,
+		&i.ReserveCount,
 		&i.PoolPublicationID,
 		&i.NormalPoolRevisionID,
 		&i.NormalPoolRevision,

@@ -180,6 +180,7 @@ RETURNING id,
     tournament_id,
     roster_id,
     kind,
+    reserve_count,
     parent_plan_id,
     revision_id,
     source_roster_revision,
@@ -218,6 +219,7 @@ type CommitAssignmentPlanCASRow struct {
 	TournamentID             uuid.UUID
 	RosterID                 uuid.UUID
 	Kind                     string
+	ReserveCount             int16
 	ParentPlanID             uuid.NullUUID
 	RevisionID               uuid.UUID
 	SourceRosterRevision     int64
@@ -257,6 +259,7 @@ func (q *Queries) CommitAssignmentPlanCAS(ctx context.Context, arg CommitAssignm
 		&i.TournamentID,
 		&i.RosterID,
 		&i.Kind,
+		&i.ReserveCount,
 		&i.ParentPlanID,
 		&i.RevisionID,
 		&i.SourceRosterRevision,
@@ -338,6 +341,7 @@ INSERT INTO assignments (
     series_id,
     roster_id,
     plan_id,
+    reserve_count,
     branch_id,
     reservation_id,
     snapshot_id,
@@ -361,16 +365,18 @@ VALUES (
     $9,
     $10,
     $11,
+    $12,
     'active',
     1,
-    $12,
-    $12
+    $13,
+    $13
 )
 RETURNING id,
     attempt_id,
     series_id,
     roster_id,
     plan_id,
+    reserve_count,
     branch_id,
     reservation_id,
     snapshot_id,
@@ -392,6 +398,7 @@ type CreateAssignmentParams struct {
 	SeriesID               uuid.UUID
 	RosterID               uuid.UUID
 	PlanID                 uuid.UUID
+	ReserveCount           int16
 	BranchID               uuid.UUID
 	ReservationID          uuid.UUID
 	SnapshotID             uuid.UUID
@@ -401,13 +408,36 @@ type CreateAssignmentParams struct {
 	CreatedAt              pgtype.Timestamptz
 }
 
-func (q *Queries) CreateAssignment(ctx context.Context, arg CreateAssignmentParams) (Assignment, error) {
+type CreateAssignmentRow struct {
+	ID                     uuid.UUID
+	AttemptID              uuid.UUID
+	SeriesID               uuid.UUID
+	RosterID               uuid.UUID
+	PlanID                 uuid.UUID
+	ReserveCount           int16
+	BranchID               uuid.UUID
+	ReservationID          uuid.UUID
+	SnapshotID             uuid.UUID
+	TaskID                 uuid.UUID
+	TaskVersion            int32
+	SupersedesAssignmentID uuid.NullUUID
+	State                  string
+	Revision               int64
+	CreatedAt              pgtype.Timestamptz
+	UpdatedAt              pgtype.Timestamptz
+	CompletedAt            pgtype.Timestamptz
+	SupersededAt           pgtype.Timestamptz
+	SupersessionReason     *string
+}
+
+func (q *Queries) CreateAssignment(ctx context.Context, arg CreateAssignmentParams) (CreateAssignmentRow, error) {
 	row := q.db.QueryRow(ctx, createAssignment,
 		arg.ID,
 		arg.AttemptID,
 		arg.SeriesID,
 		arg.RosterID,
 		arg.PlanID,
+		arg.ReserveCount,
 		arg.BranchID,
 		arg.ReservationID,
 		arg.SnapshotID,
@@ -416,13 +446,14 @@ func (q *Queries) CreateAssignment(ctx context.Context, arg CreateAssignmentPara
 		arg.SupersedesAssignmentID,
 		arg.CreatedAt,
 	)
-	var i Assignment
+	var i CreateAssignmentRow
 	err := row.Scan(
 		&i.ID,
 		&i.AttemptID,
 		&i.SeriesID,
 		&i.RosterID,
 		&i.PlanID,
+		&i.ReserveCount,
 		&i.BranchID,
 		&i.ReservationID,
 		&i.SnapshotID,
@@ -538,13 +569,6 @@ const createAssignmentPlanEdge = `-- name: CreateAssignmentPlanEdge :one
 WITH locked_task_version AS (
     SELECT task.id
     FROM assignment_plans AS plan
-    JOIN tournament_content_configurations AS configuration
-        ON configuration.tournament_id = plan.tournament_id
-        AND configuration.state = 'published'
-        AND plan.source_pool_revision_id IN (
-            configuration.normal_pool_revision_id,
-            configuration.golden_pool_revision_id
-        )
     JOIN task_pool_version_memberships AS membership
         ON membership.task_pool_revision_id = plan.source_pool_revision_id
         AND membership.task_id = $5
@@ -559,6 +583,16 @@ WITH locked_task_version AS (
         LIMIT 1
     ) AS health ON true
     WHERE plan.id = $2
+        AND EXISTS (
+            SELECT 1
+            FROM tournament_content_configurations AS configuration
+            WHERE configuration.tournament_id = plan.tournament_id
+                AND configuration.state = 'published'
+                AND plan.source_pool_revision_id IN (
+                    configuration.normal_pool_revision_id,
+                    configuration.golden_pool_revision_id
+                )
+        )
         AND task.enabled
         AND task.deleted_at IS NULL
         AND COALESCE(health.healthy, false)
@@ -955,6 +989,7 @@ INSERT INTO assignment_plans (
     tournament_id,
     roster_id,
     kind,
+    reserve_count,
     revision_id,
     source_roster_revision,
     source_pool_revision_id,
@@ -972,16 +1007,18 @@ VALUES (
     $4,
     $5,
     $6,
-    0,
     $7,
+    0,
     $8,
+    $9,
     'planned',
-    $9
+    $10
 )
 RETURNING id,
     tournament_id,
     roster_id,
     kind,
+    reserve_count,
     parent_plan_id,
     revision_id,
     source_roster_revision,
@@ -1010,6 +1047,7 @@ type CreateConservativeAssignmentPlanParams struct {
 	ID                   uuid.UUID
 	TournamentID         uuid.UUID
 	RosterID             uuid.UUID
+	ReserveCount         int16
 	RevisionID           uuid.UUID
 	SourceRosterRevision int64
 	SourcePoolRevisionID uuid.UUID
@@ -1023,6 +1061,7 @@ type CreateConservativeAssignmentPlanRow struct {
 	TournamentID             uuid.UUID
 	RosterID                 uuid.UUID
 	Kind                     string
+	ReserveCount             int16
 	ParentPlanID             uuid.NullUUID
 	RevisionID               uuid.UUID
 	SourceRosterRevision     int64
@@ -1052,6 +1091,7 @@ func (q *Queries) CreateConservativeAssignmentPlan(ctx context.Context, arg Crea
 		arg.ID,
 		arg.TournamentID,
 		arg.RosterID,
+		arg.ReserveCount,
 		arg.RevisionID,
 		arg.SourceRosterRevision,
 		arg.SourcePoolRevisionID,
@@ -1065,6 +1105,7 @@ func (q *Queries) CreateConservativeAssignmentPlan(ctx context.Context, arg Crea
 		&i.TournamentID,
 		&i.RosterID,
 		&i.Kind,
+		&i.ReserveCount,
 		&i.ParentPlanID,
 		&i.RevisionID,
 		&i.SourceRosterRevision,
@@ -1097,6 +1138,7 @@ INSERT INTO assignment_plans (
     tournament_id,
     roster_id,
     kind,
+    reserve_count,
     parent_plan_id,
     revision_id,
     source_roster_revision,
@@ -1137,13 +1179,15 @@ VALUES (
     $17,
     $18,
     $19,
+    $20,
     'planned',
-    $20
+    $21
 )
 RETURNING id,
     tournament_id,
     roster_id,
     kind,
+    reserve_count,
     parent_plan_id,
     revision_id,
     source_roster_revision,
@@ -1172,6 +1216,7 @@ type CreateExactAssignmentPlanParams struct {
 	ID                       uuid.UUID
 	TournamentID             uuid.UUID
 	RosterID                 uuid.UUID
+	ReserveCount             int16
 	ParentPlanID             uuid.NullUUID
 	RevisionID               uuid.UUID
 	SourceRosterRevision     int64
@@ -1196,6 +1241,7 @@ type CreateExactAssignmentPlanRow struct {
 	TournamentID             uuid.UUID
 	RosterID                 uuid.UUID
 	Kind                     string
+	ReserveCount             int16
 	ParentPlanID             uuid.NullUUID
 	RevisionID               uuid.UUID
 	SourceRosterRevision     int64
@@ -1225,6 +1271,7 @@ func (q *Queries) CreateExactAssignmentPlan(ctx context.Context, arg CreateExact
 		arg.ID,
 		arg.TournamentID,
 		arg.RosterID,
+		arg.ReserveCount,
 		arg.ParentPlanID,
 		arg.RevisionID,
 		arg.SourceRosterRevision,
@@ -1249,6 +1296,7 @@ func (q *Queries) CreateExactAssignmentPlan(ctx context.Context, arg CreateExact
 		&i.TournamentID,
 		&i.RosterID,
 		&i.Kind,
+		&i.ReserveCount,
 		&i.ParentPlanID,
 		&i.RevisionID,
 		&i.SourceRosterRevision,
@@ -1312,7 +1360,7 @@ func (q *Queries) CreateExactNormalAssignmentBranch(ctx context.Context, arg Cre
 
 const createExactNormalAssignmentPlan = `-- name: CreateExactNormalAssignmentPlan :exec
 INSERT INTO assignment_plans (
-    id, tournament_id, roster_id, kind, parent_plan_id, revision_id,
+    id, tournament_id, roster_id, kind, reserve_count, parent_plan_id, revision_id,
     source_roster_revision, source_pool_revision_id, reachable_branch_count,
     constraint_graph, proof_evidence, proof_hash, decision_evidence_id,
     decision_algorithm_version, decision_inputs, decision_seed,
@@ -1321,13 +1369,13 @@ INSERT INTO assignment_plans (
 )
 VALUES (
     $1, $2, $3, 'exact_normal',
-    NULL, $4, $5,
-    $6, 1, $7,
-    $8, $9, $10,
-    $11, $12,
-    $13, $14,
-    $15, $16,
-    $17, 'planned', $18
+    $4, NULL, $5, $6,
+    $7, 1, $8,
+    $9, $10, $11,
+    $12, $13,
+    $14, $15,
+    $16, $17,
+    $18, 'planned', $19
 )
 `
 
@@ -1335,6 +1383,7 @@ type CreateExactNormalAssignmentPlanParams struct {
 	ID                       uuid.UUID
 	TournamentID             uuid.UUID
 	RosterID                 uuid.UUID
+	ReserveCount             int16
 	RevisionID               uuid.UUID
 	SourceRosterRevision     int64
 	SourcePoolRevisionID     uuid.UUID
@@ -1357,6 +1406,7 @@ func (q *Queries) CreateExactNormalAssignmentPlan(ctx context.Context, arg Creat
 		arg.ID,
 		arg.TournamentID,
 		arg.RosterID,
+		arg.ReserveCount,
 		arg.RevisionID,
 		arg.SourceRosterRevision,
 		arg.SourcePoolRevisionID,
@@ -1614,6 +1664,7 @@ SELECT id,
     series_id,
     roster_id,
     plan_id,
+    reserve_count,
     branch_id,
     reservation_id,
     snapshot_id,
@@ -1631,15 +1682,38 @@ FROM assignments
 WHERE id = $1
 `
 
-func (q *Queries) GetAssignment(ctx context.Context, id uuid.UUID) (Assignment, error) {
+type GetAssignmentRow struct {
+	ID                     uuid.UUID
+	AttemptID              uuid.UUID
+	SeriesID               uuid.UUID
+	RosterID               uuid.UUID
+	PlanID                 uuid.UUID
+	ReserveCount           int16
+	BranchID               uuid.UUID
+	ReservationID          uuid.UUID
+	SnapshotID             uuid.UUID
+	TaskID                 uuid.UUID
+	TaskVersion            int32
+	SupersedesAssignmentID uuid.NullUUID
+	State                  string
+	Revision               int64
+	CreatedAt              pgtype.Timestamptz
+	UpdatedAt              pgtype.Timestamptz
+	CompletedAt            pgtype.Timestamptz
+	SupersededAt           pgtype.Timestamptz
+	SupersessionReason     *string
+}
+
+func (q *Queries) GetAssignment(ctx context.Context, id uuid.UUID) (GetAssignmentRow, error) {
 	row := q.db.QueryRow(ctx, getAssignment, id)
-	var i Assignment
+	var i GetAssignmentRow
 	err := row.Scan(
 		&i.ID,
 		&i.AttemptID,
 		&i.SeriesID,
 		&i.RosterID,
 		&i.PlanID,
+		&i.ReserveCount,
 		&i.BranchID,
 		&i.ReservationID,
 		&i.SnapshotID,
@@ -1662,6 +1736,7 @@ SELECT id,
     tournament_id,
     roster_id,
     kind,
+    reserve_count,
     parent_plan_id,
     revision_id,
     source_roster_revision,
@@ -1693,6 +1768,7 @@ type GetAssignmentPlanRow struct {
 	TournamentID             uuid.UUID
 	RosterID                 uuid.UUID
 	Kind                     string
+	ReserveCount             int16
 	ParentPlanID             uuid.NullUUID
 	RevisionID               uuid.UUID
 	SourceRosterRevision     int64
@@ -1725,6 +1801,7 @@ func (q *Queries) GetAssignmentPlan(ctx context.Context, id uuid.UUID) (GetAssig
 		&i.TournamentID,
 		&i.RosterID,
 		&i.Kind,
+		&i.ReserveCount,
 		&i.ParentPlanID,
 		&i.RevisionID,
 		&i.SourceRosterRevision,
@@ -2145,6 +2222,7 @@ SELECT id,
     series_id,
     roster_id,
     plan_id,
+    reserve_count,
     branch_id,
     reservation_id,
     snapshot_id,
@@ -2163,15 +2241,38 @@ WHERE id = $1
 FOR UPDATE
 `
 
-func (q *Queries) LockAssignment(ctx context.Context, id uuid.UUID) (Assignment, error) {
+type LockAssignmentRow struct {
+	ID                     uuid.UUID
+	AttemptID              uuid.UUID
+	SeriesID               uuid.UUID
+	RosterID               uuid.UUID
+	PlanID                 uuid.UUID
+	ReserveCount           int16
+	BranchID               uuid.UUID
+	ReservationID          uuid.UUID
+	SnapshotID             uuid.UUID
+	TaskID                 uuid.UUID
+	TaskVersion            int32
+	SupersedesAssignmentID uuid.NullUUID
+	State                  string
+	Revision               int64
+	CreatedAt              pgtype.Timestamptz
+	UpdatedAt              pgtype.Timestamptz
+	CompletedAt            pgtype.Timestamptz
+	SupersededAt           pgtype.Timestamptz
+	SupersessionReason     *string
+}
+
+func (q *Queries) LockAssignment(ctx context.Context, id uuid.UUID) (LockAssignmentRow, error) {
 	row := q.db.QueryRow(ctx, lockAssignment, id)
-	var i Assignment
+	var i LockAssignmentRow
 	err := row.Scan(
 		&i.ID,
 		&i.AttemptID,
 		&i.SeriesID,
 		&i.RosterID,
 		&i.PlanID,
+		&i.ReserveCount,
 		&i.BranchID,
 		&i.ReservationID,
 		&i.SnapshotID,
@@ -2270,6 +2371,7 @@ SELECT id,
     tournament_id,
     roster_id,
     kind,
+    reserve_count,
     parent_plan_id,
     revision_id,
     source_roster_revision,
@@ -2303,6 +2405,7 @@ type LockAssignmentPlanRow struct {
 	TournamentID             uuid.UUID
 	RosterID                 uuid.UUID
 	Kind                     string
+	ReserveCount             int16
 	ParentPlanID             uuid.NullUUID
 	RevisionID               uuid.UUID
 	SourceRosterRevision     int64
@@ -2336,6 +2439,7 @@ func (q *Queries) LockAssignmentPlan(ctx context.Context, id uuid.UUID) (LockAss
 		&i.TournamentID,
 		&i.RosterID,
 		&i.Kind,
+		&i.ReserveCount,
 		&i.ParentPlanID,
 		&i.RevisionID,
 		&i.SourceRosterRevision,
@@ -3165,6 +3269,7 @@ RETURNING id,
     series_id,
     roster_id,
     plan_id,
+    reserve_count,
     branch_id,
     reservation_id,
     snapshot_id,
@@ -3187,20 +3292,43 @@ type SupersedeAssignmentCASParams struct {
 	ExpectedRevision   int64
 }
 
-func (q *Queries) SupersedeAssignmentCAS(ctx context.Context, arg SupersedeAssignmentCASParams) (Assignment, error) {
+type SupersedeAssignmentCASRow struct {
+	ID                     uuid.UUID
+	AttemptID              uuid.UUID
+	SeriesID               uuid.UUID
+	RosterID               uuid.UUID
+	PlanID                 uuid.UUID
+	ReserveCount           int16
+	BranchID               uuid.UUID
+	ReservationID          uuid.UUID
+	SnapshotID             uuid.UUID
+	TaskID                 uuid.UUID
+	TaskVersion            int32
+	SupersedesAssignmentID uuid.NullUUID
+	State                  string
+	Revision               int64
+	CreatedAt              pgtype.Timestamptz
+	UpdatedAt              pgtype.Timestamptz
+	CompletedAt            pgtype.Timestamptz
+	SupersededAt           pgtype.Timestamptz
+	SupersessionReason     *string
+}
+
+func (q *Queries) SupersedeAssignmentCAS(ctx context.Context, arg SupersedeAssignmentCASParams) (SupersedeAssignmentCASRow, error) {
 	row := q.db.QueryRow(ctx, supersedeAssignmentCAS,
 		arg.SupersededAt,
 		arg.SupersessionReason,
 		arg.ID,
 		arg.ExpectedRevision,
 	)
-	var i Assignment
+	var i SupersedeAssignmentCASRow
 	err := row.Scan(
 		&i.ID,
 		&i.AttemptID,
 		&i.SeriesID,
 		&i.RosterID,
 		&i.PlanID,
+		&i.ReserveCount,
 		&i.BranchID,
 		&i.ReservationID,
 		&i.SnapshotID,

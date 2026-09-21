@@ -16,6 +16,7 @@ func tournamentConfigurationResponse(
 ) (api.TournamentConfiguration, error) {
 	if view.TournamentID == uuid.Nil || view.ProjectionRevisionID == uuid.Nil ||
 		view.ProjectionRevision < 1 || view.ConfigurationRevision < 1 ||
+		view.ReserveCount < 0 || view.ReserveCount > 2 ||
 		!domain.IsValidServerTime(view.UpdatedAt) {
 		return api.TournamentConfiguration{}, domain.ErrInternal
 	}
@@ -67,6 +68,7 @@ func tournamentConfigurationResponse(
 		ProjectionRevisionId:  view.ProjectionRevisionID,
 		ProjectionRevision:    view.ProjectionRevision,
 		ConfigurationRevision: view.ConfigurationRevision,
+		ReserveCount:          int32(view.ReserveCount),
 		CategoryPools:         pools,
 		SwissDefault:          swiss,
 		GoldenDefault:         golden,

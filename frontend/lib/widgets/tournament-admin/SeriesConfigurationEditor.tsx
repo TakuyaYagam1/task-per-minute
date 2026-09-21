@@ -6,11 +6,13 @@ import {
   ApiError,
   createOperatorCommandIntent,
   getTournamentConfiguration,
+  updateTournamentConfiguration,
   updateTournamentSeriesConfiguration,
   type Tournament,
   type TournamentConfiguration,
   type TournamentConfigurationCategoryPool,
   type TournamentConfigurationSeries,
+  type UpdateTournamentConfigurationRequest,
   type UpdateTournamentSeriesConfigurationRequest,
 } from "../../shared/api";
 import { formatCategory, formatSeriesFormat } from "../../shared/lib";
@@ -27,6 +29,7 @@ type SeriesConfigurationEditorProps = Readonly<{
 }>;
 
 type LoadState = "ready" | "loading" | "error";
+type ReserveCount = 0 | 1 | 2;
 type SeriesMode = TournamentConfigurationSeries["mode"];
 type Category = TournamentConfigurationCategoryPool["categories"][number];
 type SeriesDraft = Readonly<{
@@ -35,6 +38,7 @@ type SeriesDraft = Readonly<{
 }>;
 
 const SERIES_MODES: readonly SeriesMode[] = ["random", "admin", "draft"];
+const RESERVE_COUNTS: readonly ReserveCount[] = [0, 1, 2];
 
 const SERIES_MODE_LABELS: Readonly<Record<SeriesMode, string>> = {
   random: "Случайный выбор",
@@ -115,6 +119,25 @@ const staleMessage =
 const cutoffMessage =
   "Сервер отклонил изменение: серия уже заблокирована, начата, использована или раскрыта.";
 
+const reserveCutoffMessage =
+  "Серверный резерв больше нельзя менять: турнир уже начался или конфигурация перешла в работу.";
+
+const reserveCountFromValue = (value: string): ReserveCount | null => {
+  if (value === "0") {
+    return 0;
+  }
+  if (value === "1") {
+    return 1;
+  }
+  if (value === "2") {
+    return 2;
+  }
+  return null;
+};
+
+const reserveCountFromNumber = (value: number): ReserveCount | null =>
+  reserveCountFromValue(String(value));
+
 export const SeriesConfigurationEditor = ({
   onSelectTournament,
   onSessionExpired,
@@ -137,6 +160,11 @@ export const SeriesConfigurationEditor = ({
   const [loadError, setLoadError] = useState<string | null>(null);
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
   const [notices, setNotices] = useState<Record<string, string>>({});
+  const [reserveCountDraft, setReserveCountDraft] = useState<ReserveCount | null>(null);
+  const [reserveError, setReserveError] = useState<string | null>(null);
+  const [reserveNotice, setReserveNotice] = useState<string | null>(null);
+  const [reserveServerCutoff, setReserveServerCutoff] = useState(false);
+  const [submittingConfiguration, setSubmittingConfiguration] = useState(false);
   const [submittingSeriesId, setSubmittingSeriesId] = useState<string | null>(
     null,
   );
@@ -155,6 +183,7 @@ export const SeriesConfigurationEditor = ({
       id: string,
       options: Readonly<{
         preserveDirtyDrafts?: boolean;
+        replaceReserveCount?: boolean;
         replaceSeriesId?: string;
       }> = {},
     ): Promise<TournamentConfiguration | null> => {
@@ -166,6 +195,7 @@ export const SeriesConfigurationEditor = ({
       setLoadState("loading");
       setLoadError(null);
       setFormErrors({});
+      setReserveNotice(null);
 
       try {
         const nextConfiguration = await getTournamentConfiguration(
@@ -181,7 +211,21 @@ export const SeriesConfigurationEditor = ({
         }
 
         const nextDrafts = draftsFromConfiguration(nextConfiguration);
+        const nextReserveCount = reserveCountFromNumber(nextConfiguration.reserve_count);
+        if (nextReserveCount === null) {
+          setLoadState("error");
+          setLoadError("Сервер вернул недопустимое количество резервов.");
+          return null;
+        }
         setConfiguration(nextConfiguration);
+        setReserveCountDraft((current) => {
+          if (!options.preserveDirtyDrafts || options.replaceReserveCount || current === null) {
+            return nextReserveCount;
+          }
+          return current;
+        });
+        setReserveServerCutoff(false);
+        setReserveError(null);
         setDrafts((current) => {
           if (!options.preserveDirtyDrafts) {
             dirtySeriesIdsRef.current.clear();
@@ -243,6 +287,11 @@ export const SeriesConfigurationEditor = ({
       setLoadError(null);
       setFormErrors({});
       setNotices({});
+      setReserveCountDraft(null);
+      setReserveError(null);
+      setReserveNotice(null);
+      setReserveServerCutoff(false);
+      setSubmittingConfiguration(false);
       setSubmittingSeriesId(null);
       submittingRef.current = false;
       return;
@@ -251,6 +300,7 @@ export const SeriesConfigurationEditor = ({
     submitControllerRef.current?.abort();
     submitRunRef.current += 1;
     submittingRef.current = false;
+    setSubmittingConfiguration(false);
     setSubmittingSeriesId(null);
     setConfiguration(null);
     setDrafts({});
@@ -258,6 +308,10 @@ export const SeriesConfigurationEditor = ({
     setLoadError(null);
     setFormErrors({});
     setNotices({});
+    setReserveCountDraft(null);
+    setReserveError(null);
+    setReserveNotice(null);
+    setReserveServerCutoff(false);
     void loadConfiguration(tournamentId);
 
     return () => {
@@ -322,6 +376,113 @@ export const SeriesConfigurationEditor = ({
     },
     [clearFeedback],
   );
+
+  const updateReserveCount = useCallback((value: string): void => {
+    const nextReserveCount = reserveCountFromValue(value);
+    if (nextReserveCount === null) {
+      return;
+    }
+    setReserveCountDraft(nextReserveCount);
+    setReserveError(null);
+    setReserveNotice(null);
+  }, []);
+
+  const reserveEditingClosed = Boolean(
+    reserveServerCutoff ||
+      selectedTournament?.started_at,
+  );
+  const anySubmitting = Boolean(submittingSeriesId) || submittingConfiguration;
+
+  const handleReserveSubmit = useCallback(async (): Promise<void> => {
+    if (
+      !configuration ||
+      !tournamentId ||
+      reserveCountDraft === null ||
+      loadState !== "ready" ||
+      reserveEditingClosed ||
+      submittingRef.current
+    ) {
+      return;
+    }
+
+    const body: UpdateTournamentConfigurationRequest = {
+      expected_projection_revision: configuration.projection_revision,
+      expected_configuration_revision: configuration.configuration_revision,
+      reserve_count: reserveCountDraft,
+      confirmed: true,
+      reason: "Настройка резерва перед стартом",
+      unlock_intents: [],
+      swiss_default: configuration.swiss_default,
+      semifinal_default: configuration.semifinal_default,
+    };
+
+    submittingRef.current = true;
+    const submitRunId = submitRunRef.current + 1;
+    submitRunRef.current = submitRunId;
+    setSubmittingConfiguration(true);
+    setReserveError(null);
+    setReserveNotice(null);
+    submitControllerRef.current?.abort();
+    const controller = new AbortController();
+    submitControllerRef.current = controller;
+
+    try {
+      await updateTournamentConfiguration(
+        tournamentId,
+        body,
+        createOperatorCommandIntent().idempotencyKey,
+        controller.signal,
+      );
+      if (
+        controller.signal.aborted ||
+        !mountedRef.current ||
+        submitRunRef.current !== submitRunId
+      ) {
+        return;
+      }
+      const reloaded = await loadConfiguration(tournamentId, {
+        preserveDirtyDrafts: true,
+        replaceReserveCount: true,
+      });
+      if (reloaded && mountedRef.current) {
+        setReserveNotice("Резерв сохранен. Конфигурация обновлена с сервера.");
+      }
+    } catch (error) {
+      if (controller.signal.aborted || isAbortError(error)) {
+        return;
+      }
+      if (error instanceof ApiError && error.status === 401) {
+        onSessionExpired?.();
+        setReserveError("Сессия оператора истекла. Войдите снова.");
+      } else if (error instanceof ApiError && error.status === 409) {
+        setReserveError(staleMessage);
+      } else if (error instanceof ApiError && error.status === 422) {
+        const detail = problemMessage(error, "");
+        setReserveServerCutoff(true);
+        setReserveError(detail ? `${reserveCutoffMessage} ${detail}` : reserveCutoffMessage);
+      } else {
+        setReserveError(
+          problemMessage(error, "Не удалось сохранить количество резервов"),
+        );
+      }
+    } finally {
+      if (submitControllerRef.current === controller) {
+        submitControllerRef.current = null;
+      }
+      if (mountedRef.current && submitRunRef.current === submitRunId) {
+        submittingRef.current = false;
+        setSubmittingConfiguration(false);
+      }
+    }
+  }, [
+    configuration,
+    loadConfiguration,
+    loadState,
+    onSessionExpired,
+    reserveCountDraft,
+    reserveEditingClosed,
+    tournamentId,
+  ]);
 
   const handleReload = useCallback((): void => {
     if (!tournamentId || submittingRef.current) {
@@ -490,7 +651,7 @@ export const SeriesConfigurationEditor = ({
           name="series_configuration_tournament"
           value={selectedTournamentId}
           onChange={(event) => onSelectTournament(event.target.value)}
-          disabled={Boolean(submittingSeriesId)}
+          disabled={anySubmitting}
         >
           <option value="">Выберите турнир</option>
           {tournaments.map((tournament) => (
@@ -529,7 +690,7 @@ export const SeriesConfigurationEditor = ({
       {selectedTournament &&
         loadState === "ready" &&
         configuration &&
-        (configuration.series.length > 0 ? (
+        (
           <div className={styles.content}>
             <div className={styles.summary}>
               <div>
@@ -551,10 +712,98 @@ export const SeriesConfigurationEditor = ({
                   <dt>Ревизия конфигурации</dt>
                   <dd>{configuration.configuration_revision}</dd>
                 </div>
+                <div>
+                  <dt>Резерв normal + Golden</dt>
+                  <dd>{configuration.reserve_count}</dd>
+                </div>
               </dl>
             </div>
 
-            <div className={styles.seriesGrid}>
+            <section className={styles.reservePanel} aria-labelledby="reserve-count-title">
+              <div className={styles.reserveHeader}>
+                <div>
+                  <h3 id="reserve-count-title" className={styles.reserveTitle}>
+                    Резерв заданий до старта
+                  </h3>
+                  <p className={styles.reserveDescription}>
+                    Одно значение действует одновременно для normal и Golden. При нуле после сбоя основной попытки оператор принимает решение вручную.
+                  </p>
+                </div>
+                <Status tone={reserveEditingClosed ? "disabled" : "info"} size="small">
+                  {reserveEditingClosed ? "Только просмотр" : "Доступно до старта"}
+                </Status>
+              </div>
+
+              {reserveEditingClosed && !reserveError && (
+                <Message tone="warning" title="Изменение резерва закрыто">
+                  {selectedTournament.started_at
+                    ? "Турнир уже начался. Количество резервов остается серверным и доступно только для просмотра."
+                    : "Сервер уже перевел конфигурацию в работу. Количество резервов доступно только для просмотра."}
+                </Message>
+              )}
+
+              <div className={styles.reserveFields}>
+                <div className={styles.field}>
+                  <label htmlFor="reserve-count-select">
+                    Количество резервов для normal и Golden
+                  </label>
+                  <select
+                    id="reserve-count-select"
+                    value={reserveCountDraft === null ? "" : String(reserveCountDraft)}
+                    onChange={(event) => updateReserveCount(event.target.value)}
+                    disabled={reserveEditingClosed || anySubmitting || reserveCountDraft === null}
+                    aria-describedby={reserveError ? "reserve-count-error" : "reserve-count-help"}
+                  >
+                    <option value="">Загрузка значения</option>
+                    {RESERVE_COUNTS.map((count) => (
+                      <option key={count} value={count}>
+                        {count === 0
+                          ? "0 - без автоматического резерва"
+                          : `${count} - ${count === 1 ? "один резерв" : "два резерва"}`}
+                      </option>
+                    ))}
+                  </select>
+                  <span id="reserve-count-help" className={styles.fieldHint}>
+                    Резерв расходуется только после сбоя основной попытки; значение 0 означает вмешательство оператора.
+                  </span>
+                </div>
+                <div className={styles.reserveActions}>
+                  <Button
+                    type="button"
+                    onClick={() => void handleReserveSubmit()}
+                    loading={submittingConfiguration}
+                    loadingLabel="Сохраняем"
+                    disabled={reserveEditingClosed || reserveCountDraft === null || anySubmitting}
+                    aria-describedby={reserveError ? "reserve-count-error" : undefined}
+                  >
+                    Сохранить резерв
+                  </Button>
+                </div>
+              </div>
+
+              {reserveError && (
+                <Message id="reserve-count-error" tone="error" title="Резерв не сохранен">
+                  {reserveError}
+                  <button
+                    className={styles.inlineAction}
+                    type="button"
+                    onClick={handleReload}
+                    disabled={anySubmitting}
+                  >
+                    Перезагрузить конфигурацию
+                  </button>
+                </Message>
+              )}
+              {reserveNotice && (
+                <Message tone="success" title="Резерв сохранен">
+                  {reserveNotice}
+                </Message>
+              )}
+            </section>
+
+            {configuration.series.length > 0 ? (
+              <>
+                <div className={styles.seriesGrid}>
               {configuration.series.map((series, index) => {
                 const pool = poolById.get(series.category_pool_revision_id);
                 const isFinalSeries = series.stage === "final";
@@ -634,7 +883,7 @@ export const SeriesConfigurationEditor = ({
                     {!isLocked && pool && draft && (
                       <fieldset
                         className={styles.fields}
-                        disabled={submittingSeriesId !== null}
+                        disabled={anySubmitting}
                         aria-describedby={seriesStatusId}
                       >
                         <legend>Настройки серии {index + 1}</legend>
@@ -706,7 +955,7 @@ export const SeriesConfigurationEditor = ({
                           className={styles.inlineAction}
                           type="button"
                           onClick={handleReload}
-                          disabled={Boolean(submittingSeriesId)}
+                          disabled={anySubmitting}
                         >
                           Перезагрузить конфигурацию
                         </button>
@@ -728,7 +977,7 @@ export const SeriesConfigurationEditor = ({
                         }}
                         loading={submittingSeriesId === series.id}
                         loadingLabel="Сохраняем"
-                        disabled={isLocked || !pool || !draft || Boolean(submittingSeriesId)}
+                        disabled={isLocked || !pool || !draft || anySubmitting}
                         aria-describedby={formErrors[series.id] ? `series-${index + 1}-error` : undefined}
                       >
                         Сохранить серию {index + 1}
@@ -737,31 +986,33 @@ export const SeriesConfigurationEditor = ({
                   </article>
                 );
               })}
-            </div>
+                </div>
 
-            <div className={styles.reloadAction}>
-              <Button
-                type="button"
-                variant="secondary"
-                onClick={handleReload}
-                disabled={Boolean(submittingSeriesId)}
-              >
-                Обновить конфигурацию
-              </Button>
-            </div>
+                <div className={styles.reloadAction}>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={handleReload}
+                    disabled={anySubmitting}
+                  >
+                    Обновить конфигурацию
+                  </Button>
+                </div>
+              </>
+            ) : (
+              <Message tone="empty" title="Серии не найдены">
+                Сервер не вернул ни одной Series для выбранного турнира.
+                <button
+                  className={styles.inlineAction}
+                  type="button"
+                  onClick={handleReload}
+                >
+                  Обновить конфигурацию
+                </button>
+              </Message>
+            )}
           </div>
-        ) : (
-          <Message tone="empty" title="Серии не найдены">
-            Сервер не вернул ни одной Series для выбранного турнира.
-            <button
-              className={styles.inlineAction}
-              type="button"
-              onClick={handleReload}
-            >
-              Обновить конфигурацию
-            </button>
-          </Message>
-        ))}
+        )}
     </Panel>
   );
 };

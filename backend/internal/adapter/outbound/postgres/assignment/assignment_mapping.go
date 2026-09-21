@@ -103,7 +103,7 @@ func assignmentPlanRecord(row sqlc.GetAssignmentPlanRow) (AssignmentPlanRecord, 
 		return AssignmentPlanRecord{}, err
 	}
 	record := AssignmentPlanRecord{
-		ID: row.ID, TournamentID: row.TournamentID, RosterID: row.RosterID, Kind: row.Kind,
+		ID: row.ID, TournamentID: row.TournamentID, RosterID: row.RosterID, ReserveCount: int(row.ReserveCount), Kind: row.Kind,
 		RevisionID: row.RevisionID, SourceRosterRevision: row.SourceRosterRevision,
 		SourcePoolRevisionID: row.SourcePoolRevisionID, ReachableBranchCount: int(row.ReachableBranchCount),
 		ConstraintGraph: constraintGraph, ProofEvidence: proofEvidence, State: row.State,
@@ -179,7 +179,7 @@ func taskSnapshotRecord(row sqlc.TaskSnapshot) (TaskSnapshotRecord, error) {
 }
 
 func assignmentRecord(
-	assignment sqlc.Assignment,
+	assignment sqlc.GetAssignmentRow,
 	snapshot sqlc.TaskSnapshot,
 	receipts []sqlc.TaskDeliveryReceipt,
 ) (*AssignmentRecord, error) {
@@ -189,7 +189,7 @@ func assignmentRecord(
 	}
 	record := &AssignmentRecord{
 		ID: assignment.ID, AttemptID: assignment.AttemptID, SeriesID: assignment.SeriesID,
-		RosterID: assignment.RosterID, PlanID: assignment.PlanID, BranchID: assignment.BranchID,
+		RosterID: assignment.RosterID, PlanID: assignment.PlanID, ReserveCount: int(assignment.ReserveCount), BranchID: assignment.BranchID,
 		ReservationID: assignment.ReservationID, Snapshot: snapshotRecord, State: assignment.State,
 		Revision: assignment.Revision, CreatedAt: assignment.CreatedAt.Time, UpdatedAt: assignment.UpdatedAt.Time,
 		CompletedAt: nullableTime(assignment.CompletedAt), SupersededAt: nullableTime(assignment.SupersededAt),

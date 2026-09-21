@@ -154,7 +154,19 @@ func (repository *GoldenRuntimePostgres) goldenRuntimeRecoveryBoundary(
 		if len(unresolved) == 0 {
 			return "completion", nil
 		}
-		if attempt.EdgePosition >= 3 {
+		assignment, err := q.GetGoldenRuntimeAssignment(ctx, sqlc.GetGoldenRuntimeAssignmentParams{
+			AttemptID: attempt.AttemptID, TournamentID: attempt.TournamentID,
+		})
+		if err != nil {
+			return "", goldenRuntimeReadError("load Golden chain for recovery", err)
+		}
+		chainLength, err := repository.goldenRuntimeChainLength(
+			ctx, q, assignment.PlanID, assignment.TournamentID, assignment.RosterID, assignment.GroupRevisionID,
+		)
+		if err != nil {
+			return "", err
+		}
+		if int(attempt.EdgePosition) >= chainLength {
 			return "technical_pause", nil
 		}
 		return "reserve_creation", nil
@@ -325,7 +337,19 @@ func (repository *GoldenRuntimePostgres) continueOrFinalizeGoldenRuntime(
 		}
 		return repository.finalizeGoldenRuntimeGroup(ctx, q, attempt.TournamentID, attempt.GroupRevisionID, now)
 	}
-	if attempt.EdgePosition >= 3 {
+	assignment, err := q.GetGoldenRuntimeAssignment(ctx, sqlc.GetGoldenRuntimeAssignmentParams{
+		AttemptID: attempt.AttemptID, TournamentID: attempt.TournamentID,
+	})
+	if err != nil {
+		return goldenRuntimeReadError("load Golden chain for continuation", err)
+	}
+	chainLength, err := repository.goldenRuntimeChainLength(
+		ctx, q, assignment.PlanID, assignment.TournamentID, assignment.RosterID, assignment.GroupRevisionID,
+	)
+	if err != nil {
+		return err
+	}
+	if int(attempt.EdgePosition) >= chainLength {
 		locked, lockErr := q.LockGoldenAttempt(ctx, sqlc.LockGoldenAttemptParams{
 			ID: attempt.AttemptID, TournamentID: attempt.TournamentID, RosterID: attempt.RosterID,
 		})
@@ -795,7 +819,13 @@ func (repository *GoldenRuntimePostgres) resumeGoldenRuntimeAfterTechnicalPause(
 	assignment sqlc.GetGoldenRuntimeAssignmentRow,
 	now time.Time,
 ) error {
-	if assignment.EdgePosition >= 3 {
+	chainLength, err := repository.goldenRuntimeChainLength(
+		ctx, q, assignment.PlanID, assignment.TournamentID, assignment.RosterID, assignment.GroupRevisionID,
+	)
+	if err != nil {
+		return err
+	}
+	if int(assignment.EdgePosition) >= chainLength {
 		return domain.ErrConflict
 	}
 	locked, err := q.LockGoldenAttempt(ctx, sqlc.LockGoldenAttemptParams{
@@ -819,4 +849,55 @@ func (repository *GoldenRuntimePostgres) resumeGoldenRuntimeAfterTechnicalPause(
 		return goldenRuntimeWriteError("resume Golden attempt", err)
 	}
 	return repository.continueOrFinalizeGoldenRuntime(ctx, q, attempt, now)
+}
+
+// goldenRuntimeChainLength reads the immutable Golden group edges rather than
+// assuming the historical three-position chain. The selected group must have
+// contiguous positions, while an already-published legacy plan may still
+// contain all three positions.
+func (repository *GoldenRuntimePostgres) goldenRuntimeChainLength(
+	ctx context.Context,
+	q *sqlc.Queries,
+	planID uuid.UUID,
+	tournamentID uuid.UUID,
+	rosterID uuid.UUID,
+	groupRevisionID uuid.UUID,
+) (int, error) {
+	if planID == uuid.Nil || tournamentID == uuid.Nil || rosterID == uuid.Nil || groupRevisionID == uuid.Nil {
+		return 0, domain.ErrConflict
+	}
+	edges, err := q.LockTournamentProgressionGoldenExactPlanEdges(ctx, sqlc.LockTournamentProgressionGoldenExactPlanEdgesParams{
+		PlanID: planID, TournamentID: tournamentID, RosterID: rosterID,
+	})
+	if err != nil {
+		return 0, goldenRuntimeReadError("load Golden chain edges", err)
+	}
+	return goldenRuntimePlanChainLength(edges, groupRevisionID)
+}
+
+func goldenRuntimePlanChainLength(
+	edges []sqlc.LockTournamentProgressionGoldenExactPlanEdgesRow,
+	groupRevisionID uuid.UUID,
+) (int, error) {
+	if groupRevisionID == uuid.Nil {
+		return 0, domain.ErrConflict
+	}
+	chainLength := 0
+	for _, edge := range edges {
+		if edge.GroupRevisionID != groupRevisionID {
+			continue
+		}
+		if edge.Position < 1 {
+			return 0, domain.ErrConflict
+		}
+		expected := chainLength + 1
+		if int(edge.Position) != expected {
+			return 0, domain.ErrConflict
+		}
+		chainLength = expected
+	}
+	if chainLength < 1 || chainLength > domain.MaxAssignmentReserveCount+2 {
+		return 0, domain.ErrConflict
+	}
+	return chainLength, nil
 }

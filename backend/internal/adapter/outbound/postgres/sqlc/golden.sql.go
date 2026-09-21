@@ -2134,6 +2134,7 @@ INSERT INTO assignment_plans (
     tournament_id,
     roster_id,
     kind,
+    reserve_count,
     revision_id,
     source_roster_revision,
     source_pool_revision_id,
@@ -2172,8 +2173,9 @@ VALUES (
     $16,
     $17,
     $18,
+    $19,
     'planned',
-    $19
+    $20
 )
 `
 
@@ -2181,6 +2183,7 @@ type CreateGoldenRuntimeAssignmentPlanParams struct {
 	ID                       uuid.UUID
 	TournamentID             uuid.UUID
 	RosterID                 uuid.UUID
+	ReserveCount             int16
 	RevisionID               uuid.UUID
 	SourceRosterRevision     int64
 	SourcePoolRevisionID     uuid.UUID
@@ -2204,6 +2207,7 @@ func (q *Queries) CreateGoldenRuntimeAssignmentPlan(ctx context.Context, arg Cre
 		arg.ID,
 		arg.TournamentID,
 		arg.RosterID,
+		arg.ReserveCount,
 		arg.RevisionID,
 		arg.SourceRosterRevision,
 		arg.SourcePoolRevisionID,

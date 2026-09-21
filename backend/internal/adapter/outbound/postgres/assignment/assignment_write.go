@@ -77,7 +77,8 @@ func (r *AssignmentPostgres) createAssignmentTx(
 	}
 	_, err = querier.CreateAssignment(ctx, sqlc.CreateAssignmentParams{
 		ID: in.ID, AttemptID: in.AttemptID, SeriesID: in.SeriesID, RosterID: in.RosterID,
-		PlanID: in.PlanID, BranchID: in.BranchID, ReservationID: in.ReservationID,
+		PlanID: in.PlanID, ReserveCount: plan.ReserveCount,
+		BranchID: in.BranchID, ReservationID: in.ReservationID,
 		SnapshotID: in.SnapshotID, TaskID: snapshot.TaskID, TaskVersion: snapshot.TaskVersion,
 		CreatedAt: tstz(in.CreatedAt),
 	})
@@ -314,7 +315,7 @@ func (r *AssignmentPostgres) supersedeTx(
 func loadReplacementEvidence(
 	ctx context.Context,
 	querier *sqlc.Queries,
-	old sqlc.Assignment,
+	old sqlc.LockAssignmentRow,
 	in AssignmentSupersedeInput,
 ) (sqlc.ListAssignmentTaskVersionReservationsRow, sqlc.TaskSnapshot, error) {
 	reservations, err := querier.ListAssignmentTaskVersionReservations(ctx, old.PlanID)

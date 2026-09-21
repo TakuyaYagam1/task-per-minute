@@ -141,6 +141,7 @@ SELECT configuration.id,
     configuration.tournament_id,
     configuration.revision,
     configuration.state,
+    configuration.reserve_count,
     configuration.pool_publication_id,
     configuration.normal_pool_revision_id,
     normal_pool.revision AS normal_pool_revision,
@@ -365,6 +366,7 @@ INSERT INTO tournament_content_configurations (
     tournament_id,
     revision,
     state,
+    reserve_count,
     pool_publication_id,
     normal_pool_revision_id,
     golden_pool_revision_id,
@@ -374,15 +376,21 @@ SELECT sqlc.arg(configuration_id)::UUID,
     locked_head.tournament_id,
     locked_head.configuration_revision + 1,
     'draft',
+    sqlc.arg(reserve_count)::SMALLINT,
     sqlc.arg(pool_publication_id)::UUID,
     sqlc.arg(normal_pool_revision_id)::UUID,
     sqlc.arg(golden_pool_revision_id)::UUID,
     sqlc.arg(created_at)::TIMESTAMPTZ
 FROM locked_head
+JOIN tournament_content_configurations AS current_configuration
+    ON current_configuration.tournament_id = locked_head.tournament_id
+    AND current_configuration.id = sqlc.arg(source_configuration_id)::UUID
+    AND current_configuration.revision = locked_head.configuration_revision
 RETURNING id,
     tournament_id,
     revision,
     state,
+    reserve_count,
     pool_publication_id,
     normal_pool_revision_id,
     golden_pool_revision_id,

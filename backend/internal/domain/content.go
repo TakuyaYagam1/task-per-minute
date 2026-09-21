@@ -75,7 +75,11 @@ type StageContentDefault struct {
 }
 
 type ContentConfigurationInput struct {
-	TournamentID  uuid.UUID
+	TournamentID uuid.UUID
+	// ReserveCount controls the length of every normal and Golden assignment
+	// chain after the primary task. It is deliberately shared by both pools so
+	// a tournament cannot expose different reserve semantics by stage.
+	ReserveCount  int
 	CategoryPools []CategoryPoolRevision
 	NormalPool    TaskPoolRevision
 	GoldenPool    TaskPoolRevision
@@ -85,6 +89,7 @@ type ContentConfigurationInput struct {
 type ContentConfiguration struct {
 	TournamentID        uuid.UUID
 	Revision            int64
+	ReserveCount        int
 	CategoryPools       []CategoryPoolRevision
 	NormalPool          TaskPoolRevision
 	GoldenPool          TaskPoolRevision
@@ -173,6 +178,9 @@ func normalizeContentConfigurationInput(in ContentConfigurationInput) (ContentCo
 	if in.TournamentID == uuid.Nil {
 		return ContentConfigurationInput{}, contentConfigurationError("missing tournament identity")
 	}
+	if err := ValidateAssignmentReserveCount(in.ReserveCount); err != nil {
+		return ContentConfigurationInput{}, err
+	}
 	categoryPools, err := NormalizeCategoryPoolRevisions(in.CategoryPools)
 	if err != nil {
 		return ContentConfigurationInput{}, err
@@ -194,6 +202,7 @@ func normalizeContentConfigurationInput(in ContentConfigurationInput) (ContentCo
 	}
 	return ContentConfigurationInput{
 		TournamentID:  in.TournamentID,
+		ReserveCount:  in.ReserveCount,
 		CategoryPools: categoryPools,
 		NormalPool:    normalPool,
 		GoldenPool:    goldenPool,
@@ -392,6 +401,7 @@ func contentConfigurationFromInput(in ContentConfigurationInput, revision int64)
 	return ContentConfiguration{
 		TournamentID:  in.TournamentID,
 		Revision:      revision,
+		ReserveCount:  in.ReserveCount,
 		CategoryPools: cloneCategoryPools(in.CategoryPools),
 		NormalPool:    CloneTaskPool(in.NormalPool),
 		GoldenPool:    CloneTaskPool(in.GoldenPool),
@@ -402,11 +412,22 @@ func contentConfigurationFromInput(in ContentConfigurationInput, revision int64)
 func contentConfigurationInput(c ContentConfiguration) ContentConfigurationInput {
 	return ContentConfigurationInput{
 		TournamentID:  c.TournamentID,
+		ReserveCount:  c.ReserveCount,
 		CategoryPools: cloneCategoryPools(c.CategoryPools),
 		NormalPool:    CloneTaskPool(c.NormalPool),
 		GoldenPool:    CloneTaskPool(c.GoldenPool),
 		StageDefaults: append([]StageContentDefault(nil), c.StageDefaults...),
 	}
+}
+
+// ValidateAssignmentReserveCount accepts the only supported assignment
+// chain shapes. The primary task is not part of this value: zero means a
+// primary-only chain, one and two add that many undisclosed reserves.
+func ValidateAssignmentReserveCount(count int) error {
+	if count < 0 || count > MaxAssignmentReserveCount {
+		return contentConfigurationError("assignment reserve count must be between zero and two")
+	}
+	return nil
 }
 
 func cloneContentConfiguration(c ContentConfiguration) ContentConfiguration {

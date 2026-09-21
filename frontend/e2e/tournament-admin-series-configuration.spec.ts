@@ -52,6 +52,7 @@ type Configuration = {
   projection_revision_id: string;
   projection_revision: number;
   configuration_revision: number;
+  reserve_count: number;
   category_pools: Array<{
     id: string;
     revision: number;
@@ -68,15 +69,24 @@ type Configuration = {
 };
 
 type RouteOptions = Readonly<{
+  onConfigurationPatch?: (
+    route: Route,
+    body: Record<string, unknown>,
+  ) => Promise<void>;
   onSeriesPatch?: (
     route: Route,
     seriesID: string,
     body: Record<string, unknown>,
   ) => Promise<void>;
+  tournamentStarted?: boolean;
 }>;
 
 type CapturedSeriesPatch = Readonly<{
   seriesID: string;
+  body: Record<string, unknown>;
+}>;
+
+type CapturedConfigurationPatch = Readonly<{
   body: Record<string, unknown>;
 }>;
 
@@ -121,6 +131,7 @@ const configuration = (): Configuration => ({
   projection_revision_id: projectionRevisionID,
   projection_revision: 37,
   configuration_revision: 11,
+  reserve_count: 2,
   category_pools: [
     {
       id: bo1PoolID,
@@ -230,9 +241,16 @@ const fulfillJSON = async (
 const setupSeriesRoutes = async (
   page: Page,
   options: RouteOptions = {},
-): Promise<{ seriesPatches: CapturedSeriesPatch[] }> => {
+): Promise<{
+  configurationPatches: CapturedConfigurationPatch[];
+  seriesPatches: CapturedSeriesPatch[];
+}> => {
+  const configurationPatches: CapturedConfigurationPatch[] = [];
   const seriesPatches: CapturedSeriesPatch[] = [];
   let currentConfiguration = configuration();
+  const currentTournament = options.tournamentStarted
+    ? { ...tournament(), started_at: baseDate, state: 'swiss' }
+    : tournament();
 
   await page.route('**/api/v1/admin/**', async (route) => {
     const request = route.request();
@@ -268,11 +286,28 @@ const setupSeriesRoutes = async (
       return;
     }
     if (path === '/api/v1/admin/tournaments' && method === 'GET') {
-      await fulfillJSON(route, 200, { items: [tournament()], next_cursor: null });
+      await fulfillJSON(route, 200, { items: [currentTournament], next_cursor: null });
       return;
     }
     if (path === `/api/v1/admin/tournaments/${tournamentID}/configuration` && method === 'GET') {
       await fulfillJSON(route, 200, currentConfiguration, { 'Cache-Control': 'no-store' });
+      return;
+    }
+    if (path === `/api/v1/admin/tournaments/${tournamentID}/configuration` && method === 'PATCH') {
+      const body = request.postDataJSON() as Record<string, unknown>;
+      configurationPatches.push({ body });
+      if (options.onConfigurationPatch) {
+        await options.onConfigurationPatch(route, body);
+        return;
+      }
+      const reserveCount = body.reserve_count as number;
+      currentConfiguration = {
+        ...currentConfiguration,
+        configuration_revision: currentConfiguration.configuration_revision + 1,
+        projection_revision: currentConfiguration.projection_revision + 1,
+        reserve_count: reserveCount,
+      };
+      await fulfillJSON(route, 200, mutationEvidence());
       return;
     }
     const seriesPatch = path.match(
@@ -351,7 +386,7 @@ const setupSeriesRoutes = async (
     await fulfillJSON(route, 404, {});
   });
 
-  return { seriesPatches };
+  return { configurationPatches, seriesPatches };
 };
 
 const loginAndOpenSeriesEditor = async (page: Page): Promise<ReturnType<Page['getByRole']>> => {
@@ -371,6 +406,114 @@ const seriesCard = (region: ReturnType<Page['getByRole']>, label: RegExp) =>
   region.getByRole('article').filter({ hasText: label }).first();
 
 test.describe('FE-031 per-Series category configuration', () => {
+  test('selects 0, 1, and 2 shared normal and Golden reserves with authoritative reloads', async ({ page }) => {
+    const { configurationPatches } = await setupSeriesRoutes(page);
+    const region = await loginAndOpenSeriesEditor(page);
+    const reservePanel = region.locator('section[aria-labelledby="reserve-count-title"]');
+    const reserveSelect = region.getByLabel('Количество резервов для normal и Golden');
+    const reserveSave = region.getByRole('button', { name: 'Сохранить резерв' });
+
+    await expect(reserveSelect).toHaveValue('2');
+    await reserveSelect.focus();
+    await expect(reserveSelect).toBeFocused();
+    await reserveSelect.press('Tab');
+    await expect(reserveSave).toBeFocused();
+
+    for (const [index, reserveCount] of ['0', '1', '2'].entries()) {
+      await reserveSelect.selectOption(reserveCount);
+      await reserveSave.click();
+      await expect.poll(() => configurationPatches.length).toBe(index + 1);
+      await expect(reserveSelect).toHaveValue(reserveCount);
+    }
+
+    expect(configurationPatches).toEqual([
+      {
+        body: {
+          expected_projection_revision: 37,
+          expected_configuration_revision: 11,
+          reserve_count: 0,
+          confirmed: true,
+          reason: 'Настройка резерва перед стартом',
+          unlock_intents: [],
+          swiss_default: { mode: 'random', categories: ['web'] },
+          semifinal_default: { mode: 'draft', categories: ['web', 'crypto', 'reverse'] },
+        },
+      },
+      {
+        body: {
+          expected_projection_revision: 38,
+          expected_configuration_revision: 12,
+          reserve_count: 1,
+          confirmed: true,
+          reason: 'Настройка резерва перед стартом',
+          unlock_intents: [],
+          swiss_default: { mode: 'random', categories: ['web'] },
+          semifinal_default: { mode: 'draft', categories: ['web', 'crypto', 'reverse'] },
+        },
+      },
+      {
+        body: {
+          expected_projection_revision: 39,
+          expected_configuration_revision: 13,
+          reserve_count: 2,
+          confirmed: true,
+          reason: 'Настройка резерва перед стартом',
+          unlock_intents: [],
+          swiss_default: { mode: 'random', categories: ['web'] },
+          semifinal_default: { mode: 'draft', categories: ['web', 'crypto', 'reverse'] },
+        },
+      },
+    ]);
+    await expect(reservePanel).toContainText('Конфигурация обновлена с сервера');
+  });
+
+  test('keeps the reserve draft after a stale top-level configuration revision', async ({ page }) => {
+    const { configurationPatches } = await setupSeriesRoutes(page, {
+      onConfigurationPatch: async (route) => {
+        await fulfillJSON(route, 409, problem('Ревизия конфигурации устарела. Обновите состояние и повторите.'));
+      },
+    });
+    const region = await loginAndOpenSeriesEditor(page);
+    const reserveSelect = region.getByLabel('Количество резервов для normal и Golden');
+    const reserveSave = region.getByRole('button', { name: 'Сохранить резерв' });
+    await reserveSelect.selectOption('1');
+    await reserveSave.click();
+
+    await expect.poll(() => configurationPatches.length).toBe(1);
+    await expect(region.getByRole('alert')).toContainText('Состояние конфигурации устарело');
+    await expect(reserveSelect).toHaveValue('1');
+    await expect(reserveSelect).toBeEnabled();
+  });
+
+  test('disables the reserve selector after a server cutoff response', async ({ page }) => {
+    const { configurationPatches } = await setupSeriesRoutes(page, {
+      onConfigurationPatch: async (route) => {
+        await fulfillJSON(
+          route,
+          422,
+          problem('Турнир уже начался и не принимает изменение резерва.', 422, 'Invalid configuration cutoff'),
+        );
+      },
+    });
+    const region = await loginAndOpenSeriesEditor(page);
+    const reserveSelect = region.getByLabel('Количество резервов для normal и Golden');
+    await reserveSelect.selectOption('1');
+    await region.getByRole('button', { name: 'Сохранить резерв' }).click();
+
+    await expect.poll(() => configurationPatches.length).toBe(1);
+    await expect(region.getByRole('alert')).toContainText('Серверный резерв больше нельзя менять');
+    await expect(reserveSelect).toBeDisabled();
+    await expect(region.getByRole('button', { name: 'Сохранить резерв' })).toBeDisabled();
+  });
+
+  test('keeps the reserve selector read-only after tournament start', async ({ page }) => {
+    await setupSeriesRoutes(page, { tournamentStarted: true });
+    const region = await loginAndOpenSeriesEditor(page);
+    await expect(region.getByLabel('Количество резервов для normal и Golden')).toBeDisabled();
+    await expect(region.getByRole('button', { name: 'Сохранить резерв' })).toBeDisabled();
+    await expect(region).toContainText('Турнир уже начался');
+  });
+
   test('keeps independent modes, exposes pool choices, and sends exact Series PATCH requests', async ({ page }) => {
     const { seriesPatches } = await setupSeriesRoutes(page);
     const region = await loginAndOpenSeriesEditor(page);

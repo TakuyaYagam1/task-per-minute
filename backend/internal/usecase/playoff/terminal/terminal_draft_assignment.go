@@ -196,9 +196,9 @@ func finalDraftAssignmentCommand(
 				PlanRevisionID:     plan.IDs.DraftAssignmentRevisionID,
 				BranchID:           branchCommand.ChildBranchIDs[assignmentIndex],
 				DecisionEvidenceID: plan.IDs.DraftAssignmentDecisionID(branch.Key, position),
-				EdgeIDs:            finalDraftEdgeIDs(plan.IDs, branch.Key, position),
-				ReservationIDs:     finalDraftReservationIDs(plan.IDs, branch.Key, position),
-				SnapshotIDs:        finalDraftSnapshotIDs(plan.IDs, branch.Key, position),
+				EdgeIDs:            finalDraftEdgeIDs(plan.IDs, branch.Key, position, plan.ReserveCount),
+				ReservationIDs:     finalDraftReservationIDs(plan.IDs, branch.Key, position, plan.ReserveCount),
+				SnapshotIDs:        finalDraftSnapshotIDs(plan.IDs, branch.Key, position, plan.ReserveCount),
 				CreatedAt:          plan.CreatedAt,
 			}
 		}
@@ -222,12 +222,18 @@ func finalDraftGameBindings(
 		if branch.State != assignmentusecase.ExactDraftBranchStateActive || len(branch.Assignments) != 3 {
 			return nil, domain.ErrConflict
 		}
+		reserveCount := -1
 		bindings := make([]FinalGameBinding, len(branch.Assignments))
 		for index, assignment := range branch.Assignments {
 			position := index + 1
 			gameID, ok := finalGameID(ids, position)
 			if !ok || assignment.Position != position || assignment.State != assignmentusecase.ExactDraftReservationStateCommitted ||
-				assignment.Plan.Validate() != nil || len(assignment.Plan.SelectedEdges) != domain.AssignmentReserveCount+1 {
+				assignment.Plan.Validate() != nil || len(assignment.Plan.SelectedEdges) < 1 || len(assignment.Plan.SelectedEdges) > domain.MaxAssignmentReserveCount+1 {
+				return nil, domain.ErrConflict
+			}
+			if reserveCount == -1 {
+				reserveCount = len(assignment.Plan.SelectedEdges) - 1
+			} else if reserveCount != len(assignment.Plan.SelectedEdges)-1 {
 				return nil, domain.ErrConflict
 			}
 			if assignment.Plan.BranchID != ids.DraftAssignmentChildBranchID(branch.Path.Key, position) {
@@ -348,26 +354,35 @@ func finalGameID(ids FinalStageIDs, position int) (uuid.UUID, bool) {
 	}
 }
 
-func finalDraftEdgeIDs(ids FinalStageIDs, key string, position int) [domain.AssignmentReserveCount + 1]uuid.UUID {
-	return [domain.AssignmentReserveCount + 1]uuid.UUID{
-		ids.DraftAssignmentEdgeID(key, position, 1),
-		ids.DraftAssignmentEdgeID(key, position, 2),
-		ids.DraftAssignmentEdgeID(key, position, 3),
+func finalDraftEdgeIDs(ids FinalStageIDs, key string, position, reserveCount int) [domain.AssignmentReserveCount + 1]uuid.UUID {
+	var result [domain.AssignmentReserveCount + 1]uuid.UUID
+	if !domain.IsValidAssignmentReserveCount(reserveCount) {
+		return result
 	}
+	for index := 0; index <= reserveCount; index++ {
+		result[index] = ids.DraftAssignmentEdgeID(key, position, index+1)
+	}
+	return result
 }
 
-func finalDraftReservationIDs(ids FinalStageIDs, key string, position int) [domain.AssignmentReserveCount + 1]uuid.UUID {
-	return [domain.AssignmentReserveCount + 1]uuid.UUID{
-		ids.DraftAssignmentReservationID(key, position, 1),
-		ids.DraftAssignmentReservationID(key, position, 2),
-		ids.DraftAssignmentReservationID(key, position, 3),
+func finalDraftReservationIDs(ids FinalStageIDs, key string, position, reserveCount int) [domain.AssignmentReserveCount + 1]uuid.UUID {
+	var result [domain.AssignmentReserveCount + 1]uuid.UUID
+	if !domain.IsValidAssignmentReserveCount(reserveCount) {
+		return result
 	}
+	for index := 0; index <= reserveCount; index++ {
+		result[index] = ids.DraftAssignmentReservationID(key, position, index+1)
+	}
+	return result
 }
 
-func finalDraftSnapshotIDs(ids FinalStageIDs, key string, position int) [domain.AssignmentReserveCount + 1]uuid.UUID {
-	return [domain.AssignmentReserveCount + 1]uuid.UUID{
-		ids.DraftAssignmentSnapshotID(key, position, 1),
-		ids.DraftAssignmentSnapshotID(key, position, 2),
-		ids.DraftAssignmentSnapshotID(key, position, 3),
+func finalDraftSnapshotIDs(ids FinalStageIDs, key string, position, reserveCount int) [domain.AssignmentReserveCount + 1]uuid.UUID {
+	var result [domain.AssignmentReserveCount + 1]uuid.UUID
+	if !domain.IsValidAssignmentReserveCount(reserveCount) {
+		return result
 	}
+	for index := 0; index <= reserveCount; index++ {
+		result[index] = ids.DraftAssignmentSnapshotID(key, position, index+1)
+	}
+	return result
 }

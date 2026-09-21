@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"errors"
+	"fmt"
 	"reflect"
 	"testing"
 	"time"
@@ -101,6 +102,72 @@ func TestTournamentConfigurationWorkflowUpdatesOnlyAffectedPlannedArtifacts(t *t
 	}
 	if repository.last.NextConfiguration.Revision != 2 || repository.last.NextConfiguration.PlanRevisionID != uuid.Nil || repository.last.NextConfiguration.PreflightRevisionID != uuid.Nil {
 		t.Fatalf("next configuration did not invalidate derived revisions: %#v", repository.last.NextConfiguration)
+	}
+}
+
+func TestTournamentConfigurationWorkflowPersistsConfiguredReserveCount(t *testing.T) {
+	t.Parallel()
+
+	for _, reserveCount := range []int{0, 1, 2} {
+		t.Run(fmt.Sprintf("reserve_count_%d", reserveCount), func(t *testing.T) {
+			t.Parallel()
+			authority := configurationAuthorityFixture(t)
+			authority.Configuration.ReserveCount = 2
+			repository := &configurationRepositoryStub{authority: authority}
+			workflow := NewTournamentConfigurationWorkflow(repository)
+			command := configurationUpdateCommand(authority, uuid.New())
+			command.ReserveCount = reserveCount
+			command.SwissDefault = authority.SwissDefault
+			command.SemifinalDefault = authority.SemifinalDefault
+
+			evidence, err := workflow.UpdateTournamentConfiguration(t.Context(), command)
+			if err != nil {
+				t.Fatalf("UpdateTournamentConfiguration() error = %v", err)
+			}
+			if reserveCount == authority.Configuration.ReserveCount {
+				if repository.calls != 0 || evidence.NextConfigurationRevision != authority.Configuration.Revision {
+					t.Fatalf("unchanged reserve count mutated: calls=%d evidence=%#v", repository.calls, evidence)
+				}
+				return
+			}
+			if repository.calls != 1 {
+				t.Fatalf("ExecuteMutation calls = %d, want 1", repository.calls)
+			}
+			if repository.last.NextConfiguration.ReserveCount != reserveCount {
+				t.Fatalf("next reserve count = %d, want %d", repository.last.NextConfiguration.ReserveCount, reserveCount)
+			}
+		})
+	}
+}
+
+func TestTournamentConfigurationWorkflowReserveCountHonorsCutoffAndStaleRevision(t *testing.T) {
+	t.Parallel()
+
+	authority := configurationAuthorityFixture(t)
+	authority.Configuration.ReserveCount = 2
+	authority.Artifacts = []ConfigurationArtifact{{
+		Kind: "swiss-round", ID: uuid.New(), Stage: domain.TournamentStageSwiss,
+		Revision: 1, State: ConfigurationArtifactActive, Started: true,
+	}}
+	repository := &configurationRepositoryStub{authority: authority}
+	workflow := NewTournamentConfigurationWorkflow(repository)
+	command := configurationUpdateCommand(authority, uuid.New())
+	command.ReserveCount = 1
+	command.SwissDefault = authority.SwissDefault
+	command.SemifinalDefault = authority.SemifinalDefault
+
+	_, err := workflow.UpdateTournamentConfiguration(t.Context(), command)
+	if !errors.Is(err, ErrCutoff) || !errors.Is(err, domain.ErrConflict) || repository.calls != 0 {
+		t.Fatalf("cutoff error = %v, calls = %d", err, repository.calls)
+	}
+
+	authority.Artifacts = nil
+	repository.authority = authority
+	command.ExpectedProjectionRevision--
+	_, err = workflow.UpdateTournamentConfiguration(t.Context(), command)
+	var conflict *ConfigurationRevisionConflictError
+	if !errors.As(err, &conflict) || !errors.Is(err, domain.ErrConflict) || repository.calls != 0 {
+		t.Fatalf("stale error = %v, calls = %d", err, repository.calls)
 	}
 }
 

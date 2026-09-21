@@ -92,6 +92,7 @@ const configuration = (size: number): Configuration => ({
   projection_revision_id: "51000000-0000-4000-8000-000000000001",
   projection_revision: 9,
   configuration_revision: 3,
+  reserve_count: 1,
   category_pools: [
     {
       id: "51000000-0000-4000-8000-000000000002",

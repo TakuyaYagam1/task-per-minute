@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	goldenFailureAttemptLimit = domain.AssignmentReserveCount + 1
+	goldenFailureAttemptLimit = domain.MaxAssignmentReserveCount + 1
 	goldenFailureReceiptLimit = domain.TournamentMaxParticipants * 2
 )
 
@@ -96,7 +96,7 @@ func boundedTop4GoldenState(state goldenstate.GoldenState) bool {
 }
 
 func boundedTop4GoldenStateRoot(state goldenstate.GoldenState) bool {
-	planLimit := domain.TournamentMaxParticipants * (domain.AssignmentReserveCount + 1)
+	planLimit := domain.TournamentMaxParticipants * (domain.MaxAssignmentReserveCount + 1)
 	return len(state.Group.Members) <= domain.TournamentMaxParticipants &&
 		len(state.Group.Attempts) <= goldenFailureAttemptLimit &&
 		len(state.Windows) <= goldenFailureAttemptLimit && len(state.NoShows) <= goldenFailureAttemptLimit &&
@@ -144,7 +144,7 @@ func boundedTop4GoldenNoShows(state goldenstate.GoldenState) bool {
 func boundedTop4GoldenExactPlan(state goldenstate.GoldenState) bool {
 	for _, group := range state.ExactPlan.Groups {
 		if len(group.ParticipantIDs) > domain.TournamentMaxParticipants ||
-			len(group.Edges) > domain.AssignmentReserveCount+1 {
+			len(group.Edges) > domain.MaxAssignmentReserveCount+1 {
 			return false
 		}
 	}

@@ -125,6 +125,7 @@ type SemifinalStageAuthority struct {
 type FinalDraftPlan struct {
 	StageCommandID uuid.UUID
 	RosterID       uuid.UUID
+	ReserveCount   int
 	Advancement    []SemifinalAdvancementResult
 	Series         domain.Series
 	Category       draftusecase.CategoryRevision

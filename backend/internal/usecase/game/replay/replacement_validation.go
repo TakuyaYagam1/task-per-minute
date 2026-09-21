@@ -28,7 +28,7 @@ func validReplayReplacementHeader(replacement ReplayReplacement) bool {
 		replacement.ExpectedAuthorityRevision >= 1 && !replacement.ClosureRevisionID.IsZero() &&
 		replacement.FromSnapshotID != uuid.Nil && replacement.AssignmentAttemptID != uuid.Nil &&
 		replacement.ReservePosition >= 2 &&
-		replacement.ReservePosition <= operatorReplayReserveSnapshots &&
+		replacement.ReservePosition <= maxReplayReserveSnapshots &&
 		replacement.Category.IsValid() && replayValidServerTime(replacement.OpenedAt) &&
 		replacement.Snapshot.Validate() == nil &&
 		replacement.Snapshot.Category == replacement.Category &&
@@ -65,8 +65,8 @@ func (c ReplayReserveChain) Validate(category domain.Category) error {
 }
 
 func validReplayReserveSnapshotCount(snapshotCount int) bool {
-	return snapshotCount == baseReplayReserveSnapshots ||
-		snapshotCount == operatorReplayReserveSnapshots
+	return snapshotCount >= minReplayReserveSnapshots &&
+		snapshotCount <= maxReplayReserveSnapshots
 }
 
 func validateReplayReplacementCommand(command ReplayReplacementCommand) error {
@@ -123,15 +123,18 @@ func validateReplayReplacementAuthority(authority ReplayReplacementAuthority) er
 }
 
 func validateOperatorReserveChainPosition(authority ReplayReplacementAuthority) error {
-	if len(authority.ReserveChain.Snapshots) != operatorReplayReserveSnapshots {
-		return nil
+	chainLength := len(authority.ReserveChain.Snapshots)
+	activeIndex := authority.ReserveChain.ActiveIndex
+	if chainLength < minReplayReserveSnapshots || chainLength > maxReplayReserveSnapshots {
+		return replayReplacementError("reserve chain has an invalid length")
 	}
-
-	expectedActiveIndex := domain.AssignmentReserveCount
-	if authority.Current != nil {
-		expectedActiveIndex++
-	}
-	if authority.ReserveChain.ActiveIndex != expectedActiveIndex {
+	// A fourth edge is operator-owned, so the base reserves must be consumed
+	// before that edge can be selected. Earlier chain lengths may point at any
+	// already-consumed edge: the replacement use case separately returns the
+	// managed exhaustion result when the active edge is the final one. A
+	// committed Current is checked against the active snapshot below, while
+	// this bound prevents a malformed operator chain from skipping base edges.
+	if chainLength == maxReplayReserveSnapshots && activeIndex < chainLength-2 {
 		return replayReplacementError("operator reserve chain has an invalid active position")
 	}
 	return nil

@@ -1586,6 +1586,11 @@ export interface components {
             readonly projection_revision: number;
             /** Format: uuid */
             readonly projection_revision_id: string;
+            /**
+             * Format: int32
+             * @description Immutable normal and Golden reserve count selected for this published configuration.
+             */
+            readonly reserve_count: number;
             rounds: components["schemas"]["TournamentConfigurationRound"][];
             semifinal_default: components["schemas"]["TournamentConfigurationStageDefault"];
             series: components["schemas"]["TournamentConfigurationSeries"][];
@@ -1607,6 +1612,8 @@ export interface components {
             /** Format: int64 */
             expected_projection_revision: number;
             reason: string;
+            /** Format: int32 */
+            reserve_count: number;
             semifinal_default: components["schemas"]["TournamentConfigurationStageDefaultInput"];
             swiss_default: components["schemas"]["TournamentConfigurationStageDefaultInput"];
             unlock_intents: components["schemas"]["ConfigurationUnlockIntent"][];

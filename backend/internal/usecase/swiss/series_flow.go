@@ -124,7 +124,7 @@ func validateSeriesFlowAssignment(flow SeriesFlow) error {
 		locked.AssignmentPlanRevisionID != plan.PlanRevisionID {
 		return invalidSeriesFlow("RoundLock assignment plan does not match the graph")
 	}
-	if len(plan.SelectedEdges) != domain.AssignmentReserveCount+1 ||
+	if len(plan.SelectedEdges) < 1 || len(plan.SelectedEdges) > domain.MaxAssignmentReserveCount+1 ||
 		locked.ReservationID != plan.SelectedEdges[0].ReservationID {
 		return invalidSeriesFlow("RoundLock primary reservation does not match the graph")
 	}
@@ -162,7 +162,8 @@ func deriveLockedSeries(graph seriesgraph.SeriesGraph, input SeriesFlowInput) (L
 	if err := graph.Validate(); err != nil {
 		return LockedSeries{}, fmt.Errorf("%w: graph: %w", ErrInvalidSeriesFlow, err)
 	}
-	if len(graph.Assignments) != 1 || len(graph.Assignments[0].Plan.SelectedEdges) != domain.AssignmentReserveCount+1 {
+	if len(graph.Assignments) != 1 || len(graph.Assignments[0].Plan.SelectedEdges) < 1 ||
+		len(graph.Assignments[0].Plan.SelectedEdges) > domain.MaxAssignmentReserveCount+1 {
 		return LockedSeries{}, invalidSeriesFlow("materialized graph does not contain one complete BO1 assignment")
 	}
 	aggregate := graph.Assignments[0]

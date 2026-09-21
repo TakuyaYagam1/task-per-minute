@@ -56,6 +56,9 @@ const hasExactKeys = (value: RecordValue, keys: readonly string[]): boolean => {
 const isSafePositiveInteger = (value: unknown): value is number =>
   typeof value === "number" && Number.isSafeInteger(value) && value > 0;
 
+const isReserveCount = (value: unknown): value is number =>
+  typeof value === "number" && Number.isSafeInteger(value) && value >= 0 && value <= 2;
+
 const isNonNilUUID = (value: unknown): value is string =>
   isUUID(value) && value.toLowerCase() !== NIL_UUID;
 
@@ -191,6 +194,7 @@ export const isTournamentConfiguration = (value: unknown): value is TournamentCo
     "projection_revision_id",
     "projection_revision",
     "configuration_revision",
+    "reserve_count",
     "category_pools",
     "swiss_default",
     "golden_default",
@@ -204,6 +208,7 @@ export const isTournamentConfiguration = (value: unknown): value is TournamentCo
   isNonNilUUID(value.projection_revision_id) &&
   isSafePositiveInteger(value.projection_revision) &&
   isSafePositiveInteger(value.configuration_revision) &&
+  isReserveCount(value.reserve_count) &&
   isCategoryPoolList(value.category_pools) &&
   isStageDefault(value.swiss_default) &&
   isStageDefault(value.golden_default) &&

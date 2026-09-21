@@ -154,6 +154,32 @@ func TestContentConfigurationRevision(t *testing.T) {
 	})
 }
 
+func TestContentConfigurationReserveCountIsSharedAndBounded(t *testing.T) {
+	t.Parallel()
+
+	for _, reserveCount := range []int{0, 1, 2} {
+		input := task020ContentInput()
+		input.ReserveCount = reserveCount
+		configuration, err := domain.CreateContentConfiguration(input)
+		if err != nil {
+			t.Fatalf("reserve_count=%d: CreateContentConfiguration() error = %v", reserveCount, err)
+		}
+		if configuration.ReserveCount != reserveCount {
+			t.Fatalf("reserve_count=%d: configuration retained %d", reserveCount, configuration.ReserveCount)
+		}
+		if err := configuration.Validate(); err != nil {
+			t.Fatalf("reserve_count=%d: Validate() error = %v", reserveCount, err)
+		}
+	}
+	for _, reserveCount := range []int{-1, 3} {
+		input := task020ContentInput()
+		input.ReserveCount = reserveCount
+		if _, err := domain.CreateContentConfiguration(input); !errors.Is(err, domain.ErrInvalidContentConfiguration) {
+			t.Fatalf("reserve_count=%d: error = %v, want ErrInvalidContentConfiguration", reserveCount, err)
+		}
+	}
+}
+
 func TestContentConfigurationStageDefaultModes(t *testing.T) {
 	t.Parallel()
 

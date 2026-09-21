@@ -30,6 +30,7 @@ type ConservativePlanInput struct {
 	ID                   uuid.UUID
 	TournamentID         uuid.UUID
 	RosterID             uuid.UUID
+	ReserveCount         int
 	RevisionID           uuid.UUID
 	SourceRosterRevision int64
 	SourcePoolRevisionID uuid.UUID
@@ -42,6 +43,7 @@ type ExactPlanInput struct {
 	ID                   uuid.UUID
 	TournamentID         uuid.UUID
 	RosterID             uuid.UUID
+	ReserveCount         int
 	ParentPlanID         uuid.UUID
 	RevisionID           uuid.UUID
 	SourceRosterRevision int64
@@ -76,6 +78,7 @@ type AssignmentPlanRecord struct {
 	ID                    uuid.UUID
 	TournamentID          uuid.UUID
 	RosterID              uuid.UUID
+	ReserveCount          int
 	Kind                  string
 	ParentPlanID          *uuid.UUID
 	RevisionID            uuid.UUID
@@ -173,6 +176,7 @@ type AssignmentRecord struct {
 	PlanID                 uuid.UUID
 	BranchID               uuid.UUID
 	ReservationID          uuid.UUID
+	ReserveCount           int
 	Snapshot               TaskSnapshotRecord
 	SupersedesAssignmentID *uuid.UUID
 	State                  string
@@ -211,6 +215,7 @@ func (r *AssignmentPostgres) CreateConservativePlan(
 			ID:                   in.ID,
 			TournamentID:         in.TournamentID,
 			RosterID:             in.RosterID,
+			ReserveCount:         int16(in.ReserveCount), //nolint:gosec // validation bounds the reserve count to 0..2.
 			RevisionID:           in.RevisionID,
 			SourceRosterRevision: in.SourceRosterRevision,
 			SourcePoolRevisionID: in.SourcePoolRevisionID,
@@ -256,6 +261,7 @@ func (r *AssignmentPostgres) CreateExactPlan(
 				ID:                       in.ID,
 				TournamentID:             in.TournamentID,
 				RosterID:                 in.RosterID,
+				ReserveCount:             int16(in.ReserveCount), //nolint:gosec // validation bounds the reserve count to 0..2.
 				ParentPlanID:             uuid.NullUUID{UUID: in.ParentPlanID, Valid: true},
 				RevisionID:               in.RevisionID,
 				SourceRosterRevision:     in.SourceRosterRevision,
@@ -425,13 +431,26 @@ func (r *AssignmentPostgres) commitBranchTx(
 	) {
 		return errAssignmentCAS
 	}
+	edges, err := querier.ListAssignmentPlanEdges(ctx, planID)
+	if err != nil {
+		return err
+	}
+	expectedReservations := 0
+	for _, edge := range edges {
+		if edge.BranchID == branchID {
+			expectedReservations++
+		}
+	}
+	if expectedReservations < 1 || expectedReservations > domain.MaxAssignmentReserveCount+1 {
+		return errAssignmentCAS
+	}
 	committed, err := querier.CommitAssignmentBranchReservations(ctx, sqlc.CommitAssignmentBranchReservationsParams{
 		CommittedAt: tstz(committedAt), PlanID: planID, BranchID: branchID,
 	})
 	if err != nil {
 		return err
 	}
-	if len(committed) != domain.AssignmentReserveCount+1 {
+	if len(committed) != expectedReservations {
 		return errAssignmentCAS
 	}
 	if _, err = querier.ReleaseOtherAssignmentBranchReservations(

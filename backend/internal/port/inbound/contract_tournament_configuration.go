@@ -90,6 +90,7 @@ type AdminTournamentConfigurationView struct {
 	ProjectionRevisionID  uuid.UUID
 	ProjectionRevision    int64
 	ConfigurationRevision int64
+	ReserveCount          int
 	CategoryPools         []AdminConfigurationCategoryPoolView
 	SwissDefault          AdminConfigurationStageDefault
 	GoldenDefault         AdminConfigurationStageDefault
@@ -106,6 +107,7 @@ type AdminUpdateTournamentConfigurationCommand struct {
 	CommandID                     uuid.UUID
 	ExpectedProjectionRevision    int64
 	ExpectedConfigurationRevision int64
+	ReserveCount                  int
 	Confirmed                     bool
 	Reason                        string
 	SwissDefault                  AdminConfigurationStageDefault

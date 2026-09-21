@@ -29,7 +29,8 @@ func TestAssignmentRepositoryCommitsProofAndDeliversExactlyOnce(t *testing.T) {
 	conservativeID := uuid.New()
 	conservative, err := repository.CreateConservativePlan(ctx, assignmentrepo.ConservativePlanInput{
 		ID: conservativeID, TournamentID: draft.tournamentID, RosterID: draft.rosterID,
-		RevisionID: uuid.New(), SourceRosterRevision: 1, SourcePoolRevisionID: poolRevisionID,
+		ReserveCount: domain.AssignmentReserveCount,
+		RevisionID:   uuid.New(), SourceRosterRevision: 1, SourcePoolRevisionID: poolRevisionID,
 		ConstraintGraph: map[string]any{"scope": "all-reachable-branches"},
 		ProofEvidence:   map[string]any{"feasible": true}, CreatedAt: baseTime,
 	})
@@ -50,6 +51,7 @@ func TestAssignmentRepositoryCommitsProofAndDeliversExactlyOnce(t *testing.T) {
 	exactRevisionID := uuid.New()
 	exact, err := repository.CreateExactPlan(ctx, assignmentrepo.ExactPlanInput{
 		ID: exactID, TournamentID: draft.tournamentID, RosterID: draft.rosterID,
+		ReserveCount: domain.AssignmentReserveCount,
 		ParentPlanID: conservativeID, RevisionID: exactRevisionID, SourceRosterRevision: 1,
 		SourcePoolRevisionID: poolRevisionID, SourceDraftRevision: draft.initialRevisionID,
 		ConstraintGraph: map[string]any{"source": "conservative-proof"},

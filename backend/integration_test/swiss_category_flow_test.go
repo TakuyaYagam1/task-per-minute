@@ -296,6 +296,9 @@ func TestSwissCategoryInsufficientCandidatesRejectPreflightBeforePairing(t *test
 	content := getTournamentContentThroughREST(t, fixture, adminToken)
 	created := createTournamentThroughREST(t, fixture, adminToken, content.ContentRevision, "insufficient-candidates")
 	openRegistrationThroughREST(t, fixture, adminToken, created.Id, created.Revision)
+	setTournamentReserveCountThroughREST(
+		t, fixture, adminToken, created.Id, domain.AssignmentReserveCount,
+	)
 	roster := replaceTournamentRosterThroughREST(t, fixture, adminToken, created.Id, players)
 	before := tournamentAdminSnapshotThroughREST(t, fixture, adminToken, created.Id)
 	commandsBefore := swissPairingCommandCount(t, created.Id)
@@ -354,6 +357,9 @@ func newSwissCategoryFlowWithNormalTaskTimeLimit(
 	players := joinTournamentFlowPlayers(t, fixture, 4)
 	created := createTournamentThroughREST(t, fixture, adminToken, catalog.revision, "swiss-category-"+name)
 	openRegistrationThroughREST(t, fixture, adminToken, created.Id, created.Revision)
+	setTournamentReserveCountThroughREST(
+		t, fixture, adminToken, created.Id, domain.AssignmentReserveCount,
+	)
 	roster := replaceTournamentRosterThroughREST(t, fixture, adminToken, created.Id, players)
 	preflight := runTournamentRosterPreflightThroughREST(t, fixture, adminToken, created.Id)
 	lockTournamentRosterThroughREST(t, fixture, adminToken, created.Id, roster, preflight)

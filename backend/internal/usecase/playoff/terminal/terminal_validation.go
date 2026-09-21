@@ -18,7 +18,7 @@ func (a SemifinalStageAuthority) valid() error {
 
 //nolint:gocyclo // One cohesive audit boundary keeps cross-field invariants and fail-closed branches explicit.
 func (p FinalDraftPlan) valid() error {
-	if p.StageCommandID == uuid.Nil || p.RosterID == uuid.Nil || !p.IDs.Valid() ||
+	if p.StageCommandID == uuid.Nil || p.RosterID == uuid.Nil || !domain.IsValidAssignmentReserveCount(p.ReserveCount) || !p.IDs.Valid() ||
 		!domain.IsValidServerTime(p.CreatedAt) || len(p.Advancement) != 2 ||
 		p.Series.Validate() != nil || p.Series.ID != p.IDs.FinalSeriesID ||
 		p.Series.Format != domain.SeriesFormatBO3 || p.Series.State != domain.SeriesStatePlanned ||

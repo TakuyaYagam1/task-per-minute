@@ -440,17 +440,17 @@ func buildSlotAggregate(
 		Category: plan.Category, ScoreBefore: domain.SeriesScore{}, Attempts: []domain.Game{attempt},
 	}
 
-	if len(plan.SelectedEdges) != domain.AssignmentReserveCount+1 {
-		return domain.GameSlot{}, AssignmentAggregate{}, invalidSeriesGraph("assignment plan does not contain primary and reserve edges")
+	if len(plan.SelectedEdges) < 1 || len(plan.SelectedEdges) > domain.MaxAssignmentReserveCount+1 {
+		return domain.GameSlot{}, AssignmentAggregate{}, invalidSeriesGraph("assignment plan does not contain a valid primary and reserve chain")
 	}
 	primary := plan.SelectedEdges[0].Snapshot
-	reserves := make([]domain.AssignmentTaskSnapshot, domain.AssignmentReserveCount)
+	reserves := make([]domain.AssignmentTaskSnapshot, len(plan.SelectedEdges)-1)
 	for index := range reserves {
 		reserves[index] = plan.SelectedEdges[index+1].Snapshot
 	}
-	assignment, err := domain.NewAssignment(
+	assignment, err := domain.NewAssignmentWithReserveCount(
 		assignmentID, attemptID, series.FirstParticipantID, series.SecondParticipantID,
-		primary, reserves,
+		primary, reserves, len(reserves),
 	)
 	if err != nil {
 		return domain.GameSlot{}, AssignmentAggregate{}, invalidSeriesGraph("assignment aggregate: %v", err)

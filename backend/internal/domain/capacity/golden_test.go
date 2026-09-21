@@ -50,6 +50,27 @@ func TestGoldenAssignmentSolver(t *testing.T) {
 		})
 	}
 
+	t.Run("scales the 4-player proof with the shared reserve count", func(t *testing.T) {
+		t.Parallel()
+
+		for _, test := range []struct {
+			reserveCount int
+			wantRequired int
+		}{
+			{reserveCount: 0, wantRequired: 2},
+			{reserveCount: 1, wantRequired: 4},
+			{reserveCount: 2, wantRequired: 6},
+		} {
+			proof := capacity.ProveGolden(task021GoldenCapacityInputWithReserveCount(4, test.reserveCount))
+			if !proof.Certified || proof.ReserveCount != test.reserveCount {
+				t.Fatalf("reserve_count=%d proof = %+v, want certified", test.reserveCount, proof)
+			}
+			if proof.RequiredTaskVersions != test.wantRequired {
+				t.Fatalf("reserve_count=%d total required versions = %d, want %d", test.reserveCount, proof.RequiredTaskVersions, test.wantRequired)
+			}
+		}
+	})
+
 	t.Run("rejects overlap with the normal pool", func(t *testing.T) {
 		t.Parallel()
 
@@ -102,12 +123,16 @@ func TestGoldenAssignmentSolver(t *testing.T) {
 }
 
 func task021GoldenCapacityInput(rosterSize int) capacity.GoldenInput {
+	return task021GoldenCapacityInputWithReserveCount(rosterSize, domain.AssignmentReserveCount)
+}
+
+func task021GoldenCapacityInputWithReserveCount(rosterSize, reserveCount int) capacity.GoldenInput {
 	participants := make([]uuid.UUID, rosterSize)
 	for i := range participants {
 		participants[i] = task021ID(200 + i)
 	}
 	goldenPoolID := task021ID(30)
-	required := rosterSize / 2 * (domain.AssignmentReserveCount + 1)
+	required := rosterSize / 2 * (reserveCount + 1)
 	versions := make([]capacity.TaskVersion, required)
 	refs := make([]domain.TaskVersionRef, required)
 	for i := range versions {
@@ -122,6 +147,7 @@ func task021GoldenCapacityInput(rosterSize int) capacity.GoldenInput {
 	}
 	return capacity.GoldenInput{
 		Preset:         domain.TournamentPresetV1,
+		ReserveCount:   reserveCount,
 		ParticipantIDs: participants,
 		NormalPool: domain.TaskPoolRevision{
 			ID: task021ID(20), Revision: 7, Kind: domain.AssignmentTaskKindNormal,

@@ -290,6 +290,7 @@ const configuration = (): Schema["TournamentConfiguration"] => ({
     },
   ],
   configuration_revision: 1,
+  reserve_count: 1,
   final_default: {
     categories: ["web", "crypto", "pwn", "reverse", "osint"],
     mode: "draft",

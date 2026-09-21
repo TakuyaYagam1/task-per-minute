@@ -8,7 +8,15 @@ import (
 	"github.com/google/uuid"
 )
 
-const AssignmentReserveCount = 2
+const (
+	// MaxAssignmentReserveCount is the largest reserve chain supported by the
+	// current tournament contract.
+	MaxAssignmentReserveCount = 2
+	// AssignmentReserveCount is retained as the legacy/default chain size for
+	// callers that predate versioned reserve configuration. New workflows must
+	// carry the configured count explicitly.
+	AssignmentReserveCount = MaxAssignmentReserveCount
+)
 
 type AssignmentTaskKind string
 
@@ -60,9 +68,13 @@ type Assignment struct {
 	id             uuid.UUID
 	attemptID      uuid.UUID
 	participantIDs [2]uuid.UUID
-	snapshots      [AssignmentReserveCount + 1]AssignmentTaskSnapshot
+	snapshots      []AssignmentTaskSnapshot
 	activeIndex    int
 	receipts       []TaskDeliveryReceipt
+}
+
+func IsValidAssignmentReserveCount(count int) bool {
+	return count >= 0 && count <= MaxAssignmentReserveCount
 }
 
 func (k AssignmentTaskKind) IsValid() bool {
@@ -165,13 +177,36 @@ func NewAssignment(
 	primary AssignmentTaskSnapshot,
 	reserves []AssignmentTaskSnapshot,
 ) (Assignment, error) {
-	if len(reserves) != AssignmentReserveCount {
-		return Assignment{}, fmt.Errorf("%w: exactly two reserves required", ErrInvalidAssignment)
+	return NewAssignmentWithReserveCount(
+		id, attemptID, firstParticipantID, secondParticipantID,
+		primary, reserves, AssignmentReserveCount,
+	)
+}
+
+// NewAssignmentWithReserveCount builds a primary task plus the configured
+// number of reserves. The variadic legacy constructor above intentionally
+// keeps the old two-reserve contract for callers that do not yet carry the
+// tournament content configuration.
+func NewAssignmentWithReserveCount(
+	id uuid.UUID,
+	attemptID uuid.UUID,
+	firstParticipantID uuid.UUID,
+	secondParticipantID uuid.UUID,
+	primary AssignmentTaskSnapshot,
+	reserves []AssignmentTaskSnapshot,
+	reserveCount int,
+) (Assignment, error) {
+	if !IsValidAssignmentReserveCount(reserveCount) {
+		return Assignment{}, fmt.Errorf("%w: invalid reserve count %d", ErrInvalidAssignment, reserveCount)
+	}
+	if len(reserves) != reserveCount {
+		return Assignment{}, fmt.Errorf("%w: reserve count %d does not match %d snapshots", ErrInvalidAssignment, reserveCount, len(reserves))
 	}
 	assignment := Assignment{
 		id:             id,
 		attemptID:      attemptID,
 		participantIDs: [2]uuid.UUID{firstParticipantID, secondParticipantID},
+		snapshots:      make([]AssignmentTaskSnapshot, reserveCount+1),
 	}
 	assignment.snapshots[0] = cloneTaskSnapshot(primary)
 	for i := range reserves {
@@ -213,6 +248,13 @@ func (a Assignment) ActiveSnapshot() AssignmentTaskSnapshot {
 
 func (a Assignment) UndisclosedReserveCount() int {
 	return len(a.snapshots) - a.activeIndex - 1
+}
+
+func (a Assignment) ReserveCount() int {
+	if len(a.snapshots) == 0 {
+		return 0
+	}
+	return len(a.snapshots) - 1
 }
 
 func (a Assignment) Receipts() []TaskDeliveryReceipt {
@@ -278,6 +320,9 @@ func ParticipantTaskInstanceID(assignmentID, participantID uuid.UUID) uuid.UUID 
 }
 
 func (a Assignment) validateSnapshots() error {
+	if len(a.snapshots) < 1 || len(a.snapshots) > MaxAssignmentReserveCount+1 {
+		return fmt.Errorf("%w: invalid reserve chain length", ErrInvalidAssignment)
+	}
 	seenTaskIDs := make(map[uuid.UUID]struct{}, len(a.snapshots))
 	seenSnapshotIDs := make(map[uuid.UUID]struct{}, len(a.snapshots))
 	for _, snapshot := range a.snapshots {

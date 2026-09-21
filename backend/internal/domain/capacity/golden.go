@@ -18,6 +18,7 @@ type GoldenGroupProof struct {
 
 type GoldenProof struct {
 	Certified             bool
+	ReserveCount          int
 	NormalPoolRevisionID  uuid.UUID
 	NormalPoolRevision    int64
 	PoolRevisionID        uuid.UUID
@@ -32,6 +33,7 @@ type GoldenProof struct {
 
 type GoldenInput struct {
 	Preset         domain.TournamentPreset
+	ReserveCount   int
 	ParticipantIDs []uuid.UUID
 	NormalPool     domain.TaskPoolRevision
 	GoldenPool     domain.TaskPoolRevision
@@ -45,7 +47,7 @@ func ProveGolden(in GoldenInput) GoldenProof {
 		return failedGolden(*failure)
 	}
 
-	chainSize := domain.AssignmentReserveCount + 1
+	chainSize := in.ReserveCount + 1
 	required := len(participants) / 2 * chainSize
 	if len(versions) < required {
 		return failedGolden(Failure{
@@ -80,6 +82,7 @@ func ProveGolden(in GoldenInput) GoldenProof {
 
 	proof := GoldenProof{
 		Certified:             true,
+		ReserveCount:          in.ReserveCount,
 		NormalPoolRevisionID:  normalPool.ID,
 		NormalPoolRevision:    normalPool.Revision,
 		PoolRevisionID:        goldenPool.ID,
@@ -112,6 +115,9 @@ func ProveGolden(in GoldenInput) GoldenProof {
 func normalizeGoldenInput(
 	in GoldenInput,
 ) ([]uuid.UUID, domain.TaskPoolRevision, domain.TaskPoolRevision, []TaskVersion, map[uuid.UUID]map[domain.TaskVersionRef]struct{}, *Failure) {
+	if !domain.IsValidAssignmentReserveCount(in.ReserveCount) {
+		return nil, domain.TaskPoolRevision{}, domain.TaskPoolRevision{}, nil, nil, &Failure{Code: FailureGoldenInvalidInput}
+	}
 	participants, ok := normalizedParticipants(in.Preset, in.ParticipantIDs)
 	if !ok {
 		return nil, domain.TaskPoolRevision{}, domain.TaskPoolRevision{}, nil, nil, &Failure{Code: FailureGoldenInvalidInput}
@@ -141,6 +147,7 @@ func normalizeGoldenInput(
 func goldenDigest(proof GoldenProof, normalPool domain.TaskPoolRevision) string {
 	hash := sha256.New()
 	writeField(hash, GraphAlgorithmV1)
+	writeField(hash, fmt.Sprintf("reserve_count:%d", proof.ReserveCount))
 	writeField(hash, "normal_pool:"+normalPool.ID.String())
 	writeField(hash, fmt.Sprintf("normal_pool_revision:%d", normalPool.Revision))
 	writeField(hash, "golden_pool:"+proof.PoolRevisionID.String())

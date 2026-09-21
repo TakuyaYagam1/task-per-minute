@@ -73,6 +73,7 @@ func TestTournamentConfigurationDefaultsThroughProductionHTTPAndPostgres(t *test
 	require.Equal(t, "no-store", response.Header().Get("Cache-Control"))
 	initial := decodeJSON[api.TournamentConfiguration](t, response)
 	require.Equal(t, tournament.Id, initial.TournamentId)
+	require.Zero(t, initial.ReserveCount, "new tournaments default to no reserve tasks")
 	require.Len(t, initial.CategoryPools, 2)
 	require.Empty(t, initial.Series)
 
@@ -88,6 +89,7 @@ func TestTournamentConfigurationDefaultsThroughProductionHTTPAndPostgres(t *test
 	body, err := json.Marshal(api.UpdateTournamentConfigurationRequest{
 		ExpectedProjectionRevision:    initial.ProjectionRevision,
 		ExpectedConfigurationRevision: initial.ConfigurationRevision,
+		ReserveCount:                  1,
 		Confirmed:                     api.UpdateTournamentConfigurationRequestConfirmed(true),
 		Reason:                        "set explicit operator defaults before execution",
 		SwissDefault: api.TournamentConfigurationStageDefaultInput{
@@ -117,10 +119,20 @@ func TestTournamentConfigurationDefaultsThroughProductionHTTPAndPostgres(t *test
 	fixture.validateResponse(t, request, response)
 	updated := decodeJSON[api.TournamentConfiguration](t, response)
 	require.Equal(t, initial.ConfigurationRevision+1, updated.ConfigurationRevision)
+	require.Equal(t, int32(1), updated.ReserveCount)
 	require.Equal(t, api.CategoryModeAdmin, updated.SwissDefault.Mode)
 	require.Equal(t, []api.Category{selectedCategory}, updated.SwissDefault.Categories)
 	require.Equal(t, api.CategoryModeRandom, updated.SemifinalDefault.Mode)
 	require.Equal(t, []api.Category{selectedCategory}, updated.SemifinalDefault.Categories)
+	persisted, err := configurationrepo.NewProductionTournamentConfigurationPostgres(fixture.mgr).LoadConfiguration(
+		ctx,
+		configurationusecase.ConfigurationLoadQuery{
+			Operator:     adminoperation.OperatorIdentity{ActorID: uuid.New()},
+			TournamentID: tournament.Id,
+		},
+	)
+	require.NoError(t, err)
+	require.Equal(t, 1, persisted.Configuration.ReserveCount)
 
 	request, response = doTournamentFlowJSON(
 		t, fixture, http.MethodPatch, path, string(body), adminSession(adminToken), commandID, "",

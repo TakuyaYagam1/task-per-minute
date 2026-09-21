@@ -193,7 +193,9 @@ func (r *TournamentProgressionPostgres) preparePlayoffSemifinalMaterialization(
 	}
 
 	planID := tournamentAdminExecutionID(match.Series.ID, fmt.Sprintf("playoff-semifinal-%d-exact-normal-plan", index+1))
-	exactCommand := playoffSemifinalExactNormalCommand(command, match, revision.ID, slotID, planID, createdAt, index)
+	exactCommand := playoffSemifinalExactNormalCommand(
+		command, match, revision.ID, slotID, planID, configuration.ReserveCount, createdAt, index,
+	)
 	exactRepository := NewExactNormalAssignmentPostgres(r.tx)
 	exactUseCase := assignmentusecase.NewExactNormalAssignmentUseCase(exactRepository)
 	exactPlan, _, err := exactUseCase.PlanAndCommit(ctx, exactCommand)
@@ -236,13 +238,14 @@ func playoffSemifinalExactNormalCommand(
 	command tournamentprogression.Command,
 	match playoff.SemifinalMatch,
 	categoryRevisionID, slotID, planID uuid.UUID,
+	reserveCount int,
 	createdAt time.Time,
 	index int,
 ) assignmentusecase.ExactNormalAssignmentCommand {
 	var edgeIDs [domain.AssignmentReserveCount + 1]uuid.UUID
 	var reservationIDs [domain.AssignmentReserveCount + 1]uuid.UUID
 	var snapshotIDs [domain.AssignmentReserveCount + 1]uuid.UUID
-	for position := range edgeIDs {
+	for position := 0; position <= reserveCount; position++ {
 		edgeIDs[position] = tournamentAdminExecutionID(planID, fmt.Sprintf("playoff-semifinal-%d-exact-normal-edge-%d", index+1, position+1))
 		reservationIDs[position] = tournamentAdminExecutionID(planID, fmt.Sprintf("playoff-semifinal-%d-exact-normal-reservation-%d", index+1, position+1))
 		snapshotIDs[position] = tournamentAdminExecutionID(planID, fmt.Sprintf("playoff-semifinal-%d-exact-normal-snapshot-%d", index+1, position+1))
@@ -321,7 +324,8 @@ func (r *TournamentProgressionPostgres) persistPlayoffSemifinalGraph(
 	}); err != nil {
 		return executionWriteError("link playoff semifinal wave", err)
 	}
-	if len(graph.Assignments[0].Plan.SelectedEdges) != domain.AssignmentReserveCount+1 {
+	if len(graph.Assignments[0].Plan.SelectedEdges) < 1 ||
+		len(graph.Assignments[0].Plan.SelectedEdges) > domain.MaxAssignmentReserveCount+1 {
 		return domain.ErrConflict
 	}
 	aggregate := graph.Assignments[0]

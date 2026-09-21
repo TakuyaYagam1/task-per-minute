@@ -144,9 +144,16 @@ type OperatorReserveRepository interface {
 }
 
 const (
-	replayReplacementAttempts      = 2
-	baseReplayReserveSnapshots     = domain.AssignmentReserveCount + 1
-	operatorReplayReserveSnapshots = baseReplayReserveSnapshots + 1
+	replayReplacementAttempts = 2
+	// A published assignment always has one primary snapshot and may have the
+	// configured immutable reserve count. The replay workflow also accepts one
+	// operator-appended snapshot after exhaustion. The active position is
+	// validated against the actual slice length; these bounds only protect the
+	// authority from malformed or unbounded input.
+	minReplayReserveSnapshots = 1
+	// One primary plus the largest configured reserve chain and one optional
+	// operator extension is the largest replay authority we can accept.
+	maxReplayReserveSnapshots = domain.MaxAssignmentReserveCount + 2
 )
 
 var (

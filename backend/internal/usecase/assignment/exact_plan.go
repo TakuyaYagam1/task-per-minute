@@ -78,9 +78,15 @@ func buildExactNormalAssignment(
 	if err != nil {
 		return ExactNormalAssignmentPlan{}, err
 	}
+	reserveCount, err := command.ReserveCount()
+	if err != nil {
+		return ExactNormalAssignmentPlan{}, err
+	}
 	eligible = exactNormalAvailableCandidates(eligible, unavailable)
-	if len(eligible) < domain.AssignmentReserveCount+1 {
-		return ExactNormalAssignmentPlan{}, exactNormalCapacityError("fewer than three unreserved task versions")
+	if len(eligible) < reserveCount+1 {
+		return ExactNormalAssignmentPlan{}, exactNormalCapacityError(
+			fmt.Sprintf("fewer than %d unreserved task versions", reserveCount+1),
+		)
 	}
 
 	inputs := make([]string, len(eligible))
@@ -111,7 +117,7 @@ func buildExactNormalAssignment(
 		CandidateTaskVersions:   exactNormalTaskVersionRefs(eligible),
 		GraphDigest:             canonical.GraphDigest, ArtifactDigest: canonical.ArtifactDigest,
 		DecisionEvidence: evidence, CreatedAt: command.CreatedAt,
-		SelectedEdges: make([]ExactNormalAssignmentEdge, domain.AssignmentReserveCount+1),
+		SelectedEdges: make([]ExactNormalAssignmentEdge, reserveCount+1),
 	}
 	for index := range plan.SelectedEdges {
 		candidate := byEvidence[evidence.Result[index]]

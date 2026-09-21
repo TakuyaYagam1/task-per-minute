@@ -343,6 +343,7 @@ func (r *TournamentConfigurationPostgres) ExecuteMutation(
 				ConfigurationID: resultConfigurationID, TournamentID: mutation.Authority.TournamentID,
 				SourceConfigurationID: current.ConfigurationID, SourceConfigurationRevision: current.ConfigurationRevision,
 				SourceConfigurationHeadRevision: current.ConfigurationHeadRevision,
+				ReserveCount:                    int16(mutation.NextConfiguration.ReserveCount), //nolint:gosec // validated as 0..2 by the domain.
 				PoolPublicationID:               currentConfiguration.PoolPublicationID,
 				NormalPoolRevisionID:            mutation.NextConfiguration.NormalPool.ID, GoldenPoolRevisionID: mutation.NextConfiguration.GoldenPool.ID,
 				CreatedAt: validTimestamp(mutation.Evidence.RequestedAt),
@@ -870,6 +871,7 @@ func configurationContent(
 	slices.SortFunc(goldenVersions, domain.CompareTaskVersionRefs)
 	return domain.ContentConfiguration{
 		TournamentID: row.TournamentID, Revision: row.Revision, CategoryPools: categoryPools,
+		ReserveCount:  int(row.ReserveCount),
 		NormalPool:    domain.TaskPoolRevision{ID: row.NormalPoolRevisionID, Revision: row.NormalPoolRevision, Kind: domain.AssignmentTaskKindNormal, Versions: normalVersions},
 		GoldenPool:    domain.TaskPoolRevision{ID: row.GoldenPoolRevisionID, Revision: row.GoldenPoolRevision, Kind: domain.AssignmentTaskKindGolden, Versions: goldenVersions},
 		StageDefaults: []domain.StageContentDefault{},

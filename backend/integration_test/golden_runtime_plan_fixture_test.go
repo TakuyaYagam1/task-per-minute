@@ -72,6 +72,7 @@ func createGoldenRuntimeTestPlan(
 	parentPlanID := uuid.New()
 	_, err := assignmentRepository.CreateConservativePlan(ctx, assignmentrepo.ConservativePlanInput{
 		ID: parentPlanID, TournamentID: tournamentID, RosterID: rosterID, RevisionID: uuid.New(),
+		ReserveCount:         domain.AssignmentReserveCount,
 		SourceRosterRevision: rosterRevision, SourcePoolRevisionID: poolID,
 		ConstraintGraph: map[string]any{"kind": "golden_capacity"},
 		ProofEvidence:   map[string]any{"group_count": len(groups), "tasks_per_group": 3},

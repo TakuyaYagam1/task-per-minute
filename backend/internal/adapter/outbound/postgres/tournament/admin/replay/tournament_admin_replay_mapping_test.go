@@ -1,6 +1,7 @@
 package replay
 
 import (
+	"strconv"
 	"testing"
 	"time"
 
@@ -31,6 +32,45 @@ func TestReplayWorkflowReserveChainAcceptsBoundedOperatorReserve(t *testing.T) {
 	require.Equal(t, 2, chain.ActiveIndex)
 	require.Len(t, chain.Snapshots, 4)
 	require.Len(t, reservations, 4)
+}
+
+func TestReplayWorkflowReserveChainAcceptsOperatorAppendAfterEveryOriginalLength(t *testing.T) {
+	t.Parallel()
+
+	for originalLength := 1; originalLength <= 3; originalLength++ {
+		t.Run("original_length_"+strconv.Itoa(originalLength), func(t *testing.T) {
+			t.Parallel()
+
+			operatorCommandID := uuid.New()
+			rows := replayWorkflowReserveChainRows(originalLength+1, &operatorCommandID)
+			chain, _, err := replayWorkflowReserveChain(
+				uuid.New(), rows[originalLength-1].TaskSnapshot.ID, rows, &operatorCommandID,
+			)
+
+			require.NoError(t, err)
+			require.Equal(t, originalLength-1, chain.ActiveIndex)
+			require.Len(t, chain.Snapshots, originalLength+1)
+		})
+	}
+}
+
+func TestReplayWorkflowReserveChainAcceptsEveryOriginalLength(t *testing.T) {
+	t.Parallel()
+
+	for chainLength := 1; chainLength <= 3; chainLength++ {
+		t.Run("chain_length_"+strconv.Itoa(chainLength), func(t *testing.T) {
+			t.Parallel()
+
+			rows := replayWorkflowReserveChainRows(chainLength, nil)
+			chain, _, err := replayWorkflowReserveChain(
+				uuid.New(), rows[chainLength-1].TaskSnapshot.ID, rows, nil,
+			)
+
+			require.NoError(t, err)
+			require.Equal(t, chainLength-1, chain.ActiveIndex)
+			require.Len(t, chain.Snapshots, chainLength)
+		})
+	}
 }
 
 func TestReplayWorkflowReserveChainRejectsUnboundFourthReserve(t *testing.T) {
@@ -74,7 +114,7 @@ func replayWorkflowReserveChainRows(
 		}
 		result[index].TaskVersionReservation.TaskID = result[index].AssignmentPlanEdge.TaskID
 		result[index].TaskSnapshot.TaskID = result[index].AssignmentPlanEdge.TaskID
-		if position == 4 && operatorCommandID != nil {
+		if position == count && operatorCommandID != nil {
 			result[index].AssignmentPlanEdge.OperatorReserveCommandID = uuid.NullUUID{UUID: *operatorCommandID, Valid: true}
 		}
 	}
