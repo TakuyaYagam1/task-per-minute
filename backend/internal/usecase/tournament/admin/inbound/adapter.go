@@ -92,6 +92,20 @@ func (a *inboundAdapter) CorrectGameResult(ctx context.Context, c inbound.AdminC
 	return inboundCorrectionEvidence(evidence), adminInboundError(err)
 }
 
+func (a *inboundAdapter) PrepareGameResultCorrection(
+	ctx context.Context,
+	c inbound.AdminCorrectionCommand,
+) (inbound.AdminCorrectionCommand, error) {
+	preparer, ok := a.next.(interface {
+		PrepareGameResultCorrection(ctx context.Context, command CorrectionCommand) (CorrectionCommand, error)
+	})
+	if !ok {
+		return inbound.AdminCorrectionCommand{}, domain.ErrInternal
+	}
+	prepared, err := preparer.PrepareGameResultCorrection(ctx, correctionCommand(c))
+	return inboundCorrectionCommand(prepared), adminInboundError(err)
+}
+
 func (a *inboundAdapter) ListAudit(ctx context.Context, query inbound.AdminAuditQuery) (inbound.AdminAuditPage, error) {
 	page, err := a.next.ListAudit(ctx, AuditQuery{Operator: operatorIdentity(query.Operator), Filter: auditFilter(query.Filter)})
 	return mapAuditPage(page), err

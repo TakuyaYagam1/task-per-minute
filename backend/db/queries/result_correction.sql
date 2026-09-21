@@ -277,9 +277,19 @@ SELECT CASE
         WHERE result_event.tournament_id = tournament.id
             AND result_event.roster_id = sqlc.arg(roster_id)
             AND result_event.series_id = sqlc.arg(series_id)
-            AND result_event.result_reason IN ('no_show', 'operator_forfeit')
+            AND result_event.result_reason = 'no_show'
             AND result_event.occurred_at > source.created_at
-    ) THEN 'no_show_or_forfeit'
+    ) THEN 'no_show_recorded'
+    WHEN EXISTS (
+        SELECT 1
+        FROM result_events AS result_event
+        CROSS JOIN source_revision AS source
+        WHERE result_event.tournament_id = tournament.id
+            AND result_event.roster_id = sqlc.arg(roster_id)
+            AND result_event.series_id = sqlc.arg(series_id)
+            AND result_event.result_reason = 'operator_forfeit'
+            AND result_event.occurred_at > source.created_at
+    ) THEN 'forfeit_recorded'
     WHEN EXISTS (
         SELECT 1
         FROM golden_memberships AS membership

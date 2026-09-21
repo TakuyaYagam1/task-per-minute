@@ -80,6 +80,7 @@ func TestTournamentRatePolicyMatchesCanonicalOpenAPISpec(t *testing.T) {
 		"recordTournamentForfeit":                  tournamentOperatorMutation,
 		"replayTournamentGame":                     tournamentOperatorMutation,
 		"correctTournamentGameResult":              tournamentOperatorMutation,
+		"preflightTournamentGameCorrection":        tournamentOperatorMutation,
 		"exportTournamentIncident":                 tournamentOperatorRead,
 		"getOperatorSnapshot":                      tournamentOperatorRead,
 		"getGoldenOperatorState":                   tournamentOperatorRead,

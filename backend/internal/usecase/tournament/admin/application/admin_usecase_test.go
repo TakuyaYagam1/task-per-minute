@@ -369,7 +369,7 @@ func validAdminCommands() adminCommands {
 			ReadyWindowRevisionID: adminTestID(91),
 		},
 		correction: correctionusecase.CorrectionCommand{
-			CommandScope: scope(14), SeriesID: adminTestID(100), GameID: adminTestID(101),
+			CommandScope: scope(14), SeriesID: adminTestID(100), GameID: adminTestID(101), SourceResultRevision: adminTestID(102),
 			ExpectedProjectionRevision: 1, Confirmed: true, Reason: "operator_ruling",
 			Explanation: "verified result correction", Fields: []string{"winner"},
 			Patch: correctionusecase.CorrectionPatch{

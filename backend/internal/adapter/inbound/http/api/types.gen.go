@@ -225,6 +225,51 @@ func (e CorrectionReason) Valid() bool {
 	}
 }
 
+// Defines values for CorrectionRejectionCode.
+const (
+	Cutoff                      CorrectionRejectionCode = "cutoff"
+	CutoffForfeitRecorded       CorrectionRejectionCode = "cutoff_forfeit_recorded"
+	CutoffGoldenDirectAllocated CorrectionRejectionCode = "cutoff_golden_direct_allocated"
+	CutoffNoShowRecorded        CorrectionRejectionCode = "cutoff_no_show_recorded"
+	CutoffTaskDelivered         CorrectionRejectionCode = "cutoff_task_delivered"
+	CutoffWaveStarted           CorrectionRejectionCode = "cutoff_wave_started"
+	IncompleteProjection        CorrectionRejectionCode = "incomplete_projection"
+	IncompleteUnlock            CorrectionRejectionCode = "incomplete_unlock"
+	StaleProjection             CorrectionRejectionCode = "stale_projection"
+	StaleResult                 CorrectionRejectionCode = "stale_result"
+	TournamentTerminal          CorrectionRejectionCode = "tournament_terminal"
+)
+
+// Valid indicates whether the value is a known member of the CorrectionRejectionCode enum.
+func (e CorrectionRejectionCode) Valid() bool {
+	switch e {
+	case Cutoff:
+		return true
+	case CutoffForfeitRecorded:
+		return true
+	case CutoffGoldenDirectAllocated:
+		return true
+	case CutoffNoShowRecorded:
+		return true
+	case CutoffTaskDelivered:
+		return true
+	case CutoffWaveStarted:
+		return true
+	case IncompleteProjection:
+		return true
+	case IncompleteUnlock:
+		return true
+	case StaleProjection:
+		return true
+	case StaleResult:
+		return true
+	case TournamentTerminal:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for DependencyStatusHealth.
 const (
 	DependencyStatusHealthDegraded DependencyStatusHealth = "degraded"
@@ -1752,6 +1797,33 @@ type ConfigurationUnlockIntent struct {
 	SourceRevisionId  openapi_types.UUID `json:"source_revision_id"`
 }
 
+// CorrectionConflictProblem Stable optimistic-concurrency rejection for result correction.
+type CorrectionConflictProblem struct {
+	// Code Stable reason code for a correction preflight or commit rejection.
+	Code            CorrectionRejectionCode `json:"code"`
+	CurrentRevision int64                   `json:"current_revision"`
+	CurrentState    *TournamentState        `json:"current_state,omitempty"`
+
+	// Detail Example: username must be 2..50 characters
+	Detail           *string `json:"detail,omitempty"`
+	ExpectedRevision int64   `json:"expected_revision"`
+
+	// Instance Example: /api/v1/players/join
+	Instance *string `json:"instance,omitempty"`
+
+	// RequestId Example: 01HXC2K9F4ZG6YV1AAB7TBQ7AP
+	RequestId *string `json:"request_id,omitempty"`
+
+	// Status Example: 400
+	Status int32 `json:"status"`
+
+	// Title Example: Validation Failed
+	Title string `json:"title"`
+
+	// Type Example: about:blank
+	Type string `json:"type"`
+}
+
 // CorrectionEvidence Immutable correction record. All projection and unlock evidence is retained by value.
 type CorrectionEvidence struct {
 	CommandId        openapi_types.UUID                 `json:"command_id"`
@@ -1782,10 +1854,22 @@ type CorrectionPatch struct {
 type CorrectionProjectionIntent struct {
 	DecisionId openapi_types.UUID `json:"decision_id"`
 
-	// ExpectedRevision Immutable revision metadata for a derived Tournament artifact.
-	ExpectedRevision ProjectionRevision `json:"expected_revision"`
-	NextRevisionId   openapi_types.UUID `json:"next_revision_id"`
-	PayloadDigest    string             `json:"payload_digest"`
+	// ExpectedRevision Server-prepared projection revision expectation echoed unchanged by the client.
+	ExpectedRevision CorrectionProjectionRevisionExpectation `json:"expected_revision"`
+	NextRevisionId   openapi_types.UUID                      `json:"next_revision_id"`
+	PayloadDigest    string                                  `json:"payload_digest"`
+}
+
+// CorrectionProjectionRevisionExpectation Server-prepared projection revision expectation echoed unchanged by the client.
+type CorrectionProjectionRevisionExpectation struct {
+	ArtifactId         openapi_types.UUID  `json:"artifact_id"`
+	ArtifactKind       ArtifactKind        `json:"artifact_kind"`
+	CreatedAt          time.Time           `json:"created_at"`
+	Id                 openapi_types.UUID  `json:"id"`
+	PayloadDigest      string              `json:"payload_digest"`
+	PreviousRevisionId *openapi_types.UUID `json:"previous_revision_id,omitempty"`
+	RevisionNo         int32               `json:"revision_no"`
+	TournamentId       openapi_types.UUID  `json:"tournament_id"`
 }
 
 // CorrectionProjectionSupersession defines model for CorrectionProjectionSupersession.
@@ -1801,6 +1885,9 @@ type CorrectionProjectionSupersession struct {
 // CorrectionReason defines model for CorrectionReason.
 type CorrectionReason string
 
+// CorrectionRejectionCode Stable reason code for a correction preflight or commit rejection.
+type CorrectionRejectionCode string
+
 // CorrectionSolveMetadata defines model for CorrectionSolveMetadata.
 type CorrectionSolveMetadata struct {
 	EvidenceDigest string              `json:"evidence_digest"`
@@ -1808,7 +1895,7 @@ type CorrectionSolveMetadata struct {
 	SubmissionId   *openapi_types.UUID `json:"submission_id"`
 }
 
-// CorrectionUnlockIntent Complete compare-and-set evidence for releasing an undisclosed, unused reservation.
+// CorrectionUnlockIntent Server-prepared compare-and-set evidence echoed unchanged by the client.
 type CorrectionUnlockIntent struct {
 	BindingDigest     string             `json:"binding_digest"`
 	EvidenceDigest    string             `json:"evidence_digest"`
@@ -2247,16 +2334,30 @@ type OfficialResultRevision struct {
 // OfficialResultSubjectKind defines model for OfficialResultSubjectKind.
 type OfficialResultSubjectKind string
 
+// OperatorCorrectionDraftRequest defines model for OperatorCorrectionDraftRequest.
+type OperatorCorrectionDraftRequest struct {
+	Confirmed                  bool              `json:"confirmed"`
+	ExpectedProjectionRevision int64             `json:"expected_projection_revision"`
+	Explanation                string            `json:"explanation"`
+	Fields                     []CorrectionField `json:"fields"`
+	Patch                      CorrectionPatch   `json:"patch"`
+	Reason                     CorrectionReason  `json:"reason"`
+
+	// SourceResultRevision Exact immutable Game result revision the operator observed.
+	SourceResultRevision openapi_types.UUID `json:"source_result_revision"`
+}
+
 // OperatorCorrectionRequest defines model for OperatorCorrectionRequest.
 type OperatorCorrectionRequest struct {
-	Confirmed                  bool                          `json:"confirmed"`
-	ExpectedProjectionRevision int64                         `json:"expected_projection_revision"`
-	Explanation                string                        `json:"explanation"`
-	Fields                     []CorrectionField             `json:"fields"`
-	Patch                      CorrectionPatch               `json:"patch"`
-	ProjectionIntents          *[]CorrectionProjectionIntent `json:"projection_intents,omitempty"`
-	Reason                     CorrectionReason              `json:"reason"`
-	UnlockIntents              *[]CorrectionUnlockIntent     `json:"unlock_intents,omitempty"`
+	Confirmed                  bool                         `json:"confirmed"`
+	ExpectedProjectionRevision int64                        `json:"expected_projection_revision"`
+	Explanation                string                       `json:"explanation"`
+	Fields                     []CorrectionField            `json:"fields"`
+	Patch                      CorrectionPatch              `json:"patch"`
+	ProjectionIntents          []CorrectionProjectionIntent `json:"projection_intents"`
+	Reason                     CorrectionReason             `json:"reason"`
+	SourceResultRevision       openapi_types.UUID           `json:"source_result_revision"`
+	UnlockIntents              []CorrectionUnlockIntent     `json:"unlock_intents"`
 }
 
 // OperatorForfeitGameExpectation defines model for OperatorForfeitGameExpectation.
@@ -2863,18 +2964,6 @@ type ProblemDetails struct {
 
 	// Type Example: about:blank
 	Type string `json:"type"`
-}
-
-// ProjectionRevision Immutable revision metadata for a derived Tournament artifact.
-type ProjectionRevision struct {
-	ArtifactId         openapi_types.UUID  `json:"artifact_id"`
-	ArtifactKind       ArtifactKind        `json:"artifact_kind"`
-	CreatedAt          time.Time           `json:"created_at"`
-	Id                 openapi_types.UUID  `json:"id"`
-	PayloadDigest      string              `json:"payload_digest"`
-	PreviousRevisionId *openapi_types.UUID `json:"previous_revision_id,omitempty"`
-	RevisionNo         int32               `json:"revision_no"`
-	TournamentId       openapi_types.UUID  `json:"tournament_id"`
 }
 
 // ProjectionRevisionProblem Stable optimistic-concurrency details that can accompany a 409 response.
@@ -3920,6 +4009,14 @@ type CorrectTournamentGameResultParams struct {
 	XCSRFToken AdminCSRFToken `json:"X-CSRF-Token"`
 }
 
+// PreflightTournamentGameCorrectionParams defines parameters for PreflightTournamentGameCorrection.
+type PreflightTournamentGameCorrectionParams struct {
+	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
+
+	// XCSRFToken Cookie-bound CSRF token required for this admin mutation.
+	XCSRFToken AdminCSRFToken `json:"X-CSRF-Token"`
+}
+
 // ReplayTournamentGameParams defines parameters for ReplayTournamentGame.
 type ReplayTournamentGameParams struct {
 	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
@@ -4092,6 +4189,9 @@ type UpdateTournamentSeriesConfigurationJSONRequestBody = UpdateTournamentSeries
 
 // CorrectTournamentGameResultJSONRequestBody defines body for CorrectTournamentGameResult for application/json ContentType.
 type CorrectTournamentGameResultJSONRequestBody = OperatorCorrectionRequest
+
+// PreflightTournamentGameCorrectionJSONRequestBody defines body for PreflightTournamentGameCorrection for application/json ContentType.
+type PreflightTournamentGameCorrectionJSONRequestBody = OperatorCorrectionDraftRequest
 
 // ReplayTournamentGameJSONRequestBody defines body for ReplayTournamentGame for application/json ContentType.
 type ReplayTournamentGameJSONRequestBody = OperatorReplayRequest

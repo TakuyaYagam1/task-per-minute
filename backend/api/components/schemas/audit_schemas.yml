@@ -2,6 +2,22 @@ CorrectionReason:
   type: string
   enum: [scorekeeping_error, verified_submission, operator_ruling]
 
+CorrectionRejectionCode:
+  type: string
+  description: Stable reason code for a correction preflight or commit rejection.
+  enum:
+    - stale_projection
+    - stale_result
+    - incomplete_projection
+    - incomplete_unlock
+    - tournament_terminal
+    - cutoff
+    - cutoff_wave_started
+    - cutoff_task_delivered
+    - cutoff_no_show_recorded
+    - cutoff_forfeit_recorded
+    - cutoff_golden_direct_allocated
+
 CorrectionField:
   type: string
   enum: [winner, result_reason, solve_metadata]
@@ -20,7 +36,7 @@ AuditEntityKind:
 
 CorrectionUnlockIntent:
   type: object
-  description: Complete compare-and-set evidence for releasing an undisclosed, unused reservation.
+  description: Server-prepared compare-and-set evidence echoed unchanged by the client.
   required: [reservation_id, tournament_id, owner_id, source_revision_id, expected_revision, expected_used, expected_disclosed, evidence_digest, binding_digest]
   properties:
     reservation_id:
@@ -35,7 +51,6 @@ CorrectionUnlockIntent:
     source_revision_id:
       type: string
       format: uuid
-      readOnly: true
     expected_revision:
       type: integer
       format: int64
@@ -49,13 +64,45 @@ CorrectionUnlockIntent:
       minLength: 64
       maxLength: 64
       pattern: '^[0-9a-f]{64}$'
-      readOnly: true
     binding_digest:
       type: string
       minLength: 64
       maxLength: 64
       pattern: '^[0-9a-f]{64}$'
-      readOnly: true
+
+CorrectionProjectionRevisionExpectation:
+  type: object
+  additionalProperties: false
+  description: Server-prepared projection revision expectation echoed unchanged by the client.
+  required: [id, tournament_id, artifact_kind, artifact_id, revision_no, payload_digest, created_at]
+  properties:
+    id:
+      type: string
+      format: uuid
+    tournament_id:
+      type: string
+      format: uuid
+    artifact_kind:
+      $ref: '#/ArtifactKind'
+    artifact_id:
+      type: string
+      format: uuid
+    revision_no:
+      type: integer
+      format: int32
+      minimum: 1
+    previous_revision_id:
+      type: string
+      format: uuid
+      nullable: true
+    payload_digest:
+      type: string
+      minLength: 64
+      maxLength: 64
+      pattern: '^[0-9a-f]{64}$'
+    created_at:
+      type: string
+      format: date-time
 
 CorrectionProjectionIntent:
   type: object
@@ -63,7 +110,7 @@ CorrectionProjectionIntent:
   required: [expected_revision, next_revision_id, decision_id, payload_digest]
   properties:
     expected_revision:
-      $ref: '#/ProjectionRevision'
+      $ref: '#/CorrectionProjectionRevisionExpectation'
     next_revision_id:
       type: string
       format: uuid
@@ -111,7 +158,7 @@ CorrectionPatch:
 
 CorrectionRequest:
   type: object
-  required: [tournament_id, series_id, game_id, command_id, operator_id, confirmed, reason, explanation, requested_at, fields, patch, projection_intents, unlock_intents]
+  required: [tournament_id, series_id, game_id, command_id, operator_id, source_result_revision, confirmed, reason, explanation, requested_at, fields, patch, projection_intents, unlock_intents]
   properties:
     tournament_id:
       type: string
@@ -128,6 +175,10 @@ CorrectionRequest:
     operator_id:
       type: string
       format: uuid
+    source_result_revision:
+      type: string
+      format: uuid
+      readOnly: true
     confirmed:
       type: boolean
     reason:
@@ -149,6 +200,7 @@ CorrectionRequest:
       $ref: '#/CorrectionPatch'
     projection_intents:
       type: array
+      maxItems: 4096
       items:
         $ref: '#/CorrectionProjectionIntent'
     unlock_intents:
@@ -457,8 +509,11 @@ IncidentBundle:
 OperatorCorrectionRequest:
   type: object
   additionalProperties: false
-  required: [expected_projection_revision, confirmed, reason, explanation, fields, patch]
+  required: [source_result_revision, expected_projection_revision, confirmed, reason, explanation, fields, patch, projection_intents, unlock_intents]
   properties:
+    source_result_revision:
+      type: string
+      format: uuid
     expected_projection_revision:
       type: integer
       format: int64
@@ -481,6 +536,7 @@ OperatorCorrectionRequest:
       $ref: '#/CorrectionPatch'
     projection_intents:
       type: array
+      maxItems: 4096
       items:
         $ref: '#/CorrectionProjectionIntent'
     unlock_intents:
@@ -488,3 +544,53 @@ OperatorCorrectionRequest:
       maxItems: 4096
       items:
         $ref: '#/CorrectionUnlockIntent'
+
+OperatorCorrectionDraftRequest:
+  type: object
+  additionalProperties: false
+  required: [source_result_revision, expected_projection_revision, confirmed, reason, explanation, fields, patch]
+  properties:
+    source_result_revision:
+      type: string
+      format: uuid
+      description: Exact immutable Game result revision the operator observed.
+    expected_projection_revision:
+      type: integer
+      format: int64
+      minimum: 1
+    confirmed:
+      type: boolean
+    reason:
+      $ref: '#/CorrectionReason'
+    explanation:
+      type: string
+      minLength: 1
+      maxLength: 512
+    fields:
+      type: array
+      minItems: 1
+      maxItems: 3
+      items:
+        $ref: '#/CorrectionField'
+    patch:
+      $ref: '#/CorrectionPatch'
+
+CorrectionConflictProblem:
+  description: Stable optimistic-concurrency rejection for result correction.
+  allOf:
+    - $ref: '#/ProblemDetails'
+    - type: object
+      required: [code, expected_revision, current_revision]
+      properties:
+        code:
+          $ref: '#/CorrectionRejectionCode'
+        expected_revision:
+          type: integer
+          format: int64
+          minimum: 1
+        current_revision:
+          type: integer
+          format: int64
+          minimum: 1
+        current_state:
+          $ref: '#/TournamentState'

@@ -2,7 +2,9 @@ import { adminClient, unwrapApi, unwrapApiVoid } from "./client";
 import {
   assertApiResponse,
   isAuditPage,
+  isCorrectionEvidence,
   isIncidentBundle,
+  isOperatorCorrectionRequest,
   isOperatorRecoverySnapshot,
   isOperatorWave,
   isPreflightReport,
@@ -47,6 +49,9 @@ export type OperatorForfeitRequest = components["schemas"]["OperatorForfeitReque
 export type OperatorForfeitGameExpectation = components["schemas"]["OperatorForfeitGameExpectation"];
 export type OperatorReplayRequest = components["schemas"]["OperatorReplayRequest"];
 export type OperatorReserveRequest = components["schemas"]["OperatorReserveRequest"];
+export type OperatorCorrectionDraftRequest = components["schemas"]["OperatorCorrectionDraftRequest"];
+export type OperatorCorrectionRequest = components["schemas"]["OperatorCorrectionRequest"];
+export type CorrectionEvidence = components["schemas"]["CorrectionEvidence"];
 export type AuditEntityKind = components["parameters"]["AuditEntityKind"];
 export type AuditActorKind = components["parameters"]["AuditActorKind"];
 
@@ -409,6 +414,58 @@ export const operatorApi = {
     );
   },
 
+  async preflightGameResultCorrection(
+    tournamentId: string,
+    seriesId: string,
+    gameId: string,
+    body: OperatorCorrectionDraftRequest,
+    intent: OperatorIdempotencyKey,
+    signal?: AbortSignal,
+  ): Promise<OperatorCorrectionRequest> {
+    return readOperatorResponse(
+      adminClient.POST("/api/v1/admin/tournaments/{tournament_id}/series/{series_id}/games/{game_id}/corrections/preflight", {
+        params: {
+          path: {
+            tournament_id: tournamentId,
+            series_id: seriesId,
+            game_id: gameId,
+          },
+          header: mutationHeaders(intent),
+        },
+        body,
+        signal,
+      }),
+      isOperatorCorrectionRequest,
+      "admin/tournament game correction preflight",
+    );
+  },
+
+  async correctGameResult(
+    tournamentId: string,
+    seriesId: string,
+    gameId: string,
+    body: OperatorCorrectionRequest,
+    intent: OperatorIdempotencyKey,
+    signal?: AbortSignal,
+  ): Promise<CorrectionEvidence> {
+    return readOperatorResponse(
+      adminClient.POST("/api/v1/admin/tournaments/{tournament_id}/series/{series_id}/games/{game_id}/corrections", {
+        params: {
+          path: {
+            tournament_id: tournamentId,
+            series_id: seriesId,
+            game_id: gameId,
+          },
+          header: mutationHeaders(intent),
+        },
+        body,
+        signal,
+      }),
+      isCorrectionEvidence,
+      "admin/tournament game correction",
+    );
+  },
+
   async assignReserve(
     tournamentId: string,
     seriesId: string,
@@ -494,6 +551,8 @@ export const applyTournamentAction = operatorApi.applyTournamentAction;
 export const resolveTournamentNoShow = operatorApi.resolveNoShow;
 export const recordTournamentForfeit = operatorApi.recordForfeit;
 export const replayTournamentGame = operatorApi.replayGame;
+export const preflightTournamentGameResultCorrection = operatorApi.preflightGameResultCorrection;
+export const correctTournamentGameResult = operatorApi.correctGameResult;
 export const assignTournamentReserve = operatorApi.assignReserve;
 export const getOperatorSnapshot = operatorApi.getSnapshot;
 export const listTournamentAudit = operatorApi.listAudit;

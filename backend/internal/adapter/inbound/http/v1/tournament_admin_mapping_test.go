@@ -90,7 +90,7 @@ func TestTournamentCorrectionCommandPreservesCASAndEvidence(t *testing.T) {
 	digest := strings.Repeat("1a", 32)
 	bindingDigest := strings.Repeat("2b", 32)
 	projectionIntents := []api.CorrectionProjectionIntent{{
-		ExpectedRevision: api.ProjectionRevision{
+		ExpectedRevision: api.CorrectionProjectionRevisionExpectation{
 			Id: tournamentAdminTestID(10), TournamentId: tournamentID,
 			ArtifactKind: api.ArtifactKindGameResult, ArtifactId: gameID, RevisionNo: 3,
 			PreviousRevisionId: &previousRevisionID, PayloadDigest: digest, CreatedAt: tournamentAdminTestTime(),
@@ -105,7 +105,7 @@ func TestTournamentCorrectionCommandPreservesCASAndEvidence(t *testing.T) {
 		EvidenceDigest: digest, BindingDigest: bindingDigest,
 	}}
 	body := api.OperatorCorrectionRequest{
-		ExpectedProjectionRevision: 9, Confirmed: true, Reason: api.OperatorRuling,
+		SourceResultRevision: tournamentAdminTestID(9), ExpectedProjectionRevision: 9, Confirmed: true, Reason: api.OperatorRuling,
 		Explanation: "verified operator correction", Fields: []api.CorrectionField{api.Winner, api.SolveMetadata},
 		Patch: api.CorrectionPatch{
 			State: api.GameStateCompleted, Reason: api.GameResultReasonSolved, WinnerId: &winnerID,
@@ -113,8 +113,8 @@ func TestTournamentCorrectionCommandPreservesCASAndEvidence(t *testing.T) {
 				SolvedAt: &solvedAt, SubmissionId: &submissionID, EvidenceDigest: digest,
 			},
 		},
-		ProjectionIntents: &projectionIntents,
-		UnlockIntents:     &unlockIntents,
+		ProjectionIntents: projectionIntents,
+		UnlockIntents:     unlockIntents,
 	}
 
 	command, err := tournamentCorrectionCommand(
@@ -130,6 +130,7 @@ func TestTournamentCorrectionCommandPreservesCASAndEvidence(t *testing.T) {
 	require.Equal(t, tournamentID, command.TournamentID)
 	require.Equal(t, seriesID, command.SeriesID)
 	require.Equal(t, gameID, command.GameID)
+	require.Equal(t, tournamentAdminTestID(9), command.SourceResultRevision)
 	require.Equal(t, commandID, command.CommandID)
 	require.Equal(t, int64(9), command.ExpectedProjectionRevision)
 	require.Equal(t, []string{"winner", "solve_metadata"}, command.Fields)
@@ -260,6 +261,38 @@ func TestWriteTournamentAdminErrorRejectsMalformedRevisionConflict(t *testing.T)
 			require.Equal(t, http.StatusInternalServerError, recorder.Code)
 		})
 	}
+}
+
+func TestWriteCorrectionAdminErrorMapsStableConflictCode(t *testing.T) {
+	t.Parallel()
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/tournaments/example/corrections", nil)
+	writeCorrectionAdminError(recorder, request, &inbound.AdminCorrectionConflictError{
+		ExpectedRevision: 4, CurrentRevision: 5, CurrentState: domain.TournamentStateSwiss,
+		Code: "incomplete_unlock",
+	})
+
+	require.Equal(t, http.StatusConflict, recorder.Code)
+	var payload api.CorrectionConflictProblem
+	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &payload))
+	require.Equal(t, api.IncompleteUnlock, payload.Code)
+	require.Equal(t, int64(4), payload.ExpectedRevision)
+	require.Equal(t, int64(5), payload.CurrentRevision)
+	require.NotNil(t, payload.CurrentState)
+	require.Equal(t, api.TournamentStateSwiss, *payload.CurrentState)
+}
+
+func TestWriteCorrectionAdminErrorRejectsUnknownConflictCode(t *testing.T) {
+	t.Parallel()
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/tournaments/example/corrections", nil)
+	writeCorrectionAdminError(recorder, request, &inbound.AdminCorrectionConflictError{
+		ExpectedRevision: 4, CurrentRevision: 5, Code: "unknown",
+	})
+
+	require.Equal(t, http.StatusInternalServerError, recorder.Code)
 }
 
 func tournamentAdminTestID(value int) uuid.UUID {

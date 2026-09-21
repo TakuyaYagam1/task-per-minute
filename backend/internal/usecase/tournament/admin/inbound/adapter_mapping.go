@@ -10,9 +10,19 @@ import (
 	inbound "github.com/TakuyaYagam1/task-per-minute/internal/port/inbound"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/audit"
 	draftusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/draft"
+	admincorrection "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/correction"
 )
 
 func adminInboundError(err error) error {
+	var correctionConflict *admincorrection.CorrectionConflictError
+	if errors.As(err, &correctionConflict) {
+		return &inbound.AdminCorrectionConflictError{
+			ExpectedRevision: correctionConflict.ExpectedRevision,
+			CurrentRevision:  correctionConflict.CurrentRevision,
+			CurrentState:     correctionConflict.CurrentState,
+			Code:             string(correctionConflict.Code),
+		}
+	}
 	var conflict *RevisionConflictError
 	if errors.As(err, &conflict) {
 		return &inbound.AdminRevisionConflictError{ExpectedRevision: conflict.ExpectedRevision, CurrentRevision: conflict.CurrentRevision, CurrentState: conflict.CurrentState}
@@ -96,7 +106,7 @@ func waveView(value WaveView) inbound.AdminWaveView {
 }
 
 func correctionCommand(value inbound.AdminCorrectionCommand) CorrectionCommand {
-	mapped := CorrectionCommand{CommandScope: commandScope(value.AdminCommandScope), SeriesID: value.SeriesID, GameID: value.GameID, ExpectedProjectionRevision: value.ExpectedProjectionRevision, Confirmed: value.Confirmed, Reason: value.Reason, Explanation: value.Explanation, Fields: append([]string(nil), value.Fields...), Patch: CorrectionPatch{State: value.Patch.State, Reason: value.Patch.Reason, WinnerID: cloneUUID(value.Patch.WinnerID), SolvedAt: cloneTime(value.Patch.SolvedAt), SubmissionID: cloneUUID(value.Patch.SubmissionID), EvidenceDigest: value.Patch.EvidenceDigest}}
+	mapped := CorrectionCommand{CommandScope: commandScope(value.AdminCommandScope), SeriesID: value.SeriesID, GameID: value.GameID, SourceResultRevision: value.SourceResultRevision, ExpectedProjectionRevision: value.ExpectedProjectionRevision, Confirmed: value.Confirmed, Reason: value.Reason, Explanation: value.Explanation, Fields: append([]string(nil), value.Fields...), Patch: CorrectionPatch{State: value.Patch.State, Reason: value.Patch.Reason, WinnerID: cloneUUID(value.Patch.WinnerID), SolvedAt: cloneTime(value.Patch.SolvedAt), SubmissionID: cloneUUID(value.Patch.SubmissionID), EvidenceDigest: value.Patch.EvidenceDigest}}
 	if value.ProjectionIntents != nil {
 		mapped.ProjectionIntents = make([]CorrectionProjectionIntent, len(value.ProjectionIntents))
 	}
@@ -108,6 +118,49 @@ func correctionCommand(value inbound.AdminCorrectionCommand) CorrectionCommand {
 	}
 	for i, intent := range value.UnlockIntents {
 		mapped.UnlockIntents[i] = CorrectionUnlockIntent{ReservationID: intent.ReservationID, TournamentID: intent.TournamentID, OwnerID: intent.OwnerID, SourceRevisionID: intent.SourceRevisionID, ExpectedRevision: intent.ExpectedRevision, ExpectedUsed: intent.ExpectedUsed, ExpectedDisclosed: intent.ExpectedDisclosed, EvidenceDigest: intent.EvidenceDigest, BindingDigest: intent.BindingDigest}
+	}
+	return mapped
+}
+
+func inboundCorrectionCommand(value CorrectionCommand) inbound.AdminCorrectionCommand {
+	mapped := inbound.AdminCorrectionCommand{
+		AdminCommandScope: inbound.AdminCommandScope{
+			Operator:     inbound.AdminOperatorIdentity{ActorID: value.Operator.ActorID},
+			TournamentID: value.TournamentID, CommandID: value.CommandID,
+		},
+		SeriesID: value.SeriesID, GameID: value.GameID, SourceResultRevision: value.SourceResultRevision,
+		ExpectedProjectionRevision: value.ExpectedProjectionRevision, Confirmed: value.Confirmed,
+		Reason: value.Reason, Explanation: value.Explanation, Fields: append([]string(nil), value.Fields...),
+		Patch: inbound.AdminCorrectionPatch{
+			State: value.Patch.State, Reason: value.Patch.Reason, WinnerID: cloneUUID(value.Patch.WinnerID),
+			SolvedAt: cloneTime(value.Patch.SolvedAt), SubmissionID: cloneUUID(value.Patch.SubmissionID),
+			EvidenceDigest: value.Patch.EvidenceDigest,
+		},
+	}
+	if value.ProjectionIntents != nil {
+		mapped.ProjectionIntents = make([]inbound.AdminCorrectionProjectionIntent, len(value.ProjectionIntents))
+	}
+	for index, intent := range value.ProjectionIntents {
+		mapped.ProjectionIntents[index] = inbound.AdminCorrectionProjectionIntent{
+			ExpectedRevision: inbound.AdminProjectionRevisionExpectation{
+				ID: intent.ExpectedRevision.ID, TournamentID: intent.ExpectedRevision.TournamentID,
+				ArtifactKind: intent.ExpectedRevision.ArtifactKind, ArtifactID: intent.ExpectedRevision.ArtifactID,
+				RevisionNo: intent.ExpectedRevision.RevisionNo, PreviousRevisionID: cloneUUID(intent.ExpectedRevision.PreviousRevisionID),
+				PayloadDigest: intent.ExpectedRevision.PayloadDigest, CreatedAt: intent.ExpectedRevision.CreatedAt,
+			},
+			NextRevisionID: intent.NextRevisionID, DecisionID: intent.DecisionID, PayloadDigest: intent.PayloadDigest,
+		}
+	}
+	if value.UnlockIntents != nil {
+		mapped.UnlockIntents = make([]inbound.AdminCorrectionUnlockIntent, len(value.UnlockIntents))
+	}
+	for index, intent := range value.UnlockIntents {
+		mapped.UnlockIntents[index] = inbound.AdminCorrectionUnlockIntent{
+			ReservationID: intent.ReservationID, TournamentID: intent.TournamentID, OwnerID: intent.OwnerID,
+			SourceRevisionID: intent.SourceRevisionID, ExpectedRevision: intent.ExpectedRevision,
+			ExpectedUsed: intent.ExpectedUsed, ExpectedDisclosed: intent.ExpectedDisclosed,
+			EvidenceDigest: intent.EvidenceDigest, BindingDigest: intent.BindingDigest,
+		}
 	}
 	return mapped
 }

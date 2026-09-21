@@ -2,6 +2,8 @@ package correction_test
 
 import (
 	"context"
+	"crypto/sha256"
+	"fmt"
 	"testing"
 	"time"
 
@@ -54,6 +56,172 @@ func TestCorrectionWorkflowBuildsAndCommitsServerOwnedPlan(t *testing.T) {
 	require.NotZero(t, evidence.ValidationDigest)
 	require.Len(t, evidence.Supersessions, 6)
 	require.Empty(t, evidence.UnlockIntents)
+}
+
+func TestCorrectionWorkflowPreparesDeterministicServerOwnedIntents(t *testing.T) {
+	t.Parallel()
+
+	command, authority, _ := correctionWorkflowFixture(t)
+	command.ProjectionIntents = nil
+	command.UnlockIntents = nil
+	prepare := func() admincorrection.CorrectionCommand {
+		transactions, repository := correctionWorkflowMocks(t)
+		repository.EXPECT().LockCorrectionAuthority(
+			mock.Anything, command.TournamentID, command.SeriesID, command.GameID,
+		).Return(authority, nil)
+		prepared, err := admincorrection.NewCorrectionWorkflow(admincorrection.CorrectionWorkflowDependencies{
+			Transactions: transactions, Repository: repository,
+		}).PrepareGameResultCorrection(t.Context(), command)
+		require.NoError(t, err)
+		return prepared
+	}
+
+	first, second := prepare(), prepare()
+	require.Equal(t, first.SourceResultRevision, second.SourceResultRevision)
+	require.Equal(t, first.ProjectionIntents, second.ProjectionIntents)
+	require.Equal(t, first.UnlockIntents, second.UnlockIntents)
+	require.Len(t, first.ProjectionIntents, 7)
+	require.NotZero(t, first.ProjectionIntents[0].PayloadDigest)
+	require.NotEqual(t, command.ProjectionIntents, first.ProjectionIntents)
+}
+
+func TestCorrectionWorkflowPreflightRejectsStaleSourceAndProjection(t *testing.T) {
+	t.Parallel()
+
+	t.Run("stale source", func(t *testing.T) {
+		command, authority, _ := correctionWorkflowFixture(t)
+		command.ProjectionIntents = nil
+		command.UnlockIntents = nil
+		command.SourceResultRevision = correctionWorkflowID(999)
+		transactions, repository := correctionWorkflowMocks(t)
+		repository.EXPECT().LockCorrectionAuthority(
+			mock.Anything, command.TournamentID, command.SeriesID, command.GameID,
+		).Return(authority, nil)
+
+		_, err := admincorrection.NewCorrectionWorkflow(admincorrection.CorrectionWorkflowDependencies{
+			Transactions: transactions, Repository: repository,
+		}).PrepareGameResultCorrection(t.Context(), command)
+		var conflict *admincorrection.CorrectionConflictError
+		require.ErrorAs(t, err, &conflict)
+		require.Equal(t, admincorrection.CorrectionRejectionStaleResult, conflict.Code)
+	})
+
+	t.Run("stale projection", func(t *testing.T) {
+		command, authority, _ := correctionWorkflowFixture(t)
+		command.ProjectionIntents = nil
+		command.UnlockIntents = nil
+		command.ExpectedProjectionRevision++
+		transactions, repository := correctionWorkflowMocks(t)
+		repository.EXPECT().LockCorrectionAuthority(
+			mock.Anything, command.TournamentID, command.SeriesID, command.GameID,
+		).Return(authority, nil)
+
+		_, err := admincorrection.NewCorrectionWorkflow(admincorrection.CorrectionWorkflowDependencies{
+			Transactions: transactions, Repository: repository,
+		}).PrepareGameResultCorrection(t.Context(), command)
+		var conflict *admincorrection.CorrectionConflictError
+		require.ErrorAs(t, err, &conflict)
+		require.Equal(t, admincorrection.CorrectionRejectionStaleProjection, conflict.Code)
+	})
+}
+
+func TestCorrectionWorkflowRejectsIncompletePreparedIntentSetsAtomically(t *testing.T) {
+	t.Parallel()
+
+	command, authority, requestedAt := correctionWorkflowFixture(t)
+	authority.Core.Reservations = []correctionusecase.Reservation{{
+		ID: correctionWorkflowID(998), TournamentID: command.TournamentID,
+		OwnerID: command.SeriesID, SourceRevisionID: authority.Core.GameResult.SourceProjection.ID(),
+		Revision: 3, EvidenceDigest: sha256.Sum256([]byte("reserved task")),
+	}}
+	draft := command
+	draft.ProjectionIntents = nil
+	draft.UnlockIntents = nil
+	prepareTransactions, prepareRepository := correctionWorkflowMocks(t)
+	prepareRepository.EXPECT().LockCorrectionAuthority(
+		mock.Anything, command.TournamentID, command.SeriesID, command.GameID,
+	).Return(authority, nil)
+	prepared, err := admincorrection.NewCorrectionWorkflow(admincorrection.CorrectionWorkflowDependencies{
+		Transactions: prepareTransactions, Repository: prepareRepository,
+	}).PrepareGameResultCorrection(t.Context(), draft)
+	require.NoError(t, err)
+	require.NotEmpty(t, prepared.ProjectionIntents)
+	require.Len(t, prepared.UnlockIntents, 1)
+
+	for _, testCase := range []struct {
+		name string
+		code admincorrection.CorrectionRejectionCode
+		edit func(*admincorrection.CorrectionCommand)
+	}{
+		{
+			name: "projection", code: admincorrection.CorrectionRejectionIncompleteProjection,
+			edit: func(value *admincorrection.CorrectionCommand) {
+				value.ProjectionIntents = value.ProjectionIntents[:len(value.ProjectionIntents)-1]
+			},
+		},
+		{
+			name: "unlock", code: admincorrection.CorrectionRejectionIncompleteUnlock,
+			edit: func(value *admincorrection.CorrectionCommand) { value.UnlockIntents = nil },
+		},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			candidate := prepared
+			candidate.ProjectionIntents = append([]admincorrection.CorrectionProjectionIntent(nil), prepared.ProjectionIntents...)
+			candidate.UnlockIntents = append([]admincorrection.CorrectionUnlockIntent(nil), prepared.UnlockIntents...)
+			testCase.edit(&candidate)
+			transactions, repository := correctionWorkflowMocks(t)
+			repository.EXPECT().FindCorrectionCommand(mock.Anything, candidate.CommandID).Return(nil, nil)
+			repository.EXPECT().LockCorrectionAuthority(
+				mock.Anything, candidate.TournamentID, candidate.SeriesID, candidate.GameID,
+			).Return(authority, nil)
+			repository.EXPECT().ReadCorrectionTime(mock.Anything).Return(requestedAt, nil)
+
+			_, correctionErr := admincorrection.NewCorrectionWorkflow(admincorrection.CorrectionWorkflowDependencies{
+				Transactions: transactions, Repository: repository,
+			}).CorrectGameResult(t.Context(), candidate)
+			var conflict *admincorrection.CorrectionConflictError
+			require.ErrorAs(t, correctionErr, &conflict)
+			require.Equal(t, testCase.code, conflict.Code)
+		})
+	}
+}
+
+func TestCorrectionWorkflowPreflightPreservesTerminalAndCutoffCodes(t *testing.T) {
+	t.Parallel()
+
+	t.Run("terminal", func(t *testing.T) {
+		command, _, _ := correctionWorkflowFixture(t)
+		command.ProjectionIntents = nil
+		command.UnlockIntents = nil
+		transactions, repository := correctionWorkflowMocks(t)
+		repository.EXPECT().LockCorrectionAuthority(
+			mock.Anything, command.TournamentID, command.SeriesID, command.GameID,
+		).Return(admincorrection.CorrectionWorkflowAuthority{}, domain.ErrConflict)
+
+		_, err := admincorrection.NewCorrectionWorkflow(admincorrection.CorrectionWorkflowDependencies{
+			Transactions: transactions, Repository: repository,
+		}).PrepareGameResultCorrection(t.Context(), command)
+		var conflict *admincorrection.CorrectionConflictError
+		require.ErrorAs(t, err, &conflict)
+		require.Equal(t, admincorrection.CorrectionRejectionTournamentTerminal, conflict.Code)
+	})
+
+	t.Run("wave cutoff", func(t *testing.T) {
+		command, _, _ := correctionWorkflowFixture(t)
+		command.ProjectionIntents = nil
+		command.UnlockIntents = nil
+		transactions, repository := correctionWorkflowMocks(t)
+		repository.EXPECT().LockCorrectionAuthority(
+			mock.Anything, command.TournamentID, command.SeriesID, command.GameID,
+		).Return(admincorrection.CorrectionWorkflowAuthority{}, fmt.Errorf("wave_started: %w", correctionusecase.ErrCutoff))
+
+		_, err := admincorrection.NewCorrectionWorkflow(admincorrection.CorrectionWorkflowDependencies{
+			Transactions: transactions, Repository: repository,
+		}).PrepareGameResultCorrection(t.Context(), command)
+		var conflict *admincorrection.CorrectionConflictError
+		require.ErrorAs(t, err, &conflict)
+		require.Equal(t, admincorrection.CorrectionRejectionCutoffWaveStarted, conflict.Code)
+	})
 }
 
 func TestCorrectionWorkflowRollsBackPausedGoldenBeforeCommittingCorrection(t *testing.T) {

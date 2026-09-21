@@ -19,6 +19,19 @@ const (
 	CutoffGoldenAllocated CutoffKind = "golden_direct_allocated"
 )
 
+func (k CutoffKind) IsValid() bool {
+	switch k {
+	case CutoffWaveStarted,
+		CutoffTaskDelivered,
+		CutoffNoShowRecorded,
+		CutoffForfeitRecorded,
+		CutoffGoldenAllocated:
+		return true
+	default:
+		return false
+	}
+}
+
 type CutoffEvent struct {
 	ID               uuid.UUID
 	Kind             CutoffKind

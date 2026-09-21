@@ -3,6 +3,7 @@ package v1
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"net/http"
 	"strings"
 
@@ -200,7 +201,7 @@ func (c *tournamentController) CorrectTournamentGameResult(
 	}
 	evidence, err := service.CorrectGameResult(r.Context(), command)
 	if err != nil {
-		writeTournamentAdminError(w, r, err)
+		writeCorrectionAdminError(w, r, err)
 		return
 	}
 	payload, err := tournamentCorrectionResponse(evidence)
@@ -209,6 +210,159 @@ func (c *tournamentController) CorrectTournamentGameResult(
 		return
 	}
 	response.WriteJSON(w, http.StatusOK, payload)
+}
+
+func (c *tournamentController) PreflightTournamentGameCorrection(
+	w http.ResponseWriter,
+	r *http.Request,
+	tournamentID api.TournamentId,
+	seriesID api.SeriesId,
+	gameID api.GameId,
+	params api.PreflightTournamentGameCorrectionParams,
+) {
+	operator, service, ok := c.requireAdminService(w, r)
+	if !ok {
+		return
+	}
+	var body api.OperatorCorrectionDraftRequest
+	if !decodeJSONBody(w, r, &body, domain.ErrValidation) {
+		return
+	}
+	command, err := tournamentCorrectionDraftCommand(operator, tournamentID, seriesID, gameID, params.IdempotencyKey, body)
+	if err != nil {
+		errmap.HandleError(w, r, err)
+		return
+	}
+	preparer, ok := service.(inbound.TournamentAdminCorrectionPreparer)
+	if !ok {
+		errmap.HandleError(w, r, domain.ErrInternal)
+		return
+	}
+	prepared, err := preparer.PrepareGameResultCorrection(r.Context(), command)
+	if err != nil {
+		writeCorrectionAdminError(w, r, err)
+		return
+	}
+	response.WriteJSON(w, http.StatusOK, tournamentCorrectionPreparedResponse(prepared))
+}
+
+func tournamentCorrectionDraftCommand(
+	operator inbound.AdminOperatorIdentity,
+	tournamentID uuid.UUID,
+	seriesID uuid.UUID,
+	gameID uuid.UUID,
+	commandID uuid.UUID,
+	body api.OperatorCorrectionDraftRequest,
+) (inbound.AdminCorrectionCommand, error) {
+	digest, err := parseSHA256Hex(body.Patch.SolveMetadata.EvidenceDigest)
+	if err != nil {
+		return inbound.AdminCorrectionCommand{}, domain.ErrValidation
+	}
+	command := inbound.AdminCorrectionCommand{
+		AdminCommandScope: inbound.AdminCommandScope{
+			Operator: operator, TournamentID: tournamentID, CommandID: commandID,
+		},
+		SeriesID: seriesID, GameID: gameID, SourceResultRevision: body.SourceResultRevision,
+		ExpectedProjectionRevision: body.ExpectedProjectionRevision,
+		Confirmed:                  body.Confirmed, Reason: string(body.Reason), Explanation: body.Explanation,
+		Fields: make([]string, len(body.Fields)),
+		Patch: inbound.AdminCorrectionPatch{
+			State: domain.GameState(body.Patch.State), Reason: domain.GameResultReason(body.Patch.Reason),
+			WinnerID: cloneUUIDPointer(body.Patch.WinnerId), SolvedAt: cloneTimePointer(body.Patch.SolveMetadata.SolvedAt),
+			SubmissionID: cloneUUIDPointer(body.Patch.SolveMetadata.SubmissionId), EvidenceDigest: digest,
+		},
+	}
+	for index, field := range body.Fields {
+		command.Fields[index] = string(field)
+	}
+	return command, nil
+}
+
+func tournamentCorrectionPreparedResponse(command inbound.AdminCorrectionCommand) map[string]any {
+	fields := append([]string(nil), command.Fields...)
+	projectionIntents := make([]map[string]any, len(command.ProjectionIntents))
+	for index, intent := range command.ProjectionIntents {
+		previous := any(nil)
+		if intent.ExpectedRevision.PreviousRevisionID != nil {
+			previous = *intent.ExpectedRevision.PreviousRevisionID
+		}
+		projectionIntents[index] = map[string]any{
+			"expected_revision": map[string]any{
+				"id": intent.ExpectedRevision.ID, "tournament_id": intent.ExpectedRevision.TournamentID,
+				"artifact_kind": intent.ExpectedRevision.ArtifactKind, "artifact_id": intent.ExpectedRevision.ArtifactID,
+				"revision_no": intent.ExpectedRevision.RevisionNo, "previous_revision_id": previous,
+				"payload_digest": hex.EncodeToString(intent.ExpectedRevision.PayloadDigest[:]),
+				"created_at":     intent.ExpectedRevision.CreatedAt,
+			},
+			"next_revision_id": intent.NextRevisionID, "decision_id": intent.DecisionID,
+			"payload_digest": hex.EncodeToString(intent.PayloadDigest[:]),
+		}
+	}
+	unlockIntents := make([]map[string]any, len(command.UnlockIntents))
+	for index, intent := range command.UnlockIntents {
+		unlockIntents[index] = map[string]any{
+			"reservation_id": intent.ReservationID, "tournament_id": intent.TournamentID,
+			"owner_id": intent.OwnerID, "source_revision_id": intent.SourceRevisionID,
+			"expected_revision": intent.ExpectedRevision, "expected_used": intent.ExpectedUsed,
+			"expected_disclosed": intent.ExpectedDisclosed,
+			"evidence_digest":    hex.EncodeToString(intent.EvidenceDigest[:]),
+			"binding_digest":     hex.EncodeToString(intent.BindingDigest[:]),
+		}
+	}
+	var winner any
+	if command.Patch.WinnerID != nil {
+		winner = *command.Patch.WinnerID
+	}
+	var solvedAt any
+	if command.Patch.SolvedAt != nil {
+		solvedAt = *command.Patch.SolvedAt
+	}
+	var submission any
+	if command.Patch.SubmissionID != nil {
+		submission = *command.Patch.SubmissionID
+	}
+	return map[string]any{
+		"source_result_revision":       command.SourceResultRevision,
+		"expected_projection_revision": command.ExpectedProjectionRevision,
+		"confirmed":                    command.Confirmed, "reason": command.Reason, "explanation": command.Explanation,
+		"fields": fields,
+		"patch": map[string]any{
+			"state": command.Patch.State, "reason": command.Patch.Reason, "winner_id": winner,
+			"solve_metadata": map[string]any{
+				"solved_at": solvedAt, "submission_id": submission,
+				"evidence_digest": hex.EncodeToString(command.Patch.EvidenceDigest[:]),
+			},
+		},
+		"projection_intents": projectionIntents, "unlock_intents": unlockIntents,
+	}
+}
+
+func writeCorrectionAdminError(w http.ResponseWriter, r *http.Request, err error) {
+	var conflict *inbound.AdminCorrectionConflictError
+	if !errors.As(err, &conflict) {
+		writeTournamentAdminError(w, r, err)
+		return
+	}
+	code := api.CorrectionRejectionCode(conflict.Code)
+	if !code.Valid() || conflict.ExpectedRevision < 1 || conflict.CurrentRevision < 1 {
+		errmap.HandleError(w, r, domain.ErrInternal)
+		return
+	}
+	detail, instance, requestID := tournamentProblemContext(r, "correction conflict: "+conflict.Code)
+	payload := api.CorrectionConflictProblem{
+		Type: "about:blank", Title: http.StatusText(http.StatusConflict), Status: http.StatusConflict,
+		Detail: &detail, Instance: &instance, RequestId: &requestID, Code: code,
+		ExpectedRevision: conflict.ExpectedRevision, CurrentRevision: conflict.CurrentRevision,
+	}
+	if conflict.CurrentState != "" {
+		state := api.TournamentState(conflict.CurrentState)
+		if !state.Valid() {
+			errmap.HandleError(w, r, domain.ErrInternal)
+			return
+		}
+		payload.CurrentState = &state
+	}
+	response.WriteProblem(w, http.StatusConflict, payload)
 }
 
 func tournamentCorrectionCommand(
@@ -227,7 +381,7 @@ func tournamentCorrectionCommand(
 		AdminCommandScope: inbound.AdminCommandScope{
 			Operator: operator, TournamentID: tournamentID, CommandID: commandID,
 		},
-		SeriesID: seriesID, GameID: gameID,
+		SeriesID: seriesID, GameID: gameID, SourceResultRevision: body.SourceResultRevision,
 		ExpectedProjectionRevision: body.ExpectedProjectionRevision,
 		Confirmed:                  body.Confirmed, Reason: string(body.Reason), Explanation: body.Explanation,
 		Fields: make([]string, len(body.Fields)),
@@ -240,25 +394,21 @@ func tournamentCorrectionCommand(
 	for index, field := range body.Fields {
 		command.Fields[index] = string(field)
 	}
-	if body.ProjectionIntents != nil {
-		command.ProjectionIntents = make([]inbound.AdminCorrectionProjectionIntent, len(*body.ProjectionIntents))
-		for index, intent := range *body.ProjectionIntents {
-			mapped, mapErr := tournamentCorrectionProjectionIntent(intent)
-			if mapErr != nil {
-				return inbound.AdminCorrectionCommand{}, mapErr
-			}
-			command.ProjectionIntents[index] = mapped
+	command.ProjectionIntents = make([]inbound.AdminCorrectionProjectionIntent, len(body.ProjectionIntents))
+	for index, intent := range body.ProjectionIntents {
+		mapped, mapErr := tournamentCorrectionProjectionIntent(intent)
+		if mapErr != nil {
+			return inbound.AdminCorrectionCommand{}, mapErr
 		}
+		command.ProjectionIntents[index] = mapped
 	}
-	if body.UnlockIntents != nil {
-		command.UnlockIntents = make([]inbound.AdminCorrectionUnlockIntent, len(*body.UnlockIntents))
-		for index, intent := range *body.UnlockIntents {
-			mapped, mapErr := tournamentCorrectionUnlockIntent(intent)
-			if mapErr != nil {
-				return inbound.AdminCorrectionCommand{}, mapErr
-			}
-			command.UnlockIntents[index] = mapped
+	command.UnlockIntents = make([]inbound.AdminCorrectionUnlockIntent, len(body.UnlockIntents))
+	for index, intent := range body.UnlockIntents {
+		mapped, mapErr := tournamentCorrectionUnlockIntent(intent)
+		if mapErr != nil {
+			return inbound.AdminCorrectionCommand{}, mapErr
 		}
+		command.UnlockIntents[index] = mapped
 	}
 	return command, nil
 }

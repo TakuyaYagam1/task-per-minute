@@ -245,7 +245,7 @@ func (a *AdminUseCase) CorrectGameResult(
 	ctx context.Context,
 	command correctionusecase.CorrectionCommand,
 ) (correctionusecase.CorrectionEvidence, error) {
-	if ctx == nil || !correctionusecase.ValidCorrectionCommand(command) {
+	if ctx == nil || !correctionusecase.ValidCorrectionCommandWithSource(command) {
 		return correctionusecase.CorrectionEvidence{}, domain.ErrValidation
 	}
 	if a == nil || a.correction == nil {
@@ -259,6 +259,32 @@ func (a *AdminUseCase) CorrectGameResult(
 		return correctionusecase.CorrectionEvidence{}, domain.ErrInternal
 	}
 	return evidence, nil
+}
+
+func (a *AdminUseCase) PrepareGameResultCorrection(
+	ctx context.Context,
+	command correctionusecase.CorrectionCommand,
+) (correctionusecase.CorrectionCommand, error) {
+	if ctx == nil || !correctionusecase.ValidCorrectionDraftCommand(command) {
+		return correctionusecase.CorrectionCommand{}, domain.ErrValidation
+	}
+	if a == nil || a.correction == nil {
+		return correctionusecase.CorrectionCommand{}, domain.ErrInternal
+	}
+	preparer, ok := a.correction.(interface {
+		PrepareGameResultCorrection(ctx context.Context, command correctionusecase.CorrectionCommand) (correctionusecase.CorrectionCommand, error)
+	})
+	if !ok {
+		return correctionusecase.CorrectionCommand{}, domain.ErrInternal
+	}
+	prepared, err := preparer.PrepareGameResultCorrection(ctx, command)
+	if err != nil {
+		return correctionusecase.CorrectionCommand{}, normalizeAdminError(err)
+	}
+	if !correctionusecase.ValidCorrectionCommandWithSource(prepared) {
+		return correctionusecase.CorrectionCommand{}, domain.ErrInternal
+	}
+	return prepared, nil
 }
 
 func (a *AdminUseCase) ListAudit(ctx context.Context, query incidentusecase.AuditQuery) (audit.AuditPage, error) {

@@ -190,7 +190,7 @@ func correctionWorkflowFixture(
 			Operator:     admincorrection.OperatorIdentity{ActorID: correctionWorkflowID(40)},
 			TournamentID: tournamentID, CommandID: correctionWorkflowID(41),
 		},
-		SeriesID: seriesID, GameID: gameID, ExpectedProjectionRevision: authority.ProjectionRevision,
+		SeriesID: seriesID, GameID: gameID, SourceResultRevision: gameResultID.UUID(), ExpectedProjectionRevision: authority.ProjectionRevision,
 		Confirmed: true, Reason: "operator_ruling", Explanation: "Verified referee ruling.",
 		Fields: []string{"winner", "result_reason"},
 		Patch: admincorrection.CorrectionPatch{

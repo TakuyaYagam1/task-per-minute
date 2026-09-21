@@ -114,6 +114,8 @@ paths:
     $ref: 'routes/tournament.yml#/~1api~1v1~1admin~1tournaments~1{tournament_id}~1series~1{series_id}~1games~1{game_id}~1replays'
   /api/v1/admin/tournaments/{tournament_id}/series/{series_id}/games/{game_id}/corrections:
     $ref: 'routes/tournament.yml#/~1api~1v1~1admin~1tournaments~1{tournament_id}~1series~1{series_id}~1games~1{game_id}~1corrections'
+  /api/v1/admin/tournaments/{tournament_id}/series/{series_id}/games/{game_id}/corrections/preflight:
+    $ref: 'routes/tournament.yml#/~1api~1v1~1admin~1tournaments~1{tournament_id}~1series~1{series_id}~1games~1{game_id}~1corrections~1preflight'
   /api/v1/admin/tournament-audit:
     $ref: 'routes/tournament.yml#/~1api~1v1~1admin~1tournament-audit'
   /api/v1/admin/tournaments/{tournament_id}/incident-export:

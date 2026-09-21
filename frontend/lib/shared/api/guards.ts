@@ -17,6 +17,8 @@ type PublicBracketResponse = components["schemas"]["PublicBracketResponse"];
 type CurrentPlayerResponse = components["schemas"]["CurrentPlayerResponse"];
 type PlayerResponse = components["schemas"]["PlayerResponse"];
 type UploadSourceResponse = components["schemas"]["TaskSourceUploadResponse"];
+type OperatorCorrectionRequest = components["schemas"]["OperatorCorrectionRequest"];
+type CorrectionEvidence = components["schemas"]["CorrectionEvidence"];
 export type TournamentContentSelection = components["schemas"]["TournamentContentSelection"];
 
 type Guard<T> = (value: unknown) => value is T;
@@ -101,6 +103,9 @@ const isNonNilUUID = (value: unknown): value is string =>
 
 const isDateTimeString = (value: unknown): value is string =>
   isDateString(value) && DATE_TIME_PATTERN.test(value);
+
+const isSHA256Hex = (value: unknown): value is string =>
+  isString(value) && /^[0-9a-f]{64}$/u.test(value);
 
 const hasExactKeys = (
   value: Record<string, unknown>,
@@ -2347,6 +2352,203 @@ const hasExactRequiredKeys = (
   return requiredKeys.every((key) => keys.includes(key)) &&
     keys.every((key) => allowedKeys.includes(key));
 };
+
+const CORRECTION_FIELDS = new Set(["winner", "result_reason", "solve_metadata"]);
+const CORRECTION_REASONS = new Set(["scorekeeping_error", "verified_submission", "operator_ruling"]);
+const CORRECTION_GAME_STATES = new Set(["completed", "void", "cancelled"]);
+const CORRECTION_RESULT_REASONS = new Set([
+  "solved",
+  "surrender",
+  "operator_forfeit",
+  "no_solve",
+  "task_failure",
+  "common_platform_failure",
+  "disconnect",
+  "execution_epoch_break",
+  "no_show",
+  "series_cancelled",
+  "tournament_cancelled",
+  "derived_revision_superseded",
+]);
+const CORRECTION_ARTIFACT_KINDS = new Set([
+  "game_result",
+  "series_score",
+  "series_result",
+  "standings",
+  "golden_group",
+  "top_four",
+  "bracket",
+  "champion",
+]);
+
+const isCorrectionFields = (value: unknown): boolean =>
+  Array.isArray(value) &&
+  value.length >= 1 &&
+  value.length <= 3 &&
+  value.every((field) => isString(field) && CORRECTION_FIELDS.has(field)) &&
+  new Set(value).size === value.length;
+
+const isCorrectionPatch = (value: unknown): boolean => {
+  if (
+    !isRecord(value) ||
+    !hasExactKeys(value, ["reason", "solve_metadata", "state", "winner_id"]) ||
+    !isString(value.reason) ||
+    !CORRECTION_RESULT_REASONS.has(value.reason) ||
+    !isString(value.state) ||
+    !CORRECTION_GAME_STATES.has(value.state) ||
+    !(value.winner_id === null || isNonNilUUID(value.winner_id)) ||
+    !isRecord(value.solve_metadata) ||
+    !hasExactKeys(value.solve_metadata, ["evidence_digest", "solved_at", "submission_id"]) ||
+    !isSHA256Hex(value.solve_metadata.evidence_digest) ||
+    !(value.solve_metadata.solved_at === null || isDateTimeString(value.solve_metadata.solved_at)) ||
+    !(value.solve_metadata.submission_id === null || isNonNilUUID(value.solve_metadata.submission_id))
+  ) {
+    return false;
+  }
+  if (value.state === "completed" && !isNonNilUUID(value.winner_id)) {
+    return false;
+  }
+  if (value.state !== "completed" && value.winner_id !== null) {
+    return false;
+  }
+  return value.reason === "solved"
+    ? value.solve_metadata.solved_at !== null && value.solve_metadata.submission_id !== null &&
+      value.solve_metadata.evidence_digest !== "0".repeat(64)
+    : value.solve_metadata.solved_at === null && value.solve_metadata.submission_id === null &&
+      value.solve_metadata.evidence_digest === "0".repeat(64);
+};
+
+const isCorrectionProjectionIntent = (value: unknown): boolean => {
+  if (
+    !isRecord(value) ||
+    !hasExactKeys(value, ["decision_id", "expected_revision", "next_revision_id", "payload_digest"]) ||
+    !isNonNilUUID(value.decision_id) ||
+    !isNonNilUUID(value.next_revision_id) ||
+    !isSHA256Hex(value.payload_digest) ||
+    !isRecord(value.expected_revision) ||
+    !hasExactRequiredKeys(
+      value.expected_revision,
+      ["artifact_id", "artifact_kind", "created_at", "id", "payload_digest", "revision_no", "tournament_id"],
+      ["previous_revision_id"],
+    )
+  ) {
+    return false;
+  }
+  const revision = value.expected_revision;
+  return isNonNilUUID(revision.artifact_id) &&
+    isString(revision.artifact_kind) && CORRECTION_ARTIFACT_KINDS.has(revision.artifact_kind) &&
+    isDateTimeString(revision.created_at) &&
+    isNonNilUUID(revision.id) &&
+    isSHA256Hex(revision.payload_digest) &&
+    isSafePositiveInteger(revision.revision_no) &&
+    revision.revision_no <= INT32_MAX &&
+    (revision.previous_revision_id === undefined || revision.previous_revision_id === null ||
+      isNonNilUUID(revision.previous_revision_id)) &&
+    isNonNilUUID(revision.tournament_id);
+};
+
+const isCorrectionUnlockIntent = (value: unknown): boolean =>
+  isRecord(value) &&
+  hasExactKeys(value, [
+    "binding_digest",
+    "evidence_digest",
+    "expected_disclosed",
+    "expected_revision",
+    "expected_used",
+    "owner_id",
+    "reservation_id",
+    "source_revision_id",
+    "tournament_id",
+  ]) &&
+  isSHA256Hex(value.binding_digest) &&
+  isSHA256Hex(value.evidence_digest) &&
+  typeof value.expected_disclosed === "boolean" &&
+  isSafePositiveInteger(value.expected_revision) &&
+  typeof value.expected_used === "boolean" &&
+  isNonNilUUID(value.owner_id) &&
+  isNonNilUUID(value.reservation_id) &&
+  isNonNilUUID(value.source_revision_id) &&
+  isNonNilUUID(value.tournament_id);
+
+export const isOperatorCorrectionRequest = (
+  value: unknown,
+): value is OperatorCorrectionRequest =>
+  isRecord(value) &&
+  hasExactKeys(value, [
+    "confirmed",
+    "expected_projection_revision",
+    "explanation",
+    "fields",
+    "patch",
+    "projection_intents",
+    "reason",
+    "source_result_revision",
+    "unlock_intents",
+  ]) &&
+  value.confirmed === true &&
+  isSafePositiveInteger(value.expected_projection_revision) &&
+  isOperatorNonBlank(value.explanation) &&
+  value.explanation.length <= 512 &&
+  isCorrectionFields(value.fields) &&
+  isCorrectionPatch(value.patch) &&
+  Array.isArray(value.projection_intents) &&
+  value.projection_intents.length <= 4096 &&
+  value.projection_intents.every(isCorrectionProjectionIntent) &&
+  isString(value.reason) &&
+  CORRECTION_REASONS.has(value.reason) &&
+  isNonNilUUID(value.source_result_revision) &&
+  Array.isArray(value.unlock_intents) &&
+  value.unlock_intents.length <= 4096 &&
+  value.unlock_intents.every(isCorrectionUnlockIntent);
+
+const isCorrectionSupersession = (value: unknown): boolean =>
+  isRecord(value) &&
+  hasExactKeys(value, [
+    "artifact_id",
+    "artifact_kind",
+    "previous_decision_id",
+    "previous_revision_id",
+    "replacement_decision_id",
+    "successor_revision_id",
+  ]) &&
+  isNonNilUUID(value.artifact_id) &&
+  isString(value.artifact_kind) &&
+  CORRECTION_ARTIFACT_KINDS.has(value.artifact_kind) &&
+  (value.previous_decision_id === null || isNonNilUUID(value.previous_decision_id)) &&
+  isNonNilUUID(value.previous_revision_id) &&
+  isNonNilUUID(value.replacement_decision_id) &&
+  isNonNilUUID(value.successor_revision_id);
+
+export const isCorrectionEvidence = (value: unknown): value is CorrectionEvidence =>
+  isRecord(value) &&
+  hasExactKeys(value, [
+    "command_id",
+    "fields",
+    "game_id",
+    "operator_id",
+    "reason",
+    "requested_at",
+    "series_id",
+    "supersessions",
+    "tournament_id",
+    "unlock_intents",
+    "validation_digest",
+  ]) &&
+  isNonNilUUID(value.command_id) &&
+  isCorrectionFields(value.fields) &&
+  isNonNilUUID(value.game_id) &&
+  isNonNilUUID(value.operator_id) &&
+  isString(value.reason) &&
+  CORRECTION_REASONS.has(value.reason) &&
+  isDateTimeString(value.requested_at) &&
+  isNonNilUUID(value.series_id) &&
+  Array.isArray(value.supersessions) &&
+  value.supersessions.every(isCorrectionSupersession) &&
+  isNonNilUUID(value.tournament_id) &&
+  Array.isArray(value.unlock_intents) &&
+  value.unlock_intents.length <= 4096 &&
+  value.unlock_intents.every(isCorrectionUnlockIntent) &&
+  isSHA256Hex(value.validation_digest);
 
 export const isGoldenRuntimeState = (value: unknown): value is GoldenRuntimeState =>
   isString(value) && GOLDEN_RUNTIME_STATES.has(value as GoldenRuntimeState);

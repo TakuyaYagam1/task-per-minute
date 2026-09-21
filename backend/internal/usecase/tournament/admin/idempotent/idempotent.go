@@ -164,11 +164,27 @@ func (service *IdempotentService) CorrectGameResult(
 	ctx context.Context,
 	command correctionusecase.CorrectionCommand,
 ) (correctionusecase.CorrectionEvidence, error) {
-	return executeAdminMutation(ctx, service, correctionusecase.ValidCorrectionCommand(command), func() (idempotency.Command, error) {
+	return executeAdminMutation(ctx, service, correctionusecase.ValidCorrectionCommandWithSource(command), func() (idempotency.Command, error) {
 		return correctionReceipt(command)
 	}, func() (correctionusecase.CorrectionEvidence, error) {
 		return service.next.CorrectGameResult(ctx, command)
 	})
+}
+
+func (service *IdempotentService) PrepareGameResultCorrection(
+	ctx context.Context,
+	command correctionusecase.CorrectionCommand,
+) (correctionusecase.CorrectionCommand, error) {
+	if service == nil || service.next == nil {
+		return correctionusecase.CorrectionCommand{}, domain.ErrInternal
+	}
+	preparer, ok := service.next.(interface {
+		PrepareGameResultCorrection(ctx context.Context, command correctionusecase.CorrectionCommand) (correctionusecase.CorrectionCommand, error)
+	})
+	if !ok {
+		return correctionusecase.CorrectionCommand{}, domain.ErrInternal
+	}
+	return preparer.PrepareGameResultCorrection(ctx, command)
 }
 
 func (service *IdempotentService) ListAudit(ctx context.Context, query incidentusecase.AuditQuery) (audit.AuditPage, error) {

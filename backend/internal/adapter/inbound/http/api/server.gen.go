@@ -125,6 +125,9 @@ type ServerInterface interface {
 	// CorrectTournamentGameResult Correct an official Game result and dependent projections
 	// (POST /api/v1/admin/tournaments/{tournament_id}/series/{series_id}/games/{game_id}/corrections)
 	CorrectTournamentGameResult(w http.ResponseWriter, r *http.Request, tournamentId TournamentId, seriesId SeriesId, gameId GameId, params CorrectTournamentGameResultParams)
+	// PreflightTournamentGameCorrection Prepare an authoritative Game result correction command
+	// (POST /api/v1/admin/tournaments/{tournament_id}/series/{series_id}/games/{game_id}/corrections/preflight)
+	PreflightTournamentGameCorrection(w http.ResponseWriter, r *http.Request, tournamentId TournamentId, seriesId SeriesId, gameId GameId, params PreflightTournamentGameCorrectionParams)
 	// ReplayTournamentGame Replace a failed Game with a reserved task
 	// (POST /api/v1/admin/tournaments/{tournament_id}/series/{series_id}/games/{game_id}/replays)
 	ReplayTournamentGame(w http.ResponseWriter, r *http.Request, tournamentId TournamentId, seriesId SeriesId, gameId GameId, params ReplayTournamentGameParams)
@@ -422,6 +425,12 @@ func (_ Unimplemented) UpdateTournamentSeriesConfiguration(w http.ResponseWriter
 // CorrectTournamentGameResult Correct an official Game result and dependent projections
 // (POST /api/v1/admin/tournaments/{tournament_id}/series/{series_id}/games/{game_id}/corrections)
 func (_ Unimplemented) CorrectTournamentGameResult(w http.ResponseWriter, r *http.Request, tournamentId TournamentId, seriesId SeriesId, gameId GameId, params CorrectTournamentGameResultParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// PreflightTournamentGameCorrection Prepare an authoritative Game result correction command
+// (POST /api/v1/admin/tournaments/{tournament_id}/series/{series_id}/games/{game_id}/corrections/preflight)
+func (_ Unimplemented) PreflightTournamentGameCorrection(w http.ResponseWriter, r *http.Request, tournamentId TournamentId, seriesId SeriesId, gameId GameId, params PreflightTournamentGameCorrectionParams) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -2766,6 +2775,107 @@ func (siw *ServerInterfaceWrapper) CorrectTournamentGameResult(w http.ResponseWr
 	handler.ServeHTTP(w, r)
 }
 
+// PreflightTournamentGameCorrection operation middleware
+func (siw *ServerInterfaceWrapper) PreflightTournamentGameCorrection(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "tournament_id" -------------
+	var tournamentId TournamentId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "tournament_id", chi.URLParam(r, "tournament_id"), &tournamentId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "tournament_id", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "series_id" -------------
+	var seriesId SeriesId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "series_id", chi.URLParam(r, "series_id"), &seriesId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "series_id", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "game_id" -------------
+	var gameId GameId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "game_id", chi.URLParam(r, "game_id"), &gameId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "game_id", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, AdminSessionAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params PreflightTournamentGameCorrectionParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		err := fmt.Errorf("Header parameter Idempotency-Key is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "Idempotency-Key", Err: err})
+		return
+	}
+
+	// ------------- Required header parameter "X-CSRF-Token" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-CSRF-Token")]; found {
+		var XCSRFToken AdminCSRFToken
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-CSRF-Token", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-CSRF-Token", valueList[0], &XCSRFToken, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-CSRF-Token", Err: err})
+			return
+		}
+
+		params.XCSRFToken = XCSRFToken
+
+	} else {
+		err := fmt.Errorf("Header parameter X-CSRF-Token is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-CSRF-Token", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PreflightTournamentGameCorrection(w, r, tournamentId, seriesId, gameId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ReplayTournamentGame operation middleware
 func (siw *ServerInterfaceWrapper) ReplayTournamentGame(w http.ResponseWriter, r *http.Request) {
 
@@ -4593,6 +4703,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/api/v1/admin/tournaments/{tournament_id}/series/{series_id}/games/{game_id}/corrections", wrapper.CorrectTournamentGameResult)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v1/admin/tournaments/{tournament_id}/series/{series_id}/games/{game_id}/corrections/preflight", wrapper.PreflightTournamentGameCorrection)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/admin/tournament-audit", wrapper.ListTournamentAudit)
@@ -6968,9 +7081,7 @@ func (response UpdateTournamentConfiguration404ApplicationProblemPlusJSONRespons
 	return err
 }
 
-type UpdateTournamentConfiguration409ApplicationProblemPlusJSONResponse struct {
-	ProjectionRevisionConflictProblemApplicationProblemPlusJSONResponse
-}
+type UpdateTournamentConfiguration409ApplicationProblemPlusJSONResponse CorrectionConflictProblem
 
 func (response UpdateTournamentConfiguration409ApplicationProblemPlusJSONResponse) VisitUpdateTournamentConfigurationResponse(w http.ResponseWriter) error {
 
@@ -8840,6 +8951,159 @@ type CorrectTournamentGameResultdefaultApplicationProblemPlusJSONResponse struct
 }
 
 func (response CorrectTournamentGameResultdefaultApplicationProblemPlusJSONResponse) VisitCorrectTournamentGameResultResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PreflightTournamentGameCorrectionRequestObject struct {
+	TournamentId TournamentId `json:"tournament_id"`
+	SeriesId     SeriesId     `json:"series_id"`
+	GameId       GameId       `json:"game_id"`
+	Params       PreflightTournamentGameCorrectionParams
+	Body         *PreflightTournamentGameCorrectionJSONRequestBody
+}
+
+type PreflightTournamentGameCorrectionResponseObject interface {
+	VisitPreflightTournamentGameCorrectionResponse(w http.ResponseWriter) error
+}
+
+type PreflightTournamentGameCorrection200JSONResponse OperatorCorrectionRequest
+
+func (response PreflightTournamentGameCorrection200JSONResponse) VisitPreflightTournamentGameCorrectionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PreflightTournamentGameCorrection400ApplicationProblemPlusJSONResponse struct {
+	InvalidRequestProblemApplicationProblemPlusJSONResponse
+}
+
+func (response PreflightTournamentGameCorrection400ApplicationProblemPlusJSONResponse) VisitPreflightTournamentGameCorrectionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PreflightTournamentGameCorrection401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedProblemApplicationProblemPlusJSONResponse
+}
+
+func (response PreflightTournamentGameCorrection401ApplicationProblemPlusJSONResponse) VisitPreflightTournamentGameCorrectionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PreflightTournamentGameCorrection403ApplicationProblemPlusJSONResponse struct {
+	ForbiddenProblemApplicationProblemPlusJSONResponse
+}
+
+func (response PreflightTournamentGameCorrection403ApplicationProblemPlusJSONResponse) VisitPreflightTournamentGameCorrectionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PreflightTournamentGameCorrection404ApplicationProblemPlusJSONResponse struct {
+	NotFoundProblemApplicationProblemPlusJSONResponse
+}
+
+func (response PreflightTournamentGameCorrection404ApplicationProblemPlusJSONResponse) VisitPreflightTournamentGameCorrectionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PreflightTournamentGameCorrection409ApplicationProblemPlusJSONResponse CorrectionConflictProblem
+
+func (response PreflightTournamentGameCorrection409ApplicationProblemPlusJSONResponse) VisitPreflightTournamentGameCorrectionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PreflightTournamentGameCorrection413ApplicationProblemPlusJSONResponse struct {
+	RequestEntityTooLargeProblemApplicationProblemPlusJSONResponse
+}
+
+func (response PreflightTournamentGameCorrection413ApplicationProblemPlusJSONResponse) VisitPreflightTournamentGameCorrectionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(413)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PreflightTournamentGameCorrection415ApplicationProblemPlusJSONResponse struct {
+	UnsupportedMediaTypeProblemApplicationProblemPlusJSONResponse
+}
+
+func (response PreflightTournamentGameCorrection415ApplicationProblemPlusJSONResponse) VisitPreflightTournamentGameCorrectionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(415)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PreflightTournamentGameCorrectiondefaultApplicationProblemPlusJSONResponse struct {
+	Body       ProblemDetails
+	StatusCode int
+}
+
+func (response PreflightTournamentGameCorrectiondefaultApplicationProblemPlusJSONResponse) VisitPreflightTournamentGameCorrectionResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -12151,6 +12415,9 @@ type StrictServerInterface interface {
 	// CorrectTournamentGameResult Correct an official Game result and dependent projections
 	// (POST /api/v1/admin/tournaments/{tournament_id}/series/{series_id}/games/{game_id}/corrections)
 	CorrectTournamentGameResult(ctx context.Context, request CorrectTournamentGameResultRequestObject) (CorrectTournamentGameResultResponseObject, error)
+	// PreflightTournamentGameCorrection Prepare an authoritative Game result correction command
+	// (POST /api/v1/admin/tournaments/{tournament_id}/series/{series_id}/games/{game_id}/corrections/preflight)
+	PreflightTournamentGameCorrection(ctx context.Context, request PreflightTournamentGameCorrectionRequestObject) (PreflightTournamentGameCorrectionResponseObject, error)
 	// ReplayTournamentGame Replace a failed Game with a reserved task
 	// (POST /api/v1/admin/tournaments/{tournament_id}/series/{series_id}/games/{game_id}/replays)
 	ReplayTournamentGame(ctx context.Context, request ReplayTournamentGameRequestObject) (ReplayTournamentGameResponseObject, error)
@@ -13321,6 +13588,42 @@ func (sh *strictHandler) CorrectTournamentGameResult(w http.ResponseWriter, r *h
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(CorrectTournamentGameResultResponseObject); ok {
 		if err := validResponse.VisitCorrectTournamentGameResultResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// PreflightTournamentGameCorrection operation middleware
+func (sh *strictHandler) PreflightTournamentGameCorrection(w http.ResponseWriter, r *http.Request, tournamentId TournamentId, seriesId SeriesId, gameId GameId, params PreflightTournamentGameCorrectionParams) {
+	var request PreflightTournamentGameCorrectionRequestObject
+
+	request.TournamentId = tournamentId
+	request.SeriesId = seriesId
+	request.GameId = gameId
+	request.Params = params
+
+	var body PreflightTournamentGameCorrectionJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.PreflightTournamentGameCorrection(ctx, request.(PreflightTournamentGameCorrectionRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "PreflightTournamentGameCorrection")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(PreflightTournamentGameCorrectionResponseObject); ok {
+		if err := validResponse.VisitPreflightTournamentGameCorrectionResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

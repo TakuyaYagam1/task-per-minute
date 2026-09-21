@@ -96,6 +96,7 @@ func TestOperationMeasurementIsolatesNilContextTypedNilObserverAndPanics(t *test
 	require.Equal(t, 0, clock.calls)
 
 	observer := &testObserver{}
+	//nolint:staticcheck // A nil context is intentional input for the fail-closed boundary test.
 	NewOperationMeasurement(nil, observer).Emit(nil, OperationEvent{}, nil)
 	require.Empty(t, observer.events)
 

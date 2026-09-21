@@ -22,6 +22,22 @@ type AdminRevisionConflictError struct {
 func (e *AdminRevisionConflictError) Error() string { return ErrAdminRevisionConflict.Error() }
 func (e *AdminRevisionConflictError) Unwrap() error { return domain.ErrConflict }
 
+type AdminCorrectionConflictError struct {
+	ExpectedRevision int64
+	CurrentRevision  int64
+	CurrentState     domain.TournamentState
+	Code             string
+}
+
+func (e *AdminCorrectionConflictError) Error() string {
+	if e == nil {
+		return "correction conflict"
+	}
+	return "correction conflict: " + e.Code
+}
+
+func (e *AdminCorrectionConflictError) Unwrap() error { return domain.ErrConflict }
+
 // TournamentAdminUseCase is the transport-neutral operator boundary for a
 // single tournament. The inbound adapter derives operator identity from the
 // authenticated session and never accepts it from an external request.
@@ -357,14 +373,22 @@ type AdminCorrectionPatch struct {
 type AdminCorrectionCommand struct {
 	AdminCommandScope
 
-	SeriesID, GameID           uuid.UUID
-	ExpectedProjectionRevision int64
-	Confirmed                  bool
-	Reason, Explanation        string
-	Fields                     []string
-	Patch                      AdminCorrectionPatch
-	ProjectionIntents          []AdminCorrectionProjectionIntent
-	UnlockIntents              []AdminCorrectionUnlockIntent
+	SeriesID, GameID, SourceResultRevision uuid.UUID
+	ExpectedProjectionRevision             int64
+	Confirmed                              bool
+	Reason, Explanation                    string
+	Fields                                 []string
+	Patch                                  AdminCorrectionPatch
+	ProjectionIntents                      []AdminCorrectionProjectionIntent
+	UnlockIntents                          []AdminCorrectionUnlockIntent
+}
+
+// TournamentAdminCorrectionPreparer is an optional extension of the admin
+// boundary. It remains separate from TournamentAdminUseCase so existing
+// generated consumers do not need a source-compatible method until the
+// correction preflight route is regenerated.
+type TournamentAdminCorrectionPreparer interface {
+	PrepareGameResultCorrection(ctx context.Context, command AdminCorrectionCommand) (AdminCorrectionCommand, error)
 }
 
 type AdminProjectionSupersessionView struct {

@@ -269,6 +269,22 @@ func (service *ObservedService) CorrectGameResult(
 	return evidence, err
 }
 
+func (service *ObservedService) PrepareGameResultCorrection(
+	ctx context.Context,
+	command correctionusecase.CorrectionCommand,
+) (correctionusecase.CorrectionCommand, error) {
+	if service == nil || service.next == nil {
+		return correctionusecase.CorrectionCommand{}, domain.ErrInternal
+	}
+	preparer, ok := service.next.(interface {
+		PrepareGameResultCorrection(ctx context.Context, command correctionusecase.CorrectionCommand) (correctionusecase.CorrectionCommand, error)
+	})
+	if !ok {
+		return correctionusecase.CorrectionCommand{}, domain.ErrInternal
+	}
+	return preparer.PrepareGameResultCorrection(ctx, command)
+}
+
 func (service *ObservedService) ListAudit(ctx context.Context, query incidentusecase.AuditQuery) (audit.AuditPage, error) {
 	if service == nil || service.next == nil {
 		return audit.AuditPage{}, domain.ErrInternal

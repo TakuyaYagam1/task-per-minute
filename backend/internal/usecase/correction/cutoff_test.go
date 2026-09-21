@@ -77,6 +77,7 @@ func TestCorrectionCutoffTraversal(t *testing.T) {
 				})
 				require.ErrorIs(t, err, correctionusecase.ErrCutoff)
 				require.Equal(t, correctionusecase.RejectionCutoff, correctionusecase.Code(err))
+				require.Equal(t, kind, correctionusecase.CutoffKindOf(err))
 				require.Equal(t, []correctionusecase.CutoffEvent{event}, events)
 				require.Equal(t, before, dag.Snapshot())
 			})
@@ -88,6 +89,7 @@ func TestCorrectionCutoffTraversal(t *testing.T) {
 		})
 		require.ErrorIs(t, err, correctionusecase.ErrCutoff)
 		require.Equal(t, correctionusecase.RejectionCutoff, correctionusecase.Code(err))
+		require.Empty(t, correctionusecase.CutoffKindOf(err))
 	})
 
 	t.Run("rejects malformed and cross-tournament evidence stably", func(t *testing.T) {

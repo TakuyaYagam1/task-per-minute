@@ -34,6 +34,18 @@ func Code(err error) RejectionCode {
 	return cutoffusecase.Code(err)
 }
 
+func CutoffKindOf(err error) CutoffKind {
+	return cutoffusecase.Kind(err)
+}
+
+func RejectionDetail(err error) string {
+	return cutoffusecase.Detail(err)
+}
+
+func RejectCutoff(kind CutoffKind) error {
+	return cutoffusecase.RejectCutoff(kind)
+}
+
 func EvaluateCutoff(input CutoffInput) (Cutoff, error) {
 	return cutoffusecase.EvaluateCutoff(input)
 }

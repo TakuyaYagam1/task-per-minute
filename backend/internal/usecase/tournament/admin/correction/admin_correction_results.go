@@ -57,6 +57,7 @@ type CorrectionCommand struct {
 
 	SeriesID                   uuid.UUID
 	GameID                     uuid.UUID
+	SourceResultRevision       uuid.UUID
 	ExpectedProjectionRevision int64
 	Confirmed                  bool
 	Reason                     string
@@ -65,6 +66,58 @@ type CorrectionCommand struct {
 	Patch                      CorrectionPatch
 	ProjectionIntents          []CorrectionProjectionIntent
 	UnlockIntents              []CorrectionUnlockIntent
+}
+
+// CorrectionRejectionCode is the stable operator-facing reason returned for
+// a correction preflight or commit conflict. It distinguishes a stale result
+// compare-and-set from a stale derived projection compare-and-set.
+type CorrectionRejectionCode string
+
+const (
+	CorrectionRejectionStaleProjection             CorrectionRejectionCode = "stale_projection"
+	CorrectionRejectionStaleResult                 CorrectionRejectionCode = "stale_result"
+	CorrectionRejectionIncompleteProjection        CorrectionRejectionCode = "incomplete_projection"
+	CorrectionRejectionIncompleteUnlock            CorrectionRejectionCode = "incomplete_unlock"
+	CorrectionRejectionTournamentTerminal          CorrectionRejectionCode = "tournament_terminal"
+	CorrectionRejectionCutoff                      CorrectionRejectionCode = "cutoff"
+	CorrectionRejectionCutoffWaveStarted           CorrectionRejectionCode = "cutoff_wave_started"
+	CorrectionRejectionCutoffTaskDelivered         CorrectionRejectionCode = "cutoff_task_delivered"
+	CorrectionRejectionCutoffNoShowRecorded        CorrectionRejectionCode = "cutoff_no_show_recorded"
+	CorrectionRejectionCutoffForfeitRecorded       CorrectionRejectionCode = "cutoff_forfeit_recorded"
+	CorrectionRejectionCutoffGoldenDirectAllocated CorrectionRejectionCode = "cutoff_golden_direct_allocated"
+)
+
+// CorrectionConflictError carries a safe, stable reason while preserving the
+// ordinary conflict identity for existing callers and transaction handling.
+type CorrectionConflictError struct {
+	ExpectedRevision int64
+	CurrentRevision  int64
+	CurrentState     domain.TournamentState
+	Code             CorrectionRejectionCode
+}
+
+func (e *CorrectionConflictError) Error() string {
+	if e == nil {
+		return ""
+	}
+	return string(e.Code) + ": correction conflict"
+}
+
+func (e *CorrectionConflictError) Unwrap() error { return domain.ErrConflict }
+
+// As keeps compatibility with the older generic revision conflict contract
+// while allowing new transports to inspect the stable correction code.
+func (e *CorrectionConflictError) As(target any) bool {
+	value, ok := target.(**RevisionConflictError)
+	if !ok {
+		return false
+	}
+	*value = &RevisionConflictError{
+		ExpectedRevision: e.ExpectedRevision,
+		CurrentRevision:  e.CurrentRevision,
+		CurrentState:     e.CurrentState,
+	}
+	return true
 }
 
 type ProjectionSupersessionView struct {
@@ -96,6 +149,15 @@ type CorrectionPort interface {
 
 func validCorrectionCommand(command CorrectionCommand) bool {
 	return validCorrectionCommandHeader(command) && validCorrectionIntents(command)
+}
+
+func validCorrectionCommandWithSource(command CorrectionCommand) bool {
+	return validCorrectionCommand(command) && command.SourceResultRevision != uuid.Nil
+}
+
+func validCorrectionDraftCommand(command CorrectionCommand) bool {
+	return validCorrectionCommandHeader(command) && command.SourceResultRevision != uuid.Nil &&
+		len(command.ProjectionIntents) == 0 && len(command.UnlockIntents) == 0
 }
 
 func validCorrectionCommandHeader(command CorrectionCommand) bool {

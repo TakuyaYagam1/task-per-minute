@@ -198,7 +198,11 @@
       '404':
         $ref: '../components/responses.yml#/NotFoundProblem'
       '409':
-        $ref: '../components/responses.yml#/ProjectionRevisionConflictProblem'
+        description: Correction was stale, terminal, or past a documented cutoff.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/CorrectionConflictProblem'
       '422':
         $ref: '../components/responses.yml#/InvalidRequestProblem'
       '429':
@@ -841,6 +845,60 @@
       '409':
         $ref: '../components/responses.yml#/ProjectionRevisionConflictProblem'
 
+      '400':
+        $ref: '../components/responses.yml#/InvalidRequestProblem'
+      '413':
+        $ref: '../components/responses.yml#/RequestEntityTooLargeProblem'
+      '415':
+        $ref: '../components/responses.yml#/UnsupportedMediaTypeProblem'
+      default:
+        $ref: '../components/responses.yml#/UnexpectedServerProblem'
+/api/v1/admin/tournaments/{tournament_id}/series/{series_id}/games/{game_id}/corrections/preflight:
+  parameters:
+    - $ref: '../components/parameters.yml#/TournamentId'
+    - $ref: '../components/parameters.yml#/SeriesId'
+    - $ref: '../components/parameters.yml#/GameId'
+  post:
+    operationId: preflightTournamentGameCorrection
+    tags: [tournament]
+    summary: Prepare an authoritative Game result correction command
+    description: |
+      Builds the complete correction command from the locked server authority.
+      The Idempotency-Key deterministically binds every projection and unlock
+      intent; the returned body is sent unchanged to the correction endpoint
+      with the same key. This endpoint does not mutate result, projection,
+      readiness, or reservation state.
+    x-auth-scope: tournament:manage
+    security:
+      - AdminSessionAuth: []
+    parameters:
+      - $ref: '../components/parameters.yml#/IdempotencyKey'
+      - $ref: '../components/parameters.yml#/AdminCSRFToken'
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '../components/schemas.yml#/OperatorCorrectionDraftRequest'
+    responses:
+      '200':
+        description: Complete prepared correction request. Submit it unchanged with the same Idempotency-Key.
+        content:
+          application/json:
+            schema:
+              $ref: '../components/schemas.yml#/OperatorCorrectionRequest'
+      '401':
+        $ref: '../components/responses.yml#/UnauthorizedProblem'
+      '403':
+        $ref: '../components/responses.yml#/ForbiddenProblem'
+      '404':
+        $ref: '../components/responses.yml#/NotFoundProblem'
+      '409':
+        description: Correction was stale, terminal, or past a documented cutoff.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/CorrectionConflictProblem'
       '400':
         $ref: '../components/responses.yml#/InvalidRequestProblem'
       '413':

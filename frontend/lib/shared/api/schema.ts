@@ -717,6 +717,34 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/tournaments/{tournament_id}/series/{series_id}/games/{game_id}/corrections/preflight": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tournament_id: components["parameters"]["TournamentId"];
+                series_id: components["parameters"]["SeriesId"];
+                game_id: components["parameters"]["GameId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Prepare an authoritative Game result correction command
+         * @description Builds the complete correction command from the locked server authority.
+         *     The Idempotency-Key deterministically binds every projection and unlock
+         *     intent; the returned body is sent unchanged to the correction endpoint
+         *     with the same key. This endpoint does not mutate result, projection,
+         *     readiness, or reservation state.
+         */
+        post: operations["preflightTournamentGameCorrection"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/tournament-audit": {
         parameters: {
             query?: never;
@@ -1650,8 +1678,14 @@ export interface components {
             readonly unlock_intents: components["schemas"]["ConfigurationUnlockIntent"][];
             readonly validation_digest: string;
         };
-        /** @description Stable optimistic-concurrency details that can accompany a 409 response. */
-        ProjectionRevisionProblem: components["schemas"]["ProblemDetails"] & {
+        /**
+         * @description Stable reason code for a correction preflight or commit rejection.
+         * @enum {string}
+         */
+        CorrectionRejectionCode: "stale_projection" | "stale_result" | "incomplete_projection" | "incomplete_unlock" | "tournament_terminal" | "cutoff" | "cutoff_wave_started" | "cutoff_task_delivered" | "cutoff_no_show_recorded" | "cutoff_forfeit_recorded" | "cutoff_golden_direct_allocated";
+        /** @description Stable optimistic-concurrency rejection for result correction. */
+        CorrectionConflictProblem: components["schemas"]["ProblemDetails"] & {
+            code: components["schemas"]["CorrectionRejectionCode"];
             /** Format: int64 */
             current_revision: number;
             current_state?: components["schemas"]["TournamentState"];
@@ -1669,6 +1703,14 @@ export interface components {
             mode: components["schemas"]["CategoryMode"];
             reason: string;
             unlock_intents: components["schemas"]["ConfigurationUnlockIntent"][];
+        };
+        /** @description Stable optimistic-concurrency details that can accompany a 409 response. */
+        ProjectionRevisionProblem: components["schemas"]["ProblemDetails"] & {
+            /** Format: int64 */
+            current_revision: number;
+            current_state?: components["schemas"]["TournamentState"];
+            /** Format: int64 */
+            expected_revision: number;
         };
         ReplaceTournamentSwissRoundConfigurationRequest: {
             categories: components["schemas"]["Category"][];
@@ -2137,38 +2179,38 @@ export interface components {
         };
         /** @enum {string} */
         ArtifactKind: "game_result" | "series_score" | "series_result" | "standings" | "golden_group" | "top_four" | "bracket" | "champion";
-        /** @description Immutable revision metadata for a derived Tournament artifact. */
-        ProjectionRevision: {
+        /** @description Server-prepared projection revision expectation echoed unchanged by the client. */
+        CorrectionProjectionRevisionExpectation: {
             /** Format: uuid */
-            readonly artifact_id: string;
+            artifact_id: string;
             artifact_kind: components["schemas"]["ArtifactKind"];
             /** Format: date-time */
-            readonly created_at: string;
+            created_at: string;
             /** Format: uuid */
-            readonly id: string;
-            readonly payload_digest: string;
+            id: string;
+            payload_digest: string;
             /** Format: uuid */
-            readonly previous_revision_id?: string | null;
+            previous_revision_id?: string | null;
             /** Format: int32 */
-            readonly revision_no: number;
+            revision_no: number;
             /** Format: uuid */
-            readonly tournament_id: string;
+            tournament_id: string;
         };
         /** @description Digest-only projection mutation intent. Raw projection payload is not exposed. */
         CorrectionProjectionIntent: {
             /** Format: uuid */
             decision_id: string;
-            expected_revision: components["schemas"]["ProjectionRevision"];
+            expected_revision: components["schemas"]["CorrectionProjectionRevisionExpectation"];
             /** Format: uuid */
             next_revision_id: string;
             payload_digest: string;
         };
         /** @enum {string} */
         CorrectionReason: "scorekeeping_error" | "verified_submission" | "operator_ruling";
-        /** @description Complete compare-and-set evidence for releasing an undisclosed, unused reservation. */
+        /** @description Server-prepared compare-and-set evidence echoed unchanged by the client. */
         CorrectionUnlockIntent: {
-            readonly binding_digest: string;
-            readonly evidence_digest: string;
+            binding_digest: string;
+            evidence_digest: string;
             expected_disclosed: boolean;
             /** Format: int64 */
             expected_revision: number;
@@ -2178,7 +2220,7 @@ export interface components {
             /** Format: uuid */
             reservation_id: string;
             /** Format: uuid */
-            readonly source_revision_id: string;
+            source_revision_id: string;
             /** Format: uuid */
             tournament_id: string;
         };
@@ -2189,9 +2231,11 @@ export interface components {
             explanation: string;
             fields: components["schemas"]["CorrectionField"][];
             patch: components["schemas"]["CorrectionPatch"];
-            projection_intents?: components["schemas"]["CorrectionProjectionIntent"][];
+            projection_intents: components["schemas"]["CorrectionProjectionIntent"][];
             reason: components["schemas"]["CorrectionReason"];
-            unlock_intents?: components["schemas"]["CorrectionUnlockIntent"][];
+            /** Format: uuid */
+            source_result_revision: string;
+            unlock_intents: components["schemas"]["CorrectionUnlockIntent"][];
         };
         CorrectionProjectionSupersession: {
             /** Format: uuid */
@@ -2225,6 +2269,20 @@ export interface components {
             readonly tournament_id: string;
             readonly unlock_intents: components["schemas"]["CorrectionUnlockIntent"][];
             readonly validation_digest: string;
+        };
+        OperatorCorrectionDraftRequest: {
+            confirmed: boolean;
+            /** Format: int64 */
+            expected_projection_revision: number;
+            explanation: string;
+            fields: components["schemas"]["CorrectionField"][];
+            patch: components["schemas"]["CorrectionPatch"];
+            reason: components["schemas"]["CorrectionReason"];
+            /**
+             * Format: uuid
+             * @description Exact immutable Game result revision the operator observed.
+             */
+            source_result_revision: string;
         };
         /** @enum {string} */
         AuditEntityKind: "game_attempt" | "series";
@@ -4739,7 +4797,15 @@ export interface operations {
             401: components["responses"]["UnauthorizedProblem"];
             403: components["responses"]["ForbiddenProblem"];
             404: components["responses"]["NotFoundProblem"];
-            409: components["responses"]["ProjectionRevisionConflictProblem"];
+            /** @description Correction was stale, terminal, or past a documented cutoff. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["CorrectionConflictProblem"];
+                };
+            };
             422: components["responses"]["InvalidRequestProblem"];
             429: components["responses"]["RateLimitedProblem"];
             default: components["responses"]["UnexpectedServerProblem"];
@@ -5301,6 +5367,54 @@ export interface operations {
             403: components["responses"]["ForbiddenProblem"];
             404: components["responses"]["NotFoundProblem"];
             409: components["responses"]["ProjectionRevisionConflictProblem"];
+            413: components["responses"]["RequestEntityTooLargeProblem"];
+            415: components["responses"]["UnsupportedMediaTypeProblem"];
+            default: components["responses"]["UnexpectedServerProblem"];
+        };
+    };
+    preflightTournamentGameCorrection: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+                /** @description Cookie-bound CSRF token required for this admin mutation. */
+                "X-CSRF-Token": components["parameters"]["AdminCSRFToken"];
+            };
+            path: {
+                tournament_id: components["parameters"]["TournamentId"];
+                series_id: components["parameters"]["SeriesId"];
+                game_id: components["parameters"]["GameId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OperatorCorrectionDraftRequest"];
+            };
+        };
+        responses: {
+            /** @description Complete prepared correction request. Submit it unchanged with the same Idempotency-Key. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OperatorCorrectionRequest"];
+                };
+            };
+            400: components["responses"]["InvalidRequestProblem"];
+            401: components["responses"]["UnauthorizedProblem"];
+            403: components["responses"]["ForbiddenProblem"];
+            404: components["responses"]["NotFoundProblem"];
+            /** @description Correction was stale, terminal, or past a documented cutoff. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["CorrectionConflictProblem"];
+                };
+            };
             413: components["responses"]["RequestEntityTooLargeProblem"];
             415: components["responses"]["UnsupportedMediaTypeProblem"];
             default: components["responses"]["UnexpectedServerProblem"];

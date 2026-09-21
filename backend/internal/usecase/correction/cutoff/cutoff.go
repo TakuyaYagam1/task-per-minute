@@ -46,9 +46,7 @@ func evaluateCorrectionCutoffPrepared(
 	}
 	for _, event := range input.Events {
 		if _, blocked := affected[event.SourceRevisionID]; blocked {
-			return Cutoff{}, rejectCorrection(
-				RejectionCutoff, ErrCutoff, "irreversible event exists",
-			)
+			return Cutoff{}, rejectCutoff(event.Kind)
 		}
 	}
 	return Cutoff{

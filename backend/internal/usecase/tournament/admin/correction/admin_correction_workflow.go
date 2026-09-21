@@ -10,6 +10,7 @@ import (
 	"reflect"
 	"slices"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -29,12 +30,61 @@ func NewCorrectionWorkflow(deps CorrectionWorkflowDependencies) *CorrectionWorkf
 	return &CorrectionWorkflow{transactions: deps.Transactions, repository: deps.Repository}
 }
 
+// PrepareGameResultCorrection evaluates the same locked authority snapshot as
+// the committing workflow and returns the complete server-owned intent set.
+// It deliberately performs no mutation. The caller must send this exact
+// result back with the same command id and idempotency key for the commit.
+func (w *CorrectionWorkflow) PrepareGameResultCorrection(
+	ctx context.Context,
+	command CorrectionCommand,
+) (CorrectionCommand, error) {
+	if ctx == nil || !validCorrectionDraftCommand(command) {
+		return CorrectionCommand{}, domain.ErrValidation
+	}
+	if !w.available() {
+		return CorrectionCommand{}, domain.ErrInternal
+	}
+	var prepared CorrectionCommand
+	err := w.transactions.Do(ctx, func(txCtx context.Context) error {
+		authority, loadErr := w.repository.LockCorrectionAuthority(
+			txCtx, command.TournamentID, command.SeriesID, command.GameID,
+		)
+		if loadErr != nil {
+			return correctionWorkflowError(loadErr, command, authority)
+		}
+		if !validCorrectionWorkflowAuthority(authority, command) {
+			return domain.ErrInternal
+		}
+		if authority.Core.GameResult.ID.UUID() != command.SourceResultRevision {
+			return newCorrectionConflictWithCode(command, authority, CorrectionRejectionStaleResult)
+		}
+		if authority.ProjectionRevision != command.ExpectedProjectionRevision {
+			return newCorrectionConflictWithCode(command, authority, CorrectionRejectionStaleProjection)
+		}
+		projectionIntents, unlockIntents, intentErr := correctionPreparedIntents(command, authority.Core)
+		if intentErr != nil {
+			return correctionWorkflowError(intentErr, command, authority)
+		}
+		prepared = command
+		prepared.ProjectionIntents = projectionIntents
+		prepared.UnlockIntents = unlockIntents
+		return nil
+	})
+	if err != nil {
+		return CorrectionCommand{}, err
+	}
+	if !validCorrectionCommandWithSource(prepared) {
+		return CorrectionCommand{}, domain.ErrInternal
+	}
+	return prepared, nil
+}
+
 //nolint:gocyclo // One transactional workflow keeps ordering, rollback, and fail-closed branches explicit.
 func (w *CorrectionWorkflow) CorrectGameResult(
 	ctx context.Context,
 	command CorrectionCommand,
 ) (CorrectionEvidence, error) {
-	if ctx == nil || !validCorrectionCommand(command) {
+	if ctx == nil || !validCorrectionCommandWithSource(command) {
 		return CorrectionEvidence{}, domain.ErrValidation
 	}
 	if !w.available() {
@@ -70,12 +120,15 @@ func (w *CorrectionWorkflow) CorrectGameResult(
 		if !validCorrectionWorkflowAuthority(authority, command) {
 			return domain.ErrInternal
 		}
+		if authority.Core.GameResult.ID.UUID() != command.SourceResultRevision {
+			return newCorrectionConflictWithCode(command, authority, CorrectionRejectionStaleResult)
+		}
 
 		if recorded != nil {
-			return newCorrectionConflict(command, authority)
+			return newCorrectionConflictWithCode(command, authority, CorrectionRejectionStaleProjection)
 		}
 		if authority.ProjectionRevision != command.ExpectedProjectionRevision {
-			return newCorrectionConflict(command, authority)
+			return newCorrectionConflictWithCode(command, authority, CorrectionRejectionStaleProjection)
 		}
 
 		requestedAt, timeErr := w.readTime(txCtx)
@@ -115,6 +168,121 @@ func (w *CorrectionWorkflow) CorrectGameResult(
 		return CorrectionEvidence{}, err
 	}
 	return committed, nil
+}
+
+func correctionPreparedIntents(
+	command CorrectionCommand,
+	authority correctionusecase.Authority,
+) ([]CorrectionProjectionIntent, []CorrectionUnlockIntent, error) {
+	targetID := authority.GameResult.SourceProjection.ID()
+	var target domain.DerivedRevision
+	for _, projection := range authority.DAG.Snapshot().Projections {
+		revision := projection.Revision()
+		if revision.ID() == targetID {
+			target = revision
+			break
+		}
+	}
+	if target.ID().IsZero() {
+		return nil, nil, domain.ErrInternal
+	}
+	cutoff, err := correctionusecase.EvaluateCutoff(correctionusecase.CutoffInput{
+		DAG: authority.DAG, TournamentID: command.TournamentID,
+		TargetRevisionID: targetID, TournamentState: authority.TournamentState,
+		Events: authority.CutoffEvents,
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+	revisions := correctionRebuildExpectedRevisions(cutoff, target)
+	projectionIntents := make([]CorrectionProjectionIntent, len(revisions))
+	for index, revision := range revisions {
+		intent := CorrectionProjectionIntent{
+			ExpectedRevision: correctionProjectionExpectation(revision),
+			NextRevisionID: correctionWorkflowID(
+				command.CommandID, "projection:"+revision.ID().UUID().String(),
+			),
+			DecisionID: correctionWorkflowID(
+				command.CommandID, "decision:"+revision.ID().UUID().String(),
+			),
+		}
+		payload, marshalErr := marshalCorrectionProjectionDocument(command, intent)
+		if marshalErr != nil {
+			return nil, nil, marshalErr
+		}
+		intent.PayloadDigest = sha256.Sum256(payload)
+		projectionIntents[index] = intent
+	}
+	affected := make(map[domain.DerivedRevisionID]struct{}, len(cutoff.Descendants())+1)
+	affected[target.ID()] = struct{}{}
+	for _, revision := range cutoff.Descendants() {
+		affected[revision.ID()] = struct{}{}
+	}
+	unlockIntents := make([]CorrectionUnlockIntent, 0, len(authority.Reservations))
+	for _, reservation := range authority.Reservations {
+		if _, included := affected[reservation.SourceRevisionID]; !included || reservation.Used || reservation.Disclosed {
+			continue
+		}
+		intent := correctionusecase.NewUnlockIntent(reservation)
+		unlockIntents = append(unlockIntents, CorrectionUnlockIntent{
+			ReservationID: intent.ReservationID, TournamentID: intent.TournamentID,
+			OwnerID: intent.OwnerID, SourceRevisionID: intent.SourceRevisionID.UUID(),
+			ExpectedRevision: intent.ExpectedRevision, ExpectedUsed: intent.ExpectedUsed,
+			ExpectedDisclosed: intent.ExpectedDisclosed, EvidenceDigest: intent.EvidenceDigest,
+			BindingDigest: intent.BindingDigest,
+		})
+	}
+	return projectionIntents, unlockIntents, nil
+}
+
+func correctionRebuildExpectedRevisions(
+	cutoff correctionusecase.Cutoff,
+	target domain.DerivedRevision,
+) []domain.DerivedRevision {
+	descendants := cutoff.Descendants()
+	current := make(map[domain.ArtifactRef]domain.DerivedRevision, len(descendants))
+	for _, descendant := range descendants {
+		prior, exists := current[descendant.Artifact()]
+		if !exists || prior.RevisionNo() < descendant.RevisionNo() {
+			current[descendant.Artifact()] = descendant
+		}
+	}
+	revisions := make([]domain.DerivedRevision, 1, len(current)+1)
+	revisions[0] = target
+	for _, descendant := range descendants {
+		if head, exists := current[descendant.Artifact()]; exists && correctionDerivedRevisionEqual(head, descendant) {
+			revisions = append(revisions, descendant)
+			delete(current, descendant.Artifact())
+		}
+	}
+	return revisions
+}
+
+func correctionDerivedRevisionEqual(first, second domain.DerivedRevision) bool {
+	if first.ID() != second.ID() || first.TournamentID() != second.TournamentID() ||
+		first.Artifact() != second.Artifact() || first.RevisionNo() != second.RevisionNo() ||
+		first.PayloadDigest() != second.PayloadDigest() || !first.CreatedAt().Equal(second.CreatedAt()) {
+		return false
+	}
+	firstPrevious, secondPrevious := first.PreviousRevisionID(), second.PreviousRevisionID()
+	if firstPrevious == nil || secondPrevious == nil {
+		return firstPrevious == nil && secondPrevious == nil
+	}
+	return *firstPrevious == *secondPrevious
+}
+
+func correctionProjectionExpectation(revision domain.DerivedRevision) ProjectionRevisionExpectation {
+	var previous *uuid.UUID
+	if value := revision.PreviousRevisionID(); value != nil {
+		id := value.UUID()
+		previous = &id
+	}
+	return ProjectionRevisionExpectation{
+		ID: revision.ID().UUID(), TournamentID: revision.TournamentID(),
+		ArtifactKind: string(revision.Artifact().Kind), ArtifactID: revision.Artifact().EntityID,
+		RevisionNo: revision.RevisionNo(), PreviousRevisionID: previous,
+		PayloadDigest: revision.PayloadDigest(), CreatedAt: revision.CreatedAt(),
+	}
 }
 
 func (w *CorrectionWorkflow) available() bool {
@@ -448,14 +616,35 @@ func correctionWorkflowError(
 	if err == nil {
 		return nil
 	}
-	var conflict *RevisionConflictError
-	if errors.As(err, &conflict) {
+	var typedConflict *CorrectionConflictError
+	if errors.As(err, &typedConflict) {
 		return err
 	}
+	var conflict *RevisionConflictError
+	if errors.As(err, &conflict) {
+		return newCorrectionConflictWithCode(command, authority, CorrectionRejectionStaleProjection)
+	}
 	code := correctionusecase.Code(err)
-	if errors.Is(err, domain.ErrConflict) || errors.Is(err, correctionusecase.ErrCutoff) ||
-		code == correctionusecase.RejectionStale || code == correctionusecase.RejectionCutoff {
-		return newCorrectionConflict(command, authority)
+	if code == correctionusecase.RejectionTerminal {
+		return newCorrectionConflictWithCode(command, authority, CorrectionRejectionTournamentTerminal)
+	}
+	if code == correctionusecase.RejectionCutoff || errors.Is(err, correctionusecase.ErrCutoff) {
+		return newCorrectionConflictWithCode(command, authority, correctionCutoffCode(err))
+	}
+	if code == correctionusecase.RejectionStale {
+		return newCorrectionConflictWithCode(command, authority, CorrectionRejectionStaleProjection)
+	}
+	if code == correctionusecase.RejectionIncomplete {
+		if conflictCode, ok := correctionIncompleteCode(err); ok {
+			return newCorrectionConflictWithCode(command, authority, conflictCode)
+		}
+	}
+	if errors.Is(err, domain.ErrConflict) {
+		conflictCode := CorrectionRejectionStaleProjection
+		if !authority.Core.TournamentState.IsValid() {
+			conflictCode = CorrectionRejectionTournamentTerminal
+		}
+		return newCorrectionConflictWithCode(command, authority, conflictCode)
 	}
 	if errors.Is(err, correctionusecase.ErrInvalid) {
 		return domain.ErrValidation
@@ -463,15 +652,71 @@ func correctionWorkflowError(
 	return err
 }
 
+func correctionIncompleteCode(err error) (CorrectionRejectionCode, bool) {
+	detail := correctionusecase.RejectionDetail(err)
+	switch {
+	case strings.HasPrefix(detail, "projection intent"):
+		return CorrectionRejectionIncompleteProjection, true
+	case strings.HasPrefix(detail, "unlock intent"):
+		return CorrectionRejectionIncompleteUnlock, true
+	default:
+		return "", false
+	}
+}
+
 func newCorrectionConflict(
 	command CorrectionCommand,
 	authority CorrectionWorkflowAuthority,
 ) error {
-	return &RevisionConflictError{
-		ExpectedRevision: command.ExpectedProjectionRevision,
-		CurrentRevision:  authority.ProjectionRevision,
-		CurrentState:     authority.Core.TournamentState,
+	return newCorrectionConflictWithCode(command, authority, CorrectionRejectionStaleProjection)
+}
+
+func newCorrectionConflictWithCode(
+	command CorrectionCommand,
+	authority CorrectionWorkflowAuthority,
+	code CorrectionRejectionCode,
+) error {
+	currentRevision := authority.ProjectionRevision
+	if currentRevision < 1 {
+		currentRevision = command.ExpectedProjectionRevision
 	}
+	return &CorrectionConflictError{
+		ExpectedRevision: command.ExpectedProjectionRevision,
+		CurrentRevision:  currentRevision,
+		CurrentState:     authority.Core.TournamentState,
+		Code:             code,
+	}
+}
+
+func correctionCutoffCode(err error) CorrectionRejectionCode {
+	switch correctionusecase.CutoffKindOf(err) {
+	case correctionusecase.CutoffWaveStarted:
+		return CorrectionRejectionCutoffWaveStarted
+	case correctionusecase.CutoffTaskDelivered:
+		return CorrectionRejectionCutoffTaskDelivered
+	case correctionusecase.CutoffNoShowRecorded:
+		return CorrectionRejectionCutoffNoShowRecorded
+	case correctionusecase.CutoffForfeitRecorded:
+		return CorrectionRejectionCutoffForfeitRecorded
+	case correctionusecase.CutoffGoldenAllocated:
+		return CorrectionRejectionCutoffGoldenDirectAllocated
+	}
+	message := strings.ToLower(err.Error())
+	for _, item := range []struct {
+		needle string
+		code   CorrectionRejectionCode
+	}{
+		{needle: string(correctionusecase.CutoffWaveStarted), code: CorrectionRejectionCutoffWaveStarted},
+		{needle: string(correctionusecase.CutoffTaskDelivered), code: CorrectionRejectionCutoffTaskDelivered},
+		{needle: string(correctionusecase.CutoffNoShowRecorded), code: CorrectionRejectionCutoffNoShowRecorded},
+		{needle: string(correctionusecase.CutoffForfeitRecorded), code: CorrectionRejectionCutoffForfeitRecorded},
+		{needle: string(correctionusecase.CutoffGoldenAllocated), code: CorrectionRejectionCutoffGoldenDirectAllocated},
+	} {
+		if strings.Contains(message, item.needle) {
+			return item.code
+		}
+	}
+	return CorrectionRejectionCutoff
 }
 
 func correctionWorkflowID(commandID uuid.UUID, role string) uuid.UUID {

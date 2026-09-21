@@ -18,6 +18,7 @@ import {
 import { Button, Dialog, Message, Panel, Status } from "../../shared/ui";
 
 import styles from "./TournamentOperatorActions.module.css";
+import { TournamentResultCorrection } from "./TournamentResultCorrection";
 
 type OperatorAction = "pause" | "resume" | "cancel" | "no-show" | "operator-forfeit";
 
@@ -936,6 +937,12 @@ export const TournamentOperatorActions = ({
           </p>
         </div>
       </form>
+
+      <TournamentResultCorrection
+        snapshot={snapshot}
+        snapshotLoading={snapshotLoading}
+        onAccepted={loadSnapshot}
+      />
 
       <section className={styles.recoverySection} aria-labelledby="operator-recovery-heading">
         <div className={styles.recoveryHeader}>

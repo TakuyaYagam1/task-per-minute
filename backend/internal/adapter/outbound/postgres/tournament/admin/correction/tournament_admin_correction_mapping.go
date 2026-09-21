@@ -56,7 +56,7 @@ func (r *TournamentAdminCorrectionPostgres) loadCorrectionAuthority(
 	if cutoff, cutoffErr := querier.GetCorrectionCutoff(ctx, correctionCutoffParams(scope, locked.target.ResultRevisionID)); cutoffErr != nil {
 		return admincorrection.CorrectionWorkflowAuthority{}, tournamentAdminCorrectionError("load cutoff", cutoffErr)
 	} else if cutoff != "" {
-		return admincorrection.CorrectionWorkflowAuthority{}, &CorrectionCutoffError{Code: cutoff}
+		return admincorrection.CorrectionWorkflowAuthority{}, correctionAuthorityCutoffError(cutoff)
 	}
 
 	core, err := buildTournamentAdminCorrectionCore(ctx, querier, locked, scope)
@@ -74,6 +74,25 @@ func (r *TournamentAdminCorrectionPostgres) loadCorrectionAuthority(
 		Core:                 core,
 		Stage:                stage,
 	}, nil
+}
+
+func correctionAuthorityCutoffError(code string) error {
+	var kind correctionusecase.CutoffKind
+	switch code {
+	case string(correctionusecase.CutoffWaveStarted):
+		kind = correctionusecase.CutoffWaveStarted
+	case string(correctionusecase.CutoffTaskDelivered):
+		kind = correctionusecase.CutoffTaskDelivered
+	case string(correctionusecase.CutoffNoShowRecorded):
+		kind = correctionusecase.CutoffNoShowRecorded
+	case string(correctionusecase.CutoffForfeitRecorded):
+		kind = correctionusecase.CutoffForfeitRecorded
+	case string(correctionusecase.CutoffGoldenAllocated):
+		kind = correctionusecase.CutoffGoldenAllocated
+	default:
+		return domain.ErrInternal
+	}
+	return correctionusecase.RejectCutoff(kind)
 }
 
 func loadTournamentAdminCorrectionStage(
