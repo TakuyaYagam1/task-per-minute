@@ -1652,6 +1652,27 @@ export const isOperatorRecoveryControl = (
   return value.replay === null && isOperatorRecoveryReserveExhaustedDetails(value.reserve_exhausted);
 };
 
+const isOperatorRecoveryControlList = (
+  value: unknown,
+): value is OperatorRecoveryControl[] => {
+  if (!Array.isArray(value)) {
+    return false;
+  }
+
+  const controlKeys = new Set<string>();
+  return value.every((control) => {
+    if (!isOperatorRecoveryControl(control)) {
+      return false;
+    }
+    const controlKey = `${control.kind}:${control.assignment_id}:${control.series_id}:${control.slot_id}`;
+    if (controlKeys.has(controlKey)) {
+      return false;
+    }
+    controlKeys.add(controlKey);
+    return true;
+  });
+};
+
 const isOperatorGameSlot = (value: unknown): boolean =>
   isRecord(value) &&
   hasExactKeys(value, ["attempts", "category", "id", "position", "score_before", "series_id"]) &&
@@ -2128,8 +2149,7 @@ export const isOperatorRecoverySnapshot = (
   ]) &&
   isOperatorRecoveryCursor(value.next_cursor) &&
   (value.pause_graph === null || isOperatorPauseGraph(value.pause_graph)) &&
-  Array.isArray(value.recovery_controls) &&
-  value.recovery_controls.every(isOperatorRecoveryControl) &&
+  isOperatorRecoveryControlList(value.recovery_controls) &&
   isRoster(value.roster) &&
   Array.isArray(value.series) &&
   value.series.every(isOperatorSeries) &&

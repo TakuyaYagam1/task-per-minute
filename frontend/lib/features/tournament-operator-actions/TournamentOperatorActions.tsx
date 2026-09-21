@@ -38,7 +38,7 @@ const noShowCandidateKey = (candidate: NoShowCandidate): string =>
   `${candidate.wave.id}:${candidate.series.id}`;
 
 const recoveryControlKey = (control: RecoveryControl): string =>
-  `${control.kind}:${control.series_id}:${control.slot_id}`;
+  `${control.kind}:${control.assignment_id}:${control.series_id}:${control.slot_id}`;
 
 const recoveryCandidateKey = (candidate: RecoveryReserveCandidate): string =>
   `${candidate.task_id}:${candidate.version}`;

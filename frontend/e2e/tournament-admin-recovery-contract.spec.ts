@@ -2,6 +2,7 @@ import { expect, test, type Page, type Request, type Route } from "@playwright/t
 
 import type { OperatorRecoverySnapshot } from "../lib/shared/api";
 import type { components } from "../lib/shared/api/schema";
+import { isOperatorRecoverySnapshot } from "../lib/shared/api/guards";
 import {
   operatorSnapshot,
   publicTournament,
@@ -126,6 +127,19 @@ const reserveSnapshot = (revision = 9, candidates: Schema["OperatorRecoveryReser
     }],
   };
 };
+
+test("runtime guard rejects duplicate recovery control identities", () => {
+  const snapshot = replaySnapshot();
+  const control = snapshot.recovery_controls[0];
+  if (control === undefined) {
+    throw new Error("Recovery fixture is missing a control");
+  }
+  const duplicateSnapshot: OperatorRecoverySnapshot = {
+    ...snapshot,
+    recovery_controls: [control, { ...control, reason: "duplicate server control" }],
+  };
+  expect(isOperatorRecoverySnapshot(duplicateSnapshot)).toBe(false);
+});
 
 type RecoveryRoutes = Readonly<{
   replayRequests: Array<{ body: Record<string, unknown>; headers: Record<string, string> }>;
