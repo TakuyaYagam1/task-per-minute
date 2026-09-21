@@ -621,6 +621,10 @@ func TestTournamentOddSwissRoundRevisionRebuildsByeThroughProductionHTTPAndPostg
 	for _, series := range publicSnapshot.LiveSeries {
 		_, found := expectedPublicSeries[series.SeriesId]
 		require.True(t, found, "public snapshot exposed a superseded Swiss Series %s", series.SeriesId)
+		require.Equal(t, api.PublicLiveSeriesStageSwiss, series.Stage)
+		require.NotNil(t, series.RoundNumber)
+		require.Equal(t, int32(1), *series.RoundNumber)
+		require.Nil(t, series.ScheduledAt, "no authoritative schedule must remain explicitly absent")
 	}
 
 	byeEvidence := readOddSwissByeEvidence(t, created.Id, roster.Id, initialRound.Id, startedWave.Id)
