@@ -33,7 +33,7 @@ pending_deadlines AS (
         COALESCE(
             latest_clock.resumed_deadline,
             game_attempt.started_at
-                + task_snapshot.time_limit * INTERVAL '1 second'
+                + INTERVAL '180 seconds'
         )::TIMESTAMPTZ AS due_at
     FROM game_attempts AS game_attempt
     JOIN series
@@ -178,7 +178,7 @@ pending_deadlines AS (
         COALESCE(
             latest_clock.resumed_deadline,
             game_attempt.started_at
-                + task_snapshot.time_limit * INTERVAL '1 second'
+                + INTERVAL '180 seconds'
         )::TIMESTAMPTZ AS due_at
     FROM game_attempts AS game_attempt
     JOIN series

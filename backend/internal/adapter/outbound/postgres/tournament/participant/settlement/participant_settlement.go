@@ -114,8 +114,8 @@ func (r *ParticipantSettlementRepository) LoadConcurrentWinnerAuthority(
 		Series: series, AssignmentID: scope.AssignmentID,
 		AssignmentRevision: binding.AssignmentRevision, PlanRevisionID: binding.PlanRevisionID,
 		SnapshotID: binding.SnapshotID, ContentDigest: participantBindingDigest(binding),
-		DeadlineSeconds: int(binding.TimeLimit), StartedAt: startedAt,
-		Deadline: startedAt.Add(time.Duration(binding.TimeLimit) * time.Second), DeliveryEnabled: true,
+		DeadlineSeconds: int(domain.TournamentTaskDuration / time.Second), StartedAt: startedAt,
+		Deadline: startedAt.Add(domain.TournamentTaskDuration), DeliveryEnabled: true,
 	}
 	if gamedomain.ValidateStarted(scope, started) != nil ||
 		metadata.AttemptRevisions[scope.Game.GameID] != binding.AttemptRevision {

@@ -391,7 +391,7 @@ func validateWaveStartGameIdentity(scope StartScope, game GameAuthority) error {
 		game.ParticipantIDs[0] == game.ParticipantIDs[1] || game.AssignmentID == uuid.Nil ||
 		game.AssignmentRevision < 1 || game.PlanRevisionID == uuid.Nil || game.SnapshotID == uuid.Nil ||
 		game.ContentDigest == [sha256.Size]byte{} ||
-		!domain.IsValidTaskTimeLimit(game.DeadlineSeconds) {
+		game.DeadlineSeconds != int(domain.TournamentTaskDuration/time.Second) {
 		return waveStartError("invalid playable Game authority")
 	}
 	return nil

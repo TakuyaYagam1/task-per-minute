@@ -552,7 +552,7 @@ func waveStartGameAuthorities(
 			ParticipantIDs: [2]uuid.UUID{row.FirstParticipantID, row.SecondParticipantID}, Series: series,
 			AssignmentID: row.AssignmentID, AssignmentRevision: row.AssignmentRevision,
 			PlanRevisionID: row.PlanRevisionID, SnapshotID: row.SnapshotID,
-			ContentDigest: digest, DeadlineSeconds: int(row.TimeLimit),
+			ContentDigest: digest, DeadlineSeconds: int(domain.TournamentTaskDuration / time.Second),
 		}
 	}
 	return result, nil
@@ -618,8 +618,8 @@ func waveStartGameMatchesRow(
 		game.ParticipantIDs != [2]uuid.UUID{row.FirstParticipantID, row.SecondParticipantID} ||
 		game.AssignmentID != row.AssignmentID || game.AssignmentRevision != row.AssignmentRevision ||
 		game.PlanRevisionID != row.PlanRevisionID || game.SnapshotID != row.SnapshotID ||
-		game.ContentDigest != digest || game.DeadlineSeconds != int(row.TimeLimit) ||
-		!game.StartedAt.Equal(startedAt) || !game.Deadline.Equal(startedAt.Add(time.Duration(row.TimeLimit)*time.Second)) ||
+		game.ContentDigest != digest || game.DeadlineSeconds != int(domain.TournamentTaskDuration/time.Second) ||
+		!game.StartedAt.Equal(startedAt) || !game.Deadline.Equal(startedAt.Add(domain.TournamentTaskDuration)) ||
 		!game.DeliveryEnabled || game.Series.Series.ID != row.SeriesID ||
 		game.Series.Series.State != domain.SeriesStateActive || len(game.Series.Series.Slots) != 1 {
 		return false

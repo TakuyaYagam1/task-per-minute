@@ -1,6 +1,7 @@
 package execution
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -42,6 +43,31 @@ func TestWaveStartGameAuthorityAllowsDistinctPerGamePlans(t *testing.T) {
 	row.PlanRevisionID = tournamentExecutionID(199)
 	_, err = waveStartGameAuthorities(authority, rosterID, []sqlc.LockWaveStartGamesRow{row})
 	require.NoError(t, err)
+}
+
+func TestWaveStartGameAuthorityUsesRuntimeDeadlineForCatalogLimit(t *testing.T) {
+	t.Parallel()
+
+	for _, catalogLimit := range []int{60, 90, 180} {
+		t.Run(fmt.Sprintf("catalog limit %d", catalogLimit), func(t *testing.T) {
+			t.Parallel()
+
+			header, scope := waveStartAuthorityRow()
+			authority, rosterID, err := waveStartAuthorityHeader(header, scope)
+			require.NoError(t, err)
+			require.NoError(t, applyWaveStartReadiness(&authority, []sqlc.LockWaveStartReadinessRow{
+				{ParticipantID: tournamentExecutionID(101), Ready: true, ReadinessRevision: 2},
+				{ParticipantID: tournamentExecutionID(102), Ready: true, ReadinessRevision: 2},
+			}))
+
+			row := waveStartGameRow(authority, rosterID)
+			row.TimeLimit = int32(catalogLimit)
+			games, err := waveStartGameAuthorities(authority, rosterID, []sqlc.LockWaveStartGamesRow{row})
+			require.NoError(t, err)
+			require.Len(t, games, 1)
+			require.Equal(t, int(domain.TournamentTaskDuration/time.Second), games[0].DeadlineSeconds)
+		})
+	}
 }
 
 func TestWaveStartAuthorityAllowsOnlySwissAndPlayoffs(t *testing.T) {

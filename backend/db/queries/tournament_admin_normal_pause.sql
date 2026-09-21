@@ -73,7 +73,7 @@ FOR UPDATE OF clock;
 -- name: ListTournamentAdminNormalPauseGameDeadlines :many
 SELECT attempt.id AS game_attempt_id,
     COALESCE(latest_resume.resumed_deadline,
-        attempt.started_at + snapshot.time_limit * INTERVAL '1 second')::TIMESTAMPTZ AS deadline
+        attempt.started_at + INTERVAL '180 seconds')::TIMESTAMPTZ AS deadline
 FROM wave_series AS membership
 JOIN series ON series.id = membership.series_id
 JOIN game_slots AS slot ON slot.series_id = series.id

@@ -78,7 +78,7 @@ WHERE game_attempt.id = sqlc.arg(game_attempt_id)
     AND wave.state = 'active'
     AND COALESCE(
         latest_clock.resumed_deadline,
-        game_attempt.started_at + task_snapshot.time_limit * INTERVAL '1 second'
+        game_attempt.started_at + INTERVAL '180 seconds'
     ) = sqlc.arg(due_at)::TIMESTAMPTZ
 FOR UPDATE OF game_attempt, game_slot, assignment, series, wave, score_head;
 

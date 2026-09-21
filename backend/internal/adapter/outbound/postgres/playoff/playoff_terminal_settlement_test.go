@@ -92,7 +92,7 @@ func terminalSettlementBindingFixture(ids playoff.FinalStageIDs, position int) p
 		ReservationID:      ids.DraftAssignmentReservationID("completed-final", position, 1),
 		SnapshotID:         ids.DraftAssignmentSnapshotID("completed-final", position, 1),
 		ContentDigest:      digest,
-		DeadlineSeconds:    60,
+		DeadlineSeconds:    180,
 	}
 }
 

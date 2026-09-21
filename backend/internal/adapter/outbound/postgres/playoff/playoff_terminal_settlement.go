@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -312,7 +313,7 @@ func (repository *PlayoffTerminalPostgres) finalExistingBindings(
 			PlanID: assignment.PlanID, PlanRevisionID: ids.DraftAssignmentRevisionID,
 			BranchID: assignment.BranchID, ReservationID: assignment.ReservationID,
 			SnapshotID: assignment.SnapshotID, ContentDigest: digest,
-			DeadlineSeconds: int(snapshot.TimeLimit),
+			DeadlineSeconds: int(domain.TournamentTaskDuration / time.Second),
 		})
 	}
 	if err := validateFinalMaterializedBindingPrefix(ids, series, bindings); err != nil {

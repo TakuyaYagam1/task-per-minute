@@ -117,7 +117,7 @@ func terminalRehydrateBindingFixture(ids playoff.FinalStageIDs, position int) pl
 		ReservationID:      ids.DraftAssignmentReservationID("completed-final", position, 1),
 		SnapshotID:         ids.DraftAssignmentSnapshotID("completed-final", position, 1),
 		ContentDigest:      digest,
-		DeadlineSeconds:    60,
+		DeadlineSeconds:    180,
 	}
 }
 

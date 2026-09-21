@@ -131,7 +131,7 @@ SELECT assignment.id AS assignment_id,
         WHEN game_pause.resumed_deadline IS NOT NULL THEN game_pause.resumed_deadline
         WHEN game_pause.state = 'active' THEN NULL::TIMESTAMPTZ
         WHEN attempt.started_at IS NOT NULL
-            THEN attempt.started_at + (snapshot.time_limit * INTERVAL '1 second')
+            THEN attempt.started_at + INTERVAL '180 seconds'
         ELSE NULL::TIMESTAMPTZ
     END AS effective_deadline,
     transaction_timestamp()::TIMESTAMPTZ AS observed_at

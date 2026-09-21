@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -246,7 +247,7 @@ func finalDraftGameBindings(
 				ReservationID:      primary.ReservationID,
 				SnapshotID:         primary.Snapshot.SnapshotID,
 				ContentDigest:      primary.ContentDigest,
-				DeadlineSeconds:    primary.Snapshot.TimeLimit,
+				DeadlineSeconds:    int(domain.TournamentTaskDuration / time.Second),
 			}
 		}
 		if !hasFinalBindings(bindings, ids) {

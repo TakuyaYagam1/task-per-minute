@@ -696,7 +696,7 @@ func (r *TournamentReconnectPostgres) reconnectCurrentDeadline(
 	if row.TimeLimit < 1 {
 		return time.Time{}, domain.ErrInternal
 	}
-	deadline, ok := pausedomain.AddTime(startedAt, time.Duration(row.TimeLimit)*time.Second)
+	deadline, ok := pausedomain.AddTime(startedAt, domain.TournamentTaskDuration)
 	if !ok {
 		return time.Time{}, domain.ErrInternal
 	}

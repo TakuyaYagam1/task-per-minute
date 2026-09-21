@@ -19,6 +19,8 @@ import (
 
 var ErrParticipantStateInvalid = errors.New("participant state: persisted read model is invalid")
 
+const participantRuntimeTaskDurationSeconds = int(domain.TournamentTaskDuration / time.Second)
+
 type participantStateRoot struct {
 	tournamentID            uuid.UUID
 	tournamentState         domain.TournamentState
@@ -292,7 +294,7 @@ func validateParticipantActiveDeadline(
 		}
 		return nil
 	}
-	expected := startedAt.Add(time.Duration(row.TimeLimit) * time.Second)
+	expected := startedAt.Add(domain.TournamentTaskDuration)
 	if !effectiveDeadline.Equal(expected) {
 		return participantStateInvalid("assignment context deadline")
 	}
@@ -336,7 +338,7 @@ func participantAssignmentVisibleHints(
 			if state != domain.GameStateActive {
 				return nil, participantStateInvalid("assignment hint timing")
 			}
-			return participantUnlockedAssignmentHints(hints, startedAt, observedAt, int(row.TimeLimit))
+			return participantUnlockedAssignmentHints(hints, startedAt, observedAt, participantRuntimeTaskDurationSeconds)
 		}
 		return participantUnlockedPausedAssignmentHints(row, hints, startedAt, observedAt)
 	case domain.GameStateCompleted:
@@ -369,7 +371,7 @@ func participantUnlockedPausedAssignmentHints(
 	hints []string,
 	startedAt, observedAt time.Time,
 ) ([]string, error) {
-	baseStart, remaining, err := participantValidatedPauseClock(row, startedAt, observedAt)
+	baseStart, timeLimit, remaining, err := participantValidatedPauseClock(row, startedAt, observedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -383,13 +385,13 @@ func participantUnlockedPausedAssignmentHints(
 		if !ok {
 			return nil, participantStateInvalid("assignment hint timing")
 		}
-		return participantUnlockedAssignmentHints(hints, baseStart, frozenAt, int(row.TimeLimit))
+		return participantUnlockedAssignmentHints(hints, baseStart, frozenAt, int(timeLimit/time.Second))
 	case "resumed", "cancelled":
-		resumedStart, err := participantValidatedResumedHintStart(row, baseStart, remaining, observedAt)
+		resumedStart, err := participantValidatedResumedHintStart(row, baseStart, remaining, timeLimit, observedAt)
 		if err != nil {
 			return nil, err
 		}
-		return participantUnlockedAssignmentHints(hints, resumedStart, observedAt, int(row.TimeLimit))
+		return participantUnlockedAssignmentHints(hints, resumedStart, observedAt, int(timeLimit/time.Second))
 	default:
 		return nil, participantStateInvalid("assignment hint timing")
 	}
@@ -398,29 +400,30 @@ func participantUnlockedPausedAssignmentHints(
 func participantValidatedPauseClock(
 	row sqlc.GetParticipantStateAssignmentRow,
 	startedAt, observedAt time.Time,
-) (time.Time, time.Duration, error) {
+) (time.Time, time.Duration, time.Duration, error) {
 	if row.GamePauseID == uuid.Nil || !row.GamePauseGameAttemptID.Valid ||
 		row.GamePauseGameAttemptID.UUID != row.AttemptID {
-		return time.Time{}, 0, participantStateInvalid("assignment hint timing")
+		return time.Time{}, 0, 0, participantStateInvalid("assignment hint timing")
 	}
 	frozenAt, originalDeadline, validTimes := participantPauseClockTimes(row, startedAt, observedAt)
 	if !validTimes {
-		return time.Time{}, 0, participantStateInvalid("assignment hint timing")
+		return time.Time{}, 0, 0, participantStateInvalid("assignment hint timing")
 	}
 	remaining, ok := participantHintRemaining(row.GamePauseFrozenRemainingMs)
 	if !ok {
-		return time.Time{}, 0, participantStateInvalid("assignment hint timing")
+		return time.Time{}, 0, 0, participantStateInvalid("assignment hint timing")
 	}
-	timeLimit, ok := participantHintDuration(int(row.TimeLimit))
+	// A persisted pause clock owns the elapsed task timeline. Keep its original
+	// duration for hint reconstruction instead of restarting the schedule at the
+	// current preset when a catalog time limit changes.
+	timeLimit, ok := participantPersistedHintDuration(startedAt, originalDeadline)
 	if !ok || remaining > timeLimit || !participantHintRemainingMatches(originalDeadline, frozenAt, remaining) {
-		return time.Time{}, 0, participantStateInvalid("assignment hint timing")
+		return time.Time{}, 0, 0, participantStateInvalid("assignment hint timing")
 	}
-
-	baseStart, ok := participantHintTimeSub(originalDeadline, timeLimit)
-	if !ok || baseStart.Before(startedAt) || baseStart.After(frozenAt) {
-		return time.Time{}, 0, participantStateInvalid("assignment hint timing")
+	if startedAt.After(frozenAt) {
+		return time.Time{}, 0, 0, participantStateInvalid("assignment hint timing")
 	}
-	return baseStart, remaining, nil
+	return startedAt, timeLimit, remaining, nil
 }
 
 func participantPauseClockTimes(
@@ -439,6 +442,7 @@ func participantValidatedResumedHintStart(
 	row sqlc.GetParticipantStateAssignmentRow,
 	baseStart time.Time,
 	remaining time.Duration,
+	timeLimit time.Duration,
 	observedAt time.Time,
 ) (time.Time, error) {
 	if row.AttemptState != string(domain.GameStateActive) || !row.GamePauseResumedAt.Valid || !row.GamePauseResumedDeadline.Valid {
@@ -450,8 +454,7 @@ func participantValidatedResumedHintStart(
 		resumedDeadline.Sub(resumedAt) != remaining {
 		return time.Time{}, participantStateInvalid("assignment hint timing")
 	}
-	timeLimit, ok := participantHintDuration(int(row.TimeLimit))
-	if !ok {
+	if timeLimit <= 0 {
 		return time.Time{}, participantStateInvalid("assignment hint timing")
 	}
 	resumedStart, ok := participantHintTimeSub(resumedDeadline, timeLimit)
@@ -473,6 +476,18 @@ func participantHintDuration(timeLimitSeconds int) (time.Duration, bool) {
 	}
 	duration := time.Duration(timeLimitSeconds) * time.Second
 	return duration, duration > 0
+}
+
+func participantPersistedHintDuration(startedAt, originalDeadline time.Time) (time.Duration, bool) {
+	if !domain.IsValidServerTime(startedAt) || !domain.IsValidServerTime(originalDeadline) ||
+		!originalDeadline.After(startedAt) {
+		return 0, false
+	}
+	seconds := int64(originalDeadline.Sub(startedAt) / time.Second)
+	if seconds < 1 || seconds > math.MaxInt32 {
+		return 0, false
+	}
+	return participantHintDuration(int(seconds))
 }
 
 func participantHintRemaining(value *int64) (time.Duration, bool) {

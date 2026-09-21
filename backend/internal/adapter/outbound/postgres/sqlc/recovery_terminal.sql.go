@@ -1177,7 +1177,7 @@ WHERE game_attempt.id = $2
     AND wave.state = 'active'
     AND COALESCE(
         latest_clock.resumed_deadline,
-        game_attempt.started_at + task_snapshot.time_limit * INTERVAL '1 second'
+        game_attempt.started_at + INTERVAL '180 seconds'
     ) = $6::TIMESTAMPTZ
 FOR UPDATE OF game_attempt, game_slot, assignment, series, wave, score_head
 `

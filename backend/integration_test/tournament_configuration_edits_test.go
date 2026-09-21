@@ -201,7 +201,22 @@ func TestTournamentSeriesConfigurationRebuildsUnstartedAssignmentThroughProducti
 }
 
 func TestTournamentSeriesConfigurationSuccessorStartsExistingWaveThroughProductionHTTPAndPostgres(t *testing.T) {
-	flow := newSwissCategoryFlowWithNormalTaskTimeLimit(t, "series-successor-wave-start", 90)
+	for _, testCase := range []struct {
+		name      string
+		timeLimit int
+	}{
+		{name: "catalog-60", timeLimit: 60},
+		{name: "catalog-90", timeLimit: 90},
+		{name: "catalog-180", timeLimit: 180},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			testTournamentSeriesConfigurationSuccessorStartsExistingWave(t, testCase.timeLimit)
+		})
+	}
+}
+
+func testTournamentSeriesConfigurationSuccessorStartsExistingWave(t *testing.T, normalTaskTimeLimit int) {
+	flow := newSwissCategoryFlowWithNormalTaskTimeLimit(t, "series-successor-wave-start", normalTaskTimeLimit)
 	beforePairing := tournamentAdminSnapshotThroughREST(t, flow.fixture, flow.adminToken, flow.tournamentID)
 	round := configureSwissCategoryPairingsThroughREST(
 		t, flow.fixture, flow.adminToken, flow.tournamentID,
@@ -319,6 +334,22 @@ func TestTournamentSeriesConfigurationSuccessorStartsExistingWaveThroughProducti
 		afterConflict.NextCursor.ProjectionRevision, api.WaveControlRequestActionStart,
 	)
 	require.Equal(t, api.WaveStateActive, started.State)
+	require.NotNil(t, started.StartedAt)
+	for _, member := range started.Members {
+		player, ok := flow.playersByParticipant[member.ParticipantId]
+		require.True(t, ok, "missing player for participant %s", member.ParticipantId)
+		participant := participantSnapshotThroughREST(t, flow.fixture, flow.tournamentID, player)
+		require.NotNil(t, participant.Assignment, "participant %s has no active assignment", member.ParticipantId)
+		require.Equal(t, int32(normalTaskTimeLimit), participant.Assignment.ActiveSnapshot.TimeLimit)
+		require.NotNil(t, participant.Assignment.Context.StartedAt)
+		require.NotNil(t, participant.Assignment.Context.EffectiveDeadline)
+		require.Equal(t, *started.StartedAt, *participant.Assignment.Context.StartedAt)
+		require.Equal(
+			t,
+			started.StartedAt.Add(domain.TournamentTaskDuration),
+			*participant.Assignment.Context.EffectiveDeadline,
+		)
+	}
 }
 
 func TestTournamentManualRoundRevisionRebuildsPairingsThroughProductionHTTPAndPostgres(t *testing.T) {

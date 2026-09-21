@@ -44,6 +44,7 @@ func TestAtomicWaveStart(t *testing.T) {
 		require.Len(t, record.Games, 2)
 		for index, startedGame := range record.Games {
 			require.Equal(t, now, startedGame.StartedAt)
+			require.Equal(t, int(domain.TournamentTaskDuration/time.Second), startedGame.DeadlineSeconds)
 			require.Equal(
 				t,
 				now.Add(time.Duration(authority.Games[index].DeadlineSeconds)*time.Second),
@@ -181,7 +182,7 @@ func TestAtomicWaveStart(t *testing.T) {
 		require.Equal(t, 0, projectionHarness.commitCount())
 	})
 
-	t.Run("derives each deadline from the persisted task time limit", func(t *testing.T) {
+	t.Run("rejects a non-runtime task deadline", func(t *testing.T) {
 		t.Parallel()
 
 		authority, command := waveStartFixture(t, now)
@@ -192,11 +193,10 @@ func TestAtomicWaveStart(t *testing.T) {
 			harness.repository,
 			waveNewGameClock(t, now),
 		).Start(t.Context(), command)
-		require.NoError(t, err)
-		require.True(t, changed)
-		require.Equal(t, 90, record.Games[0].DeadlineSeconds)
-		require.Equal(t, now.Add(90*time.Second), record.Games[0].Deadline)
-		require.Equal(t, 1, harness.commitCount())
+		require.Nil(t, record)
+		require.False(t, changed)
+		require.ErrorIs(t, err, gameusecase.ErrInvalidWaveStart)
+		require.Equal(t, 0, harness.commitCount())
 	})
 
 	t.Run("rejects a non-positive task deadline", func(t *testing.T) {

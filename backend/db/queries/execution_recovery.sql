@@ -68,7 +68,7 @@ SELECT attempt.id AS game_attempt_id,
     current_authority.revision AS current_authority_revision,
     COALESCE(
         pause_clock.resumed_deadline,
-        attempt.started_at + snapshot.time_limit * INTERVAL '1 second'
+        attempt.started_at + INTERVAL '180 seconds'
     )::TIMESTAMPTZ AS due_at
 FROM execution_game_epochs AS epoch
 JOIN current_authority ON TRUE
@@ -208,7 +208,7 @@ SELECT attempt.id AS game_attempt_id,
     COALESCE(rebind.authority_revision, epoch.authority_revision) AS authority_revision,
     COALESCE(
         pause_clock.resumed_deadline,
-        attempt.started_at + snapshot.time_limit * INTERVAL '1 second'
+        attempt.started_at + INTERVAL '180 seconds'
     )::TIMESTAMPTZ AS due_at,
     current_authority.command_id AS current_command_id,
     current_authority.holder_id AS current_holder_id,

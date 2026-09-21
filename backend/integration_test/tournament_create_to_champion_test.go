@@ -220,7 +220,7 @@ func TestTournamentCreateToChampionThroughProductionHandlers(t *testing.T) {
 			lockTournamentRosterThroughREST(t, fixture, adminToken, created.Id, roster, preflight)
 			startSwissThroughREST(t, fixture, adminToken, created.Id)
 			connectTournamentParticipantsThroughProduction(t, fixture, created.Id, players)
-			runProductionSwissThroughREST(t, fixture, adminToken, created.Id, players, catalog.flags, withGolden)
+			runProductionSwissThroughREST(t, fixture, adminToken, created.Id, players, catalog.flags, withGolden, 180)
 			assertTournamentRealtimeThroughProduction(t, fixture, adminToken, created.Id, players[0])
 			projectionRevision := tournamentAdminSnapshotThroughREST(t, fixture, adminToken, created.Id).NextCursor.ProjectionRevision
 			if withGolden {
@@ -237,9 +237,50 @@ func TestTournamentCreateToChampionThroughProductionHandlers(t *testing.T) {
 				t, fixture, adminToken, created.Id, projectionRevision, "start_playoffs", playoffCommandID,
 			)
 			require.Equal(t, api.TournamentState(domain.TournamentStatePlayoffs), playoffView.State)
-			completeTournamentPlayoffsThroughREST(t, fixture, adminToken, created.Id, roster, players, catalog.flags)
+			completeTournamentPlayoffsThroughREST(t, fixture, adminToken, created.Id, roster, players, catalog.flags, 180)
 			assertCompletedTournamentThroughREST(t, fixture, adminToken, created.Id)
 			assertTournamentRealtimeThroughProduction(t, fixture, adminToken, created.Id, players[0])
+		})
+	}
+}
+
+func TestTournamentRuntimeDurationAcrossPlayoffStages(t *testing.T) {
+	for _, normalTaskTimeLimit := range []int{60, 90} {
+		t.Run(fmt.Sprintf("normal_limit_%d", normalTaskTimeLimit), func(t *testing.T) {
+			ctx := context.Background()
+			truncateRoundProofTables(ctx, t)
+			t.Cleanup(func() { truncateRoundProofTables(context.Background(), t) })
+
+			catalog := prepareCreateToChampionContentWithCountsAndNormalTimeLimit(
+				ctx, t, createToChampionNormalTaskCount, createToChampionGoldenTaskCount, normalTaskTimeLimit,
+			)
+			fixture := newTournamentFlowRESTFixture(t)
+			adminToken := fixture.adminAccessToken(t)
+			content := getTournamentContentThroughREST(t, fixture, adminToken)
+			players := joinTournamentFlowPlayers(t, fixture, 4)
+			created := createTournamentThroughREST(
+				t, fixture, adminToken, content.ContentRevision,
+				fmt.Sprintf("runtime-duration-%d", normalTaskTimeLimit),
+			)
+			openRegistrationThroughREST(t, fixture, adminToken, created.Id, created.Revision)
+			roster := replaceTournamentRosterThroughREST(t, fixture, adminToken, created.Id, players)
+			preflight := runTournamentRosterPreflightThroughREST(t, fixture, adminToken, created.Id)
+			lockTournamentRosterThroughREST(t, fixture, adminToken, created.Id, roster, preflight)
+			startSwissThroughREST(t, fixture, adminToken, created.Id)
+			connectTournamentParticipantsThroughProduction(t, fixture, created.Id, players)
+			runProductionSwissThroughREST(
+				t, fixture, adminToken, created.Id, players, catalog.flags, false, normalTaskTimeLimit,
+			)
+
+			projectionRevision := tournamentAdminSnapshotThroughREST(t, fixture, adminToken, created.Id).NextCursor.ProjectionRevision
+			playoffView := applyTournamentActionThroughREST(
+				t, fixture, adminToken, created.Id, projectionRevision, "start_playoffs", uuid.New(),
+			)
+			require.Equal(t, api.TournamentState(domain.TournamentStatePlayoffs), playoffView.State)
+			completeTournamentPlayoffsThroughREST(
+				t, fixture, adminToken, created.Id, roster, players, catalog.flags, normalTaskTimeLimit,
+			)
+			assertCompletedTournamentThroughREST(t, fixture, adminToken, created.Id)
 		})
 	}
 }
@@ -797,6 +838,7 @@ func runProductionSwissThroughREST(
 	players []tournamentFlowPlayer,
 	flags map[uuid.UUID]string,
 	withGolden bool,
+	normalTaskTimeLimit int,
 ) {
 	t.Helper()
 	playersByID := make(map[uuid.UUID]tournamentFlowPlayer, len(players))
@@ -853,6 +895,7 @@ func runProductionSwissThroughREST(
 			api.WaveControlRequestActionStart,
 		)
 		require.Equal(t, api.WaveStateActive, wave.State)
+		assertRuntimeDeadlineForWaveAssignments(t, fixture, tournamentID, wave, playersByParticipant, normalTaskTimeLimit)
 		settleProductionSwissWaveThroughREST(
 			t, fixture, tournamentID, wave, playersByParticipant, flags,
 			func(series api.Series) uuid.UUID {
@@ -995,6 +1038,33 @@ func productionPlayersByParticipant(
 		players[participant.Id] = player
 	}
 	return players
+}
+
+func assertRuntimeDeadlineForWaveAssignments(
+	t *testing.T,
+	fixture *restFixture,
+	tournamentID uuid.UUID,
+	wave api.Wave,
+	playersByParticipant map[uuid.UUID]tournamentFlowPlayer,
+	normalTaskTimeLimit int,
+) {
+	t.Helper()
+	require.NotNil(t, wave.StartedAt)
+	for _, member := range wave.Members {
+		player, ok := playersByParticipant[member.ParticipantId]
+		require.True(t, ok, "missing player for started participant %s", member.ParticipantId)
+		participant := participantSnapshotThroughREST(t, fixture, tournamentID, player)
+		require.NotNil(t, participant.Assignment, "participant %s has no active assignment", member.ParticipantId)
+		require.Equal(t, int32(normalTaskTimeLimit), participant.Assignment.ActiveSnapshot.TimeLimit)
+		require.NotNil(t, participant.Assignment.Context.StartedAt)
+		require.NotNil(t, participant.Assignment.Context.EffectiveDeadline)
+		require.Equal(t, *wave.StartedAt, *participant.Assignment.Context.StartedAt)
+		require.Equal(
+			t,
+			wave.StartedAt.Add(domain.TournamentTaskDuration),
+			*participant.Assignment.Context.EffectiveDeadline,
+		)
+	}
 }
 
 func participantSnapshotThroughREST(
@@ -1506,6 +1576,7 @@ func completeTournamentPlayoffsThroughREST(
 	roster api.Roster,
 	players []tournamentFlowPlayer,
 	flags map[uuid.UUID]string,
+	normalTaskTimeLimit int,
 ) {
 	t.Helper()
 	playersByID := make(map[uuid.UUID]tournamentFlowPlayer, len(players))
@@ -1517,7 +1588,7 @@ func completeTournamentPlayoffsThroughREST(
 	semifinals := productionPlayoffSemifinals(t, snapshot)
 	for _, semifinal := range semifinals {
 		runProductionPlayoffSeriesThroughREST(
-			t, fixture, adminToken, tournamentID, semifinal.Id, playersByParticipant, flags,
+			t, fixture, adminToken, tournamentID, semifinal.Id, playersByParticipant, flags, normalTaskTimeLimit,
 		)
 	}
 	draft, ok := productionFinalDraftThroughREST(t, fixture, tournamentID, playersByParticipant)
@@ -1535,7 +1606,7 @@ func completeTournamentPlayoffsThroughREST(
 	runtime.clock.Resume()
 	waitForTournamentFlowDatabaseClock(t, finalWave.Id)
 	runProductionPlayoffSeriesThroughREST(
-		t, fixture, adminToken, tournamentID, draft.SeriesId, playersByParticipant, flags,
+		t, fixture, adminToken, tournamentID, draft.SeriesId, playersByParticipant, flags, normalTaskTimeLimit,
 	)
 }
 
@@ -1580,6 +1651,7 @@ func runProductionPlayoffSeriesThroughREST(
 	seriesID uuid.UUID,
 	playersByParticipant map[uuid.UUID]tournamentFlowPlayer,
 	flags map[uuid.UUID]string,
+	normalTaskTimeLimit int,
 ) {
 	t.Helper()
 	for iteration := 0; iteration < 8; iteration++ {
@@ -1625,6 +1697,7 @@ func runProductionPlayoffSeriesThroughREST(
 			)
 		}
 		require.Equal(t, api.WaveStateActive, wave.State)
+		assertRuntimeDeadlineForWaveAssignments(t, fixture, tournamentID, wave, playersByParticipant, normalTaskTimeLimit)
 		settleProductionSwissWaveThroughREST(
 			t, fixture, tournamentID, wave, playersByParticipant, flags,
 			func(series api.Series) uuid.UUID { return series.FirstParticipantId },
