@@ -204,6 +204,7 @@ const publicBracket = (
       first_display_name: "Алиса",
       second_display_name: "Боб",
       score: { first_participant_wins: 1, second_participant_wins: 0 },
+      scheduled_at: null,
       state: "active",
     },
   ],

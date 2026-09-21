@@ -2,7 +2,12 @@
 
 import type { ReactNode } from "react";
 
-import type { RoleAwareRecoveryState, TournamentLiveRole } from "../../shared/api";
+import {
+  recoverPublicTournament,
+  type PublicRecoveryState,
+  type RoleAwareRecoveryState,
+  type TournamentLiveRole,
+} from "../../shared/api";
 import { useServerCountdown } from "./use-server-countdown";
 import { useOperatorTournamentRealtime } from "./use-operator-tournament-realtime";
 import { useParticipantTournamentRealtime } from "./use-participant-tournament-realtime";
@@ -15,6 +20,8 @@ type ArenaLiveRole = TournamentLiveRole | "spectator";
 
 export type TournamentRecoveryRenderContext = Readonly<{
   participantRefreshSequence: number;
+  publicConnectionStatus: ReturnType<typeof usePublicTournamentRealtime>["status"];
+  publicState: PublicRecoveryState | null;
   recovery: RoleAwareRecoveryState | null;
   receivedAtMonotonicMs?: number;
   retry: () => void;
@@ -258,6 +265,16 @@ export const TournamentRecoveryPanel = ({
   const panelRevision = operatorRealtime.state?.projectionRevision ??
     publicRealtime.state?.cursor.projection_revision ??
     recovery?.cursor.projection_revision;
+  const publicRecoveryState = liveRole === "public" && recovery?.role === "public"
+    ? recoverPublicTournament(recovery.snapshot)
+    : null;
+  const publicBroadcastState = publicRealtime.state !== null && (
+    publicRecoveryState === null ||
+    publicRealtime.state.cursor.projection_revision >=
+      publicRecoveryState.cursor.projection_revision
+  )
+    ? publicRealtime.state
+    : publicRecoveryState;
   const operatorState = liveRole === "operator" ? (
     <dl
       aria-label="Состояние realtime оператора"
@@ -319,14 +336,16 @@ export const TournamentRecoveryPanel = ({
   ) : null;
   const realtimeState = operatorState ?? publicState;
   const deadline = recovery ? deadlineFrom(recovery) : undefined;
-  const roleSlot = liveRole === "participant" && children !== undefined
-      ? children({
-        participantRefreshSequence: participantRealtime.refreshSequence,
-        receivedAtMonotonicMs,
-        recovery,
-        retry,
-        status: panelStatus,
-      })
+  const roleSlot = children !== undefined
+    ? children({
+      participantRefreshSequence: participantRealtime.refreshSequence,
+      publicConnectionStatus: publicRealtime.status,
+      publicState: publicBroadcastState,
+      receivedAtMonotonicMs,
+      recovery,
+      retry,
+      status: panelStatus,
+    })
     : null;
 
   if (recovery && deadline) {

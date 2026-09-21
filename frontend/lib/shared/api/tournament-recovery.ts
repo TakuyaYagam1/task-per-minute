@@ -113,6 +113,12 @@ const SERIES_STATES = new Set([
   "completed",
   "cancelled",
 ]);
+const PUBLIC_SERIES_STAGES = new Set([
+  "swiss",
+  "golden",
+  "semifinal",
+  "final",
+]);
 const CATEGORIES = new Set([
   "web",
   "crypto",
@@ -224,14 +230,24 @@ const isScoreboardEntry = (value: unknown): value is Record<string, unknown> =>
 
 const isBracketMatch = (value: unknown, websocket: boolean): value is Record<string, unknown> =>
   isRecord(value) &&
-  hasOnlyKeys(value, ["stage", "position", "first_display_name", "second_display_name", "score", "state"]) &&
+  hasOnlyKeys(value, [
+    "stage",
+    "position",
+    "first_display_name",
+    "second_display_name",
+    "score",
+    "state",
+    "scheduled_at",
+  ]) &&
   (value.stage === "semifinal" || value.stage === "final") &&
   isPositiveInteger(value.position) &&
   isNonBlank(value.first_display_name) &&
   isNonBlank(value.second_display_name) &&
   (websocket ? isPublicSeriesScore(value.score) : isBracketScore(value.score)) &&
   typeof value.state === "string" &&
-  SERIES_STATES.has(value.state);
+  SERIES_STATES.has(value.state) &&
+  "scheduled_at" in value &&
+  isOptionalDateTime(value.scheduled_at);
 
 const isLiveSeries = (value: unknown): value is Record<string, unknown> =>
   isRecord(value) &&
@@ -243,6 +259,9 @@ const isLiveSeries = (value: unknown): value is Record<string, unknown> =>
     "second_display_name",
     "score",
     "current_game_position",
+    "stage",
+    "round_number",
+    "scheduled_at",
   ]) &&
   isUUID(value.series_id) &&
   (value.format === "bo1" || value.format === "bo3") &&
@@ -251,6 +270,12 @@ const isLiveSeries = (value: unknown): value is Record<string, unknown> =>
   isNonBlank(value.first_display_name) &&
   isNonBlank(value.second_display_name) &&
   isPublicSeriesScore(value.score) &&
+  typeof value.stage === "string" &&
+  PUBLIC_SERIES_STAGES.has(value.stage) &&
+  "round_number" in value &&
+  (value.round_number === null || isPositiveInteger(value.round_number)) &&
+  "scheduled_at" in value &&
+  isOptionalDateTime(value.scheduled_at) &&
   (value.current_game_position === undefined ||
     (isNonNegativeInteger(value.current_game_position) && value.current_game_position <= 3));
 

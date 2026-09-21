@@ -21,6 +21,9 @@ export interface PublicSeriesView {
   secondDisplayName: string;
   score: SeriesScoreView;
   currentGamePosition: number | null;
+  stage: components["schemas"]["PublicLiveSeries"]["stage"];
+  roundNumber: number | null;
+  scheduledAt: string | null;
 }
 
 export interface ParticipantSeriesView {

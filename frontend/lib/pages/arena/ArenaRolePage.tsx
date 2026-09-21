@@ -40,6 +40,7 @@ import {
   ParticipantGoldenPanel,
   TournamentPlayerPanel,
 } from "../../widgets/tournament-player";
+import { TournamentBroadcastPanel } from "../../widgets/tournament-broadcast";
 
 type ArenaRolePageProps = Readonly<{
   role: ArenaRole;
@@ -504,6 +505,15 @@ export const ArenaRolePage = ({ role, tournamentId }: ArenaRolePageProps) => {
                   view={buildParticipantPlayerView(recovery)}
                 />
               </>
+            )}
+          </TournamentRecoveryPanel>
+        ) : role === "spectator" ? (
+          <TournamentRecoveryPanel role={role} tournamentId={tournamentId}>
+            {({ publicConnectionStatus, publicState }) => (
+              <TournamentBroadcastPanel
+                connectionStatus={publicConnectionStatus}
+                state={publicState}
+              />
             )}
           </TournamentRecoveryPanel>
         ) : (

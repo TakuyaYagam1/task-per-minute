@@ -40,6 +40,7 @@ export interface PublicBracketMatchView {
   secondDisplayName: string;
   score: SeriesScoreView;
   state: SeriesState;
+  scheduledAt: string | null;
 }
 
 export interface PublicDraftActionView {

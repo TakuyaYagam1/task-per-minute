@@ -1,4 +1,5 @@
 import { spawn, type ChildProcessByStdio } from "node:child_process";
+import { mkdir } from "node:fs/promises";
 import { createServer } from "node:net";
 import { resolve } from "node:path";
 import { type Readable } from "node:stream";
@@ -374,6 +375,7 @@ const restSnapshot = (
         first_display_name: "alice",
         second_display_name: "bob",
         score: { first_participant_wins: 1, second_participant_wins: 0 },
+        scheduled_at: null,
         state: "active",
       },
     ],
@@ -387,6 +389,9 @@ const restSnapshot = (
       second_display_name: "bob",
       score: { first_wins: 1, second_wins: 0 },
       current_game_position: 2,
+      stage: "swiss",
+      round_number: 1,
+      scheduled_at: null,
     },
   ],
   official_results: [
@@ -438,6 +443,7 @@ const realtimeEnvelope = (
         first_display_name: "alice",
         second_display_name: "bob",
         score: { first_wins: 1, second_wins: 0 },
+        scheduled_at: null,
         state: "active",
       },
     ],
@@ -1369,6 +1375,137 @@ test("FE-013 spectator route mounts public recovery and keeps only the public cu
   expect(retryURL?.searchParams.get("cursor[authority_revision]")).toBeNull();
   expect(retryURL?.searchParams.get("cursor[audit_sequence]")).toBeNull();
   await expect(livePanel.getByText(/Ревизия сервера: 10/)).toBeVisible();
+});
+
+test("FE-038 public match center keeps the selected server match in a direct link", async ({ page }) => {
+  const fixtureSet = createTournamentFixtureSet();
+  const serverTimestamp = "2026-09-15T10:00:00Z";
+
+  await page.clock.install({ time: serverTimestamp });
+  await installOperatorWebSocketStub(page);
+  await installArenaAccessRoutes(page, fixtureSet);
+  await page.route(`**${arenaPublicSnapshotPath}*`, async (route) => {
+    expect(route.request().method()).toBe("GET");
+    await fulfillJSON(
+      route,
+      publicRecovery(9),
+      { date: new Date(serverTimestamp).toUTCString() },
+    );
+  });
+
+  await page.goto(`/arena/spectator/${arenaTournamentId}`, { waitUntil: "domcontentloaded" });
+
+  const broadcast = page.getByTestId("tournament-broadcast");
+  await expect(broadcast).toBeVisible();
+  await expect(broadcast).toHaveAttribute("data-phase", "technical_pause");
+  await expect(broadcast.getByTestId("broadcast-phase-title")).toHaveText("Техническая пауза");
+  await expect(broadcast.getByText("Подключение", { exact: true })).toBeVisible();
+  await expect(broadcast.getByRole("button", { name: /Swiss.*Раунд 1/ })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  await expect(broadcast.getByText("Не объявлено", { exact: true })).toBeVisible();
+
+  const bracketMatch = broadcast.getByRole("button", { name: /Полуфинал.*Матч 1/ });
+  await bracketMatch.click();
+  await expect(bracketMatch).toHaveAttribute("aria-pressed", "true");
+  await expect.poll(() => new URL(page.url()).searchParams.get("match")).toBe(
+    "bracket:semifinal:1",
+  );
+
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await expect(page.getByTestId("tournament-broadcast").getByRole("button", {
+    name: /Полуфинал.*Матч 1/,
+  })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByRole("heading", { name: "Алиса - Боб" })).toBeVisible();
+
+  await broadcast.getByRole("tab", { name: "Сетка" }).click();
+  await expect(broadcast.getByRole("tabpanel")).toContainText("Полуфинал");
+  await expect(broadcast.getByTestId("server-countdown")).toHaveCount(0);
+  await expect(broadcast.getByText("До серверного дедлайна")).toHaveCount(0);
+
+  await page.getByRole("button", { name: "Темная тема" }).click();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+  if (process.env.IMPECCABLE_CAPTURE === "1") {
+    const reviewDirectory = resolve(frontendRoot, "../.impeccable/review");
+    await mkdir(reviewDirectory, { recursive: true });
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    await page.screenshot({
+      fullPage: true,
+      path: resolve(reviewDirectory, "desktop.png"),
+    });
+  }
+  await page.getByRole("button", { name: "Светлая тема" }).click();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+  await page.setViewportSize({ width: 390, height: 844 });
+  if (process.env.IMPECCABLE_CAPTURE === "1") {
+    await page.screenshot({
+      fullPage: true,
+      path: resolve(frontendRoot, "../.impeccable/review/mobile.png"),
+    });
+  }
+  const mobileBox = await broadcast.boundingBox();
+  expect(mobileBox).not.toBeNull();
+  if (mobileBox !== null) {
+    expect(mobileBox.x).toBeGreaterThanOrEqual(0);
+    expect(mobileBox.x + mobileBox.width).toBeLessThanOrEqual(390);
+  }
+});
+
+test("FE-038 public match center distinguishes every server tournament state in both themes", async ({ page }) => {
+  type PublicState = ReturnType<typeof publicRecovery>["tournament"]["state"];
+  const serverTimestamp = "2026-09-15T10:00:00Z";
+  let currentState: PublicState = "registration";
+
+  const snapshotForState = () => {
+    const snapshot = publicRecovery(9);
+    snapshot.tournament.state = currentState;
+    snapshot.live_series[0]!.state = currentState === "registration"
+      ? "planned"
+      : currentState === "swiss"
+        ? "active"
+        : currentState === "technical_pause"
+          ? "technical_pause"
+          : currentState === "cancelled"
+            ? "cancelled"
+            : "completed";
+    return snapshot;
+  };
+
+  await page.clock.install({ time: serverTimestamp });
+  await installOperatorWebSocketStub(page);
+  await page.route(`**${arenaPublicPath}`, async (route) => {
+    const snapshot = snapshotForState();
+    await fulfillJSON(route, snapshot.tournament);
+  });
+  await page.route(`**${arenaPublicSnapshotPath}*`, async (route) => {
+    await fulfillJSON(
+      route,
+      snapshotForState(),
+      { date: new Date(serverTimestamp).toUTCString() },
+    );
+  });
+
+  const cases: ReadonlyArray<readonly [PublicState, string, string]> = [
+    ["registration", "waiting", "Турнир ожидает старта"],
+    ["swiss", "live", "Турнир идет"],
+    ["technical_pause", "technical_pause", "Техническая пауза"],
+    ["cancelled", "cancelled", "Турнир отменен"],
+    ["completed", "completed", "Турнир завершен"],
+  ];
+
+  for (const [serverState, phase, title] of cases) {
+    currentState = serverState;
+    await page.goto(`/arena/spectator/${arenaTournamentId}`, { waitUntil: "domcontentloaded" });
+    const broadcast = page.getByTestId("tournament-broadcast");
+    await expect(broadcast).toHaveAttribute("data-phase", phase);
+    await expect(broadcast.getByTestId("broadcast-phase-title")).toHaveText(title);
+
+    await page.getByRole("button", { name: "Темная тема" }).click();
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+    await page.getByRole("button", { name: "Светлая тема" }).click();
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+  }
 });
 
 test("FE-012 public route uses a snapshot-first stream and recovers sequence gaps", async ({ page }) => {

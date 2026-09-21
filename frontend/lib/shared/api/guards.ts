@@ -248,6 +248,7 @@ export const isPublicBracketMatch = (value: unknown): value is PublicBracketMatc
     "second_display_name",
     "score",
     "state",
+    "scheduled_at",
   ]) &&
   (value.stage === "semifinal" || value.stage === "final") &&
   isPositiveInteger(value.position) &&
@@ -261,7 +262,8 @@ export const isPublicBracketMatch = (value: unknown): value is PublicBracketMatc
   isNonNegativeInt32(value.score.second_participant_wins) &&
   value.score.second_participant_wins <= 2 &&
   isString(value.state) &&
-  PUBLIC_SERIES_STATES.has(value.state);
+  PUBLIC_SERIES_STATES.has(value.state) &&
+  isOptionalDateStringOrNull(value.scheduled_at);
 
 export const isPublicBracketResponse = (
   value: unknown,

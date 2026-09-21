@@ -169,6 +169,7 @@ const toPublicBracketMatchView = (
   secondDisplayName: value.second_display_name,
   score: toSeriesScoreView(value.score),
   state: value.state,
+  scheduledAt: value.scheduled_at,
 });
 
 const toPublicSeriesView = (
@@ -181,6 +182,9 @@ const toPublicSeriesView = (
   secondDisplayName: value.second_display_name,
   score: toPublicSeriesScoreView(value.score),
   currentGamePosition: value.current_game_position ?? null,
+  stage: value.stage,
+  roundNumber: value.round_number,
+  scheduledAt: value.scheduled_at,
 });
 
 const toPublicDraftActionView = (
