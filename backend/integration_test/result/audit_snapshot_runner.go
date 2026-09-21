@@ -194,6 +194,7 @@ func createBackdatedAuditSeries(
 		RosterID:       input.RosterID,
 		ParticipantIDs: []uuid.UUID{input.ParticipantIDs[0], input.ParticipantIDs[1]},
 		Format:         "bo3",
+		CreatedAt:      createdAt,
 	})
 	if err != nil {
 		return uuid.Nil, err

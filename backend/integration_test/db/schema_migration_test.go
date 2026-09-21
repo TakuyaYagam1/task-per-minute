@@ -19,7 +19,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/bootstrap"
 )
 
-const schemaHeadVersion int64 = 25
+const schemaHeadVersion int64 = 26
 
 func TestSchemaMigration(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
