@@ -26,8 +26,7 @@
       "@/widgets/*": ["./lib/widgets/*"],
       "@/pages/*": ["./lib/pages/*"],
       "@/app/*": ["./lib/app/*"]
-    },
-    "baseUrl": "."
+    }
   },
   "include": [
     "next-env.d.ts",

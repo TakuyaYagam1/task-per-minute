@@ -38,8 +38,6 @@ next-env.d.ts
 *.prof
 *.pprof
 **/mocks/
-# Keep the result use case visible even when a global ignore file
-# excludes generic build directories named result.
 !/backend/internal/usecase/result/
 !/backend/internal/usecase/result/**
 /backend/internal/usecase/result/mocks/
@@ -64,10 +62,19 @@ Thumbs.db
 *.db
 *.sqlite
 *.pem
+*tpm-tasks/
 vendor/
 PRD/
-docs/engineering/
-docs/superpowers/
-.superpowers/
-/.worktrees/
+*engineering/
+*superpowers/
+*impeccable/
+*.worktrees/
 .cursor/
+.claude/
+.codex/
+.gemini/
+.opencode/
+.serena/
+.continue/
+.aider*
+.mcp.json

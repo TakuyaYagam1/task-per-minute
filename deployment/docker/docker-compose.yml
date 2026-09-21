@@ -57,6 +57,7 @@ services:
       start_period: 10s
     networks:
       - internal
+      - tasks
 
   postgres:
     image: postgres:18.3-alpine3.23
@@ -312,6 +313,10 @@ networks:
     ipam:
       config:
         - subnet: ${DOCKER_INTERNAL_SUBNET:-172.30.0.0/24}
+  tasks:
+    name: task-per-minute_tasks
+    driver: bridge
+    internal: true
 
 volumes:
   caddy_config:
