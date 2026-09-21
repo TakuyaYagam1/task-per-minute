@@ -151,6 +151,7 @@ const operatorSnapshot = (projectionRevision: number): OperatorRecoverySnapshot 
     projection_revision: projectionRevision,
   },
   pause_graph: null,
+  recovery_controls: [],
   roster: roster(),
   series: [series()],
   tournament: tournament(projectionRevision),

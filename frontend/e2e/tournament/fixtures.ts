@@ -513,6 +513,7 @@ export const operatorSnapshot = (projectionRevision = 9): Schema["OperatorRecove
     projection_revision: projectionRevision,
   },
   pause_graph: pauseGraph(),
+  recovery_controls: [],
   roster: operatorRoster(),
   series: [operatorSeries("bo1", "planned"), operatorSeries("bo3", "technical_pause")],
   tournament: operatorTournament(projectionRevision),

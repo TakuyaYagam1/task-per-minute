@@ -8,6 +8,8 @@ import {
   operatorApi,
   type OperatorForfeitGameExpectation,
   type OperatorForfeitRequest,
+  type OperatorReplayRequest,
+  type OperatorReserveRequest,
   type OperatorNoShowRequest,
   type OperatorRecoverySnapshot,
   type TournamentActionRequest,
@@ -29,8 +31,17 @@ type NoShowCandidate = Readonly<{
   window: NonNullable<OperatorRecoverySnapshot["waves"][number]["ready_window"]>;
 }>;
 
+type RecoveryControl = OperatorRecoverySnapshot["recovery_controls"][number];
+type RecoveryReserveCandidate = NonNullable<RecoveryControl["reserve_exhausted"]>["candidates"][number];
+
 const noShowCandidateKey = (candidate: NoShowCandidate): string =>
   `${candidate.wave.id}:${candidate.series.id}`;
+
+const recoveryControlKey = (control: RecoveryControl): string =>
+  `${control.kind}:${control.series_id}:${control.slot_id}`;
+
+const recoveryCandidateKey = (candidate: RecoveryReserveCandidate): string =>
+  `${candidate.task_id}:${candidate.version}`;
 
 type ActionMessage = Readonly<{
   tone: "success" | "error" | "warning";
@@ -71,6 +82,43 @@ const stateLabel = (value: OperatorRecoverySnapshot["tournament"]["state"]): str
       return "Отменен";
   }
 };
+
+const recoveryReasonLabel = (value: string | null): string => {
+  switch (value) {
+    case "operator":
+      return "Операторская пауза";
+    case "disconnect":
+      return "Разрыв соединения";
+    case "platform":
+      return "Сбой платформы";
+    case "execution_epoch":
+      return "Смена execution epoch";
+    default:
+      return "Причина не указана";
+  }
+};
+
+const gameReasonLabel = (value: string | null): string => {
+  switch (value) {
+    case "no_solve":
+      return "no-solve - нет решения";
+    case "task_failure":
+      return "failure - ошибка задания";
+    case "common_platform_failure":
+      return "failure - сбой платформы";
+    case "disconnect":
+      return "failure - разрыв соединения";
+    case "execution_epoch_break":
+      return "failure - смена execution epoch";
+    case null:
+      return "Причина еще не зафиксирована";
+    default:
+      return value;
+  }
+};
+
+const recoveryKindLabel = (kind: RecoveryControl["kind"]): string =>
+  kind === "replay" ? "Replay игры" : "Резерв исчерпан";
 
 const errorText = (error: unknown): string => {
   if (error instanceof ApiError) {
@@ -251,6 +299,10 @@ export const TournamentOperatorActions = ({
   const [selectedParticipantId, setSelectedParticipantId] = useState("");
   const [ruleId, setRuleId] = useState("");
   const [evidenceText, setEvidenceText] = useState("");
+  const [selectedRecoveryKey, setSelectedRecoveryKey] = useState("");
+  const [recoveryReason, setRecoveryReason] = useState("");
+  const [recoveryConfirmed, setRecoveryConfirmed] = useState(false);
+  const [selectedReserveCandidateKey, setSelectedReserveCandidateKey] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
   const [actionMessage, setActionMessage] = useState<ActionMessage | null>(null);
@@ -305,6 +357,23 @@ export const TournamentOperatorActions = ({
   const forfeitAvailable = selectedForfeitSeries !== null &&
     selectedForfeitAttempt !== null &&
     LIVE_GAME_STATES.has(selectedForfeitAttempt.state);
+  const recoveryControls = useMemo(
+    () => snapshot?.recovery_controls ?? [],
+    [snapshot],
+  );
+  const selectedRecoveryControl = recoveryControls.find(
+    (control) => recoveryControlKey(control) === selectedRecoveryKey,
+  ) ?? recoveryControls[0] ?? null;
+  const reserveDetails = selectedRecoveryControl?.kind === "reserve_exhausted"
+    ? selectedRecoveryControl.reserve_exhausted
+    : null;
+  const reserveCandidates = useMemo(
+    () => reserveDetails?.candidates ?? [],
+    [reserveDetails],
+  );
+  const selectedReserveCandidate = reserveCandidates.find(
+    (candidate) => recoveryCandidateKey(candidate) === selectedReserveCandidateKey,
+  ) ?? reserveCandidates[0] ?? null;
 
   useEffect(() => {
     if (selectedNoShowKey === "" || !noShowCandidates.some((candidate) => noShowCandidateKey(candidate) === selectedNoShowKey)) {
@@ -319,6 +388,28 @@ export const TournamentOperatorActions = ({
   }, [forfeitSeries, selectedSeriesId]);
 
   useEffect(() => {
+    if (
+      selectedRecoveryKey === "" ||
+      !recoveryControls.some((control) => recoveryControlKey(control) === selectedRecoveryKey)
+    ) {
+      setSelectedRecoveryKey(
+        recoveryControls[0] === undefined ? "" : recoveryControlKey(recoveryControls[0]),
+      );
+    }
+  }, [recoveryControls, selectedRecoveryKey]);
+
+  useEffect(() => {
+    if (
+      selectedReserveCandidateKey === "" ||
+      !reserveCandidates.some((candidate) => recoveryCandidateKey(candidate) === selectedReserveCandidateKey)
+    ) {
+      setSelectedReserveCandidateKey(
+        reserveCandidates[0] === undefined ? "" : recoveryCandidateKey(reserveCandidates[0]),
+      );
+    }
+  }, [reserveCandidates, selectedReserveCandidateKey]);
+
+  useEffect(() => {
     const participants = selectedForfeitSeries === null
       ? []
       : [selectedForfeitSeries.first_participant_id, selectedForfeitSeries.second_participant_id];
@@ -331,6 +422,144 @@ export const TournamentOperatorActions = ({
     actionAvailable(action, snapshot, noShowCandidates, forfeitAvailable);
   const submitDisabled = snapshotLoading || snapshot === null || submitting ||
     !confirmed || reason.trim().length === 0 || !selectedActionAvailable;
+  const recoveryActionAvailable = selectedRecoveryControl !== null && (
+    selectedRecoveryControl.kind === "replay"
+      ? selectedRecoveryControl.replay?.available === true
+      : reserveDetails !== null && selectedReserveCandidate !== null
+  );
+  const recoverySubmitDisabled = snapshotLoading || snapshot === null || submitting ||
+    !recoveryConfirmed || recoveryReason.trim().length === 0 || !recoveryActionAvailable;
+
+  const submitRecovery = async (): Promise<void> => {
+    if (
+      submittingRef.current ||
+      recoverySubmitDisabled ||
+      snapshot === null ||
+      selectedRecoveryControl === null
+    ) {
+      return;
+    }
+
+    submittingRef.current = true;
+    setSubmitting(true);
+    setActionMessage(null);
+    const trimmedReason = recoveryReason.trim();
+    const intent = createOperatorCommandIntent();
+    const failedAttempt = selectedRecoveryControl.attempts.at(-1);
+
+    try {
+      if (selectedRecoveryControl.kind === "replay") {
+        const replay = selectedRecoveryControl.replay;
+        if (replay === null || !replay.available || failedAttempt === undefined) {
+          setActionMessage({
+            tone: "warning",
+            title: "Replay недоступен",
+            body: "Серверный снимок больше не разрешает replay для этой попытки.",
+          });
+          return;
+        }
+        const body: OperatorReplayRequest = {
+          assignment_attempt_id: newUUID(),
+          assignment_id: selectedRecoveryControl.assignment_id,
+          confirmed: true,
+          expected_authority_revision: selectedRecoveryControl.expected_authority_revision,
+          expected_closure_revision_id: replay.expected_closure_revision_id,
+          failed_game_id: failedAttempt.id,
+          old_wave_id: selectedRecoveryControl.old_wave_id,
+          ready_window_id: newUUID(),
+          ready_window_revision_id: newUUID(),
+          reason: trimmedReason,
+          replacement_game_id: newUUID(),
+          replacement_wave_id: newUUID(),
+          replacement_wave_revision_id: newUUID(),
+          series_id: selectedRecoveryControl.series_id,
+          slot_id: selectedRecoveryControl.slot_id,
+          tournament_id: tournamentId,
+        };
+        await operatorApi.replayGame(
+          tournamentId,
+          selectedRecoveryControl.series_id,
+          failedAttempt.id,
+          body,
+          intent,
+        );
+      } else {
+        if (reserveDetails === null || selectedReserveCandidate === null || failedAttempt === undefined) {
+          setActionMessage({
+            tone: "warning",
+            title: "Резерв недоступен",
+            body: "Сервер не предложил допустимый кандидат для этого назначения.",
+          });
+          return;
+        }
+        const body: OperatorReserveRequest = {
+          assignment_attempt_id: failedAttempt.id,
+          assignment_id: selectedRecoveryControl.assignment_id,
+          confirmed: true,
+          evidence_id: newUUID(),
+          expected_artifact_revision: reserveDetails.expected_artifact_revision,
+          expected_artifact_revision_id: reserveDetails.expected_artifact_revision_id,
+          expected_assignment_revision: reserveDetails.expected_assignment_revision,
+          expected_authority_revision: selectedRecoveryControl.expected_authority_revision,
+          expected_category_revision: reserveDetails.expected_category_revision,
+          expected_category_revision_id: reserveDetails.expected_category_revision_id,
+          expected_exhaustion_command_id: reserveDetails.expected_exhaustion_command_id,
+          expected_history_revision: reserveDetails.expected_history_revision,
+          expected_history_revision_id: reserveDetails.expected_history_revision_id,
+          expected_pool_revision: reserveDetails.expected_pool_revision,
+          expected_pool_revision_id: reserveDetails.expected_pool_revision_id,
+          expected_reservation_revision: reserveDetails.expected_reservation_revision,
+          expected_reservation_revision_id: reserveDetails.expected_reservation_revision_id,
+          expected_snapshot_id: reserveDetails.expected_snapshot_id,
+          old_wave_id: selectedRecoveryControl.old_wave_id,
+          proposed_snapshot_id: newUUID(),
+          proposed_task_id: selectedReserveCandidate.task_id,
+          proposed_version: selectedReserveCandidate.version,
+          reason: trimmedReason,
+          series_id: selectedRecoveryControl.series_id,
+          slot_id: selectedRecoveryControl.slot_id,
+          tournament_id: tournamentId,
+        };
+        await operatorApi.assignReserve(
+          tournamentId,
+          selectedRecoveryControl.series_id,
+          selectedRecoveryControl.assignment_id,
+          body,
+          intent,
+        );
+      }
+
+      await loadSnapshot();
+      setActionMessage({
+        tone: "success",
+        title: "Восстановление подтверждено",
+        body: "Серверный снимок перечитан. Новая попытка отображается только после подтверждения сервера.",
+      });
+      setRecoveryConfirmed(false);
+      setRecoveryReason("");
+    } catch (error) {
+      if (isAbortError(error)) {
+        return;
+      }
+      if (error instanceof ApiError && error.status === 409) {
+        try {
+          await loadSnapshot();
+        } catch {
+          // The stale message remains the actionable state for the operator.
+        }
+        setActionMessage({
+          tone: "warning",
+          title: "Снимок устарел",
+          body: "Другой оператор изменил восстановление. Снимок обновлен, проверьте разрешенный путь перед повтором.",
+        });
+        return;
+      }
+      setActionMessage({ tone: "error", title: "Восстановление не выполнено", body: errorText(error) });
+    } finally {
+      submittingRef.current = false;
+      setSubmitting(false);
+    }
+  };
 
   const submit = async (): Promise<void> => {
     if (submittingRef.current || submitDisabled || snapshot === null) {
@@ -707,6 +936,192 @@ export const TournamentOperatorActions = ({
           </p>
         </div>
       </form>
+
+      <section className={styles.recoverySection} aria-labelledby="operator-recovery-heading">
+        <div className={styles.recoveryHeader}>
+          <div>
+            <h3 className={styles.recoveryTitle} id="operator-recovery-heading">
+              Восстановление игр
+            </h3>
+            <p className={styles.hint}>
+              Путь восстановления и доказательства выбирает серверный снимок. Обычная жеребьевка не создает replay.
+            </p>
+          </div>
+          {recoveryControls.length > 0 && (
+            <Status tone={snapshotLoading ? "loading" : "warning"}>
+              {snapshotLoading ? "Обновляем" : `Пути: ${recoveryControls.length}`}
+            </Status>
+          )}
+        </div>
+
+        {recoveryControls.length === 0 ? (
+          <Message tone="info" title="Восстановление не требуется">
+            <p className={styles.errorText}>
+              Сервер не сообщил ни одного no-solve или failure, доступного для восстановления.
+            </p>
+          </Message>
+        ) : (
+          <form
+            className={styles.recoveryForm}
+            onSubmit={(event) => {
+              event.preventDefault();
+              void submitRecovery();
+            }}
+          >
+            <fieldset className={styles.recoveryChoices}>
+              <legend className={styles.label}>Серверные пути восстановления</legend>
+              <div className={styles.recoveryChoiceList}>
+                {recoveryControls.map((control) => {
+                  const controlKey = recoveryControlKey(control);
+                  return (
+                    <label className={styles.recoveryChoice} key={controlKey}>
+                      <input
+                        className={styles.radio}
+                        type="radio"
+                        name="operator-recovery-control"
+                        value={controlKey}
+                        checked={selectedRecoveryControl !== null && recoveryControlKey(selectedRecoveryControl) === controlKey}
+                        onChange={() => setSelectedRecoveryKey(controlKey)}
+                        disabled={submitting}
+                      />
+                      <span>
+                        <strong>{recoveryKindLabel(control.kind)}</strong>
+                        <span className={styles.recoveryChoiceMeta}>
+                          {control.category} - {control.series_id} - {control.slot_id}
+                        </span>
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+            </fieldset>
+
+            {selectedRecoveryControl !== null && (
+              <div className={styles.recoveryDetails}>
+                <dl className={styles.recoveryMeta} aria-label="Доказательства восстановления">
+                  <div className={styles.recoveryMetaItem}>
+                    <dt className={styles.snapshotLabel}>Причина остановки</dt>
+                    <dd className={styles.snapshotValue}>{selectedRecoveryControl.reason}</dd>
+                  </div>
+                  {selectedRecoveryControl.pause_reason !== null && (
+                    <div className={styles.recoveryMetaItem}>
+                      <dt className={styles.snapshotLabel}>Тип pause</dt>
+                      <dd className={styles.snapshotValue}>{recoveryReasonLabel(selectedRecoveryControl.pause_reason)}</dd>
+                    </div>
+                  )}
+                  <div className={styles.recoveryMetaItem}>
+                    <dt className={styles.snapshotLabel}>Категория</dt>
+                    <dd className={styles.snapshotValue}>{selectedRecoveryControl.category}</dd>
+                  </div>
+                  <div className={styles.recoveryMetaItem}>
+                    <dt className={styles.snapshotLabel}>Ревизия authority</dt>
+                    <dd className={styles.snapshotValue}>{selectedRecoveryControl.expected_authority_revision}</dd>
+                  </div>
+                </dl>
+
+                <div className={styles.attemptPanel}>
+                  <h4 className={styles.attemptTitle}>Попытки по порядку</h4>
+                  <ol className={styles.attemptList} aria-label="Упорядоченные попытки игры">
+                    {selectedRecoveryControl.attempts.map((attempt) => (
+                      <li className={styles.attemptItem} key={attempt.id}>
+                        <span className={styles.attemptNumber}>Попытка {attempt.attempt_no}</span>
+                        <span>{gameReasonLabel(attempt.result_reason)}</span>
+                        <span className={styles.attemptState}>{attempt.state}</span>
+                        <code>{attempt.id}</code>
+                      </li>
+                    ))}
+                  </ol>
+                </div>
+
+                {selectedRecoveryControl.kind === "replay" && selectedRecoveryControl.replay?.available !== true && (
+                  <Message tone="warning" title="Replay недоступен">
+                    <p className={styles.errorText}>
+                      Серверная closure revision больше не разрешает повтор этой игры. Открытая команда не предлагается.
+                    </p>
+                  </Message>
+                )}
+
+                {selectedRecoveryControl.kind === "reserve_exhausted" && reserveDetails !== null && (
+                  reserveCandidates.length === 0 ? (
+                    <Message tone="warning" title="Резерв исчерпан">
+                      <p className={styles.errorText}>
+                        Сервер не предложил кандидатов. Нельзя вручную вводить задачу или менять категорию.
+                      </p>
+                    </Message>
+                  ) : (
+                    <div className={styles.field}>
+                      <label className={styles.label} htmlFor="operator-recovery-candidate">
+                        Кандидат из серверного резерва
+                      </label>
+                      <select
+                        className={styles.select}
+                        id="operator-recovery-candidate"
+                        value={selectedReserveCandidate === null ? "" : recoveryCandidateKey(selectedReserveCandidate)}
+                        onChange={(event) => setSelectedReserveCandidateKey(event.target.value)}
+                        disabled={submitting}
+                      >
+                        {reserveCandidates.map((candidate) => (
+                          <option key={recoveryCandidateKey(candidate)} value={recoveryCandidateKey(candidate)}>
+                            Задача {candidate.task_id}, версия {candidate.version}
+                          </option>
+                        ))}
+                      </select>
+                      <p className={styles.hint}>
+                        Отправляется только выбранный сервером task/version. Новый snapshot ID создается для команды. Категория остается {selectedRecoveryControl.category}.
+                      </p>
+                    </div>
+                  )
+                )}
+
+                <div className={styles.field}>
+                  <label className={styles.label} htmlFor="operator-recovery-reason">
+                    Причина восстановления
+                  </label>
+                  <textarea
+                    className={styles.textarea}
+                    id="operator-recovery-reason"
+                    value={recoveryReason}
+                    onChange={(event) => setRecoveryReason(event.target.value)}
+                    disabled={submitting}
+                    maxLength={512}
+                    required
+                    placeholder="Коротко опишите подтвержденную причину"
+                  />
+                </div>
+
+                <label className={styles.checkRow} htmlFor="operator-recovery-confirmed">
+                  <input
+                    className={styles.checkbox}
+                    id="operator-recovery-confirmed"
+                    type="checkbox"
+                    checked={recoveryConfirmed}
+                    onChange={(event) => setRecoveryConfirmed(event.target.checked)}
+                    disabled={submitting}
+                  />
+                  <span>Подтверждаю путь восстановления и доказательства из текущего серверного снимка.</span>
+                </label>
+
+                <div className={styles.submitRow}>
+                  <Button
+                    type="submit"
+                    variant="primary"
+                    loading={submitting}
+                    loadingLabel="Восстанавливаем"
+                    disabled={recoverySubmitDisabled}
+                  >
+                    {selectedRecoveryControl.kind === "replay" ? "Повторить игру" : "Назначить резерв"}
+                  </Button>
+                  <p className={styles.submitHint}>
+                    {recoveryActionAvailable
+                      ? "После ответа серверный снимок будет загружен заново."
+                      : "Команда недоступна по текущему серверному снимку."}
+                  </p>
+                </div>
+              </div>
+            )}
+          </form>
+        )}
+      </section>
 
       <Dialog
         open={cancelDialogOpen}

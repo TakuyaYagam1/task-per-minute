@@ -199,6 +199,7 @@ const snapshot = (size: number, projectionRevision: number): Snapshot => ({
     projection_revision: projectionRevision,
   },
   pause_graph: null,
+  recovery_controls: [],
   roster: roster(size),
   series: [],
   tournament: tournament(size, projectionRevision),

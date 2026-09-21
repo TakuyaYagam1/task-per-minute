@@ -1189,6 +1189,7 @@ type AuditPage = OperatorAuditPage;
 type IncidentBundle = components["schemas"]["IncidentBundle"];
 type OperatorRecoveryCursor = components["schemas"]["OperatorRecoveryCursor"];
 type OperatorRecoverySnapshot = components["schemas"]["OperatorRecoverySnapshot"];
+export type OperatorRecoveryControl = components["schemas"]["OperatorRecoveryControl"];
 
 const operatorTournamentStates = new Set<string>([
   "draft",
@@ -1246,6 +1247,23 @@ const operatorGameResultReasons = new Set<string>([
   "tournament_cancelled",
   "derived_revision_superseded",
 ]);
+const operatorRecoveryFailureReasons = new Set<string>([
+  "no_solve",
+  "task_failure",
+  "common_platform_failure",
+  "disconnect",
+  "execution_epoch_break",
+]);
+const operatorCompletedGameResultReasons = new Set<string>([
+  "solved",
+  "surrender",
+  "operator_forfeit",
+]);
+const operatorCancelledGameResultReasons = new Set<string>([
+  "no_show",
+  "series_cancelled",
+  "tournament_cancelled",
+]);
 const operatorSeriesResultReasons = new Set<string>([
   "score_complete",
   "operator_correction",
@@ -1267,6 +1285,12 @@ const operatorCategories = new Set<string>([
 ]);
 const operatorAuditEntityKinds = new Set<string>(["game_attempt", "series"]);
 const operatorActorKinds = new Set<string>(["server", "operator"]);
+const operatorPauseReasons = new Set<string>([
+  "operator",
+  "disconnect",
+  "platform",
+  "execution_epoch",
+]);
 
 const isOperatorNonBlank = (value: unknown): value is string =>
   isString(value) && value.trim().length > 0;
@@ -1438,7 +1462,7 @@ const isOperatorSeriesScore = (value: unknown): boolean =>
   isNonNegativeInteger(value.second_participant_wins) &&
   value.second_participant_wins <= 2;
 
-const isOperatorGame = (value: unknown): boolean =>
+const isOperatorGame = (value: unknown): value is components["schemas"]["Game"] =>
   isRecord(value) &&
   hasExactKeys(value, [
     "attempt_no",
@@ -1458,6 +1482,175 @@ const isOperatorGame = (value: unknown): boolean =>
   isString(value.state) &&
   operatorGameStates.has(value.state) &&
   isOperatorUUIDOrNull(value.winner_id);
+
+const isOperatorRecoveryReplayDetails = (
+  value: unknown,
+): value is components["schemas"]["OperatorRecoveryReplayDetails"] =>
+  isRecord(value) &&
+  hasExactKeys(value, ["available", "expected_closure_revision_id"]) &&
+  typeof value.available === "boolean" &&
+  isNonNilUUID(value.expected_closure_revision_id);
+
+const isOperatorRecoveryReserveCandidate = (
+  value: unknown,
+): value is components["schemas"]["OperatorRecoveryReserveCandidate"] =>
+  isRecord(value) &&
+  hasExactKeys(value, ["task_id", "version"]) &&
+  isNonNilUUID(value.task_id) &&
+  isSafePositiveInteger(value.version) &&
+  value.version <= INT32_MAX;
+
+const isOperatorRecoveryReserveExhaustedDetails = (
+  value: unknown,
+): value is components["schemas"]["OperatorRecoveryReserveExhaustedDetails"] => {
+  if (
+    !isRecord(value) ||
+    !hasExactKeys(value, [
+      "candidates",
+      "current_snapshot_id",
+      "expected_artifact_revision",
+      "expected_artifact_revision_id",
+      "expected_assignment_revision",
+      "expected_category_revision",
+      "expected_category_revision_id",
+      "expected_exhaustion_command_id",
+      "expected_history_revision",
+      "expected_history_revision_id",
+      "expected_pool_revision",
+      "expected_pool_revision_id",
+      "expected_reservation_revision",
+      "expected_reservation_revision_id",
+      "expected_snapshot_id",
+    ]) ||
+    !Array.isArray(value.candidates) ||
+    !isNonNilUUID(value.current_snapshot_id) ||
+    !isSafePositiveInteger(value.expected_artifact_revision) ||
+    !isNonNilUUID(value.expected_artifact_revision_id) ||
+    !isSafePositiveInteger(value.expected_assignment_revision) ||
+    !isSafePositiveInteger(value.expected_category_revision) ||
+    !isNonNilUUID(value.expected_category_revision_id) ||
+    !isNonNilUUID(value.expected_exhaustion_command_id) ||
+    !isSafePositiveInteger(value.expected_history_revision) ||
+    !isNonNilUUID(value.expected_history_revision_id) ||
+    !isSafePositiveInteger(value.expected_pool_revision) ||
+    !isNonNilUUID(value.expected_pool_revision_id) ||
+    !isSafePositiveInteger(value.expected_reservation_revision) ||
+    !isNonNilUUID(value.expected_reservation_revision_id) ||
+    !isNonNilUUID(value.expected_snapshot_id) ||
+    !value.candidates.every(isOperatorRecoveryReserveCandidate)
+  ) {
+    return false;
+  }
+
+  const candidateKeys = new Set<string>();
+  return value.candidates.every((candidate) => {
+    const candidateKey = `${candidate.task_id}:${candidate.version}`;
+    if (candidateKeys.has(candidateKey)) {
+      return false;
+    }
+    candidateKeys.add(candidateKey);
+    return true;
+  });
+};
+
+const isOperatorRecoveryGame = (value: unknown): value is components["schemas"]["Game"] => {
+  if (!isOperatorGame(value)) {
+    return false;
+  }
+  if (value.state === "void") {
+    return value.result_reason !== null &&
+      operatorRecoveryFailureReasons.has(value.result_reason) &&
+      value.result_revision_id !== null &&
+      value.winner_id === null;
+  }
+  if (value.state === "completed") {
+    return value.result_reason !== null &&
+      operatorCompletedGameResultReasons.has(value.result_reason) &&
+      value.result_revision_id !== null &&
+      value.winner_id !== null;
+  }
+  if (value.state === "cancelled") {
+    return value.result_reason !== null &&
+      operatorCancelledGameResultReasons.has(value.result_reason) &&
+      value.result_revision_id !== null &&
+      value.winner_id === null;
+  }
+  if (value.state === "superseded") {
+    return value.result_reason === "derived_revision_superseded" &&
+      value.result_revision_id !== null &&
+      value.winner_id === null;
+  }
+  return value.result_reason === null && value.result_revision_id === null && value.winner_id === null;
+};
+
+const isOperatorRecoveryAttemptChain = (
+  value: unknown,
+  slotId: unknown,
+): value is components["schemas"]["Game"][] => {
+  if (!Array.isArray(value) || value.length === 0 || !isNonNilUUID(slotId)) {
+    return false;
+  }
+
+  const gameIds = new Set<string>();
+  const ordered = value.every((attempt, index) => {
+    if (
+      !isOperatorRecoveryGame(attempt) ||
+      attempt.slot_id !== slotId ||
+      attempt.attempt_no !== index + 1 ||
+      (index < value.length - 1 && attempt.state !== "void") ||
+      gameIds.has(attempt.id)
+    ) {
+      return false;
+    }
+    gameIds.add(attempt.id);
+    return true;
+  });
+  const latest = value.at(-1);
+  return ordered && latest !== undefined && latest.state === "void" &&
+    latest.result_reason !== null && operatorRecoveryFailureReasons.has(latest.result_reason);
+};
+
+export const isOperatorRecoveryControl = (
+  value: unknown,
+): value is OperatorRecoveryControl => {
+  if (
+    !isRecord(value) ||
+    !hasExactKeys(value, [
+      "assignment_id",
+      "attempts",
+      "category",
+      "expected_authority_revision",
+      "kind",
+      "old_wave_id",
+      "pause_reason",
+      "reason",
+      "replay",
+      "reserve_exhausted",
+      "series_id",
+      "slot_id",
+    ]) ||
+    (value.kind !== "replay" && value.kind !== "reserve_exhausted") ||
+    !isOperatorNonBlank(value.reason) ||
+    value.reason.length > 512 ||
+    (value.pause_reason !== null &&
+      (!isString(value.pause_reason) || !operatorPauseReasons.has(value.pause_reason))) ||
+    !isNonNilUUID(value.assignment_id) ||
+    !isNonNilUUID(value.old_wave_id) ||
+    !isNonNilUUID(value.series_id) ||
+    !isNonNilUUID(value.slot_id) ||
+    !isSafePositiveInteger(value.expected_authority_revision) ||
+    !isOperatorCategory(value.category) ||
+    !isOperatorRecoveryAttemptChain(value.attempts, value.slot_id)
+  ) {
+    return false;
+  }
+
+  if (value.kind === "replay") {
+    return isOperatorRecoveryReplayDetails(value.replay) && value.reserve_exhausted === null;
+  }
+
+  return value.replay === null && isOperatorRecoveryReserveExhaustedDetails(value.reserve_exhausted);
+};
 
 const isOperatorGameSlot = (value: unknown): boolean =>
   isRecord(value) &&
@@ -1924,9 +2117,19 @@ export const isOperatorRecoverySnapshot = (
   value: unknown,
 ): value is OperatorRecoverySnapshot =>
   isRecord(value) &&
-  hasExactKeys(value, ["next_cursor", "pause_graph", "roster", "series", "tournament", "waves"]) &&
+  hasExactKeys(value, [
+    "next_cursor",
+    "pause_graph",
+    "recovery_controls",
+    "roster",
+    "series",
+    "tournament",
+    "waves",
+  ]) &&
   isOperatorRecoveryCursor(value.next_cursor) &&
   (value.pause_graph === null || isOperatorPauseGraph(value.pause_graph)) &&
+  Array.isArray(value.recovery_controls) &&
+  value.recovery_controls.every(isOperatorRecoveryControl) &&
   isRoster(value.roster) &&
   Array.isArray(value.series) &&
   value.series.every(isOperatorSeries) &&

@@ -16,7 +16,7 @@ import {
 } from "./guards";
 import type { components } from "./schema";
 
-export { isOperatorWave } from "./guards";
+export { isOperatorRecoveryControl, isOperatorWave } from "./guards";
 
 export type Tournament = components["schemas"]["Tournament"];
 export type TournamentListResponse = components["schemas"]["TournamentListResponse"];
@@ -45,6 +45,8 @@ export type TournamentActionRequest = components["schemas"]["TournamentActionReq
 export type OperatorNoShowRequest = components["schemas"]["OperatorNoShowRequest"];
 export type OperatorForfeitRequest = components["schemas"]["OperatorForfeitRequest"];
 export type OperatorForfeitGameExpectation = components["schemas"]["OperatorForfeitGameExpectation"];
+export type OperatorReplayRequest = components["schemas"]["OperatorReplayRequest"];
+export type OperatorReserveRequest = components["schemas"]["OperatorReserveRequest"];
 export type AuditEntityKind = components["parameters"]["AuditEntityKind"];
 export type AuditActorKind = components["parameters"]["AuditActorKind"];
 
@@ -382,6 +384,56 @@ export const operatorApi = {
     );
   },
 
+  async replayGame(
+    tournamentId: string,
+    seriesId: string,
+    gameId: string,
+    body: OperatorReplayRequest,
+    intent: OperatorIdempotencyKey,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    await unwrapApiVoid(
+      adminClient.POST("/api/v1/admin/tournaments/{tournament_id}/series/{series_id}/games/{game_id}/replays", {
+        params: {
+          path: {
+            tournament_id: tournamentId,
+            series_id: seriesId,
+            game_id: gameId,
+          },
+          header: mutationHeaders(intent),
+        },
+        body,
+        signal,
+      }),
+      "admin/tournament game replay",
+    );
+  },
+
+  async assignReserve(
+    tournamentId: string,
+    seriesId: string,
+    assignmentId: string,
+    body: OperatorReserveRequest,
+    intent: OperatorIdempotencyKey,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    await unwrapApiVoid(
+      adminClient.POST("/api/v1/admin/tournaments/{tournament_id}/series/{series_id}/assignments/{assignment_id}/operator-reserves", {
+        params: {
+          path: {
+            tournament_id: tournamentId,
+            series_id: seriesId,
+            assignment_id: assignmentId,
+          },
+          header: mutationHeaders(intent),
+        },
+        body,
+        signal,
+      }),
+      "admin/tournament reserve assignment",
+    );
+  },
+
   async getSnapshot(
     tournamentId: string,
     cursor?: OperatorRecoveryCursor,
@@ -441,6 +493,8 @@ export const controlTournamentWave = operatorApi.controlWave;
 export const applyTournamentAction = operatorApi.applyTournamentAction;
 export const resolveTournamentNoShow = operatorApi.resolveNoShow;
 export const recordTournamentForfeit = operatorApi.recordForfeit;
+export const replayTournamentGame = operatorApi.replayGame;
+export const assignTournamentReserve = operatorApi.assignReserve;
 export const getOperatorSnapshot = operatorApi.getSnapshot;
 export const listTournamentAudit = operatorApi.listAudit;
 export const exportTournamentIncident = operatorApi.exportIncident;
