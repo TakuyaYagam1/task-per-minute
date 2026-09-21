@@ -821,6 +821,7 @@ INSERT INTO task_version_reservations (
     branch_id,
     task_id,
     task_version,
+    contingency_draft_branch_id,
     revision,
     state,
     committed_at,
@@ -833,6 +834,7 @@ VALUES (
     sqlc.arg(branch_id),
     sqlc.arg(task_id),
     sqlc.arg(task_version),
+    sqlc.narg(contingency_draft_branch_id)::UUID,
     1,
     'committed',
     sqlc.arg(committed_at),
@@ -916,6 +918,29 @@ VALUES (
     sqlc.arg(created_at)
 )
 RETURNING id;
+
+-- name: SupersedeReplaySourceWaveCAS :one
+WITH source_ready_window AS (
+    UPDATE ready_windows
+    SET state = 'superseded',
+        consumed_at = NULL
+    WHERE wave_id = sqlc.arg(wave_id)
+        AND roster_id = sqlc.arg(roster_id)
+        AND state = 'consumed'
+    RETURNING id
+)
+UPDATE waves AS source_wave
+SET state = 'superseded',
+    revision = revision + 1,
+    updated_at = sqlc.arg(superseded_at)
+WHERE source_wave.id = sqlc.arg(wave_id)
+    AND source_wave.tournament_id = sqlc.arg(tournament_id)
+    AND source_wave.roster_id = sqlc.arg(roster_id)
+    AND source_wave.revision = sqlc.arg(expected_revision)
+    AND source_wave.revision_id = sqlc.arg(expected_revision_id)
+    AND source_wave.state = 'completed'
+    AND EXISTS (SELECT 1 FROM source_ready_window)
+RETURNING source_wave.id;
 
 -- name: CreateReplayReplacementWaveMember :exec
 INSERT INTO wave_members (

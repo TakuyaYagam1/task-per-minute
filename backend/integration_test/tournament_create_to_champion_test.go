@@ -39,6 +39,7 @@ import (
 	executionrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/admin/execution"
 	wavestartrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/admin/execution/wavestart"
 	adminlifecyclerepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/admin/lifecycle"
+	adminreplayrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/admin/replay"
 	adminresultrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/admin/result"
 	rosterrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/admin/roster"
 	snapshotrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/admin/snapshot"
@@ -76,6 +77,7 @@ import (
 	tournamentadminexecution "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/execution"
 	tournamentadmininbound "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/inbound"
 	tournamentadminlifecycle "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/lifecycle"
+	tournamentadminreplay "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/replay"
 	tournamentadminresult "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/result"
 	tournamentadminroster "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/roster"
 	tournamentcancellation "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/cancellation"
@@ -453,9 +455,14 @@ func newTournamentFlowRESTFixture(t *testing.T) *restFixture {
 		),
 		Postseason: postseason,
 	})
+	replay := tournamentadminreplay.NewReplayWorkflow(tournamentadminreplay.ReplayWorkflowDependencies{
+		Transactions: tx,
+		Repository:   adminreplayrepo.NewTournamentAdminReplayPostgres(tx),
+	})
 	admin := tournamentadmininbound.NewInboundAdapter(tournamentadmin.AdminNewUseCase(tournamentadmin.AdminDependencies{
 		Catalog: catalog, Roster: roster, Preflight: roster, Pairing: execution,
 		Lifecycle: lifecycle, Wave: execution, Forfeit: results,
+		Reserve: replay, Replay: replay,
 		Audit:     auditrepo.NewTournamentAdminAuditPostgres(tx),
 		Snapshots: snapshotrepo.NewTournamentAdminSnapshotPostgres(tx),
 	}))

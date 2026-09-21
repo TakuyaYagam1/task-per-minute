@@ -1232,6 +1232,7 @@ type Querier interface {
 	StartWaveSeriesCAS(ctx context.Context, arg StartWaveSeriesCASParams) (StartWaveSeriesCASRow, error)
 	SupersedeAssignmentCAS(ctx context.Context, arg SupersedeAssignmentCASParams) (Assignment, error)
 	SupersedeProjectionRevisionCAS(ctx context.Context, arg SupersedeProjectionRevisionCASParams) (ProjectionRevision, error)
+	SupersedeReplaySourceWaveCAS(ctx context.Context, arg SupersedeReplaySourceWaveCASParams) (uuid.UUID, error)
 	// Wave/readiness evidence cannot be deleted. These mutations close an
 	// undisclosed unstarted execution lineage so a new graph can be created.
 	SupersedeTournamentConfigurationEditReadyWindowCAS(ctx context.Context, arg SupersedeTournamentConfigurationEditReadyWindowCASParams) (SupersedeTournamentConfigurationEditReadyWindowCASRow, error)

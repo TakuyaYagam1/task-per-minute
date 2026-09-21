@@ -395,7 +395,9 @@ func insertReplayAuthorityHead(ctx context.Context, tx pgx.Tx, assignmentID uuid
 			source.pool_revision, source.history_revision_id, source.history_revision,
 			source.artifact_revision_id, source.artifact_revision, reservation.id,
 			reservation.revision, source.category_revision_id, source.category_revision,
-			1, assignment.created_at, assignment.created_at
+			1,
+			LEAST(assignment.created_at, clock_timestamp() - INTERVAL '1 second'),
+			LEAST(assignment.created_at, clock_timestamp() - INTERVAL '1 second')
 		FROM assignments AS assignment
 		JOIN assignment_plans AS plan ON plan.id = assignment.plan_id
 		JOIN assignment_branches AS branch ON branch.id = assignment.branch_id AND branch.plan_id = plan.id

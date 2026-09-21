@@ -325,6 +325,7 @@ INSERT INTO task_version_reservations (
     branch_id,
     task_id,
     task_version,
+    contingency_draft_branch_id,
     revision,
     state,
     committed_at,
@@ -337,23 +338,25 @@ VALUES (
     $4,
     $5,
     $6,
+    $7::UUID,
     1,
     'committed',
-    $7,
-    $8
+    $8,
+    $9
 )
 RETURNING id
 `
 
 type CreateOperatorReplayReserveReservationParams struct {
-	ID          uuid.UUID
-	EdgeID      uuid.UUID
-	PlanID      uuid.UUID
-	BranchID    uuid.UUID
-	TaskID      uuid.UUID
-	TaskVersion int32
-	CommittedAt pgtype.Timestamptz
-	CreatedAt   pgtype.Timestamptz
+	ID                       uuid.UUID
+	EdgeID                   uuid.UUID
+	PlanID                   uuid.UUID
+	BranchID                 uuid.UUID
+	TaskID                   uuid.UUID
+	TaskVersion              int32
+	ContingencyDraftBranchID uuid.NullUUID
+	CommittedAt              pgtype.Timestamptz
+	CreatedAt                pgtype.Timestamptz
 }
 
 func (q *Queries) CreateOperatorReplayReserveReservation(ctx context.Context, arg CreateOperatorReplayReserveReservationParams) (uuid.UUID, error) {
@@ -364,6 +367,7 @@ func (q *Queries) CreateOperatorReplayReserveReservation(ctx context.Context, ar
 		arg.BranchID,
 		arg.TaskID,
 		arg.TaskVersion,
+		arg.ContingencyDraftBranchID,
 		arg.CommittedAt,
 		arg.CreatedAt,
 	)
@@ -2592,6 +2596,53 @@ type OpenReplayReplacementWaveCASParams struct {
 
 func (q *Queries) OpenReplayReplacementWaveCAS(ctx context.Context, arg OpenReplayReplacementWaveCASParams) (uuid.UUID, error) {
 	row := q.db.QueryRow(ctx, openReplayReplacementWaveCAS, arg.OpenedAt, arg.WaveID, arg.TournamentID)
+	var id uuid.UUID
+	err := row.Scan(&id)
+	return id, err
+}
+
+const supersedeReplaySourceWaveCAS = `-- name: SupersedeReplaySourceWaveCAS :one
+WITH source_ready_window AS (
+    UPDATE ready_windows
+    SET state = 'superseded',
+        consumed_at = NULL
+    WHERE wave_id = $2
+        AND roster_id = $4
+        AND state = 'consumed'
+    RETURNING id
+)
+UPDATE waves AS source_wave
+SET state = 'superseded',
+    revision = revision + 1,
+    updated_at = $1
+WHERE source_wave.id = $2
+    AND source_wave.tournament_id = $3
+    AND source_wave.roster_id = $4
+    AND source_wave.revision = $5
+    AND source_wave.revision_id = $6
+    AND source_wave.state = 'completed'
+    AND EXISTS (SELECT 1 FROM source_ready_window)
+RETURNING source_wave.id
+`
+
+type SupersedeReplaySourceWaveCASParams struct {
+	SupersededAt       pgtype.Timestamptz
+	WaveID             uuid.UUID
+	TournamentID       uuid.UUID
+	RosterID           uuid.UUID
+	ExpectedRevision   int64
+	ExpectedRevisionID uuid.UUID
+}
+
+func (q *Queries) SupersedeReplaySourceWaveCAS(ctx context.Context, arg SupersedeReplaySourceWaveCASParams) (uuid.UUID, error) {
+	row := q.db.QueryRow(ctx, supersedeReplaySourceWaveCAS,
+		arg.SupersededAt,
+		arg.WaveID,
+		arg.TournamentID,
+		arg.RosterID,
+		arg.ExpectedRevision,
+		arg.ExpectedRevisionID,
+	)
 	var id uuid.UUID
 	err := row.Scan(&id)
 	return id, err

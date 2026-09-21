@@ -83,7 +83,7 @@ func (a *inboundAdapter) RecordForfeit(ctx context.Context, c inbound.AdminForfe
 }
 
 func (a *inboundAdapter) ReplayGame(ctx context.Context, c inbound.AdminReplayCommand) error {
-	return a.next.ReplayGame(ctx, ReplayCommand{CommandScope: commandScope(c.AdminCommandScope), OldWaveID: c.OldWaveID, SeriesID: c.SeriesID, SlotID: c.SlotID, AssignmentID: c.AssignmentID, FailedGameID: c.FailedGameID, Confirmed: c.Confirmed, Reason: c.Reason, ExpectedAuthorityRevision: c.ExpectedAuthorityRevision, ExpectedClosureRevisionID: c.ExpectedClosureRevisionID, AssignmentAttemptID: c.AssignmentAttemptID, ReplacementGameID: c.ReplacementGameID, ReplacementWaveID: c.ReplacementWaveID, ReplacementWaveRevisionID: c.ReplacementWaveRevisionID, ReadyWindowID: c.ReadyWindowID, ReadyWindowRevisionID: c.ReadyWindowRevisionID})
+	return adminInboundError(a.next.ReplayGame(ctx, ReplayCommand{CommandScope: commandScope(c.AdminCommandScope), OldWaveID: c.OldWaveID, SeriesID: c.SeriesID, SlotID: c.SlotID, AssignmentID: c.AssignmentID, FailedGameID: c.FailedGameID, Confirmed: c.Confirmed, Reason: c.Reason, ExpectedAuthorityRevision: c.ExpectedAuthorityRevision, ExpectedClosureRevisionID: c.ExpectedClosureRevisionID, AssignmentAttemptID: c.AssignmentAttemptID, ReplacementGameID: c.ReplacementGameID, ReplacementWaveID: c.ReplacementWaveID, ReplacementWaveRevisionID: c.ReplacementWaveRevisionID, ReadyWindowID: c.ReadyWindowID, ReadyWindowRevisionID: c.ReadyWindowRevisionID}))
 }
 
 func (a *inboundAdapter) CorrectGameResult(ctx context.Context, c inbound.AdminCorrectionCommand) (inbound.AdminCorrectionEvidence, error) {
