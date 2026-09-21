@@ -2585,7 +2585,7 @@ export interface components {
             /** Format: uuid */
             expected_closure_revision_id: string;
         };
-        /** @description Operator-only task and version candidate for recovering an exhausted reserve. The proposed replacement snapshot is a fresh authority-generated UUID, not an existing candidate snapshot. */
+        /** @description Operator-only candidate exposes only the server-validated task and version. The mutation client supplies a fresh proposed_snapshot_id that is not an existing snapshot. */
         OperatorRecoveryReserveCandidate: {
             /** Format: uuid */
             task_id: string;
