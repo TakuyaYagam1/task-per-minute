@@ -37,6 +37,7 @@ import {
   operatorSnapshot,
   participantRecovery,
   publicRecovery,
+  publicRecoveryWithRoster,
   tournamentFixtureIds,
 } from "./tournament/fixtures";
 
@@ -360,6 +361,11 @@ const restSnapshot = (
         rank: 1,
         display_name: displayName,
         points: 3,
+        wins: 1,
+        losses: 0,
+        bye_count: 0,
+        provisional_tie: false,
+        qualification_status: "pending",
         buchholz: 2,
         effective_time_ms: 42000,
       },
@@ -587,12 +593,15 @@ test("FE-012 public realtime requires its wrapper, keeps public data, and detect
     parsePublicRealtimeMessage(publicRealtimeMessage(8, 5, secondEventId), tournamentId),
   );
   const gap = parsePublicRealtimeMessage(publicRealtimeMessage(12, 9, revisionId), tournamentId);
-  const revisionJump = parsePublicRealtimeMessage(publicRealtimeMessage(8, 9, revisionId), tournamentId);
+  const revisionJump = parsePublicRealtimeMessage(publicRealtimeMessage(7, 9, revisionId), tournamentId);
   const malformed = { ...publicRealtimeMessage(8, 5), type: "tournament.operator" };
+  const revisionApplied = applyPublicRealtime(applied.state, revisionJump);
 
   expect(initial.tournamentId).toBe(tournamentId);
   expect(applied.outcome).toBe("applied");
   expect(applied.state.display.scoreboard).toHaveLength(1);
+  expect(revisionApplied.outcome).toBe("applied");
+  expect(revisionApplied.state.cursor).toEqual({ projection_revision: 9, event_sequence: 7 });
   expect(isPublicRealtimeGap(applied.state, gap)).toBe(true);
   expect(isPublicRealtimeGap(applied.state, revisionJump)).toBe(false);
   expect(isPublicRealtimeRejection({
@@ -1449,6 +1458,51 @@ test("FE-038 public match center keeps the selected server match in a direct lin
   if (mobileBox !== null) {
     expect(mobileBox.x).toBeGreaterThanOrEqual(0);
     expect(mobileBox.x + mobileBox.width).toBeLessThanOrEqual(390);
+  }
+});
+
+test("FE-039 public scoreboard renders the complete server-owned zero-state roster", async ({ page }) => {
+  const fixtureSet = createTournamentFixtureSet();
+  const serverTimestamp = "2026-09-15T10:00:00Z";
+
+  await page.clock.install({ time: serverTimestamp });
+  await installOperatorWebSocketStub(page);
+  await installArenaAccessRoutes(page, fixtureSet);
+  await page.route(`**${arenaPublicSnapshotPath}*`, async (route) => {
+    expect(route.request().method()).toBe("GET");
+    await fulfillJSON(
+      route,
+      publicRecoveryWithRoster(16),
+      { date: new Date(serverTimestamp).toUTCString() },
+    );
+  });
+
+  await page.goto(`/arena/spectator/${arenaTournamentId}`, { waitUntil: "domcontentloaded" });
+
+  const broadcast = page.getByTestId("tournament-broadcast");
+  await expect(broadcast).toBeVisible();
+  const table = broadcast.getByRole("table", { name: "Публичная таблица турнира" });
+  await expect(table.getByRole("row")).toHaveCount(17);
+  await expect(table.getByRole("row").nth(1)).toContainText("Участник 01");
+  await expect(table.getByRole("row").nth(1)).toContainText("Ожидает решения");
+  await expect(table.getByRole("row").nth(1)).toContainText("00:00");
+  await expect(table.getByRole("row").nth(16)).toContainText("Участник 16");
+  await expect(table.getByText("00:00", { exact: true })).toHaveCount(16);
+
+  for (const theme of ["Темная тема", "Светлая тема"] as const) {
+    await page.getByRole("button", { name: theme }).click();
+    await expect(page.locator("html")).toHaveAttribute(
+      "data-theme",
+      theme === "Темная тема" ? "dark" : "light",
+    );
+  }
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  const box = await broadcast.boundingBox();
+  expect(box).not.toBeNull();
+  if (box !== null) {
+    expect(box.x).toBeGreaterThanOrEqual(0);
+    expect(box.x + box.width).toBeLessThanOrEqual(390);
   }
 });
 

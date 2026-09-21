@@ -2,6 +2,7 @@ package snapshot
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -30,15 +31,35 @@ type TournamentSnapshotPostgres struct {
 }
 
 type standingsPayloadDocument struct {
-	Entries []standingsPayloadEntry `json:"entries"`
+	Entries   []standingsPayloadEntry    `json:"entries"`
+	TieGroups []standingsPayloadTieGroup `json:"tie_groups"`
 }
 
 type standingsPayloadEntry struct {
 	ParticipantID uuid.UUID `json:"participant_id"`
 	Position      int       `json:"position"`
 	Points        int       `json:"points"`
+	Wins          int       `json:"wins"`
+	Losses        int       `json:"losses"`
+	ByeCount      int       `json:"bye_count"`
 	Buchholz      int       `json:"buchholz"`
 	EffectiveTime int64     `json:"effective_time"`
+}
+
+type standingsPayloadTieGroup struct {
+	PositionFrom   int         `json:"position_from"`
+	PositionTo     int         `json:"position_to"`
+	Impactful      bool        `json:"impactful"`
+	ParticipantIDs []uuid.UUID `json:"participant_ids"`
+}
+
+type topFourPayloadDocument struct {
+	Participants json.RawMessage `json:"participants"`
+}
+
+type topFourPayloadParticipant struct {
+	Seed          int       `json:"seed"`
+	ParticipantID uuid.UUID `json:"participant_id"`
 }
 
 type bracketPayloadDocument struct {
@@ -199,8 +220,11 @@ func (r *TournamentSnapshotPostgres) loadPublicSnapshot(
 	if err != nil {
 		return fmt.Errorf("TournamentSnapshotPostgres - PublicSnapshot - participants: %w", err)
 	}
+	if len(participants) != int(summary.RosterSize) {
+		return tournamentSnapshotInvalidError("public roster coverage")
+	}
 	names := tournamentParticipantNames(participants)
-	view.Scoreboard, err = tournamentScoreboard(payloads.StandingsPayload, names)
+	view.Scoreboard, err = tournamentScoreboard(payloads.StandingsPayload, payloads.TopFourPayload, participants)
 	if err != nil {
 		return err
 	}

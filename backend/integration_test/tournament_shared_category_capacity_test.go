@@ -6,12 +6,14 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/http/api"
+	inboundws "github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/websocket"
 )
 
 func TestSharedCategoryCapacityBoundariesThroughProductionHandlers(t *testing.T) {
@@ -46,7 +48,69 @@ func TestSharedCategoryCapacityBoundariesThroughProductionHandlers(t *testing.T)
 			locked := lockTournamentRosterThroughREST(t, fixture, adminToken, created.Id, roster, report)
 			require.True(t, locked.Locked)
 			require.Len(t, locked.Participants, test.rosterSize)
+			if test.rosterSize == 16 {
+				assertZeroStatePublicScoreboardThroughProduction(t, fixture, created.Id)
+			}
 		})
+	}
+}
+
+func assertZeroStatePublicScoreboardThroughProduction(
+	t *testing.T,
+	fixture *restFixture,
+	tournamentID uuid.UUID,
+) {
+	t.Helper()
+	path := "/api/v1/tournaments/" + tournamentID.String() + "/snapshot"
+	req, resp := fixture.doJSON(t, http.MethodGet, path, "", "")
+	require.Equal(t, http.StatusOK, resp.Code, resp.Body.String())
+	fixture.validateResponse(t, req, resp)
+	snapshot := decodeJSON[api.PublicRecoverySnapshot](t, resp)
+	require.Len(t, snapshot.Scoreboard.Entries, 16)
+	for index, entry := range snapshot.Scoreboard.Entries {
+		require.Equal(t, int32(index+1), entry.Rank)
+		require.NotEmpty(t, entry.DisplayName)
+		require.Zero(t, entry.Points)
+		require.Zero(t, entry.Wins)
+		require.Zero(t, entry.Losses)
+		require.Zero(t, entry.ByeCount)
+		require.False(t, entry.ProvisionalTie)
+		require.Equal(t, api.Pending, entry.QualificationStatus)
+	}
+	for _, privateField := range []string{`"participant_id"`, `"seed"`, `"task"`, `"evidence"`} {
+		require.NotContains(t, resp.Body.String(), privateField)
+	}
+
+	runtime := tournamentFlowRuntimeForFixture(t, fixture)
+	require.NotNil(t, runtime.webSocket)
+	server := httptest.NewServer(runtime.webSocket)
+	t.Cleanup(server.Close)
+	connection := dialTournamentFlowWebSocket(
+		t, server.URL+"/api/v1/tournaments/"+tournamentID.String()+"/realtime", nil,
+	)
+	data := readTournamentFlowWebSocket(t, connection)
+	require.NoError(t, connection.CloseNow())
+	message, err := inboundws.DecodeTournamentPublicMessage(data)
+	require.NoError(t, err)
+	require.NotNil(t, message.Public, string(data))
+	public := message.Public.Envelope.Public
+	require.Equal(t, snapshot.NextCursor.ProjectionRevision, message.Public.Envelope.ProjectionRevision)
+	require.Len(t, public.Scoreboard, len(snapshot.Scoreboard.Entries))
+	for index, entry := range snapshot.Scoreboard.Entries {
+		realtime := public.Scoreboard[index]
+		require.Equal(t, int(entry.Rank), realtime.Rank)
+		require.Equal(t, entry.DisplayName, realtime.DisplayName)
+		require.Equal(t, int(entry.Points), realtime.Points)
+		require.Equal(t, int(entry.Wins), realtime.Wins)
+		require.Equal(t, int(entry.Losses), realtime.Losses)
+		require.Equal(t, int(entry.ByeCount), realtime.ByeCount)
+		require.Equal(t, int(entry.Buchholz), realtime.Buchholz)
+		require.Equal(t, entry.EffectiveTimeMs, realtime.EffectiveTimeMS)
+		require.Equal(t, entry.ProvisionalTie, realtime.ProvisionalTie)
+		require.Equal(t, string(entry.QualificationStatus), realtime.QualificationStatus)
+	}
+	for _, privateField := range []string{`"participant_id"`, `"seed"`, `"task"`, `"evidence"`} {
+		require.NotContains(t, string(data), privateField)
 	}
 }
 

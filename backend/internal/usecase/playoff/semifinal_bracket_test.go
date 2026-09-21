@@ -53,7 +53,7 @@ func TestStrengthMatchedSemifinals(t *testing.T) {
 			DerivedRevisionID: playoffRevisionID(5202),
 		}}, bracket.Dependencies())
 		require.Equal(t,
-			"69ae76ca9ea671dff88dfda12a464abc3c51f1f6eafccfced257b4034b70d0a9",
+			"dab42d8e91e5b3155f34cc367f3e2ff15eaa0fafa4fa0f31d97f4065f4e9612f",
 			projectionDigestHex(bracket.Projection()),
 		)
 

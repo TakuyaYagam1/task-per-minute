@@ -171,11 +171,16 @@ type PublicTournamentView struct {
 }
 
 type PublicScoreboardEntryView struct {
-	Rank            int
-	DisplayName     string
-	Points          int
-	Buchholz        int
-	EffectiveTimeMS int64
+	Rank                int
+	DisplayName         string
+	Points              int
+	Wins                int
+	Losses              int
+	ByeCount            int
+	Buchholz            int
+	EffectiveTimeMS     int64
+	ProvisionalTie      bool
+	QualificationStatus string
 }
 
 type PublicBracketMatchView struct {

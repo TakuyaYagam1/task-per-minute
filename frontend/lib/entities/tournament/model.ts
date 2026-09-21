@@ -29,9 +29,16 @@ export interface PublicScoreboardEntryView {
   rank: number;
   displayName: string;
   points: number;
+  wins: number;
+  losses: number;
+  byeCount: number;
+  provisionalTie: boolean;
+  qualificationStatus: PublicQualificationStatus;
   buchholz: number;
   effectiveTimeMs: number;
 }
+
+export type PublicQualificationStatus = "pending" | "qualified" | "eliminated";
 
 export interface PublicBracketMatchView {
   stage: Extract<TournamentStage, "semifinal" | "final">;

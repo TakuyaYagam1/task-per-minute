@@ -64,6 +64,9 @@ func TestBuildCanonicalMaterializationUsesSwissTieBreaks(t *testing.T) {
 			ParticipantID uuid.UUID `json:"participant_id"`
 			Position      int       `json:"position"`
 			Points        int       `json:"points"`
+			Wins          int       `json:"wins"`
+			Losses        int       `json:"losses"`
+			ByeCount      int       `json:"bye_count"`
 			Buchholz      int       `json:"buchholz"`
 		} `json:"entries"`
 	}
@@ -73,6 +76,9 @@ func TestBuildCanonicalMaterializationUsesSwissTieBreaks(t *testing.T) {
 	require.Equal(t, participants[0], standings.Entries[1].ParticipantID)
 	require.Equal(t, 3, standings.Entries[1].Buchholz)
 	require.Equal(t, 1, standings.Entries[1].Points)
+	require.Equal(t, 1, standings.Entries[1].Wins)
+	require.Equal(t, 1, standings.Entries[1].Losses)
+	require.Equal(t, 0, standings.Entries[1].ByeCount)
 }
 
 func TestBuildCanonicalMaterializationDoesNotInventLaterStages(t *testing.T) {

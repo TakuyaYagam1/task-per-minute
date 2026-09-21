@@ -98,6 +98,8 @@ func TestTournamentProductionSnapshotSourceUsesCompleteRoleReaders(t *testing.T)
 	require.Equal(t, tournamentSourceCursor().EventSequence, public.Snapshot.LastSequence)
 	require.Equal(t, tournamentSourceCursor().EventSequence, public.SnapshotMetadata.Sequence)
 	require.Len(t, public.Snapshot.Scoreboard, 1)
+	require.Equal(t, 1, public.Snapshot.Scoreboard[0].Wins)
+	require.Equal(t, "pending", public.Snapshot.Scoreboard[0].QualificationStatus)
 	require.Len(t, public.Snapshot.Bracket, 1)
 	require.Equal(t, "final", public.Snapshot.Bracket[0].Stage)
 	require.Nil(t, public.Snapshot.Bracket[0].ScheduledAt)
@@ -240,10 +242,8 @@ func tournamentSourcePublicView(tournamentID uuid.UUID) tournamentsnapshot.Publi
 			RosterSize:   2,
 		},
 		Scoreboard: []tournamentsnapshot.PublicScoreboardEntryView{{
-			Rank:        1,
-			DisplayName: "player",
-			Points:      3,
-			Buchholz:    1,
+			Rank: 1, DisplayName: "player", Points: 3, Wins: 1, ByeCount: 1,
+			Buchholz: 1, QualificationStatus: "pending",
 		}},
 		Bracket: []tournamentsnapshot.PublicBracketMatchView{{
 			Stage:             "final",

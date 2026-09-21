@@ -44,6 +44,10 @@ func TestGetPublicSnapshotPropagatesCursorAndMapsAllowlistedCollections(t *testi
 	require.Equal(t, tournamentID, payload.Tournament.TournamentId)
 	require.Equal(t, int64(7), payload.NextCursor.ProjectionRevision)
 	require.Equal(t, int64(12), payload.NextCursor.EventSequence)
+	require.Len(t, payload.Scoreboard.Entries, 1)
+	require.Equal(t, int32(1), payload.Scoreboard.Entries[0].Wins)
+	require.Equal(t, int32(1), payload.Scoreboard.Entries[0].ByeCount)
+	require.Equal(t, api.Pending, payload.Scoreboard.Entries[0].QualificationStatus)
 	require.Len(t, payload.LiveSeries, 1)
 	require.Equal(t, api.PublicLiveSeriesStageSwiss, payload.LiveSeries[0].Stage)
 	require.NotNil(t, payload.LiveSeries[0].RoundNumber)
@@ -133,8 +137,11 @@ func publicSnapshotHTTPView(tournamentID uuid.UUID) inbound.PublicSnapshotView {
 			State:        "swiss",
 			RosterSize:   2,
 		},
-		Scoreboard: []inbound.PublicScoreboardEntryView{},
-		Bracket:    []inbound.PublicBracketMatchView{},
+		Scoreboard: []inbound.PublicScoreboardEntryView{{
+			Rank: 1, DisplayName: "alice", Points: 3, Wins: 1, Losses: 0, ByeCount: 1,
+			Buchholz: 2, EffectiveTimeMS: 4100, QualificationStatus: "pending",
+		}},
+		Bracket: []inbound.PublicBracketMatchView{},
 		LiveSeries: []inbound.PublicSeriesView{{
 			SeriesID:            seriesID,
 			Stage:               "swiss",

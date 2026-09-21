@@ -358,7 +358,7 @@
 
 .table {
   width: 100%;
-  min-width: 38rem;
+  min-width: 58rem;
   border-collapse: collapse;
   font-size: 0.85rem;
 }
@@ -374,6 +374,33 @@
 .table thead th {
   color: var(--secondary);
   font-size: 0.72rem;
+}
+
+.qualification,
+.provisionalTie {
+  display: block;
+  width: fit-content;
+}
+
+.qualification {
+  color: var(--secondary);
+  font-size: 0.78rem;
+  font-weight: 750;
+}
+
+.qualification[data-status="qualified"] {
+  color: var(--success);
+}
+
+.qualification[data-status="eliminated"] {
+  color: var(--error);
+}
+
+.provisionalTie {
+  margin-top: 0.2rem;
+  color: var(--warning);
+  font-size: 0.7rem;
+  white-space: nowrap;
 }
 
 .table tbody tr:last-child th,

@@ -510,10 +510,14 @@ PairingConfigurationRequest:
       format: uuid
       nullable: true
       description: Required for an odd roster and must confirm the deterministic fair-bye selection from current standings.
+PublicQualificationStatus:
+  type: string
+  enum: [pending, qualified, eliminated]
+
 PublicScoreboardEntry:
   type: object
   additionalProperties: false
-  required: [rank, display_name, points, buchholz, effective_time_ms]
+  required: [rank, display_name, points, wins, losses, bye_count, buchholz, effective_time_ms, provisional_tie, qualification_status]
   properties:
     rank:
       type: integer
@@ -526,6 +530,18 @@ PublicScoreboardEntry:
       type: integer
       format: int32
       minimum: 0
+    wins:
+      type: integer
+      format: int32
+      minimum: 0
+    losses:
+      type: integer
+      format: int32
+      minimum: 0
+    bye_count:
+      type: integer
+      format: int32
+      minimum: 0
     buchholz:
       type: integer
       format: int32
@@ -534,6 +550,11 @@ PublicScoreboardEntry:
       type: integer
       format: int64
       minimum: 0
+    provisional_tie:
+      type: boolean
+      readOnly: true
+    qualification_status:
+      $ref: '#/PublicQualificationStatus'
 
 PublicScoreboardResponse:
   type: object

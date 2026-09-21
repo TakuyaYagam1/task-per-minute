@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
+	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/sqlc"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	usecase "github.com/TakuyaYagam1/task-per-minute/internal/port/inbound"
 )
@@ -25,7 +26,7 @@ func TestTournamentScoreboardReadsCanonicalEntries(t *testing.T) {
 		}]
 	}`)
 
-	view, err := tournamentScoreboard(payload, map[uuid.UUID]string{participantID: "alice"})
+	view, err := tournamentScoreboard(payload, nil, []sqlc.ListTournamentReadParticipantsRow{{ParticipantID: participantID, DisplayName: "alice", Seed: 1}})
 	require.NoError(t, err)
 	require.Len(t, view, 1)
 	require.Equal(t, 2500, int(view[0].EffectiveTimeMS))
@@ -46,21 +47,83 @@ func TestTournamentScoreboardRejectsLegacyOrUnknownMembers(t *testing.T) {
 		}]
 	}`)
 
-	_, err := tournamentScoreboard(legacy, map[uuid.UUID]string{participantID: "alice"})
+	_, err := tournamentScoreboard(legacy, nil, []sqlc.ListTournamentReadParticipantsRow{{ParticipantID: participantID, DisplayName: "alice", Seed: 1}})
 	require.ErrorIs(t, err, ErrTournamentSnapshotInvalid)
-	_, err = tournamentScoreboard(unknown, map[uuid.UUID]string{participantID: "alice"})
+	_, err = tournamentScoreboard(unknown, nil, []sqlc.ListTournamentReadParticipantsRow{{ParticipantID: participantID, DisplayName: "alice", Seed: 1}})
 	require.ErrorIs(t, err, ErrTournamentSnapshotInvalid)
 }
 
 func TestTournamentScoreboardBeforeFirstSwissResult(t *testing.T) {
-	view, err := tournamentScoreboard([]byte(`{"entries":[]}`), nil)
+	view, err := tournamentScoreboard([]byte(`{"entries":[]}`), nil, nil)
 	require.NoError(t, err)
 	require.NotNil(t, view)
 	require.Empty(t, view)
 
 	for _, payload := range []string{`{}`, `{"entries":null}`} {
-		_, err = tournamentScoreboard([]byte(payload), nil)
+		_, err = tournamentScoreboard([]byte(payload), nil, nil)
 		require.ErrorIs(t, err, ErrTournamentSnapshotInvalid)
+	}
+}
+
+func TestTournamentScoreboardPublishesRosterStatusesAndGoldenOrder(t *testing.T) {
+	ids := []uuid.UUID{
+		uuid.MustParse("10000000-0000-4000-8000-000000000001"),
+		uuid.MustParse("10000000-0000-4000-8000-000000000002"),
+		uuid.MustParse("10000000-0000-4000-8000-000000000003"),
+		uuid.MustParse("10000000-0000-4000-8000-000000000004"),
+		uuid.MustParse("10000000-0000-4000-8000-000000000005"),
+	}
+	participants := []sqlc.ListTournamentReadParticipantsRow{
+		{ParticipantID: ids[0], DisplayName: "alice", Seed: 1},
+		{ParticipantID: ids[1], DisplayName: "bob", Seed: 2},
+		{ParticipantID: ids[2], DisplayName: "carol", Seed: 3},
+		{ParticipantID: ids[3], DisplayName: "dave", Seed: 4},
+		{ParticipantID: ids[4], DisplayName: "erin", Seed: 5},
+	}
+	standings := []byte(`{"entries":[
+		{"participant_id":"10000000-0000-4000-8000-000000000002","position":1,"points":6,"wins":2,"losses":0,"bye_count":0,"buchholz":4,"effective_time":1000000},
+		{"participant_id":"10000000-0000-4000-8000-000000000001","position":2,"points":3,"wins":1,"losses":1,"bye_count":0,"buchholz":3,"effective_time":2000000},
+		{"participant_id":"10000000-0000-4000-8000-000000000004","position":3,"points":3,"wins":0,"losses":1,"bye_count":1,"buchholz":2,"effective_time":3000000},
+		{"participant_id":"10000000-0000-4000-8000-000000000003","position":4,"points":0,"wins":0,"losses":2,"bye_count":0,"buchholz":1,"effective_time":4000000},
+		{"participant_id":"10000000-0000-4000-8000-000000000005","position":5,"points":0,"wins":0,"losses":2,"bye_count":0,"buchholz":0,"effective_time":5000000}
+	],"tie_groups":[{"position_from":2,"position_to":3,"impactful":true,"participant_ids":["10000000-0000-4000-8000-000000000001","10000000-0000-4000-8000-000000000004"]}]}`)
+	topFour := []byte(`{"participants":[
+		"10000000-0000-4000-8000-000000000004",
+		"10000000-0000-4000-8000-000000000002",
+		"10000000-0000-4000-8000-000000000001",
+		"10000000-0000-4000-8000-000000000003"
+	]}`)
+
+	view, err := tournamentScoreboard(standings, topFour, participants)
+	require.NoError(t, err)
+	require.Len(t, view, 5)
+	require.Equal(t, []string{"dave", "bob", "alice", "carol", "erin"}, []string{view[0].DisplayName, view[1].DisplayName, view[2].DisplayName, view[3].DisplayName, view[4].DisplayName})
+	for _, entry := range view[:4] {
+		require.Equal(t, "qualified", entry.QualificationStatus)
+		require.False(t, entry.ProvisionalTie)
+	}
+	require.Equal(t, "eliminated", view[4].QualificationStatus)
+	require.False(t, view[4].ProvisionalTie)
+	require.Equal(t, 1, view[0].ByeCount)
+	require.Equal(t, 2, view[1].Wins)
+}
+
+func TestTournamentScoreboardSynthesizesZeroStateForRoster(t *testing.T) {
+	participants := []sqlc.ListTournamentReadParticipantsRow{
+		{ParticipantID: uuid.MustParse("10000000-0000-4000-8000-000000000001"), DisplayName: "alice", Seed: 1},
+		{ParticipantID: uuid.MustParse("10000000-0000-4000-8000-000000000002"), DisplayName: "bob", Seed: 2},
+	}
+	view, err := tournamentScoreboard([]byte(`{"entries":[]}`), []byte(`{"participants":[]}`), participants)
+	require.NoError(t, err)
+	require.Len(t, view, 2)
+	require.Equal(t, "alice", view[0].DisplayName)
+	require.Equal(t, "bob", view[1].DisplayName)
+	for _, entry := range view {
+		require.Equal(t, 0, entry.Points)
+		require.Equal(t, 0, entry.Wins)
+		require.Equal(t, 0, entry.Losses)
+		require.Equal(t, 0, entry.ByeCount)
+		require.Equal(t, "pending", entry.QualificationStatus)
 	}
 }
 
@@ -101,14 +164,14 @@ func TestTournamentBracketAllowsCanonicalEmptyRoundsBeforePlayoffs(t *testing.T)
 func TestTournamentProjectionPayloadsRejectDuplicatePositions(t *testing.T) {
 	firstID := uuid.MustParse("10000000-0000-4000-8000-000000000001")
 	secondID := uuid.MustParse("10000000-0000-4000-8000-000000000002")
-	names := map[uuid.UUID]string{firstID: "alice", secondID: "bob"}
+	participants := []sqlc.ListTournamentReadParticipantsRow{{ParticipantID: firstID, DisplayName: "alice", Seed: 1}, {ParticipantID: secondID, DisplayName: "bob", Seed: 2}}
 
 	_, err := tournamentScoreboard([]byte(`{
 		"entries":[
 			{"participant_id":"10000000-0000-4000-8000-000000000001","position":1,"points":1},
 			{"participant_id":"10000000-0000-4000-8000-000000000002","position":1,"points":0}
 		]
-	}`), names)
+	}`), nil, participants)
 	require.ErrorIs(t, err, ErrTournamentSnapshotInvalid)
 
 	_, err = tournamentBracket([]byte(`{
@@ -116,7 +179,7 @@ func TestTournamentProjectionPayloadsRejectDuplicatePositions(t *testing.T) {
 			{"position":1,"first_participant_id":"10000000-0000-4000-8000-000000000001","second_participant_id":"10000000-0000-4000-8000-000000000002","state":"planned"},
 			{"position":1,"first_participant_id":"10000000-0000-4000-8000-000000000002","second_participant_id":"10000000-0000-4000-8000-000000000001","state":"planned"}
 		]
-	}`), names)
+	}`), map[uuid.UUID]string{firstID: "alice", secondID: "bob"})
 	require.ErrorIs(t, err, ErrTournamentSnapshotInvalid)
 }
 
@@ -147,9 +210,9 @@ func TestTournamentSnapshotHelpersPreserveEmptyAndNullableValues(t *testing.T) {
 			"buchholz":0,
 			"effective_time":1000000
 		}]
-	}`), map[uuid.UUID]string{
-		uuid.MustParse("10000000-0000-4000-8000-000000000001"): "alice",
-	})
+	}`), nil, []sqlc.ListTournamentReadParticipantsRow{{
+		ParticipantID: uuid.MustParse("10000000-0000-4000-8000-000000000001"), DisplayName: "alice", Seed: 1,
+	}})
 	require.NoError(t, err)
 	require.Equal(t, int64(1), entry[0].EffectiveTimeMS)
 }

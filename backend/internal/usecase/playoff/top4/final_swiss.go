@@ -64,6 +64,9 @@ type FinalSwissStanding struct {
 	ParticipantID     uuid.UUID                `json:"participant_id"`
 	Position          int                      `json:"position"`
 	Points            int                      `json:"points"`
+	Wins              int                      `json:"wins"`
+	Losses            int                      `json:"losses"`
+	ByeCount          int                      `json:"bye_count"`
 	PointsLabel       swissusecase.PointsLabel `json:"points_label"`
 	Buchholz          int                      `json:"buchholz"`
 	BuchholzStatus    SwissBuchholzStatus      `json:"buchholz_status"`

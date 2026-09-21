@@ -37,9 +37,16 @@ func TestTournamentPublicSnapshot(t *testing.T) {
 		t.Fatal(err)
 	}
 	requireJSONKeys(t, object["tournament"], "tournament_id", "preset", "state", "roster_size", "started_at", "finished_at")
+	var scoreboard []map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(object["scoreboard"], &scoreboard))
+	scoreboardEntry, err := json.Marshal(scoreboard[0])
+	require.NoError(t, err)
+	requireJSONKeys(t, scoreboardEntry, "rank", "display_name", "points", "wins", "losses", "bye_count", "buchholz", "effective_time_ms", "provisional_tie", "qualification_status")
 	var decoded PublicSnapshot
 	require.NoError(t, json.Unmarshal(encoded, &decoded))
 	require.Len(t, decoded.Bracket, 1)
+	require.Equal(t, 1, decoded.Scoreboard[0].Wins)
+	require.Equal(t, "pending", decoded.Scoreboard[0].QualificationStatus)
 	require.Nil(t, decoded.Bracket[0].ScheduledAt)
 	require.Len(t, decoded.LiveSeries, 1)
 	require.Equal(t, "swiss", decoded.LiveSeries[0].Stage)
@@ -154,7 +161,7 @@ func testPublicSnapshotInput(tournamentID uuid.UUID) PublicSnapshotInput {
 			RosterSize:   8,
 			StartedAt:    &startedAt,
 		},
-		Scoreboard:      []PublicScoreboardEntryInput{{TournamentID: tournamentID, Rank: 1, DisplayName: "red", Points: 3, Buchholz: 2, EffectiveTimeMS: 4100}},
+		Scoreboard:      []PublicScoreboardEntryInput{{TournamentID: tournamentID, Rank: 1, DisplayName: "red", Points: 3, Wins: 1, ByeCount: 1, Buchholz: 2, EffectiveTimeMS: 4100, QualificationStatus: "pending"}},
 		Bracket:         []PublicBracketMatchInput{{TournamentID: tournamentID, Stage: "semifinal", Position: 1, FirstDisplayName: "red", SecondDisplayName: "blue", FirstWins: 1, SecondWins: 0, State: "active"}},
 		LiveSeries:      []PublicSeriesInput{{TournamentID: tournamentID, SeriesID: testUUID("00000000-0000-4000-8000-000000000022"), Stage: "swiss", RoundNumber: &roundNumber, Format: "bo3", State: "active", FirstDisplayName: "red", SecondDisplayName: "blue", FirstWins: 1, SecondWins: 0, CurrentGamePosition: 2}},
 		OfficialResults: []PublicOfficialResultInput{{TournamentID: tournamentID, RevisionID: testUUID("00000000-0000-4000-8000-000000000040"), SeriesID: testUUID("00000000-0000-4000-8000-000000000022"), State: "completed", WinnerDisplayName: "red", FirstWins: 2, SecondWins: 0, RecordedAt: time.Date(2026, 9, 2, 8, 20, 0, 0, time.UTC)}},

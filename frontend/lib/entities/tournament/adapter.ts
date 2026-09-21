@@ -156,6 +156,11 @@ const toPublicScoreboardEntryView = (
   rank: value.rank,
   displayName: value.display_name,
   points: value.points,
+  wins: value.wins,
+  losses: value.losses,
+  byeCount: value.bye_count,
+  provisionalTie: value.provisional_tie,
+  qualificationStatus: value.qualification_status,
   buchholz: value.buchholz,
   effectiveTimeMs: value.effective_time_ms,
 });

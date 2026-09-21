@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -101,40 +102,251 @@ func tournamentParticipantNames(rows []sqlc.ListTournamentReadParticipantsRow) m
 	return names
 }
 
+// tournamentScoreboard converts private projection evidence into the complete
+// public roster. Participant IDs are used only while joining persisted rows;
+// the returned view contains display names and server-owned status fields.
 func tournamentScoreboard(
+	standingsPayload []byte,
+	topFourPayload []byte,
+	participants []sqlc.ListTournamentReadParticipantsRow,
+) ([]usecase.PublicScoreboardEntryView, error) {
+	names, orderedIDs, err := tournamentScoreboardRoster(participants)
+	if err != nil {
+		return nil, err
+	}
+	document, entries, err := tournamentStandingsPayload(standingsPayload, names)
+	if err != nil {
+		return nil, err
+	}
+	if len(entries) != 0 && len(entries) != len(participants) {
+		return nil, tournamentSnapshotInvalidError("standings roster coverage")
+	}
+
+	// An initial published projection has no standings entries. Return a
+	// deterministic zero-state row for every roster member instead of exposing
+	// an empty table and making the browser infer missing participants.
+	syntheticStandings := len(entries) == 0
+	if syntheticStandings {
+		entries = make(map[uuid.UUID]standingsPayloadEntry, len(orderedIDs))
+		for index, participantID := range orderedIDs {
+			entries[participantID] = standingsPayloadEntry{ParticipantID: participantID, Position: index + 1}
+		}
+	}
+
+	finalOrder, qualified, resolved, err := tournamentTopFourOrder(topFourPayload, names, entries, orderedIDs)
+	if err != nil {
+		return nil, err
+	}
+	if syntheticStandings && resolved {
+		return nil, tournamentSnapshotInvalidError("top four without standings")
+	}
+	provisional, err := tournamentProvisionalTie(document.TieGroups, names, entries, resolved)
+	if err != nil {
+		return nil, err
+	}
+	return tournamentScoreboardView(finalOrder, names, entries, qualified, resolved, provisional), nil
+}
+
+func tournamentScoreboardRoster(
+	participants []sqlc.ListTournamentReadParticipantsRow,
+) (map[uuid.UUID]string, []uuid.UUID, error) {
+	names := tournamentParticipantNames(participants)
+	if len(names) != len(participants) {
+		return nil, nil, tournamentSnapshotInvalidError("duplicate roster participant")
+	}
+	orderedIDs := make([]uuid.UUID, len(participants))
+	previousSeed := int32(0)
+	for index, participant := range participants {
+		if participant.ParticipantID == uuid.Nil || strings.TrimSpace(participant.DisplayName) == "" ||
+			participant.Seed < 1 || participant.Seed <= previousSeed {
+			return nil, nil, tournamentSnapshotInvalidError("roster participant")
+		}
+		previousSeed = participant.Seed
+		orderedIDs[index] = participant.ParticipantID
+	}
+	return names, orderedIDs, nil
+}
+
+func tournamentStandingsPayload(
 	payload []byte,
 	names map[uuid.UUID]string,
-) ([]usecase.PublicScoreboardEntryView, error) {
+) (standingsPayloadDocument, map[uuid.UUID]standingsPayloadEntry, error) {
 	var document standingsPayloadDocument
 	if err := json.Unmarshal(payload, &document); err != nil || document.Entries == nil {
-		return nil, tournamentSnapshotInvalidError("standings payload")
+		return standingsPayloadDocument{}, nil, tournamentSnapshotInvalidError("standings payload")
 	}
-	view := make([]usecase.PublicScoreboardEntryView, len(document.Entries))
-	seenParticipants := make(map[uuid.UUID]struct{}, len(document.Entries))
+	entries := make(map[uuid.UUID]standingsPayloadEntry, len(document.Entries))
 	seenPositions := make(map[int]struct{}, len(document.Entries))
-	for index, entry := range document.Entries {
+	for _, entry := range document.Entries {
 		displayName, ok := names[entry.ParticipantID]
-		if !ok || entry.ParticipantID == uuid.Nil || strings.TrimSpace(displayName) == "" ||
-			entry.Position < 1 || entry.Points < 0 || entry.Buchholz < 0 || entry.EffectiveTime < 0 {
-			return nil, tournamentSnapshotInvalidError("standings entry")
+		if !ok || !validTournamentStandingsEntry(entry, displayName) {
+			return standingsPayloadDocument{}, nil, tournamentSnapshotInvalidError("standings entry")
 		}
-		if _, duplicate := seenParticipants[entry.ParticipantID]; duplicate {
-			return nil, tournamentSnapshotInvalidError("duplicate standings participant")
+		if _, duplicate := entries[entry.ParticipantID]; duplicate {
+			return standingsPayloadDocument{}, nil, tournamentSnapshotInvalidError("duplicate standings participant")
 		}
 		if _, duplicate := seenPositions[entry.Position]; duplicate {
-			return nil, tournamentSnapshotInvalidError("duplicate standings position")
+			return standingsPayloadDocument{}, nil, tournamentSnapshotInvalidError("duplicate standings position")
 		}
-		seenParticipants[entry.ParticipantID] = struct{}{}
+		entries[entry.ParticipantID] = entry
 		seenPositions[entry.Position] = struct{}{}
+	}
+	return document, entries, nil
+}
+
+func validTournamentStandingsEntry(entry standingsPayloadEntry, displayName string) bool {
+	return entry.ParticipantID != uuid.Nil && strings.TrimSpace(displayName) != "" && entry.Position >= 1 &&
+		entry.Points >= 0 && entry.Wins >= 0 && entry.Losses >= 0 && entry.ByeCount >= 0 &&
+		entry.Buchholz >= 0 && entry.EffectiveTime >= 0
+}
+
+func tournamentScoreboardView(
+	order []uuid.UUID,
+	names map[uuid.UUID]string,
+	entries map[uuid.UUID]standingsPayloadEntry,
+	qualified map[uuid.UUID]bool,
+	resolved bool,
+	provisional map[uuid.UUID]bool,
+) []usecase.PublicScoreboardEntryView {
+	view := make([]usecase.PublicScoreboardEntryView, len(order))
+	for index, participantID := range order {
+		entry := entries[participantID]
+		status := "pending"
+		if resolved && qualified[participantID] {
+			status = "qualified"
+		} else if resolved {
+			status = "eliminated"
+		}
 		view[index] = usecase.PublicScoreboardEntryView{
-			Rank:            entry.Position,
-			DisplayName:     displayName,
-			Points:          entry.Points,
-			Buchholz:        entry.Buchholz,
-			EffectiveTimeMS: entry.EffectiveTime / int64(time.Millisecond),
+			Rank: index + 1, DisplayName: names[participantID], Points: entry.Points,
+			Wins: entry.Wins, Losses: entry.Losses, ByeCount: entry.ByeCount,
+			Buchholz: entry.Buchholz, EffectiveTimeMS: entry.EffectiveTime / int64(time.Millisecond),
+			ProvisionalTie: provisional[participantID], QualificationStatus: status,
 		}
 	}
-	return view, nil
+	return view
+}
+
+func tournamentTopFourOrder(
+	payload []byte,
+	names map[uuid.UUID]string,
+	entries map[uuid.UUID]standingsPayloadEntry,
+	orderedRoster []uuid.UUID,
+) ([]uuid.UUID, map[uuid.UUID]bool, bool, error) {
+	qualified := make(map[uuid.UUID]bool)
+	if len(payload) == 0 {
+		return standingsOrder(entries, orderedRoster), qualified, false, nil
+	}
+	var document topFourPayloadDocument
+	if err := json.Unmarshal(payload, &document); err != nil || document.Participants == nil {
+		return nil, nil, false, tournamentSnapshotInvalidError("top four payload")
+	}
+	participants, err := topFourParticipants(document.Participants)
+	if err != nil {
+		return nil, nil, false, err
+	}
+	if len(participants) == 0 {
+		return standingsOrder(entries, orderedRoster), qualified, false, nil
+	}
+	if len(participants) != 4 {
+		return nil, nil, false, tournamentSnapshotInvalidError("top four roster coverage")
+	}
+	for _, participantID := range participants {
+		if participantID == uuid.Nil || names[participantID] == "" {
+			return nil, nil, false, tournamentSnapshotInvalidError("top four participant")
+		}
+		if _, duplicate := qualified[participantID]; duplicate {
+			return nil, nil, false, tournamentSnapshotInvalidError("duplicate top four participant")
+		}
+		if _, ok := entries[participantID]; !ok {
+			return nil, nil, false, tournamentSnapshotInvalidError("top four standings participant")
+		}
+		qualified[participantID] = true
+	}
+	order := make([]uuid.UUID, 0, len(entries))
+	order = append(order, participants...)
+	for _, participantID := range standingsOrder(entries, orderedRoster) {
+		if !qualified[participantID] {
+			order = append(order, participantID)
+		}
+	}
+	return order, qualified, true, nil
+}
+
+func topFourParticipants(raw json.RawMessage) ([]uuid.UUID, error) {
+	var participants []uuid.UUID
+	if err := json.Unmarshal(raw, &participants); err == nil && participants != nil {
+		return participants, nil
+	}
+	// Older canonical revisions encoded the same final order with explicit
+	// seed objects. Accepting that shape keeps recovery readable across a
+	// revision boundary while the current contract uses UUID array order.
+	var seeded []topFourPayloadParticipant
+	if err := json.Unmarshal(raw, &seeded); err != nil || seeded == nil {
+		return nil, tournamentSnapshotInvalidError("top four participants")
+	}
+	sort.Slice(seeded, func(i, j int) bool { return seeded[i].Seed < seeded[j].Seed })
+	participants = make([]uuid.UUID, len(seeded))
+	for index, participant := range seeded {
+		if participant.Seed != index+1 {
+			return nil, tournamentSnapshotInvalidError("top four participant seed")
+		}
+		participants[index] = participant.ParticipantID
+	}
+	return participants, nil
+}
+
+func standingsOrder(entries map[uuid.UUID]standingsPayloadEntry, fallback []uuid.UUID) []uuid.UUID {
+	order := make([]uuid.UUID, 0, len(entries))
+	for participantID := range entries {
+		order = append(order, participantID)
+	}
+	sort.Slice(order, func(i, j int) bool {
+		left, right := entries[order[i]], entries[order[j]]
+		if left.Position != right.Position {
+			return left.Position < right.Position
+		}
+		return order[i].String() < order[j].String()
+	})
+	if len(order) != 0 {
+		return order
+	}
+	return append([]uuid.UUID(nil), fallback...)
+}
+
+func tournamentProvisionalTie(
+	tieGroups []standingsPayloadTieGroup,
+	names map[uuid.UUID]string,
+	entries map[uuid.UUID]standingsPayloadEntry,
+	goldenResolved bool,
+) (map[uuid.UUID]bool, error) {
+	result := make(map[uuid.UUID]bool)
+	if goldenResolved {
+		return result, nil
+	}
+	for _, group := range tieGroups {
+		if group.PositionFrom < 1 || group.PositionTo < group.PositionFrom ||
+			len(group.ParticipantIDs) < 2 || group.PositionTo-group.PositionFrom+1 != len(group.ParticipantIDs) {
+			return nil, tournamentSnapshotInvalidError("standings tie group")
+		}
+		seen := make(map[uuid.UUID]struct{}, len(group.ParticipantIDs))
+		for _, participantID := range group.ParticipantIDs {
+			if participantID == uuid.Nil || names[participantID] == "" {
+				return nil, tournamentSnapshotInvalidError("standings tie participant")
+			}
+			if _, duplicate := seen[participantID]; duplicate {
+				return nil, tournamentSnapshotInvalidError("duplicate standings tie participant")
+			}
+			if _, ok := entries[participantID]; !ok {
+				return nil, tournamentSnapshotInvalidError("standings tie participant coverage")
+			}
+			seen[participantID] = struct{}{}
+			if group.Impactful {
+				result[participantID] = true
+			}
+		}
+	}
+	return result, nil
 }
 
 //nolint:gocyclo // Public bracket decoding validates all participant, stage, score, and uniqueness invariants together.

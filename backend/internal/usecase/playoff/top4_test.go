@@ -104,7 +104,7 @@ func TestTop4Snapshot(t *testing.T) {
 		}, top4Participants(snapshot.Participants()))
 		require.Equal(t, fixture.command.RevisionID, snapshot.Dependencies()[0].SourceRevisionID)
 		require.Equal(t,
-			"c7fdee72605345867fd3326b5c9e58cd02793351cb50aff95bda669c60bb1e4e",
+			"f3ebe21b2dcebeb638f6cb6a0b860ab01f7a9569904de36481c36103eb075f67",
 			projectionDigestHex(snapshot.Projection()),
 		)
 	})

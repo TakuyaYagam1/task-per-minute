@@ -34,6 +34,9 @@ type NormalStanding struct {
 	ParticipantID     uuid.UUID
 	Position          int
 	Points            int
+	Wins              int
+	Losses            int
+	ByeCount          int
 	PointsLabel       PointsLabel
 	Buchholz          int
 	HeadToHeadPoints  int
@@ -61,6 +64,7 @@ func OrderNormalStandings(input NormalOrderingInput) ([]NormalStanding, error) {
 		points[total.ParticipantID] = total.Points
 	}
 	buchholz := swissBuchholz(input.Ledger.Entries, points)
+	records := swissRecordCounts(input.Ledger.Entries)
 	label := PointsProvisional
 	if input.SwissComplete {
 		label = PointsFinal
@@ -69,7 +73,9 @@ func OrderNormalStandings(input NormalOrderingInput) ([]NormalStanding, error) {
 	for index, total := range input.Ledger.Totals {
 		standings[index] = NormalStanding{
 			ParticipantID: total.ParticipantID,
-			Points:        total.Points, PointsLabel: label, Buchholz: buchholz[total.ParticipantID],
+			Points:        total.Points, Wins: records[total.ParticipantID].Wins,
+			Losses: records[total.ParticipantID].Losses, ByeCount: records[total.ParticipantID].ByeCount,
+			PointsLabel: label, Buchholz: buchholz[total.ParticipantID],
 			EffectiveTime:     total.EffectiveTime,
 			AcceptedSolveTime: cloneDurationPointer(total.AcceptedSolveTime), Seed: seeds[total.ParticipantID],
 		}
@@ -80,6 +86,44 @@ func OrderNormalStandings(input NormalOrderingInput) ([]NormalStanding, error) {
 		standings[index].Position = index + 1
 	}
 	return standings, nil
+}
+
+type swissRecord struct {
+	Wins     int
+	Losses   int
+	ByeCount int
+}
+
+// swissRecordCounts derives the public Swiss counters from immutable ledger
+// evidence. A bye is intentionally separate from a win: it contributes points
+// but does not represent a played Series result.
+func swissRecordCounts(entries []PointLedgerEntry) map[uuid.UUID]swissRecord {
+	records := make(map[uuid.UUID]swissRecord)
+	for _, entry := range entries {
+		switch entry.SourceKind {
+		case PointSourceBye:
+			if len(entry.Awards) == 1 {
+				record := records[entry.Awards[0].ParticipantID]
+				record.ByeCount++
+				records[entry.Awards[0].ParticipantID] = record
+			}
+		case PointSourceSeries:
+			if entry.Label != SeriesResultPlayed && entry.Label != SeriesResultNoShow {
+				continue
+			}
+			for _, award := range entry.Awards {
+				record := records[award.ParticipantID]
+				switch award.Points {
+				case SeriesWinPoints:
+					record.Wins++
+				case 0:
+					record.Losses++
+				}
+				records[award.ParticipantID] = record
+			}
+		}
+	}
+	return records
 }
 
 func validateSwissPointLedger(ledger PointLedger) error {

@@ -68,6 +68,12 @@ func TestSwissNormalOrdering(t *testing.T) {
 		if ordered[0].AcceptedSolveTime == nil || *ordered[0].AcceptedSolveTime != accepted {
 			t.Fatalf("accepted solve time = %v, want %s", ordered[0].AcceptedSolveTime, accepted)
 		}
+		if ordered[0].Wins != 1 || ordered[0].Losses != 1 || ordered[0].ByeCount != 0 {
+			t.Fatalf("participant %s record = %d-%d-%d, want 1-1-0", ordered[0].ParticipantID, ordered[0].Wins, ordered[0].Losses, ordered[0].ByeCount)
+		}
+		if ordered[3].Wins != 0 || ordered[3].Losses != 1 || ordered[3].ByeCount != 1 {
+			t.Fatalf("participant %s record = %d-%d-%d, want 0-1-1", ordered[3].ParticipantID, ordered[3].Wins, ordered[3].Losses, ordered[3].ByeCount)
+		}
 
 		finalInput := swissusecase.NormalOrderingInput{
 			Ledger: ledger,
@@ -119,6 +125,19 @@ func TestSwissNormalOrdering(t *testing.T) {
 			ledger.Entries[1].Label != swissusecase.SeriesResultVoid ||
 			ledger.Entries[2].SourceKind != swissusecase.PointSourceBye {
 			t.Fatalf("operator labels = %+v", ledger.Entries)
+		}
+		byParticipant := make(map[uuid.UUID]swissusecase.NormalStanding, len(ordered))
+		for _, standing := range ordered {
+			byParticipant[standing.ParticipantID] = standing
+		}
+		if record := byParticipant[participants[0]]; record.Wins != 1 || record.Losses != 0 || record.ByeCount != 0 {
+			t.Fatalf("no-show winner record = %d-%d-%d, want 1-0-0", record.Wins, record.Losses, record.ByeCount)
+		}
+		if record := byParticipant[participants[1]]; record.Wins != 0 || record.Losses != 1 || record.ByeCount != 0 {
+			t.Fatalf("no-show loser record = %d-%d-%d, want 0-1-0", record.Wins, record.Losses, record.ByeCount)
+		}
+		if record := byParticipant[participants[4]]; record.Wins != 0 || record.Losses != 0 || record.ByeCount != 1 {
+			t.Fatalf("bye record = %d-%d-%d, want 0-0-1", record.Wins, record.Losses, record.ByeCount)
 		}
 	})
 

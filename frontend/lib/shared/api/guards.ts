@@ -183,6 +183,12 @@ const isNonNegativeInt32 = (value: unknown): value is number =>
 const isBoundedDisplayName = (value: unknown): value is string =>
   isString(value) && value.trim().length > 0 && value.length <= 64;
 
+const PUBLIC_QUALIFICATION_STATUSES = new Set<string>([
+  "pending",
+  "qualified",
+  "eliminated",
+]);
+
 const isPublicOptionalDateTime = (value: unknown): value is string | null =>
   value === null || isDateTimeString(value);
 
@@ -217,6 +223,11 @@ export const isPublicScoreboardEntry = (
     "rank",
     "display_name",
     "points",
+    "wins",
+    "losses",
+    "bye_count",
+    "provisional_tie",
+    "qualification_status",
     "buchholz",
     "effective_time_ms",
   ]) &&
@@ -224,6 +235,12 @@ export const isPublicScoreboardEntry = (
   value.rank <= INT32_MAX &&
   isBoundedDisplayName(value.display_name) &&
   isNonNegativeInt32(value.points) &&
+  isNonNegativeInt32(value.wins) &&
+  isNonNegativeInt32(value.losses) &&
+  isNonNegativeInt32(value.bye_count) &&
+  typeof value.provisional_tie === "boolean" &&
+  isString(value.qualification_status) &&
+  PUBLIC_QUALIFICATION_STATUSES.has(value.qualification_status) &&
   isNonNegativeInt32(value.buchholz) &&
   isSafeInteger(value.effective_time_ms) &&
   value.effective_time_ms >= 0;

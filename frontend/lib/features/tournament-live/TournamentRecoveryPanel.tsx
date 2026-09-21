@@ -3,6 +3,7 @@
 import type { ReactNode } from "react";
 
 import {
+  comparePublicRecoveryCursor,
   recoverPublicTournament,
   type PublicRecoveryState,
   type RoleAwareRecoveryState,
@@ -270,8 +271,10 @@ export const TournamentRecoveryPanel = ({
     : null;
   const publicBroadcastState = publicRealtime.state !== null && (
     publicRecoveryState === null ||
-    publicRealtime.state.cursor.projection_revision >=
-      publicRecoveryState.cursor.projection_revision
+    comparePublicRecoveryCursor(
+      publicRealtime.state.cursor,
+      publicRecoveryState.cursor,
+    ) >= 0
   )
     ? publicRealtime.state
     : publicRecoveryState;

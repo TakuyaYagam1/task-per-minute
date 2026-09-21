@@ -109,7 +109,7 @@ func TestFinalSwissProjection(t *testing.T) {
 			fixture.participants[2], fixture.participants[3],
 		}, standingParticipants(projection.Standings()))
 		require.Equal(t,
-			"14610c6c43890e1feb33aae6b5c76c2e923157d99db28e4db8d78019bc6ad1cc",
+			"3c64fa340352352b09c492e26a06019c9b562febbca6b5be7985fbad84ecdea1",
 			projectionDigestHex(projection.Projection()),
 		)
 		var payload struct {
@@ -248,7 +248,7 @@ func TestFinalSwissProjection(t *testing.T) {
 		require.NoError(t, err)
 		require.NoError(t, projection.Validate())
 		require.Equal(t,
-			"40a29e83f65532a95eef87a73d7c3775a5a76a938a38f36e61d16b6b3b15b922",
+			"2600e326ee483257b788d63b339b5534b96fd4c69ed5a2000940be6de189205a",
 			projectionDigestHex(projection.Projection()),
 		)
 		evidence := fixture.command.Rounds[0].Series[0]

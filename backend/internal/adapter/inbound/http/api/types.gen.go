@@ -1083,6 +1083,27 @@ func (e PublicLiveSeriesStage) Valid() bool {
 	}
 }
 
+// Defines values for PublicQualificationStatus.
+const (
+	Eliminated PublicQualificationStatus = "eliminated"
+	Pending    PublicQualificationStatus = "pending"
+	Qualified  PublicQualificationStatus = "qualified"
+)
+
+// Valid indicates whether the value is a known member of the PublicQualificationStatus enum.
+func (e PublicQualificationStatus) Valid() bool {
+	switch e {
+	case Eliminated:
+		return true
+	case Pending:
+		return true
+	case Qualified:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ReadinessEventType.
 const (
 	ReadinessEventTypeCleared ReadinessEventType = "cleared"
@@ -2956,6 +2977,9 @@ type PublicOfficialResult struct {
 	WinnerDisplayName *string            `json:"winner_display_name,omitempty"`
 }
 
+// PublicQualificationStatus defines model for PublicQualificationStatus.
+type PublicQualificationStatus string
+
 // PublicRecoveryCursor Optional public recovery watermark. A missing, older, or equal watermark returns one fresh full snapshot. A projection revision or durable event sequence ahead of the server watermark is rejected with HTTP 409.
 type PublicRecoveryCursor struct {
 	EventSequence      int64 `json:"event_sequence"`
@@ -3004,11 +3028,16 @@ type PublicRecoverySnapshot struct {
 
 // PublicScoreboardEntry defines model for PublicScoreboardEntry.
 type PublicScoreboardEntry struct {
-	Buchholz        int32  `json:"buchholz"`
-	DisplayName     string `json:"display_name"`
-	EffectiveTimeMs int64  `json:"effective_time_ms"`
-	Points          int32  `json:"points"`
-	Rank            int32  `json:"rank"`
+	Buchholz            int32                     `json:"buchholz"`
+	ByeCount            int32                     `json:"bye_count"`
+	DisplayName         string                    `json:"display_name"`
+	EffectiveTimeMs     int64                     `json:"effective_time_ms"`
+	Losses              int32                     `json:"losses"`
+	Points              int32                     `json:"points"`
+	ProvisionalTie      bool                      `json:"provisional_tie"`
+	QualificationStatus PublicQualificationStatus `json:"qualification_status"`
+	Rank                int32                     `json:"rank"`
+	Wins                int32                     `json:"wins"`
 }
 
 // PublicScoreboardResponse defines model for PublicScoreboardResponse.

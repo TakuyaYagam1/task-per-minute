@@ -120,6 +120,7 @@ func TestTournamentAdminCorrectionHydratesEmptyReadinessAfterNativeStartPlayoffs
 	_, changed, err := repository.CommitCorrection(ctx, first)
 	require.NoError(t, err)
 	require.True(t, changed)
+	beforePublicRevision, beforePublicStandings := currentCorrectionStandingsPayload(ctx, t, fixture.tournamentID)
 
 	secondAuthority := loadAuthority()
 	require.Equal(t, correctionusecase.Readiness{}, secondAuthority.Core.Readiness)
@@ -135,6 +136,45 @@ func TestTournamentAdminCorrectionHydratesEmptyReadinessAfterNativeStartPlayoffs
 	_, changed, err = repository.CommitCorrection(ctx, second)
 	require.NoError(t, err)
 	require.True(t, changed)
+	afterPublicRevision, afterPublicStandings := currentCorrectionStandingsPayload(ctx, t, fixture.tournamentID)
+	require.Greater(t, afterPublicRevision, beforePublicRevision)
+	require.NotEqual(t, beforePublicStandings, afterPublicStandings)
+	requireCorrectionPublicStandingsContract(t, beforePublicStandings)
+	requireCorrectionPublicStandingsContract(t, afterPublicStandings)
+}
+
+func currentCorrectionStandingsPayload(
+	ctx context.Context,
+	t *testing.T,
+	tournamentID uuid.UUID,
+) (int64, []byte) {
+	t.Helper()
+	var revision int64
+	var payload []byte
+	require.NoError(t, sharedPool.QueryRow(ctx, `
+		SELECT projection.revision_number, artifact.payload
+		FROM projection_revisions AS projection
+		JOIN projection_revision_artifacts AS binding ON binding.revision_id = projection.id
+		JOIN projection_artifacts AS artifact ON artifact.id = binding.artifact_id
+			AND artifact.artifact_kind = binding.artifact_kind
+		WHERE projection.tournament_id = $1 AND projection.state = 'published'
+			AND binding.artifact_kind = 'standings'`, tournamentID).Scan(&revision, &payload))
+	return revision, payload
+}
+
+func requireCorrectionPublicStandingsContract(t *testing.T, payload []byte) {
+	t.Helper()
+	var document struct {
+		Entries []map[string]any `json:"entries"`
+	}
+	require.NoError(t, json.Unmarshal(payload, &document))
+	require.NotEmpty(t, document.Entries)
+	for _, entry := range document.Entries {
+		for _, field := range []string{"participant_id", "position", "points", "wins", "losses", "bye_count"} {
+			_, ok := entry[field]
+			require.True(t, ok, "corrected standings entry is missing %s", field)
+		}
+	}
 }
 
 func TestTournamentAdminCorrectionPersistsSecondDistinctCorrectionLineage(t *testing.T) {

@@ -3164,16 +3164,26 @@ export interface components {
             /** Format: uuid */
             tournament_id: string;
         };
+        /** @enum {string} */
+        PublicQualificationStatus: "pending" | "qualified" | "eliminated";
         PublicScoreboardEntry: {
             /** Format: int32 */
             buchholz: number;
+            /** Format: int32 */
+            bye_count: number;
             display_name: string;
             /** Format: int64 */
             effective_time_ms: number;
             /** Format: int32 */
+            losses: number;
+            /** Format: int32 */
             points: number;
+            readonly provisional_tie: boolean;
+            qualification_status: components["schemas"]["PublicQualificationStatus"];
             /** Format: int32 */
             rank: number;
+            /** Format: int32 */
+            wins: number;
         };
         PublicScoreboardResponse: {
             entries: components["schemas"]["PublicScoreboardEntry"][];

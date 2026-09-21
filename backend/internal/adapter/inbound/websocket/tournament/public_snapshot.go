@@ -31,12 +31,17 @@ type PublicTournamentInput struct {
 }
 
 type PublicScoreboardEntryInput struct {
-	TournamentID    uuid.UUID
-	Rank            int
-	DisplayName     string
-	Points          int
-	Buchholz        int
-	EffectiveTimeMS int64
+	TournamentID        uuid.UUID
+	Rank                int
+	DisplayName         string
+	Points              int
+	Wins                int
+	Losses              int
+	ByeCount            int
+	Buchholz            int
+	EffectiveTimeMS     int64
+	ProvisionalTie      bool
+	QualificationStatus string
 }
 
 type PublicBracketMatchInput struct {
@@ -116,11 +121,16 @@ type PublicTournament struct {
 }
 
 type PublicScoreboardEntry struct {
-	Rank            int    `json:"rank"`
-	DisplayName     string `json:"display_name"`
-	Points          int    `json:"points"`
-	Buchholz        int    `json:"buchholz"`
-	EffectiveTimeMS int64  `json:"effective_time_ms"`
+	Rank                int    `json:"rank"`
+	DisplayName         string `json:"display_name"`
+	Points              int    `json:"points"`
+	Wins                int    `json:"wins"`
+	Losses              int    `json:"losses"`
+	ByeCount            int    `json:"bye_count"`
+	Buchholz            int    `json:"buchholz"`
+	EffectiveTimeMS     int64  `json:"effective_time_ms"`
+	ProvisionalTie      bool   `json:"provisional_tie"`
+	QualificationStatus string `json:"qualification_status"`
 }
 
 type PublicSeriesScore struct {
@@ -202,7 +212,12 @@ func NewPublicSnapshot(tournamentID uuid.UUID, input PublicSnapshotInput) (Publi
 		if entry.TournamentID != tournamentID {
 			return PublicSnapshot{}, fmt.Errorf("%w: scoreboard crosses tournament", ErrInvalidPublicSnapshot)
 		}
-		snapshot.Scoreboard[index] = PublicScoreboardEntry{Rank: entry.Rank, DisplayName: entry.DisplayName, Points: entry.Points, Buchholz: entry.Buchholz, EffectiveTimeMS: entry.EffectiveTimeMS}
+		snapshot.Scoreboard[index] = PublicScoreboardEntry{
+			Rank: entry.Rank, DisplayName: entry.DisplayName, Points: entry.Points,
+			Wins: entry.Wins, Losses: entry.Losses, ByeCount: entry.ByeCount,
+			Buchholz: entry.Buchholz, EffectiveTimeMS: entry.EffectiveTimeMS,
+			ProvisionalTie: entry.ProvisionalTie, QualificationStatus: entry.QualificationStatus,
+		}
 	}
 	for index, match := range input.Bracket {
 		if match.TournamentID != tournamentID {
@@ -261,7 +276,9 @@ func (s PublicSnapshot) Validate() error {
 		return fmt.Errorf("%w: public collections must be arrays", ErrInvalidPublicSnapshot)
 	}
 	for _, entry := range s.Scoreboard {
-		if entry.Rank < 1 || !validRealtimeString(entry.DisplayName) || entry.Points < 0 || entry.Buchholz < 0 || entry.EffectiveTimeMS < 0 {
+		if entry.Rank < 1 || !validRealtimeString(entry.DisplayName) || entry.Points < 0 || entry.Wins < 0 || entry.Losses < 0 ||
+			entry.ByeCount < 0 || entry.Buchholz < 0 || entry.EffectiveTimeMS < 0 ||
+			!validPublicQualificationStatus(entry.QualificationStatus) {
 			return fmt.Errorf("%w: invalid scoreboard entry", ErrInvalidPublicSnapshot)
 		}
 	}
@@ -289,6 +306,15 @@ func (s PublicSnapshot) Validate() error {
 		return fmt.Errorf("%w: snapshot exceeds wire limits", ErrInvalidPublicSnapshot)
 	}
 	return nil
+}
+
+func validPublicQualificationStatus(value string) bool {
+	switch value {
+	case "pending", "qualified", "eliminated":
+		return true
+	default:
+		return false
+	}
 }
 
 func (s PublicSnapshot) clone() PublicSnapshot {

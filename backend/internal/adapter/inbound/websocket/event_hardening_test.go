@@ -223,7 +223,7 @@ func tournamentRoleFrame(tb testing.TB, role uint8, probe string) []byte {
 				StartedAt:    &startedAt,
 			},
 			Scoreboard: []tournamentws.PublicScoreboardEntryInput{{
-				TournamentID: tournamentID, Rank: 1, DisplayName: "red", Points: 3, Buchholz: 2, EffectiveTimeMS: 4000,
+				TournamentID: tournamentID, Rank: 1, DisplayName: "red", Points: 3, Wins: 1, ByeCount: 1, Buchholz: 2, EffectiveTimeMS: 4000, QualificationStatus: "pending",
 			}},
 			Bracket:         []tournamentws.PublicBracketMatchInput{},
 			LiveSeries:      []tournamentws.PublicSeriesInput{},

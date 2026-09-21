@@ -136,6 +136,11 @@ export const publicScoreboard = (projectionRevision = 9): Schema["PublicScoreboa
       display_name: "Алиса",
       effective_time_ms: 38_500,
       points: 3,
+      wins: 1,
+      losses: 0,
+      bye_count: 0,
+      provisional_tie: false,
+      qualification_status: "pending",
       rank: 1,
     },
     {
@@ -143,6 +148,11 @@ export const publicScoreboard = (projectionRevision = 9): Schema["PublicScoreboa
       display_name: "Боб",
       effective_time_ms: 42_000,
       points: 2,
+      wins: 0,
+      losses: 1,
+      bye_count: 0,
+      provisional_tie: false,
+      qualification_status: "pending",
       rank: 2,
     },
   ],
@@ -187,6 +197,37 @@ export const publicRecovery = (projectionRevision = 9, eventSequence = 14): Sche
   scoreboard: publicScoreboard(projectionRevision),
   tournament: publicTournament(projectionRevision),
 });
+
+export const publicRecoveryWithRoster = (
+  rosterSize = 16,
+  projectionRevision = 9,
+  eventSequence = 14,
+): Schema["PublicRecoverySnapshot"] => {
+  const snapshot = publicRecovery(projectionRevision, eventSequence);
+  const entries = Array.from({ length: rosterSize }, (_, index) => ({
+    rank: index + 1,
+    display_name: `Участник ${String(index + 1).padStart(2, "0")}`,
+    points: 0,
+    wins: 0,
+    losses: 0,
+    bye_count: 0,
+    provisional_tie: false,
+    qualification_status: "pending" as const,
+    buchholz: 0,
+    effective_time_ms: 0,
+  }));
+  return {
+    ...snapshot,
+    scoreboard: {
+      ...snapshot.scoreboard,
+      entries,
+    },
+    tournament: {
+      ...snapshot.tournament,
+      roster_size: rosterSize,
+    },
+  };
+};
 
 export const participantLobby = (projectionRevision = 9): Schema["ParticipantLobbyResponse"] => ({
   attendance: "checked_in",

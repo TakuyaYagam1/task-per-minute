@@ -192,6 +192,9 @@ func canonicalStandingsArtifact(
 		ParticipantID     uuid.UUID `json:"participant_id"`
 		Position          int       `json:"position"`
 		Points            int       `json:"points"`
+		Wins              int       `json:"wins"`
+		Losses            int       `json:"losses"`
+		ByeCount          int       `json:"bye_count"`
 		Buchholz          int       `json:"buchholz"`
 		HeadToHeadPoints  int       `json:"head_to_head_points"`
 		HeadToHeadApplied bool      `json:"head_to_head_applied"`
@@ -203,7 +206,8 @@ func canonicalStandingsArtifact(
 	members := make([]CanonicalMaterializedMember, len(standings))
 	for index, standing := range standings {
 		if standing.ParticipantID == uuid.Nil || standing.Position != index+1 || standing.Points < 0 ||
-			standing.Buchholz < 0 || standing.EffectiveTime < 0 || standing.Seed < 1 {
+			standing.Wins < 0 || standing.Losses < 0 || standing.ByeCount < 0 || standing.Buchholz < 0 ||
+			standing.EffectiveTime < 0 || standing.Seed < 1 {
 			return CanonicalMaterializedArtifact{}, ErrInvalidCanonicalMaterialization
 		}
 		var accepted *int64
@@ -213,6 +217,7 @@ func canonicalStandingsArtifact(
 		}
 		payloadEntries[index] = entry{
 			ParticipantID: standing.ParticipantID, Position: standing.Position, Points: standing.Points,
+			Wins: standing.Wins, Losses: standing.Losses, ByeCount: standing.ByeCount,
 			Buchholz: standing.Buchholz, HeadToHeadPoints: standing.HeadToHeadPoints,
 			HeadToHeadApplied: standing.HeadToHeadApplied, EffectiveTime: int64(standing.EffectiveTime),
 			AcceptedSolveTime: accepted, StableSeed: standing.Seed,

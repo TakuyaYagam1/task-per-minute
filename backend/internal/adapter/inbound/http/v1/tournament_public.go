@@ -237,24 +237,46 @@ func publicScoreboardResponse(
 ) (api.PublicScoreboardResponse, error) {
 	entries := make([]api.PublicScoreboardEntry, len(view.Scoreboard))
 	for index, item := range view.Scoreboard {
-		if item.Rank < 1 || item.Rank > math.MaxInt32 || item.Points < 0 || item.Points > math.MaxInt32 ||
-			item.Buchholz < 0 || item.Buchholz > math.MaxInt32 || item.EffectiveTimeMS < 0 ||
-			strings.TrimSpace(item.DisplayName) == "" {
+		entry, err := publicScoreboardEntryResponse(item)
+		if err != nil {
 			return api.PublicScoreboardResponse{}, domain.ErrInternal
 		}
-		entries[index] = api.PublicScoreboardEntry{
-			Rank:            int32(item.Rank),
-			DisplayName:     item.DisplayName,
-			Points:          int32(item.Points),
-			Buchholz:        int32(item.Buchholz),
-			EffectiveTimeMs: item.EffectiveTimeMS,
-		}
+		entries[index] = entry
 	}
 	return api.PublicScoreboardResponse{
 		TournamentId:       view.Tournament.TournamentID,
 		ProjectionRevision: view.Cursor.ProjectionRevision,
 		Entries:            entries,
 	}, nil
+}
+
+func publicScoreboardEntryResponse(
+	item tournamentsnapshot.PublicScoreboardEntryView,
+) (api.PublicScoreboardEntry, error) {
+	qualificationStatus := api.PublicQualificationStatus(item.QualificationStatus)
+	if !publicScoreboardIntegerRange(item) || item.EffectiveTimeMS < 0 ||
+		strings.TrimSpace(item.DisplayName) == "" || !qualificationStatus.Valid() {
+		return api.PublicScoreboardEntry{}, domain.ErrInternal
+	}
+	return api.PublicScoreboardEntry{
+		Rank: response.IntToInt32(item.Rank), DisplayName: item.DisplayName, Points: response.IntToInt32(item.Points),
+		Wins: response.IntToInt32(item.Wins), Losses: response.IntToInt32(item.Losses),
+		ByeCount: response.IntToInt32(item.ByeCount), Buchholz: response.IntToInt32(item.Buchholz),
+		EffectiveTimeMs: item.EffectiveTimeMS,
+		ProvisionalTie:  item.ProvisionalTie, QualificationStatus: qualificationStatus,
+	}, nil
+}
+
+func publicScoreboardIntegerRange(item tournamentsnapshot.PublicScoreboardEntryView) bool {
+	if item.Rank < 1 || item.Rank > math.MaxInt32 {
+		return false
+	}
+	for _, value := range []int{item.Points, item.Wins, item.Losses, item.ByeCount, item.Buchholz} {
+		if value < 0 || value > math.MaxInt32 {
+			return false
+		}
+	}
+	return true
 }
 
 func publicBracketResponse(

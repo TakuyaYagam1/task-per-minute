@@ -487,7 +487,8 @@ func (q *Queries) GetTournamentReadCursor(ctx context.Context, tournamentID uuid
 
 const getTournamentReadProjectionPayloads = `-- name: GetTournamentReadProjectionPayloads :one
 SELECT standings.payload AS standings_payload,
-    bracket.payload AS bracket_payload
+    bracket.payload AS bracket_payload,
+    top_four.payload AS top_four_payload
 FROM projection_revisions AS revision
 JOIN projection_revision_artifacts AS standings_link
     ON standings_link.revision_id = revision.id
@@ -501,6 +502,12 @@ JOIN projection_revision_artifacts AS bracket_link
 JOIN projection_artifacts AS bracket
     ON bracket.id = bracket_link.artifact_id
     AND bracket.artifact_kind = bracket_link.artifact_kind
+LEFT JOIN projection_revision_artifacts AS top_four_link
+    ON top_four_link.revision_id = revision.id
+    AND top_four_link.artifact_kind = 'top_four'
+LEFT JOIN projection_artifacts AS top_four
+    ON top_four.id = top_four_link.artifact_id
+    AND top_four.artifact_kind = top_four_link.artifact_kind
 WHERE revision.tournament_id = $1
     AND revision.state = 'published'
 `
@@ -508,12 +515,13 @@ WHERE revision.tournament_id = $1
 type GetTournamentReadProjectionPayloadsRow struct {
 	StandingsPayload []byte
 	BracketPayload   []byte
+	TopFourPayload   []byte
 }
 
 func (q *Queries) GetTournamentReadProjectionPayloads(ctx context.Context, tournamentID uuid.UUID) (GetTournamentReadProjectionPayloadsRow, error) {
 	row := q.db.QueryRow(ctx, getTournamentReadProjectionPayloads, tournamentID)
 	var i GetTournamentReadProjectionPayloadsRow
-	err := row.Scan(&i.StandingsPayload, &i.BracketPayload)
+	err := row.Scan(&i.StandingsPayload, &i.BracketPayload, &i.TopFourPayload)
 	return i, err
 }
 
@@ -1669,7 +1677,8 @@ func (q *Queries) ListTournamentAdminRecoveryReserveCandidates(ctx context.Conte
 
 const listTournamentReadParticipants = `-- name: ListTournamentReadParticipants :many
 SELECT participant.id AS participant_id,
-    player.username AS display_name
+    player.username AS display_name,
+    participant.seed
 FROM participants AS participant
 JOIN rosters AS roster ON roster.id = participant.roster_id
 JOIN players AS player ON player.id = participant.player_id
@@ -1681,6 +1690,7 @@ ORDER BY participant.seed,
 type ListTournamentReadParticipantsRow struct {
 	ParticipantID uuid.UUID
 	DisplayName   string
+	Seed          int32
 }
 
 func (q *Queries) ListTournamentReadParticipants(ctx context.Context, tournamentID uuid.UUID) ([]ListTournamentReadParticipantsRow, error) {
@@ -1692,7 +1702,7 @@ func (q *Queries) ListTournamentReadParticipants(ctx context.Context, tournament
 	items := []ListTournamentReadParticipantsRow{}
 	for rows.Next() {
 		var i ListTournamentReadParticipantsRow
-		if err := rows.Scan(&i.ParticipantID, &i.DisplayName); err != nil {
+		if err := rows.Scan(&i.ParticipantID, &i.DisplayName, &i.Seed); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

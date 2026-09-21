@@ -652,7 +652,15 @@ func TestTournamentOddSwissRoundRevisionRebuildsByeThroughProductionHTTPAndPostg
 	require.Equal(t, http.StatusOK, publicSnapshotResponse.Code, publicSnapshotResponse.Body.String())
 	fixture.validateResponse(t, publicSnapshotRequest, publicSnapshotResponse)
 	publicSnapshot := decodeJSON[api.PublicRecoverySnapshot](t, publicSnapshotResponse)
-	require.Empty(t, publicSnapshot.Scoreboard.Entries, "in-progress Swiss points stay out of the published standings")
+	require.Len(t, publicSnapshot.Scoreboard.Entries, 5)
+	for index, entry := range publicSnapshot.Scoreboard.Entries {
+		require.Equal(t, int32(index+1), entry.Rank)
+		require.Zero(t, entry.Points, "in-progress Swiss points stay out of the published standings")
+		require.Zero(t, entry.Wins)
+		require.Zero(t, entry.Losses)
+		require.Zero(t, entry.ByeCount)
+		require.Equal(t, api.Pending, entry.QualificationStatus)
+	}
 	expectedPublicSeries := make(map[uuid.UUID]struct{}, 2)
 	for _, member := range startedWave.Members {
 		if member.SeriesId != nil {
@@ -719,6 +727,47 @@ func TestTournamentOddSwissRoundRevisionRebuildsByeThroughProductionHTTPAndPostg
 	fixture.validateResponse(t, cutoffRequest, cutoffResponse)
 	require.Equal(t, beforeCutoffConfiguration, readConfiguration())
 	require.Equal(t, beforeCutoffSQL, readOddSwissRoundSQLState(t, created.Id, roster.Id, initialRound.Id))
+
+	settleProductionSwissWaveThroughREST(
+		t, fixture, created.Id, startedWave, flow.playersByParticipant, catalog.flags,
+		func(series api.Series) uuid.UUID { return series.FirstParticipantId },
+	)
+	completedSnapshot := tournamentAdminSnapshotThroughREST(t, fixture, adminToken, created.Id)
+	completedWave := findProductionWaveByID(t, completedSnapshot, startedWave.Id)
+	if completedWave.State != api.WaveStateCompleted {
+		completedWave = controlProductionWaveThroughREST(
+			t, fixture, adminToken, created.Id, completedWave.Id,
+			completedSnapshot.NextCursor.ProjectionRevision, api.WaveControlRequestActionComplete,
+		)
+	}
+	require.Equal(t, api.WaveStateCompleted, completedWave.State)
+
+	var byeDisplayName string
+	require.NoError(t, sharedPool.QueryRow(ctx, `
+		SELECT player.username
+		FROM participants AS participant
+		JOIN players AS player ON player.id = participant.player_id
+		WHERE participant.id = $1`, d).Scan(&byeDisplayName))
+	publicSnapshotRequest, publicSnapshotResponse = doTournamentFlowJSON(
+		t, fixture, http.MethodGet, "/api/v1/tournaments/"+created.Id.String()+"/snapshot",
+		"", "", uuid.New(), "",
+	)
+	require.Equal(t, http.StatusOK, publicSnapshotResponse.Code, publicSnapshotResponse.Body.String())
+	fixture.validateResponse(t, publicSnapshotRequest, publicSnapshotResponse)
+	publicSnapshot = decodeJSON[api.PublicRecoverySnapshot](t, publicSnapshotResponse)
+	require.Len(t, publicSnapshot.Scoreboard.Entries, 5)
+	byeRows := make([]api.PublicScoreboardEntry, 0, 1)
+	for _, entry := range publicSnapshot.Scoreboard.Entries {
+		if entry.DisplayName == byeDisplayName {
+			byeRows = append(byeRows, entry)
+		}
+	}
+	require.Len(t, byeRows, 1)
+	require.EqualValues(t, 1, byeRows[0].Points)
+	require.EqualValues(t, 1, byeRows[0].ByeCount)
+	require.Zero(t, byeRows[0].Wins)
+	require.Zero(t, byeRows[0].Losses)
+	assertTournamentPublicRealtimeThroughProduction(t, fixture, created.Id)
 }
 
 type oddSwissRoundSQLState struct {

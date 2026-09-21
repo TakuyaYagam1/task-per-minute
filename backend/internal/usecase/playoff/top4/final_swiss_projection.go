@@ -136,6 +136,7 @@ func finalSwissStandings(normal []swissusecase.NormalStanding) []FinalSwissStand
 	for index, standing := range normal {
 		standings[index] = FinalSwissStanding{
 			ParticipantID: standing.ParticipantID, Points: standing.Points,
+			Wins: standing.Wins, Losses: standing.Losses, ByeCount: standing.ByeCount,
 			PointsLabel: standing.PointsLabel, Buchholz: standing.Buchholz,
 			BuchholzStatus:   SwissBuchholzFinal,
 			HeadToHeadPoints: standing.HeadToHeadPoints, HeadToHeadApplied: standing.HeadToHeadApplied,
@@ -154,7 +155,8 @@ func finalSwissNormalStandings(standings []FinalSwissStanding) []swissusecase.No
 	for index, standing := range standings {
 		normal[index] = swissusecase.NormalStanding{
 			ParticipantID: standing.ParticipantID, Position: standing.Position,
-			Points: standing.Points, PointsLabel: standing.PointsLabel,
+			Points: standing.Points, Wins: standing.Wins, Losses: standing.Losses,
+			ByeCount: standing.ByeCount, PointsLabel: standing.PointsLabel,
 			Buchholz: standing.Buchholz, HeadToHeadPoints: standing.HeadToHeadPoints,
 			HeadToHeadApplied: standing.HeadToHeadApplied, EffectiveTime: standing.EffectiveTime,
 			AcceptedSolveTime: cloneFinalSwissDurationPointer(standing.AcceptedSolveTime), Seed: standing.StableSeed,

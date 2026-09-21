@@ -86,6 +86,17 @@ const integerValue = (value: unknown): number | undefined =>
     ? value
     : undefined;
 
+const qualificationLabel = (value: unknown): string => {
+  switch (value) {
+    case "qualified":
+      return "Прошел дальше";
+    case "eliminated":
+      return "Выбыл";
+    default:
+      return "Ожидает решения";
+  }
+};
+
 const scoreValues = (value: unknown): readonly [number, number] => {
   if (!isRecord(value)) {
     return [0, 0];
@@ -363,16 +374,20 @@ export const TournamentBroadcastPanel = ({
         {activeView === "scoreboard" ? (
           <div className={styles.tableWrap} role="tabpanel">
             {scoreboard.length === 0 ? (
-              <p className={styles.empty}>Таблица появится после первых официальных результатов.</p>
+              <p className={styles.empty}>Сервер пока не опубликовал состав таблицы.</p>
             ) : (
-              <table className={styles.table}>
+              <table aria-label="Публичная таблица турнира" className={styles.table}>
                 <thead>
                   <tr>
                     <th scope="col">Место</th>
                     <th scope="col">Участник</th>
                     <th scope="col">Очки</th>
+                    <th scope="col">Победы</th>
+                    <th scope="col">Поражения</th>
+                    <th scope="col">Bye</th>
                     <th scope="col">Бухгольц</th>
                     <th scope="col">Время</th>
+                    <th scope="col">Статус</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -381,8 +396,22 @@ export const TournamentBroadcastPanel = ({
                       <td>{integerValue(entry.rank) ?? "-"}</td>
                       <th scope="row">{stringValue(entry.display_name) ?? "Участник"}</th>
                       <td>{integerValue(entry.points) ?? "-"}</td>
+                      <td>{integerValue(entry.wins) ?? "-"}</td>
+                      <td>{integerValue(entry.losses) ?? "-"}</td>
+                      <td>{integerValue(entry.bye_count) ?? "-"}</td>
                       <td>{integerValue(entry.buchholz) ?? "-"}</td>
                       <td>{formatDurationClock(integerValue(entry.effective_time_ms))}</td>
+                      <td>
+                        <span
+                          className={styles.qualification}
+                          data-status={stringValue(entry.qualification_status) ?? "pending"}
+                        >
+                          {qualificationLabel(entry.qualification_status)}
+                        </span>
+                        {entry.provisional_tie === true && (
+                          <span className={styles.provisionalTie}>Тай-брейк не решен</span>
+                        )}
+                      </td>
                     </tr>
                   ))}
                 </tbody>

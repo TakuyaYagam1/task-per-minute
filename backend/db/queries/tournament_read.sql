@@ -231,7 +231,8 @@ GROUP BY tournament.id;
 
 -- name: GetTournamentReadProjectionPayloads :one
 SELECT standings.payload AS standings_payload,
-    bracket.payload AS bracket_payload
+    bracket.payload AS bracket_payload,
+    top_four.payload AS top_four_payload
 FROM projection_revisions AS revision
 JOIN projection_revision_artifacts AS standings_link
     ON standings_link.revision_id = revision.id
@@ -245,12 +246,19 @@ JOIN projection_revision_artifacts AS bracket_link
 JOIN projection_artifacts AS bracket
     ON bracket.id = bracket_link.artifact_id
     AND bracket.artifact_kind = bracket_link.artifact_kind
+LEFT JOIN projection_revision_artifacts AS top_four_link
+    ON top_four_link.revision_id = revision.id
+    AND top_four_link.artifact_kind = 'top_four'
+LEFT JOIN projection_artifacts AS top_four
+    ON top_four.id = top_four_link.artifact_id
+    AND top_four.artifact_kind = top_four_link.artifact_kind
 WHERE revision.tournament_id = sqlc.arg(tournament_id)
     AND revision.state = 'published';
 
 -- name: ListTournamentReadParticipants :many
 SELECT participant.id AS participant_id,
-    player.username AS display_name
+    player.username AS display_name,
+    participant.seed
 FROM participants AS participant
 JOIN rosters AS roster ON roster.id = participant.roster_id
 JOIN players AS player ON player.id = participant.player_id

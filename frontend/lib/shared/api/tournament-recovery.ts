@@ -221,10 +221,29 @@ const isTournament = (value: unknown, includeProjection: boolean): value is Reco
 
 const isScoreboardEntry = (value: unknown): value is Record<string, unknown> =>
   isRecord(value) &&
-  hasOnlyKeys(value, ["rank", "display_name", "points", "buchholz", "effective_time_ms"]) &&
+  hasOnlyKeys(value, [
+    "rank",
+    "display_name",
+    "points",
+    "wins",
+    "losses",
+    "bye_count",
+    "provisional_tie",
+    "qualification_status",
+    "buchholz",
+    "effective_time_ms",
+  ]) &&
   isPositiveInteger(value.rank) &&
   isNonBlank(value.display_name) &&
   isNonNegativeInteger(value.points) &&
+  isNonNegativeInteger(value.wins) &&
+  isNonNegativeInteger(value.losses) &&
+  isNonNegativeInteger(value.bye_count) &&
+  typeof value.provisional_tie === "boolean" &&
+  typeof value.qualification_status === "string" &&
+  (value.qualification_status === "pending" ||
+    value.qualification_status === "qualified" ||
+    value.qualification_status === "eliminated") &&
   isNonNegativeInteger(value.buchholz) &&
   isNonNegativeInteger(value.effective_time_ms);
 
@@ -535,18 +554,16 @@ export const applyPublicRealtime = (
   if (state.seenEventIds.includes(value.event_id)) {
     return { state, outcome: "duplicate" };
   }
-  if (
-    value.sequence <= state.cursor.event_sequence ||
-    value.projection_revision < state.cursor.projection_revision
-  ) {
+  const nextCursor: PublicRecoveryCursor = {
+    projection_revision: value.projection_revision,
+    event_sequence: value.sequence,
+  };
+  if (comparePublicRecoveryCursor(nextCursor, state.cursor) <= 0) {
     return { state, outcome: "out_of_order" };
   }
   const nextState: PublicRecoveryState = {
     tournamentId: state.tournamentId,
-    cursor: {
-      projection_revision: value.projection_revision,
-      event_sequence: value.sequence,
-    },
+    cursor: nextCursor,
     resumeId: value.resume_id ?? state.resumeId,
     seenEventIds: [...state.seenEventIds, value.event_id].slice(-128),
     display: realtimeDisplay(value),
@@ -601,6 +618,26 @@ export const isPublicRecoveryCursorConflict = (
     isCursor(problem.requested_cursor) &&
     isCursor(problem.current_cursor)
   );
+};
+
+/** Compare the server's public recovery watermark, revision before sequence. */
+export const comparePublicRecoveryCursor = (
+  left: PublicRecoveryCursor,
+  right: PublicRecoveryCursor,
+): number => {
+  if (left.projection_revision > right.projection_revision) {
+    return 1;
+  }
+  if (left.projection_revision < right.projection_revision) {
+    return -1;
+  }
+  if (left.event_sequence > right.event_sequence) {
+    return 1;
+  }
+  if (left.event_sequence < right.event_sequence) {
+    return -1;
+  }
+  return 0;
 };
 
 /** Role-aware REST recovery keeps each generated cursor shape intact. */

@@ -279,12 +279,17 @@ func publicSnapshotInput(view usecase.PublicSnapshotView) tournamentws.PublicSna
 	}
 	for index, entry := range view.Scoreboard {
 		input.Scoreboard[index] = tournamentws.PublicScoreboardEntryInput{
-			TournamentID:    tournamentID,
-			Rank:            entry.Rank,
-			DisplayName:     entry.DisplayName,
-			Points:          entry.Points,
-			Buchholz:        entry.Buchholz,
-			EffectiveTimeMS: entry.EffectiveTimeMS,
+			TournamentID:        tournamentID,
+			Rank:                entry.Rank,
+			DisplayName:         entry.DisplayName,
+			Points:              entry.Points,
+			Wins:                entry.Wins,
+			Losses:              entry.Losses,
+			ByeCount:            entry.ByeCount,
+			Buchholz:            entry.Buchholz,
+			EffectiveTimeMS:     entry.EffectiveTimeMS,
+			ProvisionalTie:      entry.ProvisionalTie,
+			QualificationStatus: entry.QualificationStatus,
 		}
 	}
 	for index, match := range view.Bracket {

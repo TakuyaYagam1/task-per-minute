@@ -1959,6 +1959,7 @@ func assertTournamentRealtimeThroughProduction(
 	require.NoError(t, err)
 	require.NotNil(t, publicMessage.Public, string(publicData))
 	assertPublicRealtimeEnvelope(t, publicData, publicMessage.Public.Envelope, tournamentID)
+	assertTournamentPublicScoreboardParity(t, fixture, tournamentID, publicMessage.Public.Envelope)
 	publicResumeID := publicMessage.Public.Envelope.ResumeID
 	require.NoError(t, publicConnection.CloseNow())
 
@@ -2043,6 +2044,55 @@ func assertTournamentRealtimeThroughProduction(
 		t, operatorReconnectMessage.Operator.Envelope.Sequence, operatorMessage.Operator.Envelope.Sequence,
 	)
 	require.NoError(t, operatorReconnect.CloseNow())
+}
+
+func assertTournamentPublicScoreboardParity(
+	t *testing.T,
+	fixture *restFixture,
+	tournamentID uuid.UUID,
+	envelope inboundws.TournamentPublicEnvelope,
+) {
+	t.Helper()
+	path := "/api/v1/tournaments/" + tournamentID.String() + "/snapshot"
+	req, resp := fixture.doJSON(t, http.MethodGet, path, "", "")
+	require.Equal(t, http.StatusOK, resp.Code, resp.Body.String())
+	fixture.validateResponse(t, req, resp)
+	snapshot := decodeJSON[api.PublicRecoverySnapshot](t, resp)
+	require.Equal(t, snapshot.NextCursor.ProjectionRevision, envelope.ProjectionRevision)
+	require.Len(t, envelope.Public.Scoreboard, len(snapshot.Scoreboard.Entries))
+	for index, entry := range snapshot.Scoreboard.Entries {
+		realtime := envelope.Public.Scoreboard[index]
+		require.Equal(t, int(entry.Rank), realtime.Rank)
+		require.Equal(t, entry.DisplayName, realtime.DisplayName)
+		require.Equal(t, int(entry.Points), realtime.Points)
+		require.Equal(t, int(entry.Wins), realtime.Wins)
+		require.Equal(t, int(entry.Losses), realtime.Losses)
+		require.Equal(t, int(entry.ByeCount), realtime.ByeCount)
+		require.Equal(t, int(entry.Buchholz), realtime.Buchholz)
+		require.Equal(t, entry.EffectiveTimeMs, realtime.EffectiveTimeMS)
+		require.Equal(t, entry.ProvisionalTie, realtime.ProvisionalTie)
+		require.Equal(t, string(entry.QualificationStatus), realtime.QualificationStatus)
+	}
+}
+
+func assertTournamentPublicRealtimeThroughProduction(
+	t *testing.T,
+	fixture *restFixture,
+	tournamentID uuid.UUID,
+) {
+	t.Helper()
+	runtime := tournamentFlowRuntimeForFixture(t, fixture)
+	server := httptest.NewServer(runtime.webSocket)
+	t.Cleanup(server.Close)
+	path := server.URL + "/api/v1/tournaments/" + tournamentID.String() + "/realtime"
+	connection := dialTournamentFlowWebSocket(t, path, nil)
+	data := readTournamentFlowWebSocket(t, connection)
+	require.NoError(t, connection.CloseNow())
+	message, err := inboundws.DecodeTournamentPublicMessage(data)
+	require.NoError(t, err)
+	require.NotNil(t, message.Public, string(data))
+	assertPublicRealtimeEnvelope(t, data, message.Public.Envelope, tournamentID)
+	assertTournamentPublicScoreboardParity(t, fixture, tournamentID, message.Public.Envelope)
 }
 
 func connectTournamentParticipantsThroughProduction(
