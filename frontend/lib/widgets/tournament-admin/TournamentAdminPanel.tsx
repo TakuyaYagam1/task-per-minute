@@ -31,6 +31,7 @@ import {
   TournamentContentManager,
   type AdminRequestRunner,
 } from "./TournamentContentManager";
+import { TournamentAuditPanel } from "./TournamentAuditPanel";
 import styles from "./TournamentAdminPanel.module.css";
 
 type TournamentAdminPanelProps = Readonly<{
@@ -171,6 +172,7 @@ export const TournamentAdminPanel = ({
   const [formError, setFormError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [selectedTournamentId, setSelectedTournamentId] = useState("");
+  const [selectedAuditTournamentId, setSelectedAuditTournamentId] = useState("");
   const creatingRef = useRef(false);
   const tournamentsControllerRef = useRef<AbortController | null>(null);
   const contentControllerRef = useRef<AbortController | null>(null);
@@ -392,6 +394,13 @@ export const TournamentAdminPanel = ({
             >
               Редактировать состав
             </button>
+            <button
+              className={styles.inlineAction}
+              type="button"
+              onClick={() => setSelectedAuditTournamentId(tournament.id)}
+            >
+              Открыть аудит
+            </button>
           </div>
         ),
       },
@@ -562,6 +571,13 @@ export const TournamentAdminPanel = ({
           />
         </Panel>
       </div>
+
+      <TournamentAuditPanel
+        tournaments={tournaments}
+        selectedTournamentId={selectedAuditTournamentId}
+        onSelectTournament={setSelectedAuditTournamentId}
+        onSessionExpired={onSessionExpired}
+      />
 
       <RosterEditor
         tournaments={tournaments}

@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
 
 import {
   expect,
@@ -2119,7 +2120,7 @@ test.describe('local compose full stack e2e', () => {
     }
   });
 
-  test('FE-036 real backend corrects a completed Swiss result before dependent wave start', async ({ page, browser }) => {
+  test('FE-036 and FE-037 real backend correct a result and export its audit evidence', async ({ page, browser }) => {
     test.setTimeout(600_000);
     page.setDefaultTimeout(15_000);
 
@@ -2555,6 +2556,80 @@ test.describe('local compose full stack e2e', () => {
       expect(preparedCorrection.projection_intents).toEqual(expect.arrayContaining([expect.any(Object)]));
       expect(Array.isArray(preparedCorrection.unlock_intents)).toBe(true);
       await expect(page.getByText('Новая проекция подтверждена.')).toBeVisible();
+
+      await page.goto('/admin', { waitUntil: 'domcontentloaded' });
+      await expect(page.getByRole('button', { name: 'Турниры' })).toBeVisible();
+      await page.getByRole('button', { name: 'Турниры' }).click();
+      const tournamentRow = page.getByRole('row').filter({ hasText: tournamentName });
+      await expect(tournamentRow).toBeVisible();
+      const auditResponsePromise = page.waitForResponse(
+        (response) => {
+          const url = new URL(response.url());
+          return url.pathname === '/api/v1/admin/tournament-audit' &&
+            url.searchParams.get('tournament_id') === tournament.id;
+        },
+      );
+      await tournamentRow.getByRole('button', { name: 'Открыть аудит' }).click();
+      const auditResponse = await auditResponsePromise;
+      expect(
+        auditResponse.status(),
+        `audit list failed with ${auditResponse.status()}: ${await auditResponse.text()}`,
+      ).toBe(200);
+      const auditRegion = page.getByRole('region', { name: 'Аудит и incident bundle' });
+      await expect(auditRegion.getByRole('list', { name: 'События аудита' })).toBeVisible();
+      await expect(auditRegion.getByText('Текущая revision').first()).toBeVisible();
+      await expect(auditRegion.getByText('Заменена').first()).toBeVisible();
+      await expect(auditRegion.getByText(targetGame.result_revision_id, { exact: true }).first())
+        .toBeVisible();
+
+      const incidentResponsePromise = page.waitForResponse(
+        (response) =>
+          new URL(response.url()).pathname ===
+            `/api/v1/admin/tournaments/${tournament.id}/incident-export`,
+      );
+      const incidentDownloadPromise = page.waitForEvent('download');
+      await auditRegion.getByRole('button', { name: 'Скачать incident bundle' }).click();
+      const incidentResponse = await incidentResponsePromise;
+      expect(
+        incidentResponse.status(),
+        `incident export failed with ${incidentResponse.status()}: ${await incidentResponse.text()}`,
+      ).toBe(200);
+      const incidentDownload = await incidentDownloadPromise;
+      const incidentPath = await incidentDownload.path();
+      expect(incidentPath, 'incident download did not produce a file').toBeTruthy();
+      const incidentBundle = JSON.parse(
+        await readFile(incidentPath ?? '', 'utf8'),
+      ) as {
+        canonical_content: string;
+        generated_at: string;
+        projection_revision: number;
+        sha256: string;
+        tournament_id: string;
+      };
+      expect(incidentBundle.tournament_id).toBe(tournament.id);
+      expect(incidentBundle.projection_revision).toBeGreaterThan(0);
+      expect(Date.parse(incidentBundle.generated_at)).not.toBeNaN();
+      expect(incidentBundle.sha256).toMatch(/^[0-9a-f]{64}$/);
+      expect(incidentBundle.canonical_content).toBeTruthy();
+      await expect(page.getByText(incidentBundle.canonical_content, { exact: false })).toHaveCount(0);
+
+      const playerIncident = await playerContexts[0]?.request.get(
+        `${backendURL}/api/v1/admin/tournaments/${tournament.id}/incident-export`,
+        { headers: { Origin: frontendURL } },
+      );
+      expect(playerIncident, 'player context was not available for authorization check').toBeDefined();
+      expect([401, 403]).toContain(playerIncident?.status());
+
+      const anonymousContext = await browser.newContext({ baseURL: frontendURL });
+      try {
+        const anonymousIncident = await anonymousContext.request.get(
+          `${backendURL}/api/v1/admin/tournaments/${tournament.id}/incident-export`,
+          { headers: { Origin: frontendURL } },
+        );
+        expect([401, 403]).toContain(anonymousIncident.status());
+      } finally {
+        await anonymousContext.close();
+      }
     } finally {
       for (const context of playerContexts) {
         await context.close();
