@@ -1506,6 +1506,139 @@ test("FE-039 public scoreboard renders the complete server-owned zero-state rost
   }
 });
 
+test("FE-039 public scoreboard applies cutoff, Golden, bye, and correction from one revision", async ({ page }) => {
+  const fixtureSet = createTournamentFixtureSet();
+  const serverTimestamp = "2026-09-15T10:00:00Z";
+  const cutoffBase = publicRecoveryWithRoster(16, 9, 14);
+  const cutoffSnapshot = {
+    ...cutoffBase,
+    scoreboard: {
+      ...cutoffBase.scoreboard,
+      entries: cutoffBase.scoreboard.entries.map((entry, index) => {
+        if (index === 3 || index === 4) {
+          return {
+            ...entry,
+            losses: 1,
+            points: 2,
+            provisional_tie: true,
+            wins: 2,
+          };
+        }
+        if (index === 5) {
+          return {
+            ...entry,
+            bye_count: 1,
+            losses: 1,
+            points: 1,
+          };
+        }
+        return entry;
+      }),
+    },
+  };
+  const resolvedBase = publicRecoveryWithRoster(16, 10, 15);
+  const resolvedEntries = resolvedBase.scoreboard.entries.map((entry, index) => {
+    if (index === 0) {
+      return {
+        ...entry,
+        losses: 1,
+        points: 2,
+        qualification_status: "qualified" as const,
+        wins: 2,
+      };
+    }
+    if (index < 3) {
+      return { ...entry, qualification_status: "qualified" as const };
+    }
+    if (index === 3) {
+      return {
+        ...entry,
+        losses: 1,
+        points: 2,
+        provisional_tie: false,
+        qualification_status: "eliminated" as const,
+        rank: 5,
+        wins: 2,
+      };
+    }
+    if (index === 4) {
+      return {
+        ...entry,
+        losses: 1,
+        points: 2,
+        provisional_tie: false,
+        qualification_status: "qualified" as const,
+        rank: 4,
+        wins: 2,
+      };
+    }
+    if (index === 5) {
+      return {
+        ...entry,
+        bye_count: 1,
+        losses: 1,
+        points: 1,
+        qualification_status: "eliminated" as const,
+      };
+    }
+    return { ...entry, qualification_status: "eliminated" as const };
+  });
+  const resolvedSnapshot = {
+    ...resolvedBase,
+    scoreboard: {
+      ...resolvedBase.scoreboard,
+      entries: [...resolvedEntries].sort((first, second) => first.rank - second.rank),
+    },
+  };
+  let currentSnapshot = cutoffSnapshot;
+
+  await page.clock.install({ time: serverTimestamp });
+  await installOperatorWebSocketStub(page);
+  await installArenaAccessRoutes(page, fixtureSet);
+  await page.route(`**${arenaPublicSnapshotPath}*`, async (route) => {
+    expect(route.request().method()).toBe("GET");
+    await fulfillJSON(
+      route,
+      currentSnapshot,
+      { date: new Date(serverTimestamp).toUTCString() },
+    );
+  });
+
+  await page.goto(`/arena/spectator/${arenaTournamentId}`, { waitUntil: "domcontentloaded" });
+
+  const table = page.getByRole("table", { name: "Публичная таблица турнира" });
+  const fourthAtCutoff = table.getByRole("row").filter({ hasText: "Участник 04" });
+  const fifthAtCutoff = table.getByRole("row").filter({ hasText: "Участник 05" });
+  const byeEntry = table.getByRole("row").filter({ hasText: "Участник 06" });
+  await expect(fourthAtCutoff.getByRole("cell").nth(1)).toHaveText("2");
+  await expect(fourthAtCutoff.getByRole("cell").nth(2)).toHaveText("2");
+  await expect(fourthAtCutoff.getByRole("cell").nth(3)).toHaveText("1");
+  await expect(fourthAtCutoff).toContainText("Тай-брейк не решен");
+  await expect(fifthAtCutoff).toContainText("Тай-брейк не решен");
+  await expect(byeEntry.getByRole("cell").nth(4)).toHaveText("1");
+
+  currentSnapshot = resolvedSnapshot;
+  await page.getByRole("button", { name: "Повторить синхронизацию" }).click();
+
+  const qualifiedAfterGolden = table.getByRole("row").filter({ hasText: "Участник 05" });
+  const eliminatedAfterGolden = table.getByRole("row").filter({ hasText: "Участник 04" });
+  const correctedEntry = table.getByRole("row").filter({ hasText: "Участник 01" });
+  await expect(table.getByRole("row")).toHaveCount(17);
+  await expect(qualifiedAfterGolden.getByRole("cell").nth(0)).toHaveText("4");
+  await expect(qualifiedAfterGolden).toContainText("Прошел дальше");
+  await expect(qualifiedAfterGolden).not.toContainText("Тай-брейк не решен");
+  await expect(eliminatedAfterGolden.getByRole("cell").nth(0)).toHaveText("5");
+  await expect(eliminatedAfterGolden).toContainText("Выбыл");
+  await expect(eliminatedAfterGolden).not.toContainText("Тай-брейк не решен");
+  await expect(correctedEntry.getByRole("cell").nth(1)).toHaveText("2");
+  await expect(correctedEntry.getByRole("cell").nth(2)).toHaveText("2");
+  await expect(correctedEntry.getByRole("cell").nth(3)).toHaveText("1");
+  await expect(byeEntry.getByRole("cell").nth(4)).toHaveText("1");
+  await expect(page.getByRole("region", { name: "Состояние турнира" })).toContainText(
+    "Ревизия сервера: 10",
+  );
+});
+
 test("FE-038 public match center distinguishes every server tournament state in both themes", async ({ page }) => {
   type PublicState = ReturnType<typeof publicRecovery>["tournament"]["state"];
   const serverTimestamp = "2026-09-15T10:00:00Z";
