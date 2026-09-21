@@ -296,6 +296,10 @@ func TestParticipantConnectionBindingSurvivesFinalGameAdvance(t *testing.T) {
 	require.Equal(t, reconnectAt, *resumed.GameClock.ResumedAt)
 	require.Equal(t, reconnectAt.Add(paused.GameClock.Remaining), *resumed.GameClock.ResumedDeadline)
 
+	// A replacement connection is a new mutation of the same presence.  Keep
+	// the deterministic clock strictly ahead of the reconnect timestamp before
+	// the coordinator closes generation three.
+	clock.FreezeAt(reconnectAt.Add(time.Second))
 	fourth := dialTournamentFlowWebSocket(t, endpoint+"?resume_id="+thirdMessage.Participant.Envelope.ResumeID.String(), options)
 	_ = readTournamentFlowWebSocket(t, fourth)
 	require.NoError(t, participantConnectionWaitForDisconnect(t, lifecycle))
