@@ -31,7 +31,11 @@ const chromiumExecutable = path.join(
 export default defineConfig({
   testDir: './e2e',
   testMatch: fullStackMode ? '**/full-stack-local.spec.ts' : '**/*.spec.ts',
-  testIgnore: fullStackMode ? [] : ['**/full-stack-local.spec.ts'],
+  testIgnore: fullStackMode
+    ? []
+    : process.env.E2E_LIVE === '1'
+      ? ['**/full-stack-local.spec.ts']
+      : ['**/full-stack-local.spec.ts', '**/live-backend.spec.ts'],
   timeout: 60_000,
   expect: {
     timeout: 10_000,

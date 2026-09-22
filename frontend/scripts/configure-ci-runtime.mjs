@@ -36,19 +36,37 @@ const nodePath = executablePath("node");
 const npmPath = executablePath("npm");
 const playwrightPath = executablePath("playwright");
 const chromiumPath = executablePath("chromium");
+const npmTool = tools.get("npm");
+const playwrightTool = tools.get("playwright");
 
 if (run(nodePath, ["--version"]) !== `v${tools.get("node").version}`) {
   throw new Error("reviewed Node runtime identity mismatch");
+}
+if (run(nodePath, [npmPath, "--version"]) !== npmTool.runtime_identity.expected_output) {
+  throw new Error("reviewed npm runtime identity mismatch");
 }
 if (run(chromiumPath, ["--version"]) !== tools.get("chromium").runtime_identity.expected_output) {
   throw new Error("reviewed Chromium runtime identity mismatch");
 }
 
-const pathEntries = [...new Set([dirname(nodePath), dirname(npmPath)])];
+if (process.argv.includes("--verify-packages")) {
+  const localPlaywrightCli = join(frontendRoot, "node_modules", "playwright", "cli.js");
+  try {
+    accessSync(localPlaywrightCli, constants.R_OK);
+  } catch {
+    throw new Error(`installed Playwright CLI is unavailable: ${localPlaywrightCli}`);
+  }
+  if (run(nodePath, [localPlaywrightCli, "--version"]) !== playwrightTool.runtime_identity.expected_output) {
+    throw new Error("installed Playwright runtime identity mismatch");
+  }
+}
+
+const npmBinPath = join(npmTool.provisioning.immutable_root, "bin");
+const pathEntries = [...new Set([dirname(nodePath), npmBinPath])];
 if (process.env.GITHUB_PATH) {
   appendFileSync(process.env.GITHUB_PATH, `${pathEntries.join("\n")}\n`, "utf8");
 }
 
 process.stdout.write(
-  `reviewed frontend runtime ready: node=${nodePath}, npm=${npmPath}, playwright=${playwrightPath}, chromium=${chromiumPath}\n`,
+  `reviewed frontend runtime ready: node=${nodePath}, npm=${npmPath}, playwright=${playwrightPath}, chromium=${chromiumPath}${process.argv.includes("--verify-packages") ? " (package verified)" : ""}\n`,
 );

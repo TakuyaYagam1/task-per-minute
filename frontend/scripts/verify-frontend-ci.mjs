@@ -111,17 +111,34 @@ function verifyProductionBuild() {
     throw new Error(`production route manifest contains forbidden entries: ${forbiddenPaths.join(", ")}`);
   }
 
-  const forbiddenBundleMarkers = ["lib/pages/home", "frontend/e2e", "e2e/fixtures", "__fixture__"];
+  const forbiddenBundleMarkers = [
+    "lib/pages/home",
+    "frontend/e2e",
+    "e2e/fixtures",
+    "__fixture__",
+    "frontend/legacy",
+    "/legacy/",
+  ];
   const bundleFiles = [];
+  const cacheDirectory = join(frontendRoot, ".next", "cache");
   function visitBundle(directory) {
     for (const entry of readdirSync(directory)) {
       const path = join(directory, entry);
+      if (path === cacheDirectory || path.startsWith(`${cacheDirectory}/`)) continue;
       if (statSync(path).isDirectory()) visitBundle(path);
       else bundleFiles.push(path);
     }
   }
-  const serverDirectory = join(frontendRoot, ".next", "server");
-  visitBundle(serverDirectory);
+  const buildDirectories = [
+    join(frontendRoot, ".next", "server", "app"),
+    join(frontendRoot, ".next", "server", "chunks"),
+    join(frontendRoot, ".next", "server", "pages"),
+    join(frontendRoot, ".next", "server", "vendor-chunks"),
+    join(frontendRoot, ".next", "static"),
+  ];
+  for (const directory of buildDirectories) {
+    if (existsSync(directory)) visitBundle(directory);
+  }
   const forbiddenBundleFiles = [];
   for (const path of bundleFiles) {
     const source = readFileSync(path, "utf8");
@@ -171,6 +188,7 @@ if (process.argv.includes("--init")) {
 }
 
 if (process.argv.includes("--finalize")) {
+  let shouldWriteReport = false;
   if (existsSync(reportPath)) {
     try {
       Object.assign(report, JSON.parse(readFileSync(reportPath, "utf8")));
@@ -178,6 +196,8 @@ if (process.argv.includes("--finalize")) {
       report.status = "failed";
       report.exit_code = 1;
       report.error = "frontend CI evidence is unreadable";
+      report.finished_at = new Date().toISOString();
+      shouldWriteReport = true;
     }
   }
   if (report.status === "not_started" || report.status === "running") {
@@ -185,6 +205,9 @@ if (process.argv.includes("--finalize")) {
     report.exit_code = 1;
     report.error = process.env.FRONTEND_CI_ERROR || "frontend CI stopped before verification completed";
     report.finished_at = new Date().toISOString();
+    shouldWriteReport = true;
+  }
+  if (shouldWriteReport) {
     writeReport();
   }
   process.stdout.write(`frontend CI evidence finalized: ${reportPath}\n`);

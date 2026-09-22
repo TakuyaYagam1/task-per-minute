@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 env:
-  NODE_VERSION: 24.15.0
+  NODE_VERSION: 24.18.1
   PYTHON_VERSION: '3.13'
   FRONTEND_WORKDIR: frontend
 
@@ -54,6 +54,10 @@ jobs:
       - name: install frontend dependencies
         working-directory: ${{ env.FRONTEND_WORKDIR }}
         run: npm ci --ignore-scripts --userconfig config/npm-empty-userconfig
+
+      - name: verify installed Playwright runtime
+        working-directory: ${{ env.FRONTEND_WORKDIR }}
+        run: node scripts/configure-ci-runtime.mjs --verify-packages
 
       - name: dependency advisory gate
         working-directory: ${{ env.FRONTEND_WORKDIR }}
@@ -105,6 +109,10 @@ jobs:
       - name: install frontend dependencies
         working-directory: ${{ env.FRONTEND_WORKDIR }}
         run: npm ci --ignore-scripts --userconfig config/npm-empty-userconfig
+
+      - name: verify installed Playwright runtime
+        working-directory: ${{ env.FRONTEND_WORKDIR }}
+        run: node scripts/configure-ci-runtime.mjs --verify-packages
 
       - name: write disposable e2e env
         run: |
