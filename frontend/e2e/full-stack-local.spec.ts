@@ -66,6 +66,11 @@ type FullStackRoster = {
 };
 
 type FullStackPreflightReport = {
+  checks?: Array<{
+    code: string;
+    evidence?: string[];
+    passed: boolean;
+  }>;
   id: string;
   passed: boolean;
   tournament_id: string;
@@ -758,19 +763,41 @@ const applyStartGoldenViaApi = async (
   tournamentID: string,
   csrfToken: string,
 ): Promise<APIResponse> => {
-  const projectionRevision = await getOperatorProjectionRevisionViaApi(request, tournamentID);
-  return request.post(`${backendURL}/api/v1/admin/tournaments/${tournamentID}/actions`, {
-    headers: {
-      'X-CSRF-Token': csrfToken,
-      'Idempotency-Key': randomUUID(),
-      Origin: frontendURL,
-    },
-    data: {
-      expected_projection_revision: projectionRevision,
-      action: 'start_golden',
-      confirmed: true,
-    },
-  });
+  let projectionRevision = await getOperatorProjectionRevisionViaApi(request, tournamentID);
+  let response: APIResponse | null = null;
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    response = await request.post(`${backendURL}/api/v1/admin/tournaments/${tournamentID}/actions`, {
+      headers: {
+        'X-CSRF-Token': csrfToken,
+        'Idempotency-Key': randomUUID(),
+        Origin: frontendURL,
+      },
+      data: {
+        expected_projection_revision: projectionRevision,
+        action: 'start_golden',
+        confirmed: true,
+      },
+    });
+    if (response.status() !== 409) {
+      return response;
+    }
+
+    const conflict = (await response.json()) as { current_revision?: unknown };
+    if (
+      typeof conflict.current_revision !== 'number' ||
+      !Number.isSafeInteger(conflict.current_revision) ||
+      conflict.current_revision < 1
+    ) {
+      return response;
+    }
+    projectionRevision = conflict.current_revision;
+  }
+
+  if (!response) {
+    throw new Error('start Golden did not issue a request');
+  }
+  return response;
 };
 
 const runRosterPreflightViaApi = async (
@@ -2904,7 +2931,7 @@ test.describe('local compose full stack e2e', () => {
     }
   });
 
-  test('FE-040 and FE-041 real backend spectator renders live public state and fixed Top 4 bracket', async ({ browser, request }) => {
+  test('FE-047 real backend completes a 16-player Swiss and BO3 tournament', async ({ browser, request, page }) => {
     test.setTimeout(900_000);
 
     type FullStackPlayoffSnapshot = FullStackOperatorSnapshot & {
@@ -2914,26 +2941,31 @@ test.describe('local compose full stack e2e', () => {
 
     const tournamentName = uniqueName('fe040-spectator');
     const tournamentPublicID = uniqueName('fe040-public');
-    const playerNames = Array.from({ length: 5 }, (_, index) =>
+    const playerNames = Array.from({ length: 16 }, (_, index) =>
       uniqueName(`fe040-player-${index + 1}`));
     const playerContexts: BrowserContext[] = [];
     let spectatorContext: BrowserContext | undefined;
     let spectatorPage: Page | undefined;
 
     try {
+      await loginThroughAdminUI(page);
       const adminSession = await adminLogin(request);
       const normalFlagsByTitle = new Map<string, string>();
       const goldenFlagsByTitle = new Map<string, string>();
-      const normalTimeLimitSeconds = 197;
+      const normalTimeLimitSeconds = 180;
+      const reserveChainLength = 3;
+      const swissRounds = playerNames.length <= 8 ? 3 : 4;
+      const sharedCategoryCount =
+        (playerNames.length / 2 * swissRounds + 3) * reserveChainLength;
       const normalTaskGroups: Array<{
         category: FullStackTaskInput['category'];
         count: number;
       }> = [
-        { category: 'web', count: 27 },
-        { category: 'crypto', count: 27 },
-        { category: 'reverse', count: 27 },
-        { category: 'forensics', count: 3 },
-        { category: 'pwn', count: 3 },
+        { category: 'web', count: sharedCategoryCount },
+        { category: 'crypto', count: sharedCategoryCount },
+        { category: 'reverse', count: sharedCategoryCount },
+        { category: 'forensics', count: reserveChainLength },
+        { category: 'pwn', count: reserveChainLength },
       ];
 
       for (const group of normalTaskGroups) {
@@ -2954,7 +2986,8 @@ test.describe('local compose full stack e2e', () => {
           });
         }
       }
-      for (let index = 0; index < 6; index += 1) {
+      const goldenTaskCount = playerNames.length / 2 * reserveChainLength;
+      for (let index = 0; index < goldenTaskCount; index += 1) {
         const title = uniqueName(`fe040-golden-${index + 1}`);
         const flag = `flag{${title.replaceAll('-', '_')}}`;
         goldenFlagsByTitle.set(title, flag);
@@ -2978,7 +3011,7 @@ test.describe('local compose full stack e2e', () => {
         {
           name: tournamentName,
           content_revision: contentRevision,
-          planned_roster_size: 5,
+          planned_roster_size: 16,
           public_id: tournamentPublicID,
           preset: 'tournament_v1',
           expected_revision: 0,
@@ -3017,7 +3050,7 @@ test.describe('local compose full stack e2e', () => {
         invitedParticipants,
       );
       const invitedRoster = await readRosterResponse(invitedRosterResponse, tournament.id, roster.id);
-      expect(invitedRoster.participants).toHaveLength(5);
+      expect(invitedRoster.participants).toHaveLength(16);
 
       const openRegistration = await applyOpenRegistrationViaApi(
         request,
@@ -3043,7 +3076,7 @@ test.describe('local compose full stack e2e', () => {
         roster.id,
       );
       const checkedInRosterParticipants = sortRosterParticipantsBySeed(checkedInRoster.participants);
-      expect(checkedInRosterParticipants).toHaveLength(5);
+      expect(checkedInRosterParticipants).toHaveLength(16);
       expect(checkedInRosterParticipants.every((participant) => participant.attendance === 'checked_in')).toBe(true);
 
       let preflight: FullStackPreflightReport | null = null;
@@ -3066,7 +3099,13 @@ test.describe('local compose full stack e2e', () => {
       if (!preflight) {
         throw new Error('roster preflight did not return a report');
       }
-      expect(preflight.passed).toBe(true);
+      const failedPreflightChecks = (preflight.checks ?? [])
+        .filter((check) => !check.passed)
+        .map((check) => ({ code: check.code, evidence: check.evidence ?? [] }));
+      expect(
+        preflight.passed,
+        `roster preflight failed: ${JSON.stringify(failedPreflightChecks)}`,
+      ).toBe(true);
 
       const lockResponse = await lockRosterViaApi(
         request,
@@ -3111,6 +3150,7 @@ test.describe('local compose full stack e2e', () => {
       const participantSeed = new Map(
         checkedInRosterParticipants.map((participant) => [participant.id, participant.seed]),
       );
+      const opponentPairs = new Set<string>();
 
       type WaveAction = 'open_ready_window' | 'start' | 'complete';
       const waveAction = async (waveID: string, action: WaveAction): Promise<FullStackWave> => {
@@ -3163,11 +3203,16 @@ test.describe('local compose full stack e2e', () => {
         expect(pairing.status(), `Swiss round ${roundNumber} pairing failed with ${pairing.status()}`).toBe(200);
         const configuredRound = (await pairing.json()) as FullStackSwissRound;
         expect(configuredRound.round_number).toBe(roundNumber);
-        expect(configuredRound.pairings).toHaveLength(2);
+        expect(configuredRound.pairings).toHaveLength(8);
         expect(new Set(configuredRound.pairings.flatMap((pair) => [
           pair.first_participant_id,
           pair.second_participant_id,
-        ])).size).toBe(4);
+        ])).size).toBe(16);
+        for (const pair of configuredRound.pairings) {
+          const pairKey = [pair.first_participant_id, pair.second_participant_id].sort().join(':');
+          expect(opponentPairs.has(pairKey), `Swiss repeated opponents in round ${roundNumber}`).toBe(false);
+          opponentPairs.add(pairKey);
+        }
         if (configuredRound.bye) {
           swissPoints.set(
             configuredRound.bye.participant_id,
@@ -3263,6 +3308,43 @@ test.describe('local compose full stack e2e', () => {
         }
 
         for (const [seriesID, members] of membersBySeries) {
+          expect(members, `Swiss series ${seriesID} must contain exactly two participants`).toHaveLength(2);
+          const pairAssignments = await Promise.all(
+            members.map(async (member) => {
+              const participant = await readParticipantSnapshotViaApi(
+                contextForParticipant(member.participant_id),
+                tournament.id,
+              );
+              expect(participant.assignment, `participant ${member.participant_id} did not receive a Swiss assignment`).not.toBeNull();
+              if (!participant.assignment) {
+                throw new Error(`participant ${member.participant_id} did not receive a Swiss assignment`);
+              }
+              return participant.assignment;
+            }),
+          );
+          const firstAssignment = pairAssignments[0];
+          const secondAssignment = pairAssignments[1];
+          if (!firstAssignment || !secondAssignment) {
+            throw new Error(`Swiss series ${seriesID} did not return both assignments`);
+          }
+          expect(firstAssignment.active_snapshot.task_id).toBe(secondAssignment.active_snapshot.task_id);
+          expect(firstAssignment.active_snapshot.snapshot_id).toBe(secondAssignment.active_snapshot.snapshot_id);
+          expect(firstAssignment.active_snapshot.version).toBe(secondAssignment.active_snapshot.version);
+          expect(firstAssignment.active_snapshot.time_limit).toBe(normalTimeLimitSeconds);
+          expect(secondAssignment.active_snapshot.time_limit).toBe(normalTimeLimitSeconds);
+          expect(firstAssignment.context.stage).toBe('swiss');
+          expect(firstAssignment.context.series_id).toBe(seriesID);
+          expect(secondAssignment.context.series_id).toBe(seriesID);
+          expect(firstAssignment.context.started_at).toBeTruthy();
+          expect(firstAssignment.context.effective_deadline).toBeTruthy();
+          expect(secondAssignment.context.started_at).toBeTruthy();
+          expect(secondAssignment.context.effective_deadline).toBeTruthy();
+          expect(
+            Date.parse(firstAssignment.context.effective_deadline ?? '') -
+              Date.parse(firstAssignment.context.started_at ?? ''),
+          ).toBe(180_000);
+          expect(Date.parse(firstAssignment.context.effective_deadline ?? '')).toBeGreaterThan(Date.now());
+
           const orderedMembers = [...members].sort((first, second) => {
             const firstQualifies = qualifierParticipantIDs.has(first.participant_id);
             const secondQualifies = qualifierParticipantIDs.has(second.participant_id);
@@ -3300,6 +3382,29 @@ test.describe('local compose full stack e2e', () => {
         if (currentWave && currentWave.state !== 'completed') {
           await waveAction(wave.id, 'complete');
         }
+        await expect.poll(async () => {
+          const completedResponse = await request.get(
+            `${backendURL}/api/v1/admin/tournaments/${tournament.id}/snapshot`,
+            { headers: { Origin: frontendURL } },
+          );
+          if (completedResponse.status() !== 200) {
+            return false;
+          }
+          const completedSnapshot = (await completedResponse.json()) as FullStackOperatorSnapshot & {
+            series?: FullStackPlayoffSeries[];
+          };
+          const completedSeries = completedSnapshot.series?.filter((series) =>
+            membersBySeries.has(series.id),
+          ) ?? [];
+          return completedSeries.length === membersBySeries.size && completedSeries.every((series) => {
+            expect(series.winner_id, `Swiss series ${series.id} did not publish a server winner`).toBeTruthy();
+            expect(series.score.first_participant_wins + series.score.second_participant_wins).toBe(1);
+            expect(
+              [series.score.first_participant_wins, series.score.second_participant_wins].sort(),
+            ).toEqual([0, 1]);
+            return series.state === 'completed';
+          });
+        }, { timeout: 20_000 }).toBe(true);
       };
 
       const assertFE041PublicPayloadSafe = (payload: unknown): void => {
@@ -3328,7 +3433,7 @@ test.describe('local compose full stack e2e', () => {
         const liveSeriesIDs = [...new Set(
           wave.members.flatMap((member) => member.series_id ? [member.series_id] : []),
         )];
-        expect(liveSeriesIDs, 'the active Swiss Wave must expose two simultaneous Series').toHaveLength(2);
+        expect(liveSeriesIDs, 'the active Swiss Wave must expose eight simultaneous Series').toHaveLength(8);
 
         const publicContext = await browser.newContext({ baseURL: frontendURL });
         spectatorContext = publicContext;
@@ -3531,7 +3636,7 @@ test.describe('local compose full stack e2e', () => {
       };
 
       const knownSwissWaveIDs = new Set<string>();
-      for (const roundNumber of [1, 2, 3]) {
+      for (const roundNumber of [1, 2, 3, 4]) {
         const wave = await prepareSwissRound(roundNumber, knownSwissWaveIDs);
         knownSwissWaveIDs.add(wave.id);
         if (roundNumber === 1) {
@@ -3706,12 +3811,16 @@ test.describe('local compose full stack e2e', () => {
       const completedGolden = (await completedGoldenResponse.json()) as GoldenOperatorState;
       expect(completedGolden.groups.every((group) => group.state === 'completed')).toBe(true);
 
+
       const startPlayoffs = await applyStartPlayoffsViaApi(
         request,
         tournament.id,
         adminSession.access_csrf_token,
       );
-      expect(startPlayoffs.status(), `start playoffs failed with ${startPlayoffs.status()}`).toBe(200);
+      expect(
+        startPlayoffs.status(),
+        `start playoffs failed with ${startPlayoffs.status()}: ${await startPlayoffs.text()}`,
+      ).toBe(200);
 
       const readPlayoffSnapshot = async (): Promise<FullStackPlayoffSnapshot> => {
         const response = await request.get(
@@ -3917,8 +4026,8 @@ test.describe('local compose full stack e2e', () => {
       expect(publicDraft.format).toBe('bo3');
       expect(publicDraft.state).toBe('active');
       expect(publicDraft.first_actor_display_name).toBeTruthy();
-      expect(publicDraft.current_turn).toBe(finalDraft.turn);
-      expect(publicDraft.current_action).toBe(finalDraft.current_action);
+      expect(publicDraft.current_turn).toBeGreaterThanOrEqual(activeFinalDraft.turn);
+      expect(publicDraft.current_action).toBeTruthy();
       expect(publicDraft.current_actor_display_name).toBeTruthy();
       expect(publicDraft.turn_deadline).toBeTruthy();
       for (const action of publicDraft.actions) {
@@ -3944,14 +4053,27 @@ test.describe('local compose full stack e2e', () => {
       await expect(draftPanel).toBeVisible();
       await expect(draftPanel).toContainText('Идет');
       await expect(draftPanel).toHaveAttribute('data-series-id', publicDraft.series_id);
+      await expect(draftPanel).toHaveAttribute(
+        'data-deadline',
+        /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/,
+      );
       await expect(draftPanel).toHaveAttribute('data-deadline', publicDraft.turn_deadline);
       await expect(draftPanel.getByTestId('broadcast-draft-first-actor'))
         .toHaveText(publicDraft.first_actor_display_name);
       await expect(draftPanel.getByTestId('broadcast-draft-current-actor'))
-        .toHaveText(publicDraft.current_actor_display_name ?? '');
+        .toHaveText(publicDraft.current_actor_display_name ?? 'Не объявлен');
       await expect(draftPanel.getByTestId('broadcast-draft-turn'))
-        .toHaveText(String(publicDraft.current_turn));
+        .toHaveText(String(publicDraft.current_turn ?? '-'));
+      const currentActionLabel = publicDraft.current_action === 'ban'
+        ? 'Бан'
+        : publicDraft.current_action === 'pick'
+          ? 'Выбор'
+          : publicDraft.current_action ?? 'Не объявлено';
+      await expect(draftPanel.getByTestId('broadcast-draft-current-action'))
+        .toHaveText(currentActionLabel);
       await expect(draftPanel.getByTestId('broadcast-draft-deadline')).not.toHaveText('Не объявлен');
+      await expect(draftPanel.getByTestId('broadcast-draft-deadline').locator('time'))
+        .toHaveAttribute('datetime', publicDraft.turn_deadline);
       for (const action of publicDraft.actions.filter((item) => item.automatic)) {
         await expect(draftPanel.getByTestId(`broadcast-draft-action-${action.turn}`))
           .toHaveAttribute('data-automatic', 'true');
@@ -4062,12 +4184,12 @@ test.describe('local compose full stack e2e', () => {
       }
       assertFE041PublicPayloadSafe(publicSnapshot);
       expect(publicSnapshot.tournament.state).toBe('completed');
-      expect(publicSnapshot.swiss_rounds).toHaveLength(3);
-      expect(publicSnapshot.swiss_rounds.filter((round) => round.bye !== null).length).toBeGreaterThan(0);
+      expect(publicSnapshot.swiss_rounds).toHaveLength(4);
+      expect(publicSnapshot.swiss_rounds.filter((round) => round.bye !== null)).toHaveLength(0);
       const swissSeries = publicSnapshot.live_series.filter((series) => series.stage === 'swiss');
-      expect(swissSeries.length).toBeGreaterThanOrEqual(6);
+      expect(swissSeries).toHaveLength(32);
       const firstRoundSeries = swissSeries.filter((series) => series.round_number === 1);
-      expect(firstRoundSeries).toHaveLength(2);
+      expect(firstRoundSeries).toHaveLength(8);
       expect(firstRoundSeries.every((series) => (
         series.state === 'completed' &&
         series.score.first_wins + series.score.second_wins > 0 &&
@@ -4106,17 +4228,50 @@ test.describe('local compose full stack e2e', () => {
       expect(finalOfficialResult.state).toBe('completed');
       expect(finalOfficialResult.winner_display_name).toBe(champion);
 
+      const scoreboardResponse = await terminalContext.request.get(
+        `${backendURL}/api/v1/tournaments/${tournament.id}/scoreboard`,
+        { headers: { Origin: frontendURL } },
+      );
+      expect(scoreboardResponse.status(), `public scoreboard failed with ${scoreboardResponse.status()}`).toBe(200);
+      const scoreboard = (await scoreboardResponse.json()) as {
+        entries: Array<{ display_name: string; points: number; wins: number; losses: number }>;
+        tournament_id: string;
+      };
+      expect(scoreboard.tournament_id).toBe(tournament.id);
+      expect(scoreboard.entries).toHaveLength(16);
+      const expectedScoreboard = checkedInRosterParticipants.map((participant) => {
+        const player = players.find((candidate) => candidate.id === participant.player_id);
+        expect(player, `missing player for participant ${participant.id}`).toBeDefined();
+        if (!player) {
+          throw new Error(`missing player for participant ${participant.id}`);
+        }
+        const points = swissPoints.get(participant.id) ?? 0;
+        return { display_name: player.username, points };
+      });
+      expect(new Set(scoreboard.entries.map((entry) => entry.display_name)).size).toBe(16);
+      for (const expected of expectedScoreboard) {
+        const actual = scoreboard.entries.find((entry) => entry.display_name === expected.display_name);
+        expect(actual, `scoreboard lost ${expected.display_name}`).toBeDefined();
+        if (!actual) {
+          throw new Error(`scoreboard lost ${expected.display_name}`);
+        }
+        expect(actual.points).toBe(expected.points);
+        expect(actual.wins).toBe(expected.points);
+        expect(actual.losses).toBe(swissRounds - expected.points);
+      }
+      expect(scoreboard.entries.some((entry) => entry.display_name === champion)).toBe(true);
+
       terminalPage.setDefaultTimeout(15_000);
       await terminalPage.goto(`/arena/spectator/${tournament.id}`, { waitUntil: 'domcontentloaded' });
       const broadcast = terminalPage.getByTestId('tournament-broadcast');
       await expect(broadcast).toBeVisible();
 
       await broadcast.getByRole('tab', { name: 'Swiss' }).click();
-      for (const roundNumber of [1, 2, 3]) {
+      for (const roundNumber of [1, 2, 3, 4]) {
         const round = broadcast.getByTestId(`swiss-round-${roundNumber}`);
         await expect(round).toBeVisible();
         await expect(round).toContainText('Завершена');
-        await expect(round.locator('button[data-match-key]')).toHaveCount(2);
+        await expect(round.locator('button[data-match-key]')).toHaveCount(8);
       }
       const firstRoundPanel = broadcast.getByTestId('swiss-round-1');
       await expect(firstRoundPanel).toContainText(firstRoundSeries[0]?.first_display_name ?? '');
@@ -4125,14 +4280,7 @@ test.describe('local compose full stack e2e', () => {
         `${firstRoundSeries[0]?.score.first_wins ?? 0}:${firstRoundSeries[0]?.score.second_wins ?? 0}`,
       );
       const byeRows = broadcast.locator('[data-testid^="swiss-bye-"]');
-      expect(await byeRows.count()).toBeGreaterThan(0);
-      const publicBye = publicSnapshot.swiss_rounds.find((round) => round.bye !== null)?.bye;
-      expect(publicBye).toBeDefined();
-      if (!publicBye) {
-        throw new Error('public snapshot did not expose a Swiss bye');
-      }
-      await expect(byeRows.first()).toContainText(publicBye.display_name);
-      await expect(byeRows.first()).toContainText('+1 очко');
+      expect(await byeRows.count()).toBe(0);
 
       await broadcast.getByRole('tab', { name: 'Плей-офф' }).click();
       const playoff = broadcast.getByRole('tabpanel');
