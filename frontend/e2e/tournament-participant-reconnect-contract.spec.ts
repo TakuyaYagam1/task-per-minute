@@ -863,6 +863,117 @@ test("FE-023 reconnect during an operator pause remains paused until the server 
   expect(mutationRequests).toEqual([]);
 });
 
+test("FE-049 double disconnect during an operator pause survives refresh without a local result", async ({ page }) => {
+  const fixtureSet = createTournamentFixtureSet();
+  let current = snapshotFor(fixtureSet, {
+    assignmentGameState: "paused",
+    lobbyState: "technical_pause",
+    projectionRevision: 70,
+    runtime: runtimeFor({
+      game_revision: 16,
+      game_state: "paused",
+      pause: pauseFor("operator"),
+      presence: [
+        presenceFor(tournamentFixtureIds.firstParticipant, "disconnected"),
+        presenceFor(tournamentFixtureIds.secondParticipant, "disconnected"),
+      ],
+      reconnect: [
+        reconnectFor(tournamentFixtureIds.firstParticipant, tournamentFixtureIds.pauseRevision, {
+          suspended_by_pause_id: tournamentFixtureIds.activePause,
+        }),
+        reconnectFor(tournamentFixtureIds.secondParticipant, tournamentFixtureIds.scoreRevision, {
+          number: 2,
+          suspended_by_pause_id: tournamentFixtureIds.activePause,
+        }),
+      ],
+    }),
+    seriesState: "technical_pause",
+    wavePausedAt: frozenAt,
+    waveState: "paused",
+  });
+  const snapshotRequests: URL[] = [];
+  const mutationRequests: string[] = [];
+
+  await page.clock.install({ time: serverTimestamp });
+  await openParticipant(page, fixtureSet, () => current, snapshotRequests, mutationRequests);
+  const runtimeStatus = page.getByTestId("participant-runtime-status");
+  await expect(runtimeStatus).toHaveAttribute("data-paused", "true");
+  await expect(runtimeStatus).toHaveAttribute("data-pause-reason", "operator");
+  await expect(page.getByTestId("participant-runtime-presence").locator("li")).toHaveCount(2);
+  await expect(page.getByTestId(`participant-runtime-presence-${tournamentFixtureIds.firstParticipant}`))
+    .toHaveAttribute("data-state", "disconnected");
+  await expect(page.getByTestId(`participant-runtime-presence-${tournamentFixtureIds.secondParticipant}`))
+    .toHaveAttribute("data-state", "disconnected");
+  await expect(page.getByTestId("participant-runtime-reconnect").locator("li")).toHaveCount(2);
+  await expect(page.getByTestId("server-countdown")).toHaveCount(0);
+  await expect(page.getByTestId("participant-submit-button")).toBeDisabled();
+  await expect(officialResult(page)).toHaveCount(0);
+
+  await page.clock.fastForward(240_000);
+  await expect(runtimeStatus).toHaveAttribute("data-paused", "true");
+  await expect(officialResult(page)).toHaveCount(0);
+
+  await page.reload();
+  await expect(page.getByTestId("participant-player-panel")).toBeVisible();
+  await expect(runtimeStatus).toHaveAttribute("data-game-revision", "16");
+  await expect(runtimeStatus).toHaveAttribute("data-pause-reason", "operator");
+  await expect(page.getByTestId("participant-runtime-presence").locator("li")).toHaveCount(2);
+  await expect(page.getByTestId("participant-runtime-reconnect").locator("li")).toHaveCount(2);
+  await expect(page.getByTestId("server-countdown")).toHaveCount(0);
+  await expect(page.getByTestId("participant-submit-button")).toBeDisabled();
+  await expect(officialResult(page)).toHaveCount(0);
+
+  current = snapshotFor(fixtureSet, {
+    assignmentGameState: "paused",
+    lobbyState: "technical_pause",
+    projectionRevision: 71,
+    runtime: runtimeFor({
+      game_revision: 17,
+      game_state: "paused",
+      pause: pauseFor("operator"),
+      presence: [
+        presenceFor(tournamentFixtureIds.firstParticipant, "connected", operatorResumeAt, 3, 17),
+        presenceFor(tournamentFixtureIds.secondParticipant, "connected", operatorResumeAt, 3, 17),
+      ],
+      reconnect: [
+        reconnectFor(tournamentFixtureIds.firstParticipant, tournamentFixtureIds.pauseRevision, {
+          closed_at: operatorResumeAt,
+          state: "reconnected",
+          suspended_by_pause_id: tournamentFixtureIds.activePause,
+          updated_at: operatorResumeAt,
+        }),
+        reconnectFor(tournamentFixtureIds.secondParticipant, tournamentFixtureIds.scoreRevision, {
+          closed_at: operatorResumeAt,
+          number: 2,
+          state: "reconnected",
+          suspended_by_pause_id: tournamentFixtureIds.activePause,
+          updated_at: operatorResumeAt,
+        }),
+      ],
+    }),
+    seriesState: "technical_pause",
+    wavePausedAt: frozenAt,
+    waveState: "paused",
+  });
+  await page.reload();
+  await expect(runtimeStatus).toHaveAttribute("data-game-revision", "17");
+  await expect(runtimeStatus).toHaveAttribute("data-paused", "true");
+  await expect(runtimeStatus).toHaveAttribute("data-pause-reason", "operator");
+  await expect(page.getByTestId(`participant-runtime-presence-${tournamentFixtureIds.firstParticipant}`))
+    .toHaveAttribute("data-state", "connected");
+  await expect(page.getByTestId(`participant-runtime-presence-${tournamentFixtureIds.secondParticipant}`))
+    .toHaveAttribute("data-state", "connected");
+  await expect(page.getByTestId("participant-runtime-reconnect").locator("li")).toHaveCount(2);
+  await expect(page.getByTestId("participant-runtime-reconnect").locator("li").nth(0))
+    .toHaveAttribute("data-state", "reconnected");
+  await expect(page.getByTestId("participant-runtime-reconnect").locator("li").nth(1))
+    .toHaveAttribute("data-state", "reconnected");
+  await expect(page.getByTestId("server-countdown")).toHaveCount(0);
+  await expect(page.getByTestId("participant-submit-button")).toBeDisabled();
+  await expect(officialResult(page)).toHaveCount(0);
+  expect(mutationRequests).toEqual([]);
+});
+
 test("FE-023 refresh preserves server authority and keeps the participant route usable in light mobile view", async ({ page }) => {
   const fixtureSet = createTournamentFixtureSet();
   const current = snapshotFor(fixtureSet, {

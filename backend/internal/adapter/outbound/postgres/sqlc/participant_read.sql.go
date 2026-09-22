@@ -265,7 +265,6 @@ LEFT JOIN LATERAL (
 ) AS game_pause ON TRUE
 WHERE roster.tournament_id = $1
     AND participant.player_id = $2
-    AND attempt.state NOT IN ('void', 'cancelled', 'superseded')
     AND assignment_series.state NOT IN ('completed', 'cancelled')
 ORDER BY receipt.delivered_at DESC,
     receipt.id DESC

@@ -444,6 +444,21 @@ func TestParticipantAssignmentRejectsMalformedHintClock(t *testing.T) {
 	}
 }
 
+func TestParticipantAssignmentHidesHintsAfterTerminalAttempt(t *testing.T) {
+	t.Parallel()
+
+	row := participantHintAssignmentRow()
+	row.AttemptState = string(domain.GameStateVoid)
+	row.EffectiveDeadline = pgtype.Timestamptz{}
+	row.AttemptStartedAt = participantStateTimestamp(participantStateTestTime())
+
+	assignment, err := participantAssignmentFromRow(row)
+
+	require.NoError(t, err)
+	require.Empty(t, assignment.ActiveSnapshot.Hints)
+	require.Equal(t, domain.GameStateVoid, assignment.Context.GameState)
+}
+
 func TestParticipantSeriesMapsOrderedGameGraph(t *testing.T) {
 	t.Parallel()
 

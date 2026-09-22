@@ -574,7 +574,7 @@ const readParticipantSnapshotViaApi = async (
   );
   expect(
     response.status(),
-    `participant snapshot failed with ${response.status()}`,
+    `participant snapshot failed with ${response.status()}: ${await response.text()}`,
   ).toBe(200);
   const snapshot = (await response.json()) as FullStackParticipantSnapshot;
   expect(snapshot.projection_revision).toEqual(expect.any(Number));
@@ -2928,6 +2928,303 @@ test.describe('local compose full stack e2e', () => {
       for (const context of playerContexts) {
         await context.close();
       }
+    }
+  });
+
+  test('FE-049 real backend records no-solve without a draw or stale readiness', async ({ browser, request, page }) => {
+    test.setTimeout(600_000);
+    page.setDefaultTimeout(15_000);
+
+    type ReplaySnapshot = FullStackOperatorSnapshot & {
+      recovery_controls: Array<{
+        assignment_id: string;
+        attempts: Array<{
+          attempt_no: number;
+          id: string;
+          result_reason: string | null;
+          state: string;
+        }>;
+        expected_authority_revision: number;
+        kind: string;
+        old_wave_id: string;
+        replay: { available: boolean; expected_closure_revision_id: string } | null;
+        series_id: string;
+        slot_id: string;
+      }>;
+      series: Array<{
+        id: string;
+        slots: Array<{ attempts: Array<{ id: string; result_reason: string | null; state: string }>; id: string }>;
+        state: string;
+      }>;
+      tournament: { id: string; state: string };
+    };
+
+    const tournamentName = uniqueName('fe049-replay');
+    const tournamentPublicID = uniqueName('fe049-public');
+    const playerContexts: BrowserContext[] = [];
+
+    try {
+      await loginThroughAdminUI(page);
+      const adminSession = await adminLogin(request);
+      const normalTaskGroups: Array<{ category: FullStackTaskInput['category']; count: number }> = [
+        { category: 'web', count: 27 },
+        { category: 'crypto', count: 27 },
+        { category: 'reverse', count: 27 },
+        { category: 'forensics', count: 3 },
+        { category: 'pwn', count: 3 },
+      ];
+      for (const group of normalTaskGroups) {
+        for (let index = 0; index < group.count; index += 1) {
+          const title = uniqueName(`fe049-${group.category}-${index + 1}`);
+          await createTaskViaApi(request, adminSession, {
+            title,
+            description: 'Normal task for the FE-049 no-solve replay flow.',
+            kind: 'normal',
+            category: group.category,
+            difficulty: 'easy',
+            time_limit: 180,
+            flag: `flag{${title.replaceAll('-', '_')}}`,
+            hints: ['FE-049 hint one', 'FE-049 hint two', 'FE-049 hint three'],
+            task_url: 'https://example.com/fe049-normal',
+          });
+        }
+      }
+      for (let index = 0; index < 6; index += 1) {
+        const title = uniqueName(`fe049-golden-${index + 1}`);
+        await createTaskViaApi(request, adminSession, {
+          title,
+          description: 'Golden task reserved for the FE-049 tournament preset.',
+          kind: 'golden',
+          category: 'web',
+          difficulty: 'easy',
+          time_limit: 180,
+          flag: `flag{${title.replaceAll('-', '_')}}`,
+          hints: ['FE-049 Golden hint one', 'FE-049 Golden hint two', 'FE-049 Golden hint three'],
+          task_url: 'https://example.com/fe049-golden',
+        });
+      }
+
+      const tournament = await createTournamentViaApi(request, adminSession, {
+        name: tournamentName,
+        content_revision: await getTournamentContentRevision(request),
+        planned_roster_size: 4,
+        public_id: tournamentPublicID,
+        preset: 'tournament_v1',
+        expected_revision: 0,
+      });
+      const players: FullStackPlayer[] = [];
+      for (let index = 0; index < 4; index += 1) {
+        const context = await browser.newContext({ baseURL: frontendURL });
+        playerContexts.push(context);
+        const playerPage = await context.newPage();
+        const username = uniqueName(`fe049-player-${index + 1}`);
+        await joinAsPlayer(playerPage, username);
+        const meResponse = await context.request.get(`${backendURL}/api/v1/players/me`, {
+          headers: { Origin: frontendURL },
+        });
+        expect(meResponse.status()).toBe(200);
+        players.push(((await meResponse.json()) as { player: FullStackPlayer }).player);
+        await playerPage.close();
+      }
+
+      const roster = await getRosterViaApi(request, tournament.id);
+      const rosterInputs = players.map((player, index) => ({
+        attendance: 'invited' as const,
+        player_id: player.id,
+        seed: index + 1,
+      }));
+      const invited = await replaceRosterViaApi(
+        request,
+        tournament.id,
+        adminSession.access_csrf_token,
+        await getOperatorProjectionRevisionViaApi(request, tournament.id),
+        rosterInputs,
+      );
+      expect((await readRosterResponse(invited, tournament.id, roster.id)).participants).toHaveLength(4);
+      expect((await applyOpenRegistrationViaApi(request, tournament.id, adminSession.access_csrf_token)).status()).toBe(200);
+      const checkedIn = await replaceRosterViaApi(
+        request,
+        tournament.id,
+        adminSession.access_csrf_token,
+        await getOperatorProjectionRevisionViaApi(request, tournament.id),
+        rosterInputs.map((participant) => ({ ...participant, attendance: 'checked_in' as const })),
+      );
+      const checkedInRoster = await readRosterResponse(checkedIn, tournament.id, roster.id);
+      const checkedInParticipants = sortRosterParticipantsBySeed(checkedInRoster.participants);
+      const preflight = await runRosterPreflightViaApi(request, tournament.id, adminSession.access_csrf_token);
+      expect(preflight.status()).toBe(200);
+      const preflightReport = (await preflight.json()) as FullStackPreflightReport;
+      expect(preflightReport.passed, JSON.stringify(preflightReport.checks ?? [])).toBe(true);
+      expect((await lockRosterViaApi(
+        request,
+        tournament.id,
+        adminSession.access_csrf_token,
+        preflightReport.id,
+        checkedInParticipants.map((participant) => participant.player_id),
+      )).status()).toBe(200);
+      expect((await applyStartSwissViaApi(request, tournament.id, adminSession.access_csrf_token)).status()).toBe(200);
+
+      const operatorAction = async (
+        waveID: string,
+        action: 'open_ready_window' | 'start' | 'complete',
+      ) => {
+        const response = await request.post(
+          `${backendURL}/api/v1/admin/tournaments/${tournament.id}/waves/${waveID}/actions`,
+          {
+            headers: {
+              'X-CSRF-Token': adminSession.access_csrf_token,
+              'Idempotency-Key': randomUUID(),
+              Origin: frontendURL,
+            },
+            data: {
+              action,
+              confirmed: true,
+              expected_projection_revision: await getOperatorProjectionRevisionViaApi(request, tournament.id),
+            },
+          },
+        );
+        expect(response.status(), `${action} failed with ${response.status()}: ${await response.text()}`).toBe(200);
+        return (await response.json()) as FullStackWave;
+      };
+      const pairing = await request.post(`${backendURL}/api/v1/admin/tournaments/${tournament.id}/pairings`, {
+        headers: {
+          'X-CSRF-Token': adminSession.access_csrf_token,
+          'Idempotency-Key': randomUUID(),
+          Origin: frontendURL,
+        },
+        data: {
+          categories: ['web', 'crypto', 'forensics'],
+          category_mode: 'random',
+          expected_projection_revision: await getOperatorProjectionRevisionViaApi(request, tournament.id),
+          pairing_mode: 'automatic',
+          round_number: 1,
+        },
+      });
+      expect(pairing.status()).toBe(200);
+      const operatorBeforeReady = (await (await request.get(
+        `${backendURL}/api/v1/admin/tournaments/${tournament.id}/snapshot`,
+        { headers: { Origin: frontendURL } },
+      )).json()) as ReplaySnapshot;
+      const wave = operatorBeforeReady.waves.at(-1);
+      expect(wave).toBeDefined();
+      if (!wave) throw new Error('FE-049 did not materialize a Swiss wave');
+      await operatorAction(wave.id, 'open_ready_window');
+
+      const contextForParticipant = (participantID: string): BrowserContext => {
+        const rosterParticipant = checkedInParticipants.find((participant) => participant.id === participantID);
+        expect(rosterParticipant).toBeDefined();
+        if (!rosterParticipant) throw new Error(`missing participant ${participantID}`);
+        const playerIndex = players.findIndex((player) => player.id === rosterParticipant.player_id);
+        const context = playerContexts[playerIndex];
+        if (!context) throw new Error(`missing context for ${rosterParticipant.player_id}`);
+        return context;
+      };
+      for (const member of wave.members) {
+        const context = contextForParticipant(member.participant_id);
+        const snapshot = await readParticipantSnapshotViaApi(context, tournament.id);
+        const csrfToken = (await context.cookies()).find((cookie) => cookie.name === 'tpm_player_csrf')?.value;
+        expect(csrfToken).toBeTruthy();
+        const ready = await context.request.post(
+          `${backendURL}/api/v1/tournaments/${tournament.id}/participant/waves/${wave.id}/ready`,
+          {
+            headers: { 'X-CSRF-Token': csrfToken ?? '', 'Idempotency-Key': randomUUID(), Origin: frontendURL },
+            data: { expected_projection_revision: snapshot.projection_revision, ready: true },
+          },
+        );
+        expect(ready.status()).toBe(200);
+      }
+      await operatorAction(wave.id, 'start');
+      const waveSeriesIDs = [...new Set(wave.members.map((member) => member.series_id).filter((id): id is string => id !== null && id !== undefined))];
+      expect(waveSeriesIDs.length).toBeGreaterThan(0);
+      const targetSeriesID = waveSeriesIDs[0];
+      if (!targetSeriesID) throw new Error('FE-049 target Series was not created');
+      const targetMember = wave.members.find((member) => member.series_id === targetSeriesID);
+      expect(targetMember).toBeDefined();
+      if (!targetMember) throw new Error('FE-049 target Series has no member');
+      const targetParticipant = await readParticipantSnapshotViaApi(
+        contextForParticipant(targetMember.participant_id),
+        tournament.id,
+      );
+      expect(targetParticipant.assignment?.context.effective_deadline).toBeTruthy();
+      expect(targetParticipant.assignment?.active_snapshot.time_limit).toBe(180);
+      if (!targetParticipant.assignment?.context.started_at || !targetParticipant.assignment.context.effective_deadline) {
+        throw new Error('FE-049 target game did not expose an authoritative deadline');
+      }
+      expect(
+        Date.parse(targetParticipant.assignment.context.effective_deadline) -
+          Date.parse(targetParticipant.assignment.context.started_at),
+      ).toBe(180_000);
+      const oldGameID = targetParticipant.assignment.context.game_id;
+
+      const participantPage = await contextForParticipant(targetMember.participant_id).newPage();
+      await participantPage.goto(`/arena/participant/${tournament.id}`, { waitUntil: 'domcontentloaded' });
+      await expect(participantPage.getByTestId('participant-player-panel')).toBeVisible();
+      await expect(participantPage.getByTestId('participant-submit-button')).toBeEnabled();
+
+      let terminalSnapshot: ReplaySnapshot | null = null;
+      await expect.poll(async () => {
+        const response = await request.get(`${backendURL}/api/v1/admin/tournaments/${tournament.id}/snapshot`, {
+          headers: { Origin: frontendURL },
+        });
+        if (response.status() !== 200) return false;
+        const current = (await response.json()) as ReplaySnapshot;
+        const targetSeries = current.series.find((series) => series.id === targetSeriesID);
+        const targetAttempt = targetSeries?.slots.flatMap((slot) => slot.attempts).find((attempt) => attempt.id === oldGameID);
+        if (targetSeries?.state === 'replay_required' && targetAttempt?.state === 'void' && targetAttempt.result_reason === 'no_solve') {
+          terminalSnapshot = current;
+          return true;
+        }
+        return false;
+      }, { timeout: 240_000, intervals: [1_000, 2_000, 5_000] }).toBe(true);
+      const resolvedTerminalSnapshot = terminalSnapshot as ReplaySnapshot | null;
+      expect(resolvedTerminalSnapshot).not.toBeNull();
+      if (!resolvedTerminalSnapshot) throw new Error('FE-049 no-solve terminal state was not observed');
+      const terminalSeries = resolvedTerminalSnapshot.series.find((series) => series.id === targetSeriesID);
+      const terminalAttempts = terminalSeries?.slots.flatMap((slot) => slot.attempts) ?? [];
+      expect(terminalAttempts).toHaveLength(1);
+      expect(terminalAttempts[0]).toEqual(expect.objectContaining({ id: oldGameID, state: 'void', result_reason: 'no_solve' }));
+      expect(resolvedTerminalSnapshot.recovery_controls).toEqual([]);
+      expect(resolvedTerminalSnapshot.tournament.state).toBe('swiss');
+
+      const participantAfterTimeout = await readParticipantSnapshotViaApi(
+        contextForParticipant(targetMember.participant_id),
+        tournament.id,
+      );
+      expect(participantAfterTimeout.assignment?.context.game_id).toBe(oldGameID);
+      expect(participantAfterTimeout.assignment?.context.game_state).toBe('void');
+      expect(participantAfterTimeout.assignment?.context.series_score).toEqual({
+        first_participant_wins: 0,
+        second_participant_wins: 0,
+      });
+      expect(participantAfterTimeout.assignment?.active_snapshot).toEqual(
+        expect.objectContaining({ task_id: expect.any(String), version: expect.any(Number) }),
+      );
+      expect(participantAfterTimeout.series).toEqual(expect.objectContaining({ id: targetSeriesID, state: 'replay_required' }));
+
+      const spectatorContext = await browser.newContext({ baseURL: frontendURL });
+      const spectatorPage = await spectatorContext.newPage();
+      try {
+        await participantPage.reload({ waitUntil: 'domcontentloaded' });
+        await expect(participantPage.getByTestId('participant-runtime-status')).toBeVisible();
+        await expect(participantPage.getByTestId('participant-runtime-status'))
+          .toHaveAttribute('data-game-state', 'void');
+        await expect(participantPage.getByText(/Подсказки/i)).toHaveCount(0);
+        await expect(participantPage.getByTestId('participant-submit-button')).toBeDisabled();
+        await page.goto(`/arena/operator/${tournament.id}`, { waitUntil: 'domcontentloaded' });
+        await expect(page.getByText('Снимок подтвержден', { exact: true })).toBeVisible();
+        await page.reload({ waitUntil: 'domcontentloaded' });
+        await expect(page.getByText('Снимок подтвержден', { exact: true })).toBeVisible();
+        await spectatorPage.goto(`/arena/spectator/${tournament.id}`, { waitUntil: 'domcontentloaded' });
+        await expect(spectatorPage.getByTestId('tournament-broadcast')).toBeVisible();
+        const publicSnapshot = await readPublicSnapshotViaApi(spectatorContext, tournament.id);
+        const publicSeries = publicSnapshot.live_series.find((series) => series.series_id === targetSeriesID);
+        expect(publicSeries?.state).toBe('replay_required');
+      } finally {
+        await participantPage.close();
+        await spectatorContext.close();
+      }
+    } finally {
+      for (const context of playerContexts) await context.close();
     }
   });
 

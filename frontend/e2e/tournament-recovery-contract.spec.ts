@@ -2404,6 +2404,84 @@ test("FE-013 operator route mounts operator recovery and keeps only the operator
   await expect(livePanel.getByText(/Ревизия сервера: 10/)).toBeVisible();
 });
 
+test("FE-049 operator and spectator refresh preserve a double disconnect operator pause", async ({ page }) => {
+  const fixtureSet = createTournamentFixtureSet();
+  const operator = operatorSnapshot(70);
+  const pauseGraph = operator.pause_graph;
+  if (pauseGraph === null || pauseGraph.reconnect[0] === undefined) {
+    throw new Error("Operator recovery fixture must include a pause graph and reconnect record");
+  }
+  pauseGraph.presence = pauseGraph.presence.map((entry) => ({
+    ...entry,
+    disconnected_at: "2026-09-20T10:00:10Z",
+    state: "disconnected" as const,
+    updated_at: "2026-09-20T10:00:10Z",
+  }));
+  const reconnectTemplate = pauseGraph.reconnect[0];
+  pauseGraph.reconnect = [
+    {
+      ...reconnectTemplate,
+      participant_id: tournamentFixtureIds.firstParticipant,
+      suspended_by_pause_id: tournamentFixtureIds.activePause,
+    },
+    {
+      ...reconnectTemplate,
+      id: tournamentFixtureIds.scoreRevision,
+      number: 2,
+      participant_id: tournamentFixtureIds.secondParticipant,
+      revision: 2,
+      suspended_by_pause_id: tournamentFixtureIds.activePause,
+    },
+  ];
+  expect(pauseGraph.presence.every((entry) => entry.state === "disconnected")).toBe(true);
+  expect(pauseGraph.reconnect).toHaveLength(2);
+  expect(pauseGraph.reconnect.map((entry) => entry.participant_id).sort()).toEqual([
+    tournamentFixtureIds.firstParticipant,
+    tournamentFixtureIds.secondParticipant,
+  ].sort());
+  expect(pauseGraph.reconnect.every((entry) => entry.suspended_by_pause_id === tournamentFixtureIds.activePause))
+    .toBe(true);
+  const publicSnapshot = publicRecovery(70, 70);
+  publicSnapshot.official_results = [];
+  publicSnapshot.tournament = {
+    ...publicSnapshot.tournament,
+    projection_revision: 70,
+    state: "technical_pause",
+  };
+  publicSnapshot.live_series = publicSnapshot.live_series.map((series) => ({
+    ...series,
+    state: "technical_pause",
+  }));
+
+  await page.clock.install({ time: "2026-09-20T10:00:10Z" });
+  await installOperatorWebSocketStub(page);
+  await installArenaAccessRoutes(page, fixtureSet);
+  await page.route(`**${arenaOperatorSnapshotPath}*`, async (route) => {
+    expect(route.request().method()).toBe("GET");
+    await fulfillJSON(route, operator, { date: new Date("2026-09-20T10:00:10Z").toUTCString() });
+  });
+  await page.route(`**${arenaPublicSnapshotPath}*`, async (route) => {
+    expect(route.request().method()).toBe("GET");
+    await fulfillJSON(route, publicSnapshot, { date: new Date("2026-09-20T10:00:10Z").toUTCString() });
+  });
+
+  await page.goto(`/arena/operator/${arenaTournamentId}`, { waitUntil: "domcontentloaded" });
+  const operatorRegion = page.getByRole("region", { name: "Управление турниром" });
+  await expect(operatorRegion).toContainText("Техническая пауза");
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await expect(operatorRegion).toContainText("Техническая пауза");
+
+  await page.goto(`/arena/spectator/${arenaTournamentId}`, { waitUntil: "domcontentloaded" });
+  const broadcast = page.getByTestId("tournament-broadcast");
+  await expect(broadcast.getByTestId("broadcast-phase-title")).toHaveText("Техническая пауза");
+  await expect(broadcast.getByText("Не объявлено", { exact: true })).toBeVisible();
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await expect(page.getByTestId("tournament-broadcast").getByTestId("broadcast-phase-title"))
+    .toHaveText("Техническая пауза");
+  await expect(page.getByTestId("tournament-broadcast").getByText("Не объявлено", { exact: true }))
+    .toBeVisible();
+});
+
 test("FE-011 operator route uses snapshot-first admin realtime and fences old sockets", async ({ page }) => {
   const fixtureSet = createTournamentFixtureSet();
   const serverTimestamp = "2026-09-15T10:00:00Z";

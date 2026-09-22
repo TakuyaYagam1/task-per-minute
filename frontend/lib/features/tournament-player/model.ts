@@ -483,10 +483,37 @@ const participantOfficialOutcomeFor = (
   seriesId: string | null,
   gameId: string | null,
 ): ParticipantOfficialOutcome | null => {
+  if (series === null || seriesId === null || series.id !== seriesId) {
+    return null;
+  }
+
+  const seriesGames = series.slots.flatMap((slot) =>
+    slot.attempts.map((attempt) => ({ attempt, position: slot.position })),
+  );
+  const terminalGames = seriesGames
+    .filter(({ attempt }) =>
+      terminalGameStates.has(attempt.state) && attempt.result_revision_id !== null,
+    )
+    .sort((left, right) =>
+      left.position - right.position || left.attempt.attempt_no - right.attempt.attempt_no,
+    );
+  const terminalGame = gameId === null
+    ? terminalGames[terminalGames.length - 1]?.attempt ?? null
+    : runtime !== null && runtime.gameId === gameId
+      ? null
+      : seriesGames.find(({ attempt }) => attempt.id === gameId)?.attempt ?? null;
+
+  if (terminalGame !== null && terminalGameStates.has(terminalGame.state) && terminalGame.result_revision_id !== null) {
+    return {
+      reason: terminalGame.result_reason,
+      revisionId: terminalGame.result_revision_id,
+      state: terminalGame.state,
+      subject: "game",
+      winnerId: terminalGame.winner_id,
+    };
+  }
+
   if (
-    series !== null &&
-    seriesId !== null &&
-    series.id === seriesId &&
     terminalSeriesStates.has(series.state) &&
     series.current_result_revision_id !== null
   ) {
@@ -511,40 +538,6 @@ const participantOfficialOutcomeFor = (
       state: runtime.gameState,
       subject: "game",
       winnerId: runtime.winnerId,
-    };
-  }
-
-  if (series === null || seriesId === null || series.id !== seriesId) {
-    return null;
-  }
-
-  const seriesGames = series.slots.flatMap((slot) =>
-    slot.attempts.map((attempt) => ({ attempt, position: slot.position })),
-  );
-  const terminalGames = seriesGames
-    .filter(({ attempt }) =>
-      terminalGameStates.has(attempt.state) && attempt.result_revision_id !== null,
-    )
-    .sort((left, right) =>
-      left.position - right.position || left.attempt.attempt_no - right.attempt.attempt_no,
-    );
-  const game = gameId === null
-    ? terminalGames[terminalGames.length - 1]?.attempt ?? null
-    : runtime !== null && runtime.gameId === gameId
-      ? null
-      : seriesGames.find(({ attempt }) => attempt.id === gameId)?.attempt ?? null;
-
-  if (
-    game !== null &&
-    terminalGameStates.has(game.state) &&
-    game.result_revision_id !== null
-  ) {
-    return {
-      reason: game.result_reason,
-      revisionId: game.result_revision_id,
-      state: game.state,
-      subject: "game",
-      winnerId: game.winner_id,
     };
   }
 

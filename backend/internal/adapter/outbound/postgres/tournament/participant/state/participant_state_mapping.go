@@ -347,7 +347,10 @@ func participantAssignmentVisibleHints(
 		}
 		return append([]string(nil), hints...), nil
 	case domain.GameStateVoid, domain.GameStateCancelled, domain.GameStateSuperseded:
-		return nil, participantStateInvalid("assignment hint timing")
+		// A terminal attempt may remain the latest participant assignment while
+		// the Series waits for replay or a replacement. Keep the assignment
+		// readable, but never disclose stale normal-task hints after closure.
+		return []string{}, nil
 	default:
 		return nil, participantStateInvalid("assignment hint timing")
 	}

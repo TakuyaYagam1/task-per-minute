@@ -317,6 +317,15 @@ func TestOperatorRecoverySnapshotThroughProductionREST(t *testing.T) {
 		&finalSeriesState, &finalSeriesRevision))
 	require.Equal(t, string(domain.SeriesStateReady), finalSeriesState)
 	require.Equal(t, replayControl.ExpectedAuthorityRevision+1, finalSeriesRevision)
+	var replacementReadiness, replacementReady, replacementReadyAt int
+	require.NoError(t, sharedPool.QueryRow(ctx, `
+		SELECT COUNT(*), COUNT(*) FILTER (WHERE ready), COUNT(*) FILTER (WHERE ready_at IS NOT NULL)
+		FROM wave_readiness
+		WHERE wave_id = $1`, replacementWaveID).Scan(
+		&replacementReadiness, &replacementReady, &replacementReadyAt))
+	require.Equal(t, 2, replacementReadiness)
+	require.Zero(t, replacementReady, "replay must not inherit readiness from the failed attempt")
+	require.Zero(t, replacementReadyAt, "replay must open a fresh readiness window")
 
 	retryReplayRequest, retryReplayResponse := doTournamentFlowJSON(
 		t, rest, http.MethodPost, replayPath, string(replayBody), adminSession(adminToken), replayCommandID, "",
