@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
+	authoritydomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/authority"
 	recoveryusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/recovery"
 	gamemocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/recovery/mocks"
 )
@@ -71,22 +72,12 @@ func TestRecoveryRunnerGoldenFailureGatesInitialReadiness(t *testing.T) {
 	tournaments := gamemocks.NewMockRecoveryTournamentSource(t)
 	tournaments.EXPECT().ListRecoveryTournaments(mock.Anything).
 		Return([]uuid.UUID{lease.TournamentID}, nil).Once()
-	authority := gamemocks.NewMockRecoveryAuthorityProvider(t)
-	authority.EXPECT().RecoveryAuthorityFor(mock.Anything, lease.TournamentID).
-		Return(lease.Identity(), true, nil).Once()
-	recoverer := recoveryusecase.NewRecoverer(
-		newAuthorityReaderMock(t, &lease, nil),
-		newExecutionRecoverySourceHarness(t, nil, nil).source,
-		newDeadlineRearmerHarness(t, lease, now).rearmer,
-		newEpochReplayerHarness(t, nil).replayer,
-		newRecoveryAuthorityTime(t, now, 1),
-	)
 	goldenFailure := errors.New("Golden recovery unavailable")
 	golden := &goldenRecoveryStub{err: goldenFailure}
 	runner, err := recoveryusecase.NewRecoveryRunner(
 		tournaments,
-		authority,
-		recoverer,
+		gamemocks.NewMockRecoveryAuthorityProvider(t),
+		recoveryusecase.NewRecoverer(nil, nil, nil, nil, nil),
 		newRecoveryClock(t, now, 1),
 		recoveryusecase.RecoveryRunnerConfig{Interval: time.Hour, Golden: golden},
 	)
@@ -95,6 +86,36 @@ func TestRecoveryRunnerGoldenFailureGatesInitialReadiness(t *testing.T) {
 	err = runner.Run(t.Context())
 	require.ErrorIs(t, err, goldenFailure)
 	require.False(t, runner.Ready())
+	require.Equal(t, int32(1), golden.calls.Load())
+}
+
+func TestRecoveryRunnerRunsGoldenBeforeForeignExecutionAuthority(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 9, 6, 10, 1, 30, 0, time.UTC)
+	tournamentID := uuid.New()
+	tournaments := gamemocks.NewMockRecoveryTournamentSource(t)
+	tournaments.EXPECT().ListRecoveryTournaments(mock.Anything).
+		Return([]uuid.UUID{tournamentID}, nil).Once()
+	authority := gamemocks.NewMockRecoveryAuthorityProvider(t)
+	authority.EXPECT().RecoveryAuthorityFor(mock.Anything, tournamentID).
+		Return(authoritydomain.Identity{}, false, nil).Once()
+	golden := &goldenRecoveryStub{}
+	runner, err := recoveryusecase.NewRecoveryRunner(
+		tournaments,
+		authority,
+		recoveryusecase.NewRecoverer(nil, nil, nil, nil, nil),
+		newRecoveryClock(t, now, 1),
+		recoveryusecase.RecoveryRunnerConfig{Interval: time.Hour, Golden: golden},
+	)
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithCancel(t.Context())
+	errs := make(chan error, 1)
+	go func() { errs <- runner.Run(ctx) }()
+	require.Eventually(t, runner.Ready, time.Second, time.Millisecond)
+	cancel()
+	require.NoError(t, <-errs)
 	require.Equal(t, int32(1), golden.calls.Load())
 }
 

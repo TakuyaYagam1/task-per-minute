@@ -1019,7 +1019,138 @@ $$;
 
 -- +goose StatementEnd
 
+-- +goose StatementBegin
+
+-- A no-show fallback is accepted terminal evidence, but its membership never
+-- establishes participation. Allow the fallback position commit while keeping
+-- the active-attempt and submission-position checks intact.
+CREATE OR REPLACE FUNCTION public.golden_position_commit_guard() RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    submission_status VARCHAR(16);
+    submission_position SMALLINT;
+    participation_at TIMESTAMPTZ;
+    no_show_at TIMESTAMPTZ;
+    attempt_state VARCHAR(24);
+    current_attempt_number INTEGER;
+    previous_attempt_number INTEGER;
+BEGIN
+    IF TG_OP <> 'INSERT' THEN
+        RAISE EXCEPTION 'Golden position commits are immutable terminal evidence'
+            USING ERRCODE = 'check_violation';
+    END IF;
+
+    SELECT status, provisional_position
+    INTO submission_status, submission_position
+    FROM golden_provisional_submissions
+    WHERE id = NEW.provisional_submission_id
+    FOR KEY SHARE;
+
+    SELECT membership.participation_established_at, membership.no_show_at
+    INTO participation_at, no_show_at
+    FROM golden_memberships AS membership
+    WHERE membership.id = NEW.membership_id
+    FOR NO KEY UPDATE;
+
+    SELECT state, attempt_number
+    INTO attempt_state, current_attempt_number
+    FROM golden_attempts
+    WHERE id = NEW.attempt_id
+    FOR NO KEY UPDATE;
+
+    IF submission_status <> 'accepted'
+        OR submission_position <> NEW.position
+        OR (participation_at IS NULL AND no_show_at IS NULL)
+        OR attempt_state NOT IN ('active', 'technical_pause') THEN
+        RAISE EXCEPTION 'Golden position commit must seal an accepted active submission'
+            USING ERRCODE = 'check_violation';
+    END IF;
+
+    IF NEW.previous_position_commit_id IS NOT NULL THEN
+        SELECT attempt.attempt_number
+        INTO previous_attempt_number
+        FROM golden_position_commits AS position_commit
+        INNER JOIN golden_attempts AS attempt ON attempt.id = position_commit.attempt_id
+        WHERE position_commit.id = NEW.previous_position_commit_id
+        FOR KEY SHARE OF position_commit, attempt;
+        IF previous_attempt_number >= current_attempt_number THEN
+            RAISE EXCEPTION 'Golden prior position must belong to an earlier attempt'
+                USING ERRCODE = 'check_violation';
+        END IF;
+    END IF;
+
+    RETURN NEW;
+END;
+$$;
+
+-- +goose StatementEnd
+
 -- +goose Down
+-- +goose StatementBegin
+
+CREATE OR REPLACE FUNCTION public.golden_position_commit_guard() RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    submission_status VARCHAR(16);
+    submission_position SMALLINT;
+    participation_at TIMESTAMPTZ;
+    no_show_at TIMESTAMPTZ;
+    attempt_state VARCHAR(24);
+    current_attempt_number INTEGER;
+    previous_attempt_number INTEGER;
+BEGIN
+    IF TG_OP <> 'INSERT' THEN
+        RAISE EXCEPTION 'Golden position commits are immutable terminal evidence'
+            USING ERRCODE = 'check_violation';
+    END IF;
+
+    SELECT status, provisional_position
+    INTO submission_status, submission_position
+    FROM golden_provisional_submissions
+    WHERE id = NEW.provisional_submission_id
+    FOR KEY SHARE;
+
+    SELECT membership.participation_established_at, membership.no_show_at
+    INTO participation_at, no_show_at
+    FROM golden_memberships AS membership
+    WHERE membership.id = NEW.membership_id
+    FOR NO KEY UPDATE;
+
+    SELECT state, attempt_number
+    INTO attempt_state, current_attempt_number
+    FROM golden_attempts
+    WHERE id = NEW.attempt_id
+    FOR NO KEY UPDATE;
+
+    IF submission_status <> 'accepted'
+        OR submission_position <> NEW.position
+        OR (participation_at IS NULL AND no_show_at IS NULL)
+        OR attempt_state NOT IN ('active', 'technical_pause') THEN
+        RAISE EXCEPTION 'Golden position commit must seal an accepted active submission'
+            USING ERRCODE = 'check_violation';
+    END IF;
+
+    IF NEW.previous_position_commit_id IS NOT NULL THEN
+        SELECT attempt.attempt_number
+        INTO previous_attempt_number
+        FROM golden_position_commits AS position_commit
+        INNER JOIN golden_attempts AS attempt ON attempt.id = position_commit.attempt_id
+        WHERE position_commit.id = NEW.previous_position_commit_id
+        FOR KEY SHARE OF position_commit, attempt;
+        IF previous_attempt_number >= current_attempt_number THEN
+            RAISE EXCEPTION 'Golden prior position must belong to an earlier attempt'
+                USING ERRCODE = 'check_violation';
+        END IF;
+    END IF;
+
+    RETURN NEW;
+END;
+$$;
+
+-- +goose StatementEnd
+
 -- +goose StatementBegin
 
 ALTER TABLE public.assignments

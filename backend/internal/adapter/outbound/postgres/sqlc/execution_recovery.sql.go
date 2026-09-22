@@ -402,7 +402,7 @@ WITH recovery_tournaments AS (
     SELECT attempt.tournament_id
     FROM golden_attempts AS attempt
     JOIN tournaments AS tournament ON tournament.id = attempt.tournament_id
-    WHERE attempt.state IN ('active', 'technical_pause')
+    WHERE attempt.state IN ('prepared', 'ready', 'active', 'technical_pause')
         AND tournament.state = 'golden'
 )
 SELECT tournament_id

@@ -330,6 +330,9 @@ func (repository *GoldenRuntimePostgres) continueOrFinalizeGoldenRuntime(
 		return goldenRuntimeReadError("load unresolved Golden members", err)
 	}
 	if len(unresolved) == 0 {
+		if err := repository.appendGoldenRuntimeNoShowPositions(ctx, q, attempt.TournamentID, attempt.GroupRevisionID, now); err != nil {
+			return err
+		}
 		if err := repository.completeGoldenAttemptState(
 			ctx, q, attempt.AttemptID, attempt.TournamentID, attempt.RosterID, now,
 		); err != nil {
@@ -529,9 +532,6 @@ func (repository *GoldenRuntimePostgres) finalizeGoldenRuntimeGroup(
 	groupRevisionID uuid.UUID,
 	now time.Time,
 ) error {
-	if err := repository.appendGoldenRuntimeNoShowPositions(ctx, q, tournamentID, groupRevisionID, now); err != nil {
-		return err
-	}
 	attempts, evidence, err := loadGoldenRuntimeTerminalEvidence(ctx, q, tournamentID, groupRevisionID)
 	if err != nil {
 		return err

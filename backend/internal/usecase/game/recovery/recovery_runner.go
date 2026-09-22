@@ -143,6 +143,17 @@ func (runner *RecoveryRunner) runScan(ctx context.Context) error {
 		return err
 	}
 	for _, tournamentID := range tournaments {
+		// Golden runtime recovery is fenced by its own transactional runtime
+		// head. Run it before execution authority and Swiss recovery so a Golden
+		// ready-window or deadline cannot be suppressed by an unrelated execution
+		// lease or recovery failure.
+		if runner.config.Golden != nil {
+			if goldenErr := runner.config.Golden.Recover(ctx, tournamentID); goldenErr != nil {
+				runner.emitRecoveryEvent(ctx, tournamentID, 0, RecoveryOutcomeFailure, "scan_failed", "golden_recovery_failed")
+				runner.recordFailure(attemptedAt)
+				return fmt.Errorf("execution recovery runner - recover Golden: %w", goldenErr)
+			}
+		}
 		identity, owned, authorityErr := runner.authority.RecoveryAuthorityFor(ctx, tournamentID)
 		if authorityErr != nil {
 			runner.emitRecoveryEvent(ctx, tournamentID, 0, RecoveryOutcomeFailure, "scan_failed", "authority_failed")
@@ -172,13 +183,6 @@ func (runner *RecoveryRunner) runScan(ctx context.Context) error {
 			)
 			runner.recordFailure(attemptedAt)
 			return fmt.Errorf("execution recovery runner - recover: %w", recoverErr)
-		}
-		if runner.config.Golden != nil {
-			if goldenErr := runner.config.Golden.Recover(ctx, tournamentID); goldenErr != nil {
-				runner.emitRecoveryEvent(ctx, tournamentID, identity.Epoch, RecoveryOutcomeFailure, "scan_failed", "golden_recovery_failed")
-				runner.recordFailure(attemptedAt)
-				return fmt.Errorf("execution recovery runner - recover Golden: %w", goldenErr)
-			}
 		}
 		if reason, observed := executionRecoverySuccessReason(report); observed {
 			runner.emitRecoveryEvent(

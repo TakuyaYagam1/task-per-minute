@@ -2931,6 +2931,644 @@ test.describe('local compose full stack e2e', () => {
     }
   });
 
+  test('FE-048 real backend resolves boundary Golden no-show before playoff', async ({ browser, request, page }) => {
+    test.setTimeout(900_000);
+
+    type GoldenGroup = {
+      attempt_id: string;
+      group_id: string;
+      group_revision_id: string;
+      members: Array<{ participant_id: string; position: number | null; ready: boolean; submitted: boolean }>;
+      position_from: number;
+      position_to: number;
+      ready_window_id: string;
+      runtime_revision: number;
+      state: string;
+    };
+    type GoldenOperatorState = { groups: GoldenGroup[] };
+    type GoldenParticipantState = {
+      attempt_id: string;
+      group_id: string;
+      ready_window_id: string;
+      runtime_revision: number;
+      state: string;
+      submitted: boolean;
+      position: number | null;
+      task: {
+        assignment_id: string;
+        category: FullStackTaskInput['category'];
+        description: string;
+        source_file_available: boolean;
+        snapshot_id: string;
+        task_id: string;
+        task_url: string | null;
+        time_limit_seconds: 180;
+        title: string;
+        version: number;
+      } | null;
+    };
+
+    const tournamentName = uniqueName('fe048-golden');
+    const tournamentPublicID = uniqueName('fe048-public');
+    const playerNames = Array.from({ length: 6 }, (_, index) => uniqueName(`fe048-player-${index + 1}`));
+    const playerContexts: BrowserContext[] = [];
+
+    try {
+      await loginThroughAdminUI(page);
+      const adminSession = await adminLogin(request);
+      const normalFlagsByTitle = new Map<string, string>();
+      const goldenFlagsByTitle = new Map<string, string>();
+      const normalTaskGroups: Array<{
+        category: FullStackTaskInput['category'];
+        count: number;
+      }> = [
+        { category: 'web', count: 27 },
+        { category: 'crypto', count: 27 },
+        { category: 'reverse', count: 27 },
+        { category: 'forensics', count: 3 },
+        { category: 'pwn', count: 3 },
+      ];
+
+      for (const group of normalTaskGroups) {
+        for (let index = 0; index < group.count; index += 1) {
+          const title = uniqueName(`fe048-${group.category}-${index + 1}`);
+          const flag = `flag{${title.replaceAll('-', '_')}}`;
+          normalFlagsByTitle.set(title, flag);
+          await createTaskViaApi(request, adminSession, {
+            title,
+            description: 'Normal task for the FE-048 Golden boundary flow.',
+            kind: 'normal',
+            category: group.category,
+            difficulty: 'easy',
+            time_limit: 180,
+            flag,
+            hints: ['FE-048 normal hint one', 'FE-048 normal hint two', 'FE-048 normal hint three'],
+            task_url: 'https://example.com/fe048-normal',
+          });
+        }
+      }
+      for (let index = 0; index < 6; index += 1) {
+        const title = uniqueName(`fe048-golden-${index + 1}`);
+        const flag = `flag{${title.replaceAll('-', '_')}}`;
+        goldenFlagsByTitle.set(title, flag);
+        const createdGoldenTask = await createTaskViaApi(request, adminSession, {
+          title,
+          description: 'Golden task for the FE-048 boundary flow.',
+          kind: 'golden',
+          category: 'web',
+          difficulty: 'easy',
+          time_limit: 180,
+          flag,
+          hints: ['FE-048 golden hint one', 'FE-048 golden hint two', 'FE-048 golden hint three'],
+          task_url: 'https://example.com/fe048-golden',
+        });
+        const uploadedGoldenSource = await uploadSourceViaApi(
+          request,
+          adminSession,
+          createdGoldenTask.id,
+          Buffer.from([0x50, 0x4b, 0x03, 0x04, 0x66, 0x65, 0x30, 0x34, 0x38, index]),
+        );
+        expect(uploadedGoldenSource.source_file_url).toMatch(/^https?:\/\//);
+      }
+
+      const tournament = await createTournamentViaApi(
+        request,
+        adminSession,
+        {
+          name: tournamentName,
+          content_revision: await getTournamentContentRevision(request),
+          planned_roster_size: 6,
+          public_id: tournamentPublicID,
+          preset: 'tournament_v1',
+          expected_revision: 0,
+        },
+      );
+      const players: FullStackPlayer[] = [];
+      for (const username of playerNames) {
+        const context = await browser.newContext({ baseURL: frontendURL });
+        playerContexts.push(context);
+        const playerPage = await context.newPage();
+        await joinAsPlayer(playerPage, username);
+        const meResponse = await context.request.get(`${backendURL}/api/v1/players/me`, {
+          headers: { Origin: frontendURL },
+        });
+        expect(meResponse.status()).toBe(200);
+        const me = (await meResponse.json()) as { player: FullStackPlayer };
+        expect(me.player.username).toBe(username);
+        players.push(me.player);
+        await playerPage.close();
+      }
+
+      const roster = await getRosterViaApi(request, tournament.id);
+      const rosterInputs = players.map((player, index) => ({
+        attendance: 'invited' as const,
+        player_id: player.id,
+        seed: index + 1,
+      }));
+      const invitedResponse = await replaceRosterViaApi(
+        request,
+        tournament.id,
+        adminSession.access_csrf_token,
+        await getOperatorProjectionRevisionViaApi(request, tournament.id),
+        rosterInputs,
+      );
+      expect((await readRosterResponse(invitedResponse, tournament.id, roster.id)).participants).toHaveLength(6);
+      expect((await applyOpenRegistrationViaApi(request, tournament.id, adminSession.access_csrf_token)).status()).toBe(200);
+      const checkedInResponse = await replaceRosterViaApi(
+        request,
+        tournament.id,
+        adminSession.access_csrf_token,
+        await getOperatorProjectionRevisionViaApi(request, tournament.id),
+        rosterInputs.map((participant) => ({ ...participant, attendance: 'checked_in' as const })),
+      );
+      const checkedInRoster = await readRosterResponse(checkedInResponse, tournament.id, roster.id);
+      const checkedInParticipants = sortRosterParticipantsBySeed(checkedInRoster.participants);
+      expect(checkedInParticipants).toHaveLength(6);
+
+      const preflightResponse = await runRosterPreflightViaApi(
+        request,
+        tournament.id,
+        adminSession.access_csrf_token,
+      );
+      expect(preflightResponse.status()).toBe(200);
+      const preflight = (await preflightResponse.json()) as FullStackPreflightReport;
+      expect(preflight.passed, JSON.stringify(preflight.checks ?? [])).toBe(true);
+      const lockedResponse = await lockRosterViaApi(
+        request,
+        tournament.id,
+        adminSession.access_csrf_token,
+        preflight.id,
+        checkedInParticipants.map((participant) => participant.player_id),
+      );
+      expect(lockedResponse.status()).toBe(200);
+      let startSwissResponse: APIResponse | null = null;
+      for (let attempt = 0; attempt < 60; attempt += 1) {
+        startSwissResponse = await applyStartSwissViaApi(request, tournament.id, adminSession.access_csrf_token);
+        if (startSwissResponse.status() === 200) break;
+        expect(startSwissResponse.status()).toBe(409);
+        await new Promise((resolve) => setTimeout(resolve, 500));
+      }
+      if (!startSwissResponse) throw new Error('start Swiss did not issue a request');
+      expect(startSwissResponse.status(), `start Swiss failed with ${startSwissResponse.status()}`).toBe(200);
+
+      const contextForParticipant = (participantID: string): BrowserContext => {
+        const rosterParticipant = checkedInParticipants.find((participant) => participant.id === participantID);
+        expect(rosterParticipant, `missing roster participant ${participantID}`).toBeDefined();
+        if (!rosterParticipant) throw new Error(`missing roster participant ${participantID}`);
+        const playerIndex = players.findIndex((player) => player.id === rosterParticipant.player_id);
+        const context = playerContexts[playerIndex];
+        if (!context) throw new Error(`missing browser context for ${rosterParticipant.player_id}`);
+        return context;
+      };
+
+      const waveAction = async (waveID: string, action: 'open_ready_window' | 'start' | 'complete') => {
+        let expectedRevision = await getOperatorProjectionRevisionViaApi(request, tournament.id);
+        let response: APIResponse | null = null;
+        for (let attempt = 0; attempt < 60; attempt += 1) {
+          response = await request.post(
+            `${backendURL}/api/v1/admin/tournaments/${tournament.id}/waves/${waveID}/actions`,
+            {
+              headers: {
+                'X-CSRF-Token': adminSession.access_csrf_token,
+                'Idempotency-Key': randomUUID(),
+                Origin: frontendURL,
+              },
+              data: { action, confirmed: true, expected_projection_revision: expectedRevision },
+            },
+          );
+          if (response.status() === 200) return (await response.json()) as FullStackWave;
+          expect(response.status(), `${action} Swiss Wave failed`).toBe(409);
+          const conflict = (await response.json()) as { current_revision?: unknown };
+          if (typeof conflict.current_revision === 'number' && Number.isSafeInteger(conflict.current_revision)) {
+            expectedRevision = conflict.current_revision;
+          } else {
+            expectedRevision = await getOperatorProjectionRevisionViaApi(request, tournament.id);
+          }
+          await new Promise((resolve) => setTimeout(resolve, 500));
+        }
+        throw new Error(`${action} Swiss Wave did not converge after retries: ${response?.status() ?? 'no response'}`);
+      };
+
+      const submitSwissResult = async (
+        winnerID: string,
+        loserID: string,
+        seriesID: string,
+      ): Promise<void> => {
+        for (const participantID of [loserID, winnerID]) {
+          const context = contextForParticipant(participantID);
+          const snapshot = await readParticipantSnapshotViaApi(context, tournament.id);
+          expect(snapshot.assignment?.context.series_id).toBe(seriesID);
+          if (!snapshot.assignment) throw new Error(`participant ${participantID} did not receive assignment`);
+          const flag = normalFlagsByTitle.get(snapshot.assignment.active_snapshot.title);
+          expect(flag).toBeTruthy();
+          const csrfToken = (await context.cookies()).find((cookie) => cookie.name === 'tpm_player_csrf')?.value;
+          expect(csrfToken).toBeTruthy();
+          const response = await context.request.post(
+            `${backendURL}/api/v1/tournaments/${tournament.id}/participant/series/${seriesID}/games/${snapshot.assignment.context.game_id}/submissions`,
+            {
+              headers: { 'X-CSRF-Token': csrfToken ?? '', 'Idempotency-Key': randomUUID(), Origin: frontendURL },
+              data: {
+                expected_projection_revision: snapshot.projection_revision,
+                submitted_flag: participantID === winnerID ? flag : `incorrect-${randomUUID()}`,
+              },
+            },
+          );
+          expect(response.status(), `Swiss submission failed with ${response.status()}`).toBe(200);
+        }
+      };
+
+      const knownWaveIDs = new Set<string>();
+      const swissPoints = new Map(checkedInParticipants.map((participant) => [participant.id, 0]));
+      const participantOrder = new Map(
+        [...checkedInParticipants]
+          .map((participant) => participant.id)
+          .sort()
+          .map((participantID, index) => [participantID, index] as const),
+      );
+      const targetSwissPoints = new Map(
+        checkedInParticipants.map((participant, index) => [
+          participant.id,
+          index === 0 ? 3 : index <= 3 ? 2 : 0,
+        ] as const),
+      );
+      const manualRoundPairings = [
+        [[0, 1], [2, 4], [3, 5]],
+        [[0, 2], [1, 5], [3, 4]],
+        [[0, 3], [1, 4], [2, 5]],
+      ];
+      for (const roundNumber of [1, 2, 3]) {
+        const pairingPlan = manualRoundPairings[roundNumber - 1];
+        expect(pairingPlan).toBeDefined();
+        if (!pairingPlan) throw new Error(`missing manual pairing plan for round ${roundNumber}`);
+        const pairing = await request.post(`${backendURL}/api/v1/admin/tournaments/${tournament.id}/pairings`, {
+          headers: {
+            'X-CSRF-Token': adminSession.access_csrf_token,
+            'Idempotency-Key': randomUUID(),
+            Origin: frontendURL,
+          },
+          data: {
+            categories: ['web', 'crypto', 'forensics'],
+            category_mode: 'random',
+            expected_projection_revision: await getOperatorProjectionRevisionViaApi(request, tournament.id),
+            pairing_mode: 'manual',
+            manual_pairings: pairingPlan.map(([firstIndex, secondIndex]) => ({
+              first_participant_id: checkedInParticipants[firstIndex]?.id,
+              second_participant_id: checkedInParticipants[secondIndex]?.id,
+            })),
+            round_number: roundNumber,
+          },
+        });
+        expect(pairing.status()).toBe(200);
+        const configured = (await pairing.json()) as FullStackSwissRound;
+        expect(configured.pairings).toHaveLength(3);
+        const snapshotResponse = await request.get(`${backendURL}/api/v1/admin/tournaments/${tournament.id}/snapshot`, {
+          headers: { Origin: frontendURL },
+        });
+        expect(snapshotResponse.status()).toBe(200);
+        const snapshot = (await snapshotResponse.json()) as FullStackOperatorSnapshot & { series?: FullStackPlayoffSeries[] };
+        const wave = snapshot.waves.find((candidate) => !knownWaveIDs.has(candidate.id));
+        expect(wave).toBeDefined();
+        if (!wave) throw new Error(`round ${roundNumber} Wave was not materialized`);
+        knownWaveIDs.add(wave.id);
+        await waveAction(wave.id, 'open_ready_window');
+        for (const member of wave.members) {
+          const context = contextForParticipant(member.participant_id);
+          const participant = await readParticipantSnapshotViaApi(context, tournament.id);
+          const csrfToken = (await context.cookies()).find((cookie) => cookie.name === 'tpm_player_csrf')?.value;
+          expect(csrfToken).toBeTruthy();
+          const ready = await context.request.post(
+            `${backendURL}/api/v1/tournaments/${tournament.id}/participant/waves/${wave.id}/ready`,
+            {
+              headers: { 'X-CSRF-Token': csrfToken ?? '', 'Idempotency-Key': randomUUID(), Origin: frontendURL },
+              data: { expected_projection_revision: participant.projection_revision, ready: true },
+            },
+          );
+          expect(ready.status()).toBe(200);
+        }
+        await waveAction(wave.id, 'start');
+        const membersBySeries = new Map<string, FullStackWave['members']>();
+        for (const member of wave.members) {
+          if (!member.series_id) continue;
+          const members = membersBySeries.get(member.series_id) ?? [];
+          members.push(member);
+          membersBySeries.set(member.series_id, members);
+        }
+        for (const [seriesID, members] of membersBySeries) {
+          expect(members).toHaveLength(2);
+          const first = members[0];
+          const second = members[1];
+          if (!first || !second) throw new Error(`series ${seriesID} lost a member`);
+          const firstSnapshot = await readParticipantSnapshotViaApi(contextForParticipant(first.participant_id), tournament.id);
+          const secondSnapshot = await readParticipantSnapshotViaApi(contextForParticipant(second.participant_id), tournament.id);
+          expect(firstSnapshot.assignment?.active_snapshot.task_id).toBe(secondSnapshot.assignment?.active_snapshot.task_id);
+          expect(firstSnapshot.assignment?.active_snapshot.snapshot_id).toBe(secondSnapshot.assignment?.active_snapshot.snapshot_id);
+          expect(firstSnapshot.assignment?.active_snapshot.time_limit).toBe(180);
+          expect(secondSnapshot.assignment?.active_snapshot.time_limit).toBe(180);
+          const firstOrder = participantOrder.get(first.participant_id);
+          const secondOrder = participantOrder.get(second.participant_id);
+          expect(firstOrder).toBeDefined();
+          expect(secondOrder).toBeDefined();
+          if (firstOrder === undefined || secondOrder === undefined) {
+            throw new Error(`Swiss participant order is missing for ${seriesID}`);
+          }
+          const firstPoints = swissPoints.get(first.participant_id) ?? 0;
+          const secondPoints = swissPoints.get(second.participant_id) ?? 0;
+          const firstTargetPoints = targetSwissPoints.get(first.participant_id) ?? 0;
+          const secondTargetPoints = targetSwissPoints.get(second.participant_id) ?? 0;
+          const firstRemainingWins = firstTargetPoints - firstPoints;
+          const secondRemainingWins = secondTargetPoints - secondPoints;
+          const winner = firstRemainingWins > 0 && secondRemainingWins <= 0
+            ? first
+            : secondRemainingWins > 0 && firstRemainingWins <= 0
+              ? second
+              : firstTargetPoints > secondTargetPoints
+                ? first
+                : secondTargetPoints > firstTargetPoints
+                  ? second
+                  : firstRemainingWins > secondRemainingWins || (
+                      firstRemainingWins === secondRemainingWins && firstOrder < secondOrder
+                    )
+                    ? first
+                    : second;
+          const loser = winner.participant_id === first.participant_id ? second : first;
+          await submitSwissResult(winner.participant_id, loser.participant_id, seriesID);
+          swissPoints.set(winner.participant_id, (swissPoints.get(winner.participant_id) ?? 0) + 1);
+        }
+        await expect.poll(async () => {
+          const response = await request.get(`${backendURL}/api/v1/admin/tournaments/${tournament.id}/snapshot`, {
+            headers: { Origin: frontendURL },
+          });
+          if (response.status() !== 200) return false;
+          const current = (await response.json()) as FullStackOperatorSnapshot & { series?: FullStackPlayoffSeries[] };
+          return current.series?.filter((series) => membersBySeries.has(series.id)).every((series) => (
+            series.state === 'completed' && series.winner_id &&
+            series.score.first_participant_wins + series.score.second_participant_wins === 1
+          )) ?? false;
+        }, { timeout: 20_000 }).toBe(true);
+        const currentWave = (await (await request.get(`${backendURL}/api/v1/admin/tournaments/${tournament.id}/snapshot`, {
+          headers: { Origin: frontendURL },
+        })).json() as FullStackOperatorSnapshot).waves.find((candidate) => candidate.id === wave.id);
+        if (currentWave?.state !== 'completed') await waveAction(wave.id, 'complete');
+      }
+      expect(checkedInParticipants.map((participant) => swissPoints.get(participant.id) ?? 0)).toEqual([
+        3, 2, 2, 2, 0, 0,
+      ]);
+
+      let startGoldenResponse: APIResponse | null = null;
+      for (let attempt = 0; attempt < 60; attempt += 1) {
+        startGoldenResponse = await applyStartGoldenViaApi(
+          request,
+          tournament.id,
+          adminSession.access_csrf_token,
+        );
+        if (startGoldenResponse.status() === 200) break;
+        expect(startGoldenResponse.status()).toBe(409);
+        await new Promise((resolve) => setTimeout(resolve, 500));
+      }
+      if (!startGoldenResponse) throw new Error('start Golden did not issue a request');
+      expect(startGoldenResponse.status(), `start Golden failed with ${startGoldenResponse.status()}`).toBe(200);
+      const openGolden = await request.post(`${backendURL}/api/v1/admin/tournaments/${tournament.id}/golden/open`, {
+        headers: {
+          'X-CSRF-Token': adminSession.access_csrf_token,
+          'Idempotency-Key': randomUUID(),
+          Origin: frontendURL,
+        },
+        data: {
+          expected_projection_revision: await getOperatorProjectionRevisionViaApi(request, tournament.id),
+          expected_runtime_revision: 0,
+        },
+      });
+      expect(openGolden.status(), `open Golden failed with ${openGolden.status()}`).toBe(200);
+      const opened = (await openGolden.json()) as GoldenOperatorState;
+      expect(opened.groups, 'a non-impacting tie must not create extra Golden groups').toHaveLength(1);
+      expect(opened.groups).toEqual(expect.arrayContaining([
+        expect.objectContaining({ position_from: 2, position_to: 4 }),
+      ]));
+      const noShowSource = opened.groups[0];
+      expect(noShowSource).toBeDefined();
+      if (!noShowSource) throw new Error('Golden no-show source was not opened');
+      const maxSwissPoints = Math.max(...swissPoints.values());
+      const swissLeaders = checkedInParticipants.filter((participant) => swissPoints.get(participant.id) === maxSwissPoints);
+      expect(swissLeaders).toHaveLength(1);
+      const swissLeader = swissLeaders[0];
+      if (!swissLeader) throw new Error('Swiss leader was not resolved');
+      const goldenMemberIDs = new Set(noShowSource.members.map((member) => member.participant_id));
+      expect(goldenMemberIDs.has(swissLeader.id)).toBe(false);
+      const goldenPoints = noShowSource.members.map((member) => swissPoints.get(member.participant_id) ?? 0);
+      expect(new Set(goldenPoints).size).toBe(1);
+      const lowerTiePoints = checkedInParticipants
+        .filter((participant) => participant.id !== swissLeader.id && !goldenMemberIDs.has(participant.id))
+        .map((participant) => swissPoints.get(participant.id) ?? 0);
+      expect(lowerTiePoints.length).toBeGreaterThanOrEqual(2);
+      expect(new Set(lowerTiePoints).size).toBeLessThan(lowerTiePoints.length);
+      expect(Math.max(...lowerTiePoints)).toBeLessThan(goldenPoints[0] ?? 0);
+      const survivors = noShowSource.members.slice(0, 2);
+      const noShowParticipant = noShowSource.members[2];
+      expect(survivors).toHaveLength(2);
+      expect(noShowParticipant).toBeDefined();
+      if (!noShowParticipant) throw new Error('Golden no-show source has no no-show participant');
+
+      const readGoldenParticipant = async (participantID: string): Promise<GoldenParticipantState> => {
+        const response = await contextForParticipant(participantID).request.get(
+          `${backendURL}/api/v1/tournaments/${tournament.id}/participant/golden`,
+          { headers: { Origin: frontendURL } },
+        );
+        expect(response.status()).toBe(200);
+        return (await response.json()) as GoldenParticipantState;
+      };
+      for (const group of opened.groups) {
+        for (const member of group.members) {
+          const participant = await readGoldenParticipant(member.participant_id);
+          expect(participant.attempt_id).toBe(group.attempt_id);
+          expect(participant.task).toBeNull();
+          const context = contextForParticipant(member.participant_id);
+          const csrfToken = (await context.cookies()).find((cookie) => cookie.name === 'tpm_player_csrf')?.value;
+          if (!survivors.some((candidate) => candidate.participant_id === member.participant_id)) continue;
+          const ready = await context.request.post(`${backendURL}/api/v1/tournaments/${tournament.id}/participant/golden/ready`, {
+            headers: { 'X-CSRF-Token': csrfToken ?? '', 'Idempotency-Key': randomUUID(), Origin: frontendURL },
+            data: {
+              attempt_id: participant.attempt_id,
+              expected_runtime_revision: participant.runtime_revision,
+              ready: true,
+              ready_window_id: participant.ready_window_id,
+            },
+          });
+          expect(ready.status()).toBe(200);
+        }
+      }
+
+      const activeGroups: GoldenGroup[] = [];
+      await expect.poll(async () => {
+        const response = await request.get(`${backendURL}/api/v1/admin/tournaments/${tournament.id}/golden`, {
+          headers: { Origin: frontendURL },
+        });
+        if (response.status() !== 200) return false;
+        const current = (await response.json()) as GoldenOperatorState;
+        const group = current.groups.find((candidate) => candidate.group_id === noShowSource.group_id);
+        return group?.state === 'ready' && group.runtime_revision > noShowSource.runtime_revision;
+      }, { timeout: 60_000, intervals: [1_000, 2_000, 5_000] }).toBe(true);
+
+      for (const group of opened.groups) {
+        let expectedAttemptID = group.attempt_id;
+        let expectedRuntimeRevision = group.runtime_revision;
+        let expectedReadyWindowID = group.ready_window_id;
+        let startedGroup: GoldenGroup | undefined;
+        for (let attempt = 0; attempt < 60; attempt += 1) {
+          const response = await request.post(`${backendURL}/api/v1/admin/tournaments/${tournament.id}/golden/attempts/${expectedAttemptID}/start`, {
+            headers: {
+              'X-CSRF-Token': adminSession.access_csrf_token,
+              'Idempotency-Key': randomUUID(),
+              Origin: frontendURL,
+            },
+            data: { expected_runtime_revision: expectedRuntimeRevision, ready_window_id: expectedReadyWindowID },
+          });
+          if (response.status() === 200) {
+            const current = (await response.json()) as GoldenOperatorState;
+            startedGroup = current.groups.find((candidate) => candidate.group_id === group.group_id);
+            break;
+          }
+          expect(response.status()).toBe(409);
+          const current = (await (await request.get(`${backendURL}/api/v1/admin/tournaments/${tournament.id}/golden`, {
+            headers: { Origin: frontendURL },
+          })).json()) as GoldenOperatorState;
+          const refreshed = current.groups.find((candidate) => candidate.group_id === group.group_id);
+          expect(refreshed).toBeDefined();
+          if (!refreshed) throw new Error(`Golden group ${group.group_id} disappeared`);
+          expectedAttemptID = refreshed.attempt_id;
+          expectedRuntimeRevision = refreshed.runtime_revision;
+          expectedReadyWindowID = refreshed.ready_window_id;
+          await new Promise((resolve) => setTimeout(resolve, 500));
+        }
+        expect(startedGroup).toBeDefined();
+        if (!startedGroup) throw new Error(`started Golden group ${group.group_id} disappeared`);
+        activeGroups.push(startedGroup);
+      }
+
+      const submitGolden = async (participantID: string): Promise<GoldenParticipantState> => {
+        const context = contextForParticipant(participantID);
+        const participant = await readGoldenParticipant(participantID);
+        expect(participant.task).not.toBeNull();
+        if (!participant.task) throw new Error(`Golden participant ${participantID} has no task`);
+        expect(participant.task.time_limit_seconds).toBe(180);
+        expect(participant.task.source_file_available).toBe(true);
+        const flag = goldenFlagsByTitle.get(participant.task.title);
+        expect(flag).toBeTruthy();
+        const csrfToken = (await context.cookies()).find((cookie) => cookie.name === 'tpm_player_csrf')?.value;
+        const response = await context.request.post(`${backendURL}/api/v1/tournaments/${tournament.id}/participant/golden/submissions`, {
+          headers: { 'X-CSRF-Token': csrfToken ?? '', 'Idempotency-Key': randomUUID(), Origin: frontendURL },
+          data: {
+            attempt_id: participant.attempt_id,
+            expected_runtime_revision: participant.runtime_revision,
+            ready_window_id: participant.ready_window_id,
+            submitted_flag: flag,
+            },
+        });
+        const responseBody = await response.text();
+        expect(response.status(), responseBody).toBe(200);
+        return JSON.parse(responseBody) as GoldenParticipantState;
+      };
+
+      const activeSource = activeGroups[0];
+      expect(activeSource).toBeDefined();
+      if (!activeSource) throw new Error('Golden no-show source was not started');
+      const activeSurvivors = await Promise.all(survivors.map((member) => readGoldenParticipant(member.participant_id)));
+      expect(activeSurvivors.every((participant) => participant.task !== null)).toBe(true);
+      const survivorTasks = activeSurvivors.map((participant) => participant.task);
+      expect(survivorTasks[0]?.task_id).toBe(survivorTasks[1]?.task_id);
+      expect(survivorTasks[0]?.snapshot_id).toBe(survivorTasks[1]?.snapshot_id);
+      expect(survivorTasks[0]?.assignment_id).toBe(survivorTasks[1]?.assignment_id);
+      expect(survivorTasks[0]?.version).toBe(survivorTasks[1]?.version);
+      expect(survivorTasks[0]?.title).toBe(survivorTasks[1]?.title);
+      expect(survivorTasks[0]?.description).toBe(survivorTasks[1]?.description);
+      expect(survivorTasks[0]?.task_url).toBe(survivorTasks[1]?.task_url);
+      expect(survivorTasks[0]?.source_file_available).toBe(survivorTasks[1]?.source_file_available);
+      expect(survivorTasks[0]?.source_file_available).toBe(true);
+      const sourceBodies = await Promise.all(activeSurvivors.map(async (participant, index) => {
+        if (!participant.task) throw new Error('Golden survivor task disappeared before source download');
+        const member = survivors[index];
+        if (!member) throw new Error(`Golden survivor ${index} disappeared before source download`);
+        const participantContext = contextForParticipant(member.participant_id);
+        const sourceAccess = await participantContext.request.get(
+          `${backendURL}/api/v1/tournaments/${tournament.id}/participant/assignments/${participant.task.assignment_id}/source-file`,
+          { headers: { Origin: frontendURL } },
+        );
+        expect(sourceAccess.status()).toBe(200);
+        const source = (await sourceAccess.json()) as { source_file_url: string; expires_at: string };
+        expect(source.source_file_url).toMatch(/^https?:\/\//);
+        expect(source.expires_at).toEqual(expect.any(String));
+        const download = await participantContext.request.get(source.source_file_url);
+        expect(download.ok(), `Golden source download failed with ${download.status()}`).toBeTruthy();
+        const body = await download.body();
+        expect(body.subarray(0, 2).toString()).toBe('PK');
+        return body;
+      }));
+      expect(sourceBodies[0]?.equals(sourceBodies[1] ?? Buffer.alloc(0))).toBe(true);
+      expect((await readGoldenParticipant(noShowParticipant.participant_id)).task).toBeNull();
+      for (const member of survivors) {
+        const result = await submitGolden(member.participant_id);
+        expect(result.submitted).toBe(true);
+      }
+      await expect.poll(async () => {
+        const response = await request.get(`${backendURL}/api/v1/admin/tournaments/${tournament.id}/golden`, {
+          headers: { Origin: frontendURL },
+        });
+        if (response.status() !== 200) return false;
+        const current = (await response.json()) as GoldenOperatorState;
+        const group = current.groups.find((candidate) => candidate.group_id === activeSource.group_id);
+        return group?.state === 'completed';
+      }, { timeout: 20_000, intervals: [1_000, 2_000, 5_000] }).toBe(true);
+
+      const completedState = (await (await request.get(`${backendURL}/api/v1/admin/tournaments/${tournament.id}/golden`, {
+        headers: { Origin: frontendURL },
+      })).json()) as GoldenOperatorState;
+      const completedSource = completedState.groups.find((group) => group.group_id === activeSource.group_id);
+      expect(completedSource?.state).toBe('completed');
+      const committedPositions = new Map(completedSource?.members.map((member) => [member.participant_id, member.position]) ?? []);
+      expect([...committedPositions.values()].sort((left, right) => (left ?? 0) - (right ?? 0))).toEqual([2, 3, 4]);
+      expect(committedPositions.get(noShowParticipant.participant_id)).toBe(4);
+      expect(survivors.map((survivor) => committedPositions.get(survivor.participant_id))).toEqual([2, 3]);
+
+      const completedGolden = (await (await request.get(`${backendURL}/api/v1/admin/tournaments/${tournament.id}/golden`, {
+        headers: { Origin: frontendURL },
+      })).json()) as GoldenOperatorState;
+      expect(completedGolden.groups).toHaveLength(opened.groups.length);
+      expect(completedGolden.groups.every((group) => group.members.every((member) => member.position !== null))).toBe(true);
+      const playoffResponse = await applyStartPlayoffsViaApi(request, tournament.id, adminSession.access_csrf_token);
+      expect(playoffResponse.status(), `start playoffs failed with ${playoffResponse.status()}`).toBe(200);
+
+      const spectatorContext = await browser.newContext({ baseURL: frontendURL });
+      try {
+        const publicSnapshot = await readPublicSnapshotViaApi(spectatorContext, tournament.id);
+        expect(publicSnapshot.bracket.matches).toHaveLength(3);
+        expect(publicSnapshot.bracket.matches.filter((match) => match.stage === 'semifinal')).toHaveLength(2);
+        expect(publicSnapshot.bracket.matches.find((match) => match.stage === 'final')).toBeDefined();
+        const topFourPlayerIDs = new Set([
+          swissLeader.player_id,
+          ...completedGolden.groups.flatMap((group) => group.members
+            .filter((member) => member.position !== null && member.position <= 4)
+            .map((member) => checkedInParticipants.find((participant) => participant.id === member.participant_id)?.player_id)
+            .filter((playerID): playerID is string => playerID !== undefined)),
+        ]);
+        const topFourNames = new Set([...topFourPlayerIDs]
+          .map((playerID) => players.find((player) => player.id === playerID)?.username)
+          .filter((username): username is string => username !== undefined));
+        const bracketNames = new Set(publicSnapshot.bracket.matches.flatMap((match) => [
+          match.first_display_name,
+          match.second_display_name,
+        ].filter((name): name is string => name !== null)));
+        expect([...bracketNames].sort()).toEqual([...topFourNames].sort());
+        const spectatorPage = await spectatorContext.newPage();
+        await spectatorPage.goto(`/arena/spectator/${tournament.id}`, { waitUntil: 'domcontentloaded' });
+        await expect(spectatorPage.getByTestId('tournament-broadcast')).toBeVisible();
+        await expect(spectatorPage.getByRole('tab', { name: 'Плей-офф' })).toBeVisible();
+      } finally {
+        await spectatorContext.close();
+      }
+    } finally {
+      for (const context of playerContexts) await context.close();
+    }
+  });
+
   test('FE-047 real backend completes a 16-player Swiss and BO3 tournament', async ({ browser, request, page }) => {
     test.setTimeout(900_000);
 
