@@ -31,7 +31,7 @@ func TestCORS_AllowedPreflight(t *testing.T) {
 	require.Equal(t, "true", rr.Header().Get("Access-Control-Allow-Credentials"))
 	require.Equal(t, "GET, POST, PUT, DELETE, OPTIONS", rr.Header().Get("Access-Control-Allow-Methods"))
 	require.Equal(t, "Content-Type, Idempotency-Key, X-CSRF-Token", rr.Header().Get("Access-Control-Allow-Headers"))
-	require.Equal(t, "Retry-After, X-CSRF-Token, X-Admin-Refresh-CSRF-Token", rr.Header().Get("Access-Control-Expose-Headers"))
+	require.Equal(t, "Date, Retry-After, X-CSRF-Token, X-Admin-Refresh-CSRF-Token", rr.Header().Get("Access-Control-Expose-Headers"))
 	require.Contains(t, rr.Header().Values("Vary"), "Origin")
 	require.Contains(t, rr.Header().Values("Vary"), "Access-Control-Request-Method")
 	require.Contains(t, rr.Header().Values("Vary"), "Access-Control-Request-Headers")
@@ -72,7 +72,7 @@ func TestCORS_AllowedNormalRequest(t *testing.T) {
 	require.Equal(t, http.StatusTooManyRequests, rr.Code)
 	require.Equal(t, "https://app.example.com", rr.Header().Get("Access-Control-Allow-Origin"))
 	require.Equal(t, "true", rr.Header().Get("Access-Control-Allow-Credentials"))
-	require.Equal(t, "Retry-After, X-CSRF-Token, X-Admin-Refresh-CSRF-Token", rr.Header().Get("Access-Control-Expose-Headers"))
+	require.Equal(t, "Date, Retry-After, X-CSRF-Token, X-Admin-Refresh-CSRF-Token", rr.Header().Get("Access-Control-Expose-Headers"))
 	require.Equal(t, "10", rr.Header().Get("Retry-After"))
 }
 

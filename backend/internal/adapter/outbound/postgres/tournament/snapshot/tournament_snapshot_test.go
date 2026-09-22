@@ -130,27 +130,49 @@ func TestTournamentScoreboardSynthesizesZeroStateForRoster(t *testing.T) {
 func TestTournamentBracketReadsCanonicalRounds(t *testing.T) {
 	firstID := uuid.MustParse("10000000-0000-4000-8000-000000000001")
 	secondID := uuid.MustParse("10000000-0000-4000-8000-000000000002")
+	thirdID := uuid.MustParse("10000000-0000-4000-8000-000000000003")
+	fourthID := uuid.MustParse("10000000-0000-4000-8000-000000000004")
 	payload := []byte(`{
-		"rounds":[{
-			"position":2,
-			"first_participant_id":"10000000-0000-4000-8000-000000000001",
-			"second_participant_id":"10000000-0000-4000-8000-000000000002",
-			"state":"active",
-			"first_wins":1,
-			"second_wins":0
-		}]
+		"rounds":[
+			{
+				"position":2,
+				"first_participant_id":"10000000-0000-4000-8000-000000000001",
+				"second_participant_id":"10000000-0000-4000-8000-000000000002",
+				"state":"active",
+				"first_wins":1,
+				"second_wins":0
+			},
+			{
+				"position":1,
+				"first_participant_id":"10000000-0000-4000-8000-000000000003",
+				"second_participant_id":"10000000-0000-4000-8000-000000000004",
+				"state":"planned",
+				"first_wins":0,
+				"second_wins":0
+			}
+		]
 	}`)
 
 	view, err := tournamentBracket(payload, map[uuid.UUID]string{
 		firstID:  "alice",
 		secondID: "bob",
+		thirdID:  "carol",
+		fourthID: "dave",
 	})
 	require.NoError(t, err)
-	require.Len(t, view, 1)
+	require.Len(t, view, 3)
 	require.Equal(t, tournamentBracketStageSemifinal, view[0].Stage)
-	require.Equal(t, 2, view[0].Position)
-	require.Equal(t, "alice", view[0].FirstDisplayName)
-	require.Equal(t, "bob", view[0].SecondDisplayName)
+	require.Equal(t, 1, view[0].Position)
+	require.Equal(t, "bo1", view[0].Format)
+	require.Equal(t, "carol", *view[0].FirstDisplayName)
+	require.Equal(t, "dave", *view[0].SecondDisplayName)
+	require.Equal(t, tournamentBracketStageSemifinal, view[1].Stage)
+	require.Equal(t, 2, view[1].Position)
+	require.Equal(t, tournamentBracketStageFinal, view[2].Stage)
+	require.Equal(t, 1, view[2].Position)
+	require.Equal(t, "bo3", view[2].Format)
+	require.Nil(t, view[2].FirstDisplayName)
+	require.Nil(t, view[2].SecondDisplayName)
 }
 
 func TestTournamentBracketAllowsCanonicalEmptyRoundsBeforePlayoffs(t *testing.T) {
@@ -159,6 +181,23 @@ func TestTournamentBracketAllowsCanonicalEmptyRoundsBeforePlayoffs(t *testing.T)
 	require.NoError(t, err)
 	require.NotNil(t, view)
 	require.Empty(t, view)
+}
+
+func TestTournamentBracketRejectsIncompletePlayoffTopology(t *testing.T) {
+	firstID := uuid.MustParse("10000000-0000-4000-8000-000000000001")
+	secondID := uuid.MustParse("10000000-0000-4000-8000-000000000002")
+	payload := []byte(`{
+		"rounds":[{
+			"position":1,
+			"first_participant_id":"10000000-0000-4000-8000-000000000001",
+			"second_participant_id":"10000000-0000-4000-8000-000000000002",
+			"state":"planned"
+		}]
+	}`)
+
+	_, err := tournamentBracket(payload, map[uuid.UUID]string{firstID: "alice", secondID: "bob"})
+
+	require.ErrorIs(t, err, ErrTournamentSnapshotInvalid)
 }
 
 func TestTournamentProjectionPayloadsRejectDuplicatePositions(t *testing.T) {

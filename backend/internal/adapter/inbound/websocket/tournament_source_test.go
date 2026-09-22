@@ -100,9 +100,10 @@ func TestTournamentProductionSnapshotSourceUsesCompleteRoleReaders(t *testing.T)
 	require.Len(t, public.Snapshot.Scoreboard, 1)
 	require.Equal(t, 1, public.Snapshot.Scoreboard[0].Wins)
 	require.Equal(t, "pending", public.Snapshot.Scoreboard[0].QualificationStatus)
-	require.Len(t, public.Snapshot.Bracket, 1)
-	require.Equal(t, "final", public.Snapshot.Bracket[0].Stage)
-	require.Nil(t, public.Snapshot.Bracket[0].ScheduledAt)
+	require.Len(t, public.Snapshot.Bracket, 3)
+	require.Equal(t, "semifinal", public.Snapshot.Bracket[0].Stage)
+	require.Equal(t, "final", public.Snapshot.Bracket[2].Stage)
+	require.Nil(t, public.Snapshot.Bracket[2].ScheduledAt)
 	require.Len(t, public.Snapshot.LiveSeries, 1)
 	require.Equal(t, "swiss", public.Snapshot.LiveSeries[0].Stage)
 	require.NotNil(t, public.Snapshot.LiveSeries[0].RoundNumber)
@@ -239,21 +240,46 @@ func tournamentSourcePublicView(tournamentID uuid.UUID) tournamentsnapshot.Publi
 			TournamentID: tournamentID,
 			Preset:       "tournament_v1",
 			State:        "swiss",
-			RosterSize:   2,
+			RosterSize:   4,
 		},
 		Scoreboard: []tournamentsnapshot.PublicScoreboardEntryView{{
 			Rank: 1, DisplayName: "player", Points: 3, Wins: 1, ByeCount: 1,
 			Buchholz: 1, QualificationStatus: "pending",
 		}},
-		Bracket: []tournamentsnapshot.PublicBracketMatchView{{
-			Stage:             "final",
-			Position:          1,
-			FirstDisplayName:  "player",
-			SecondDisplayName: "opponent",
-			FirstWins:         1,
-			SecondWins:        0,
-			State:             "active",
-		}},
+		Bracket: []tournamentsnapshot.PublicBracketMatchView{
+			{
+				Stage:             "semifinal",
+				Position:          1,
+				Format:            "bo1",
+				FirstDisplayName:  func() *string { value := "player"; return &value }(),
+				SecondDisplayName: func() *string { value := "opponent"; return &value }(),
+				FirstWins:         1,
+				SecondWins:        0,
+				State:             "completed",
+				WinnerDisplayName: func() *string { value := "player"; return &value }(),
+			},
+			{
+				Stage:             "semifinal",
+				Position:          2,
+				Format:            "bo1",
+				FirstDisplayName:  func() *string { value := "alpha"; return &value }(),
+				SecondDisplayName: func() *string { value := "beta"; return &value }(),
+				FirstWins:         1,
+				SecondWins:        0,
+				State:             "completed",
+				WinnerDisplayName: func() *string { value := "alpha"; return &value }(),
+			},
+			{
+				Stage:             "final",
+				Position:          1,
+				Format:            "bo3",
+				FirstDisplayName:  func() *string { value := "player"; return &value }(),
+				SecondDisplayName: func() *string { value := "alpha"; return &value }(),
+				FirstWins:         1,
+				SecondWins:        0,
+				State:             "active",
+			},
+		},
 		LiveSeries: []tournamentsnapshot.PublicSeriesView{{
 			SeriesID:            seriesID,
 			Stage:               "swiss",

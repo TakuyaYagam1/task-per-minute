@@ -273,6 +273,7 @@ func publicSnapshotInput(view usecase.PublicSnapshotView) tournamentws.PublicSna
 			FinishedAt:   view.Tournament.FinishedAt,
 		},
 		Scoreboard:      make([]tournamentws.PublicScoreboardEntryInput, len(view.Scoreboard)),
+		SwissRounds:     make([]tournamentws.PublicSwissRoundInput, len(view.SwissRounds)),
 		Bracket:         make([]tournamentws.PublicBracketMatchInput, len(view.Bracket)),
 		LiveSeries:      make([]tournamentws.PublicSeriesInput, len(view.LiveSeries)),
 		OfficialResults: make([]tournamentws.PublicOfficialResultInput, len(view.OfficialResults)),
@@ -292,17 +293,31 @@ func publicSnapshotInput(view usecase.PublicSnapshotView) tournamentws.PublicSna
 			QualificationStatus: entry.QualificationStatus,
 		}
 	}
+	for index, round := range view.SwissRounds {
+		input.SwissRounds[index] = tournamentws.PublicSwissRoundInput{
+			RoundNumber: round.RoundNumber,
+			State:       round.State,
+		}
+		if round.Bye != nil {
+			input.SwissRounds[index].Bye = &tournamentws.PublicSwissByeInput{
+				DisplayName:   round.Bye.DisplayName,
+				PointsAwarded: round.Bye.PointsAwarded,
+			}
+		}
+	}
 	for index, match := range view.Bracket {
 		input.Bracket[index] = tournamentws.PublicBracketMatchInput{
 			TournamentID:      tournamentID,
 			Stage:             match.Stage,
 			Position:          match.Position,
+			Format:            match.Format,
 			FirstDisplayName:  match.FirstDisplayName,
 			SecondDisplayName: match.SecondDisplayName,
 			FirstWins:         match.FirstWins,
 			SecondWins:        match.SecondWins,
 			State:             match.State,
 			ScheduledAt:       match.ScheduledAt,
+			WinnerDisplayName: match.WinnerDisplayName,
 		}
 	}
 	for index, series := range view.LiveSeries {

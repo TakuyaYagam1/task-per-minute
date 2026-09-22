@@ -759,7 +759,7 @@ OperatorRecoveryControl:
 PublicRecoverySnapshot:
   type: object
   additionalProperties: false
-  required: [tournament, scoreboard, bracket, live_series, official_results, live_draft, next_cursor]
+  required: [tournament, scoreboard, bracket, swiss_rounds, live_series, official_results, live_draft, next_cursor]
   properties:
     tournament:
       $ref: '#/PublicTournamentResponse'
@@ -767,6 +767,11 @@ PublicRecoverySnapshot:
       $ref: '#/PublicScoreboardResponse'
     bracket:
       $ref: '#/PublicBracketResponse'
+    swiss_rounds:
+      type: array
+      maxItems: 4
+      items:
+        $ref: '#/PublicSwissRound'
     live_series:
       type: array
       items:

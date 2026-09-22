@@ -161,15 +161,41 @@ export const publicScoreboard = (projectionRevision = 9): Schema["PublicScoreboa
 });
 
 export const publicBracket = (projectionRevision = 9): Schema["PublicBracketResponse"] => ({
-  matches: [{
-    first_display_name: "Алиса",
-    second_display_name: "Боб",
-    position: 1,
-    score: { first_participant_wins: 1, second_participant_wins: 0 },
-    scheduled_at: null,
-    stage: "semifinal",
-    state: "technical_pause",
-  }],
+  matches: [
+    {
+      first_display_name: "Алиса",
+      second_display_name: "Боб",
+      format: "bo1",
+      position: 1,
+      score: { first_participant_wins: 1, second_participant_wins: 0 },
+      scheduled_at: null,
+      stage: "semifinal",
+      state: "technical_pause",
+      winner_display_name: null,
+    },
+    {
+      first_display_name: "Чарли",
+      second_display_name: "Дана",
+      format: "bo1",
+      position: 2,
+      score: { first_participant_wins: 0, second_participant_wins: 0 },
+      scheduled_at: null,
+      stage: "semifinal",
+      state: "planned",
+      winner_display_name: null,
+    },
+    {
+      first_display_name: null,
+      second_display_name: null,
+      format: "bo3",
+      position: 1,
+      score: { first_participant_wins: 0, second_participant_wins: 0 },
+      scheduled_at: null,
+      stage: "final",
+      state: "planned",
+      winner_display_name: null,
+    },
+  ],
   projection_revision: projectionRevision,
   tournament_id: tournamentFixtureIds.tournament,
 });
@@ -195,6 +221,13 @@ export const publicRecovery = (projectionRevision = 9, eventSequence = 14): Sche
   },
   official_results: [],
   scoreboard: publicScoreboard(projectionRevision),
+  swiss_rounds: [
+    {
+      bye: null,
+      round_number: 1,
+      state: "active",
+    },
+  ],
   tournament: publicTournament(projectionRevision),
 });
 

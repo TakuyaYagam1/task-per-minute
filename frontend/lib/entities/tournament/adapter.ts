@@ -170,11 +170,13 @@ const toPublicBracketMatchView = (
 ): PublicBracketMatchView => ({
   stage: value.stage,
   position: value.position,
-  firstDisplayName: value.first_display_name,
-  secondDisplayName: value.second_display_name,
+  format: value.format,
+  firstDisplayName: value.first_display_name ?? "Ожидается",
+  secondDisplayName: value.second_display_name ?? "Ожидается",
   score: toSeriesScoreView(value.score),
   state: value.state,
   scheduledAt: value.scheduled_at,
+  winnerDisplayName: value.winner_display_name,
 });
 
 const toPublicSeriesView = (

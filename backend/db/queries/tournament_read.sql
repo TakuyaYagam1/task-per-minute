@@ -266,6 +266,40 @@ WHERE roster.tournament_id = sqlc.arg(tournament_id)
 ORDER BY participant.seed,
     participant.id;
 
+-- name: ListPublicTournamentReadSwissRounds :many
+SELECT swiss_round.round_number,
+    COALESCE(current_wave.state, 'planned')::TEXT AS state,
+    COALESCE(bye_player.username, '')::TEXT AS bye_display_name,
+    swiss_bye.points_awarded AS bye_points_awarded
+FROM swiss_rounds AS swiss_round
+JOIN rosters AS roster
+    ON roster.id = swiss_round.roster_id
+LEFT JOIN LATERAL (
+    SELECT wave.state,
+        link.bye_participant_id
+    FROM swiss_wave_links AS link
+    JOIN waves AS wave
+        ON wave.id = link.wave_id
+        AND wave.tournament_id = link.tournament_id
+        AND wave.roster_id = link.roster_id
+    WHERE link.round_id = swiss_round.id
+        AND link.tournament_id = roster.tournament_id
+        AND link.roster_id = swiss_round.roster_id
+    ORDER BY (wave.state <> 'superseded') DESC,
+        wave.created_at DESC,
+        wave.id DESC
+    LIMIT 1
+) AS current_wave ON TRUE
+LEFT JOIN swiss_byes AS swiss_bye
+    ON swiss_bye.round_id = swiss_round.id
+    AND swiss_bye.roster_id = swiss_round.roster_id
+LEFT JOIN participants AS bye_participant
+    ON bye_participant.id = COALESCE(current_wave.bye_participant_id, swiss_bye.participant_id)
+    AND bye_participant.roster_id = swiss_round.roster_id
+LEFT JOIN players AS bye_player ON bye_player.id = bye_participant.player_id
+WHERE roster.tournament_id = sqlc.arg(tournament_id)
+ORDER BY swiss_round.round_number;
+
 -- name: ListPublicTournamentReadSeries :many
 SELECT series.id AS series_id,
     COALESCE(series_stage.stage, 'golden')::TEXT AS stage,
@@ -346,7 +380,7 @@ LEFT JOIN LATERAL (
     LIMIT 1
 ) AS current_slot ON TRUE
 WHERE series.tournament_id = sqlc.arg(tournament_id)
-    AND series.state NOT IN ('completed', 'cancelled', 'superseded')
+    AND series.state <> 'superseded'
 ORDER BY series.created_at,
     series.id;
 

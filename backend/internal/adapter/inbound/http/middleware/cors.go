@@ -8,7 +8,7 @@ import (
 const (
 	corsAllowedMethods = "GET, POST, PUT, DELETE, OPTIONS"
 	corsAllowedHeaders = "Content-Type, Idempotency-Key, X-CSRF-Token"
-	corsExposedHeaders = "Retry-After, X-CSRF-Token, X-Admin-Refresh-CSRF-Token"
+	corsExposedHeaders = "Date, Retry-After, X-CSRF-Token, X-Admin-Refresh-CSRF-Token"
 )
 
 // CORS allows REST requests from a configured exact-origin allowlist.

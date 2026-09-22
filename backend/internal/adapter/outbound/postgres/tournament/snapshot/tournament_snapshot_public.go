@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -358,9 +359,11 @@ func tournamentBracket(
 	if err := json.Unmarshal(payload, &document); err != nil || document.Rounds == nil {
 		return nil, tournamentSnapshotInvalidError("bracket payload")
 	}
-	view := make([]usecase.PublicBracketMatchView, len(document.Rounds))
+	view := make([]usecase.PublicBracketMatchView, 0, len(document.Rounds)+1)
 	seenPositions := make(map[string]struct{}, len(document.Rounds))
-	for index, match := range document.Rounds {
+	semifinalCount := 0
+	finalCount := 0
+	for _, match := range document.Rounds {
 		stage := match.Stage
 		if stage == "" {
 			stage = tournamentBracketStageSemifinal
@@ -368,9 +371,18 @@ func tournamentBracket(
 		firstName, firstOK := names[match.FirstParticipantID]
 		secondName, secondOK := names[match.SecondParticipantID]
 		if !firstOK || !secondOK || match.FirstParticipantID == match.SecondParticipantID ||
-			match.Position < 1 || strings.TrimSpace(firstName) == "" || strings.TrimSpace(secondName) == "" ||
+			match.Position < 1 ||
 			(stage != tournamentBracketStageSemifinal && stage != tournamentBracketStageFinal) ||
+			strings.TrimSpace(firstName) == "" || utf8.RuneCountInString(firstName) > 64 ||
+			strings.TrimSpace(secondName) == "" || utf8.RuneCountInString(secondName) > 64 ||
 			strings.TrimSpace(match.State) == "" || match.FirstWins < 0 || match.SecondWins < 0 {
+			return nil, tournamentSnapshotInvalidError("bracket match")
+		}
+		maxWins := 1
+		if stage == tournamentBracketStageFinal {
+			maxWins = 2
+		}
+		if match.FirstWins > maxWins || match.SecondWins > maxWins || !domain.SeriesState(match.State).IsValid() {
 			return nil, tournamentSnapshotInvalidError("bracket match")
 		}
 		positionKey := fmt.Sprintf("%s:%d", stage, match.Position)
@@ -378,20 +390,112 @@ func tournamentBracket(
 			return nil, tournamentSnapshotInvalidError("duplicate bracket position")
 		}
 		seenPositions[positionKey] = struct{}{}
-		view[index] = usecase.PublicBracketMatchView{
+		format := string(domain.SeriesFormatBO1)
+		if (stage == tournamentBracketStageSemifinal && match.Position > 2) ||
+			(stage == tournamentBracketStageFinal && match.Position != 1) {
+			return nil, tournamentSnapshotInvalidError("bracket position")
+		}
+		if stage == tournamentBracketStageFinal {
+			format = string(domain.SeriesFormatBO3)
+			finalCount++
+		} else {
+			semifinalCount++
+		}
+		firstDisplayName := firstName
+		secondDisplayName := secondName
+		var winnerDisplayName *string
+		if match.State == string(domain.SeriesStateCompleted) {
+			if match.FirstWins == match.SecondWins {
+				return nil, tournamentSnapshotInvalidError("bracket match tie")
+			}
+			if match.FirstWins > match.SecondWins {
+				winnerDisplayName = &firstDisplayName
+			} else {
+				winnerDisplayName = &secondDisplayName
+			}
+		}
+		view = append(view, usecase.PublicBracketMatchView{
 			Stage:             stage,
 			Position:          match.Position,
-			FirstDisplayName:  firstName,
-			SecondDisplayName: secondName,
+			Format:            format,
+			FirstDisplayName:  &firstDisplayName,
+			SecondDisplayName: &secondDisplayName,
 			FirstWins:         match.FirstWins,
 			SecondWins:        match.SecondWins,
 			State:             match.State,
 			ScheduledAt:       nil,
+			WinnerDisplayName: winnerDisplayName,
+		})
+	}
+	if len(view) == 0 {
+		return view, nil
+	}
+	if semifinalCount != 2 || finalCount > 1 {
+		return nil, tournamentSnapshotInvalidError("bracket topology")
+	}
+	if finalCount == 0 {
+		view = append(view, usecase.PublicBracketMatchView{
+			Stage:      tournamentBracketStageFinal,
+			Position:   1,
+			Format:     string(domain.SeriesFormatBO3),
+			FirstWins:  0,
+			SecondWins: 0,
+			State:      string(domain.SeriesStatePlanned),
+		})
+	}
+	sort.Slice(view, func(left, right int) bool {
+		if view[left].Stage == view[right].Stage {
+			return view[left].Position < view[right].Position
 		}
+		return view[left].Stage == tournamentBracketStageSemifinal
+	})
+	return view, nil
+}
+
+func publicTournamentReadSwissRounds(
+	ctx context.Context,
+	querier *sqlc.Queries,
+	tournamentID uuid.UUID,
+) ([]usecase.PublicSwissRoundView, error) {
+	rows, err := querier.ListPublicTournamentReadSwissRounds(ctx, tournamentID)
+	if err != nil {
+		return nil, fmt.Errorf("TournamentSnapshotPostgres - PublicSnapshot - swiss rounds: %w", err)
+	}
+	view := make([]usecase.PublicSwissRoundView, len(rows))
+	previousRound := int16(0)
+	for index, row := range rows {
+		if row.RoundNumber < 1 || row.RoundNumber > 4 || row.RoundNumber <= previousRound ||
+			strings.TrimSpace(row.State) != row.State || !domain.WaveState(row.State).IsValid() {
+			return nil, tournamentSnapshotInvalidError("swiss round")
+		}
+		previousRound = row.RoundNumber
+		current := usecase.PublicSwissRoundView{
+			RoundNumber: int(row.RoundNumber),
+			State:       row.State,
+		}
+		if row.ByePointsAwarded != nil {
+			if *row.ByePointsAwarded != 1 || strings.TrimSpace(row.ByeDisplayName) == "" || utf8.RuneCountInString(row.ByeDisplayName) > 64 {
+				return nil, tournamentSnapshotInvalidError("swiss bye")
+			}
+			current.Bye = &usecase.PublicSwissByeView{
+				DisplayName:   row.ByeDisplayName,
+				PointsAwarded: int(*row.ByePointsAwarded),
+			}
+		} else if strings.TrimSpace(row.ByeDisplayName) != "" {
+			if utf8.RuneCountInString(row.ByeDisplayName) > 64 {
+				return nil, tournamentSnapshotInvalidError("swiss bye")
+			}
+			current.Bye = &usecase.PublicSwissByeView{
+				DisplayName:   row.ByeDisplayName,
+				PointsAwarded: 1,
+			}
+		}
+		view[index] = current
 	}
 	return view, nil
 }
 
+//nolint:gocyclo // Public series decoding validates all stage, score, state, and time invariants at the storage boundary.
 func publicTournamentReadSeries(
 	ctx context.Context,
 	querier *sqlc.Queries,
@@ -404,9 +508,15 @@ func publicTournamentReadSeries(
 	view := make([]usecase.PublicSeriesView, len(rows))
 	for index, row := range rows {
 		stage := domain.TournamentStage(row.Stage)
+		format := domain.SeriesFormat(row.Format)
+		state := domain.SeriesState(row.State)
 		if !stage.IsValid() || (stage == domain.TournamentStageSwiss &&
 			(row.RoundNumber < 1 || row.RoundNumber > 4)) ||
-			(stage != domain.TournamentStageSwiss && row.RoundNumber != 0) {
+			(stage != domain.TournamentStageSwiss && row.RoundNumber != 0) ||
+			row.SeriesID == uuid.Nil || !format.IsValid() || !state.IsValid() ||
+			strings.TrimSpace(row.FirstDisplayName) == "" || strings.TrimSpace(row.SecondDisplayName) == "" ||
+			row.CurrentGamePosition < 0 || row.CurrentGamePosition > 3 ||
+			(domain.SeriesScore{FirstParticipantWins: int(row.FirstParticipantWins), SecondParticipantWins: int(row.SecondParticipantWins)}).Validate(format) != nil {
 			return nil, tournamentSnapshotInvalidError("series stage")
 		}
 		var roundNumber *int

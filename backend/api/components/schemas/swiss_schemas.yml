@@ -577,7 +577,7 @@ PublicScoreboardResponse:
 PublicBracketMatch:
   type: object
   additionalProperties: false
-  required: [stage, position, first_display_name, second_display_name, score, state, scheduled_at]
+  required: [stage, position, format, first_display_name, second_display_name, score, state, scheduled_at, winner_display_name]
   properties:
     stage:
       type: string
@@ -586,12 +586,16 @@ PublicBracketMatch:
       type: integer
       format: int32
       minimum: 1
+    format:
+      $ref: '#/SeriesFormat'
     first_display_name:
       type: string
       maxLength: 64
+      nullable: true
     second_display_name:
       type: string
       maxLength: 64
+      nullable: true
     score:
       $ref: '#/SeriesScore'
     state:
@@ -601,6 +605,42 @@ PublicBracketMatch:
       format: date-time
       nullable: true
       readOnly: true
+    winner_display_name:
+      type: string
+      maxLength: 64
+      nullable: true
+
+PublicSwissBye:
+  type: object
+  additionalProperties: false
+  required: [display_name, points_awarded]
+  properties:
+    display_name:
+      type: string
+      maxLength: 64
+    points_awarded:
+      type: integer
+      format: int32
+      minimum: 1
+      maximum: 1
+
+PublicSwissRound:
+  type: object
+  additionalProperties: false
+  required: [round_number, state, bye]
+  properties:
+    round_number:
+      type: integer
+      format: int32
+      minimum: 1
+      maximum: 4
+    state:
+      $ref: '#/WaveState'
+    bye:
+      type: object
+      nullable: true
+      allOf:
+        - $ref: '#/PublicSwissBye'
 
 PublicBracketResponse:
   type: object

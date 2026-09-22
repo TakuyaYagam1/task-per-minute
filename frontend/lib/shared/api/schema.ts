@@ -3251,16 +3251,18 @@ export interface components {
             tournament_id: string;
         };
         PublicBracketMatch: {
-            first_display_name: string;
+            first_display_name: string | null;
+            format: components["schemas"]["SeriesFormat"];
             /** Format: int32 */
             position: number;
             /** Format: date-time */
             readonly scheduled_at: string | null;
             score: components["schemas"]["SeriesScore"];
-            second_display_name: string;
+            second_display_name: string | null;
             /** @enum {string} */
             stage: "semifinal" | "final";
             state: components["schemas"]["SeriesState"];
+            winner_display_name: string | null;
         };
         PublicBracketResponse: {
             matches: components["schemas"]["PublicBracketMatch"][];
@@ -3335,6 +3337,17 @@ export interface components {
             state: components["schemas"]["SeriesState"];
             winner_display_name?: string;
         };
+        PublicSwissBye: {
+            display_name: string;
+            /** Format: int32 */
+            points_awarded: number;
+        };
+        PublicSwissRound: {
+            bye: components["schemas"]["PublicSwissBye"] | null;
+            /** Format: int32 */
+            round_number: number;
+            state: components["schemas"]["WaveState"];
+        };
         PublicRecoverySnapshot: {
             bracket: components["schemas"]["PublicBracketResponse"];
             live_draft: components["schemas"]["PublicLiveDraftResponse"] | null;
@@ -3342,6 +3355,7 @@ export interface components {
             next_cursor: components["schemas"]["PublicRecoveryCursor"];
             official_results: components["schemas"]["PublicOfficialResult"][];
             scoreboard: components["schemas"]["PublicScoreboardResponse"];
+            swiss_rounds: components["schemas"]["PublicSwissRound"][];
             tournament: components["schemas"]["PublicTournamentResponse"];
         };
         /** @description The requested public recovery cursor is ahead of the durable snapshot watermark. */

@@ -655,6 +655,7 @@ type Querier interface {
 	ListPublicTournamentReadDraftActions(ctx context.Context, draftID uuid.UUID) ([]ListPublicTournamentReadDraftActionsRow, error)
 	ListPublicTournamentReadResults(ctx context.Context, tournamentID uuid.UUID) ([]ListPublicTournamentReadResultsRow, error)
 	ListPublicTournamentReadSeries(ctx context.Context, tournamentID uuid.UUID) ([]ListPublicTournamentReadSeriesRow, error)
+	ListPublicTournamentReadSwissRounds(ctx context.Context, tournamentID uuid.UUID) ([]ListPublicTournamentReadSwissRoundsRow, error)
 	ListRealtimeOutboxAfter(ctx context.Context, arg ListRealtimeOutboxAfterParams) ([]ListRealtimeOutboxAfterRow, error)
 	ListRecoveryGameResultRevisionIDs(ctx context.Context, arg ListRecoveryGameResultRevisionIDsParams) ([]uuid.UUID, error)
 	ListRecoveryPresence(ctx context.Context, arg ListRecoveryPresenceParams) ([]PresenceState, error)

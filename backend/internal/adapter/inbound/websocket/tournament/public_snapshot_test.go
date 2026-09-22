@@ -29,7 +29,7 @@ func TestTournamentPublicSnapshot(t *testing.T) {
 	if err != nil {
 		t.Fatalf("json.Marshal() error = %v", err)
 	}
-	requireJSONKeys(t, encoded, "revision", "last_sequence", "tournament", "scoreboard", "bracket", "live_series", "official_results", "draft")
+	requireJSONKeys(t, encoded, "revision", "last_sequence", "tournament", "scoreboard", "swiss_rounds", "bracket", "live_series", "official_results", "draft")
 	requireNoSecretNames(t, encoded)
 
 	var object map[string]json.RawMessage
@@ -44,10 +44,20 @@ func TestTournamentPublicSnapshot(t *testing.T) {
 	requireJSONKeys(t, scoreboardEntry, "rank", "display_name", "points", "wins", "losses", "bye_count", "buchholz", "effective_time_ms", "provisional_tie", "qualification_status")
 	var decoded PublicSnapshot
 	require.NoError(t, json.Unmarshal(encoded, &decoded))
-	require.Len(t, decoded.Bracket, 1)
+	require.Len(t, decoded.Bracket, 3)
+	require.Len(t, decoded.SwissRounds, 1)
+	require.Equal(t, 1, decoded.SwissRounds[0].RoundNumber)
+	require.NotNil(t, decoded.SwissRounds[0].Bye)
+	require.Equal(t, "green", decoded.SwissRounds[0].Bye.DisplayName)
+	require.Equal(t, 1, decoded.SwissRounds[0].Bye.PointsAwarded)
+	require.Equal(t, "bo1", decoded.Bracket[0].Format)
+	require.Equal(t, "red", *decoded.Bracket[0].FirstDisplayName)
+	require.Nil(t, decoded.Bracket[0].WinnerDisplayName)
 	require.Equal(t, 1, decoded.Scoreboard[0].Wins)
 	require.Equal(t, "pending", decoded.Scoreboard[0].QualificationStatus)
 	require.Nil(t, decoded.Bracket[0].ScheduledAt)
+	require.Equal(t, "bo3", decoded.Bracket[2].Format)
+	require.Nil(t, decoded.Bracket[2].FirstDisplayName)
 	require.Len(t, decoded.LiveSeries, 1)
 	require.Equal(t, "swiss", decoded.LiveSeries[0].Stage)
 	require.NotNil(t, decoded.LiveSeries[0].RoundNumber)
@@ -60,6 +70,7 @@ func TestTournamentPublicSnapshot(t *testing.T) {
 	t.Run("nil collections become empty allowlisted arrays", func(t *testing.T) {
 		minimal := testPublicSnapshotInput(tournamentID)
 		minimal.Scoreboard = nil
+		minimal.SwissRounds = nil
 		minimal.Bracket = nil
 		minimal.LiveSeries = nil
 		minimal.OfficialResults = nil
@@ -72,7 +83,7 @@ func TestTournamentPublicSnapshot(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		requireJSONKeys(t, body, "revision", "last_sequence", "tournament", "scoreboard", "bracket", "live_series", "official_results")
+		requireJSONKeys(t, body, "revision", "last_sequence", "tournament", "scoreboard", "swiss_rounds", "bracket", "live_series", "official_results")
 	})
 
 	wrongTournament := testPublicSnapshotInput(tournamentID)
@@ -85,6 +96,12 @@ func TestTournamentPublicSnapshot(t *testing.T) {
 	nonUTC.OfficialResults[0].RecordedAt = time.Date(2026, 9, 2, 12, 0, 0, 0, time.FixedZone("MSK", 3*60*60))
 	if _, err := NewPublicSnapshot(tournamentID, nonUTC); err == nil {
 		t.Fatal("NewPublicSnapshot() accepted non-UTC result timestamp")
+	}
+
+	incompleteBracket := testPublicSnapshotInput(tournamentID)
+	incompleteBracket.Bracket = incompleteBracket.Bracket[:2]
+	if _, err := NewPublicSnapshot(tournamentID, incompleteBracket); err == nil {
+		t.Fatal("NewPublicSnapshot() accepted incomplete playoff topology")
 	}
 
 	for _, state := range []domain.TournamentState{
@@ -161,8 +178,26 @@ func testPublicSnapshotInput(tournamentID uuid.UUID) PublicSnapshotInput {
 			RosterSize:   8,
 			StartedAt:    &startedAt,
 		},
-		Scoreboard:      []PublicScoreboardEntryInput{{TournamentID: tournamentID, Rank: 1, DisplayName: "red", Points: 3, Wins: 1, ByeCount: 1, Buchholz: 2, EffectiveTimeMS: 4100, QualificationStatus: "pending"}},
-		Bracket:         []PublicBracketMatchInput{{TournamentID: tournamentID, Stage: "semifinal", Position: 1, FirstDisplayName: "red", SecondDisplayName: "blue", FirstWins: 1, SecondWins: 0, State: "active"}},
+		Scoreboard: []PublicScoreboardEntryInput{{TournamentID: tournamentID, Rank: 1, DisplayName: "red", Points: 3, Wins: 1, ByeCount: 1, Buchholz: 2, EffectiveTimeMS: 4100, QualificationStatus: "pending"}},
+		SwissRounds: []PublicSwissRoundInput{{
+			RoundNumber: 1, State: "active",
+			Bye: &PublicSwissByeInput{DisplayName: "green", PointsAwarded: 1},
+		}},
+		Bracket: []PublicBracketMatchInput{
+			{
+				TournamentID: tournamentID, Stage: "semifinal", Position: 1, Format: "bo1",
+				FirstDisplayName:  func() *string { value := "red"; return &value }(),
+				SecondDisplayName: func() *string { value := "blue"; return &value }(),
+				FirstWins:         1, SecondWins: 0, State: "active",
+			},
+			{
+				TournamentID: tournamentID, Stage: "semifinal", Position: 2, Format: "bo1",
+				FirstDisplayName:  func() *string { value := "green"; return &value }(),
+				SecondDisplayName: func() *string { value := "yellow"; return &value }(),
+				State:             "planned",
+			},
+			{TournamentID: tournamentID, Stage: "final", Position: 1, Format: "bo3", State: "planned"},
+		},
 		LiveSeries:      []PublicSeriesInput{{TournamentID: tournamentID, SeriesID: testUUID("00000000-0000-4000-8000-000000000022"), Stage: "swiss", RoundNumber: &roundNumber, Format: "bo3", State: "active", FirstDisplayName: "red", SecondDisplayName: "blue", FirstWins: 1, SecondWins: 0, CurrentGamePosition: 2}},
 		OfficialResults: []PublicOfficialResultInput{{TournamentID: tournamentID, RevisionID: testUUID("00000000-0000-4000-8000-000000000040"), SeriesID: testUUID("00000000-0000-4000-8000-000000000022"), State: "completed", WinnerDisplayName: "red", FirstWins: 2, SecondWins: 0, RecordedAt: time.Date(2026, 9, 2, 8, 20, 0, 0, time.UTC)}},
 		Draft: &PublicDraftInput{

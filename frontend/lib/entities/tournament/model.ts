@@ -43,11 +43,13 @@ export type PublicQualificationStatus = "pending" | "qualified" | "eliminated";
 export interface PublicBracketMatchView {
   stage: Extract<TournamentStage, "semifinal" | "final">;
   position: number;
+  format: TournamentFormat;
   firstDisplayName: string;
   secondDisplayName: string;
   score: SeriesScoreView;
   state: SeriesState;
   scheduledAt: string | null;
+  winnerDisplayName: string | null;
 }
 
 export interface PublicDraftActionView {

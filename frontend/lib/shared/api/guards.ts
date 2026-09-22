@@ -261,31 +261,83 @@ export const isPublicScoreboardResponse = (
   value.entries.length <= 16 &&
   value.entries.every(isPublicScoreboardEntry);
 
-export const isPublicBracketMatch = (value: unknown): value is PublicBracketMatch =>
-  isRecord(value) &&
-  hasExactKeys(value, [
-    "stage",
-    "position",
-    "first_display_name",
-    "second_display_name",
-    "score",
-    "state",
-    "scheduled_at",
-  ]) &&
-  (value.stage === "semifinal" || value.stage === "final") &&
-  isPositiveInteger(value.position) &&
-  value.position <= INT32_MAX &&
-  isBoundedDisplayName(value.first_display_name) &&
-  isBoundedDisplayName(value.second_display_name) &&
-  isRecord(value.score) &&
-  hasExactKeys(value.score, ["first_participant_wins", "second_participant_wins"]) &&
-  isNonNegativeInt32(value.score.first_participant_wins) &&
-  value.score.first_participant_wins <= 2 &&
-  isNonNegativeInt32(value.score.second_participant_wins) &&
-  value.score.second_participant_wins <= 2 &&
-  isString(value.state) &&
-  PUBLIC_SERIES_STATES.has(value.state) &&
-  isOptionalDateStringOrNull(value.scheduled_at);
+export const isPublicBracketMatch = (value: unknown): value is PublicBracketMatch => {
+  if (
+    !isRecord(value) ||
+    !hasExactKeys(value, [
+      "stage",
+      "position",
+      "format",
+      "first_display_name",
+      "second_display_name",
+      "score",
+      "state",
+      "scheduled_at",
+      "winner_display_name",
+    ]) ||
+    (value.stage !== "semifinal" && value.stage !== "final") ||
+    !isPositiveInteger(value.position) ||
+    value.position > INT32_MAX ||
+    (value.stage === "semifinal" ? value.format !== "bo1" : value.format !== "bo3") ||
+    !isRecord(value.score) ||
+    !hasExactKeys(value.score, ["first_participant_wins", "second_participant_wins"]) ||
+    !isNonNegativeInt32(value.score.first_participant_wins) ||
+    !isNonNegativeInt32(value.score.second_participant_wins) ||
+    !isString(value.state) ||
+    !PUBLIC_SERIES_STATES.has(value.state) ||
+    !isOptionalDateStringOrNull(value.scheduled_at)
+  ) {
+    return false;
+  }
+
+  const firstWins = value.score.first_participant_wins;
+  const secondWins = value.score.second_participant_wins;
+  const maxWins = value.stage === "semifinal" ? 1 : 2;
+  if (firstWins > maxWins || secondWins > maxWins) {
+    return false;
+  }
+
+  const finalPlaceholder =
+    value.stage === "final" &&
+    value.state === "planned" &&
+    value.first_display_name === null &&
+    value.second_display_name === null &&
+    value.winner_display_name === null &&
+    firstWins === 0 &&
+    secondWins === 0;
+  if (finalPlaceholder) {
+    return true;
+  }
+  if (
+    !isBoundedDisplayName(value.first_display_name) ||
+    !isBoundedDisplayName(value.second_display_name)
+  ) {
+    return false;
+  }
+  if (value.state !== "completed") {
+    return value.winner_display_name === null;
+  }
+  if (!isBoundedDisplayName(value.winner_display_name) || firstWins === secondWins) {
+    return false;
+  }
+  return firstWins > secondWins
+    ? value.winner_display_name === value.first_display_name
+    : value.winner_display_name === value.second_display_name;
+};
+
+const hasPublicBracketTopology = (matches: readonly PublicBracketMatch[]): boolean => {
+  if (matches.length === 0) {
+    return true;
+  }
+  if (matches.length !== 3) {
+    return false;
+  }
+  const positions = new Set(matches.map((match) => `${match.stage}:${match.position}`));
+  return positions.size === 3 &&
+    positions.has("semifinal:1") &&
+    positions.has("semifinal:2") &&
+    positions.has("final:1");
+};
 
 export const isPublicBracketResponse = (
   value: unknown,
@@ -296,7 +348,8 @@ export const isPublicBracketResponse = (
   isSafePositiveInteger(value.projection_revision) &&
   Array.isArray(value.matches) &&
   value.matches.length <= 3 &&
-  value.matches.every(isPublicBracketMatch);
+  value.matches.every(isPublicBracketMatch) &&
+  hasPublicBracketTopology(value.matches);
 
 export const isAdminSessionResponse = (value: unknown): value is AdminSessionResponse =>
   isRecord(value) && isNonNegativeInteger(value.expires_in);

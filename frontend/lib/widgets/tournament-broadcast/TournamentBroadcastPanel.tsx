@@ -8,6 +8,7 @@ import {
   formatDurationClock,
   formatSeriesFormat,
   formatSeriesState,
+  formatWaveState,
   formatTournamentState,
 } from "../../shared/lib";
 
@@ -38,9 +39,24 @@ type BroadcastMatch = Readonly<{
   format?: string;
   state: string;
   scheduledAt?: string;
+  winnerName?: string;
 }>;
 
+type SwissRound = Readonly<{
+  roundNumber: number;
+  state: string;
+  bye: Readonly<{
+    displayName: string;
+    pointsAwarded: number;
+  }> | null;
+}>;
+
+type PublicDisplayWithSwissRounds = PublicRecoveryState["display"] & {
+  swissRounds?: readonly Record<string, unknown>[];
+};
+
 type BroadcastPhase = "waiting" | "live" | "technical_pause" | "cancelled" | "completed";
+type ProjectionView = "scoreboard" | "swiss" | "playoff";
 
 const CONNECTION_LABELS: Readonly<Record<PublicConnectionStatus, string>> = {
   idle: "Ожидание",
@@ -85,6 +101,8 @@ const integerValue = (value: unknown): number | undefined =>
   typeof value === "number" && Number.isSafeInteger(value) && value >= 0
     ? value
     : undefined;
+
+const displayName = (value: unknown): string => stringValue(value) ?? "Ожидается";
 
 const qualificationLabel = (value: unknown): string => {
   switch (value) {
@@ -146,10 +164,7 @@ const liveMatchesFrom = (
   tournamentStage: unknown,
 ): BroadcastMatch[] => items.flatMap((item) => {
   const seriesId = stringValue(item.series_id);
-  const firstName = stringValue(item.first_display_name);
-  const secondName = stringValue(item.second_display_name);
-  const state = stringValue(item.state);
-  if (!seriesId || !firstName || !secondName || !state) {
+  if (!seriesId) {
     return [];
   }
   const [firstWins, secondWins] = scoreValues(item.score);
@@ -164,40 +179,110 @@ const liveMatchesFrom = (
       : gamePosition !== undefined
         ? `Игра ${gamePosition}`
         : "Раунд не объявлен",
-    firstName,
-    secondName,
+    firstName: displayName(item.first_display_name),
+    secondName: displayName(item.second_display_name),
     firstWins,
     secondWins,
     format: stringValue(item.format),
-    state,
+    state: stringValue(item.state) ?? "planned",
     scheduledAt,
   }];
 });
 
-const bracketMatchesFrom = (
-  items: readonly Record<string, unknown>[],
-): BroadcastMatch[] => items.flatMap((item) => {
-  const stage = stringValue(item.stage);
-  const position = integerValue(item.position);
-  const firstName = stringValue(item.first_display_name);
-  const secondName = stringValue(item.second_display_name);
-  const state = stringValue(item.state);
-  if (!stage || position === undefined || !firstName || !secondName || !state) {
-    return [];
-  }
-  const [firstWins, secondWins] = scoreValues(item.score);
-  return [{
+const bracketMatchFrom = (
+  item: Record<string, unknown> | undefined,
+  stage: "semifinal" | "final",
+  position: number,
+): BroadcastMatch => {
+  const [firstWins, secondWins] = scoreValues(item?.score);
+  return {
     key: `bracket:${stage}:${position}`,
     stage: stageLabel(stage),
     round: `Матч ${position}`,
-    firstName,
-    secondName,
+    firstName: displayName(item?.first_display_name),
+    secondName: displayName(item?.second_display_name),
     firstWins,
     secondWins,
-    state,
-    scheduledAt: stringValue(item.scheduled_at ?? item.starts_at),
-  }];
-});
+    format: stringValue(item?.format) ?? (stage === "final" ? "bo3" : undefined),
+    state: stringValue(item?.state) ?? "planned",
+    scheduledAt: stringValue(item?.scheduled_at ?? item?.starts_at),
+    winnerName: stringValue(item?.winner_display_name),
+  };
+};
+
+const bracketMatchesFrom = (
+  items: readonly Record<string, unknown>[],
+): BroadcastMatch[] => {
+  if (items.length === 0) {
+    return [];
+  }
+  const findBracketItem = (stage: "semifinal" | "final", position: number) =>
+    items.find((item) => item.stage === stage && item.position === position);
+  const semifinalOne = bracketMatchFrom(findBracketItem("semifinal", 1), "semifinal", 1);
+  const semifinalTwo = bracketMatchFrom(findBracketItem("semifinal", 2), "semifinal", 2);
+  const finalItem = items
+    .filter((item) => item.stage === "final")
+    .sort((first, second) => (integerValue(first.position) ?? 1) - (integerValue(second.position) ?? 1))[0];
+  const final = bracketMatchFrom(finalItem, "final", 1);
+  return [semifinalOne, semifinalTwo, final];
+};
+
+const swissRoundsFrom = (state: PublicRecoveryState | null): SwissRound[] => {
+  const display = state?.display as PublicDisplayWithSwissRounds | undefined;
+  const rounds = display?.swissRounds;
+  if (!Array.isArray(rounds)) {
+    return [];
+  }
+  return rounds.flatMap((item) => {
+    const roundNumber = integerValue(item.round_number);
+    if (roundNumber === undefined) {
+      return [];
+    }
+    const bye = isRecord(item.bye)
+      ? {
+          displayName: displayName(item.bye.display_name),
+          pointsAwarded: integerValue(item.bye.points_awarded) ?? 0,
+        }
+      : null;
+    return [{
+      roundNumber,
+      state: stringValue(item.state) ?? "planned",
+      bye,
+    }];
+  });
+};
+
+const swissMatchesFrom = (
+  items: readonly Record<string, unknown>[],
+): ReadonlyMap<number, BroadcastMatch[]> => {
+  const grouped = new Map<number, BroadcastMatch[]>();
+  for (const item of items) {
+    if (item.stage !== "swiss") {
+      continue;
+    }
+    const roundNumber = integerValue(item.round_number ?? item.round);
+    const seriesId = stringValue(item.series_id);
+    if (roundNumber === undefined || !seriesId) {
+      continue;
+    }
+    const matches = grouped.get(roundNumber) ?? [];
+    const [firstWins, secondWins] = scoreValues(item.score);
+    matches.push({
+      key: `series:${seriesId}`,
+      stage: "Swiss",
+      round: `Раунд ${roundNumber}`,
+      firstName: displayName(item.first_display_name),
+      secondName: displayName(item.second_display_name),
+      firstWins,
+      secondWins,
+      format: stringValue(item.format),
+      state: stringValue(item.state) ?? "planned",
+      scheduledAt: stringValue(item.scheduled_at ?? item.starts_at),
+    });
+    grouped.set(roundNumber, matches);
+  }
+  return grouped;
+};
 
 const selectedMatchFromLocation = (matches: readonly BroadcastMatch[]): string | null => {
   if (typeof window === "undefined") {
@@ -215,25 +300,73 @@ const updateSelectedMatch = (key: string): void => {
   window.history.replaceState(window.history.state, "", url);
 };
 
+const matchButtonLabel = (match: BroadcastMatch): string =>
+  `${match.stage} ${match.round}: ${match.firstName} - ${match.secondName}, ` +
+  `${match.firstWins}:${match.secondWins}, ` +
+  `${match.format ? `${formatSeriesFormat(match.format)}, ` : ""}${formatSeriesState(match.state)}`;
+
+const eliminatedNameFrom = (match: BroadcastMatch): string | undefined => {
+  if (!match.winnerName) {
+    return undefined;
+  }
+  return [match.firstName, match.secondName]
+    .find((name) => name !== "Ожидается" && name !== match.winnerName);
+};
+
+const MatchButton = ({
+  match,
+  selected,
+  onSelect,
+}: Readonly<{
+  match: BroadcastMatch;
+  selected: boolean;
+  onSelect: (match: BroadcastMatch) => void;
+}>) => (
+  <button
+    aria-label={matchButtonLabel(match)}
+    aria-pressed={selected}
+    className={styles.matchButton}
+    data-match-key={match.key}
+    data-selected={selected ? "true" : "false"}
+    onClick={() => onSelect(match)}
+    type="button"
+  >
+    <span className={styles.matchMeta}>{match.stage} | {match.round}</span>
+    <span className={styles.matchNames}>{match.firstName} - {match.secondName}</span>
+    <span className={styles.matchScore}>{match.firstWins}:{match.secondWins}</span>
+    {match.format && <span className={styles.matchFormat}>{formatSeriesFormat(match.format)}</span>}
+    <span className={styles.matchStateInline}>{formatSeriesState(match.state)}</span>
+  </button>
+);
+
 export const TournamentBroadcastPanel = ({
   connectionStatus,
   state,
 }: TournamentBroadcastPanelProps) => {
   const [selectedMatchKey, setSelectedMatchKey] = useState<string | null>(null);
-  const [activeView, setActiveView] = useState<"scoreboard" | "bracket">("scoreboard");
+  const [activeView, setActiveView] = useState<ProjectionView>("scoreboard");
   const tournament = state?.display.tournament;
   const tournamentState = tournament ? stringValue(tournament.state) : undefined;
   const phase = phaseFrom(tournamentState);
   const phaseCopy = PHASE_COPY[phase];
+  const swissRounds = useMemo(() => swissRoundsFrom(state), [state]);
+  const swissSeries = useMemo(
+    () => (state?.display.liveSeries ?? []).filter((item) => item.stage === "swiss"),
+    [state],
+  );
+  const swissMatches = useMemo(() => swissMatchesFrom(swissSeries), [swissSeries]);
+  const bracket = useMemo(() => state?.display.bracket ?? [], [state]);
+  const playoffMatches = useMemo(() => bracketMatchesFrom(bracket), [bracket]);
   const matches = useMemo(() => {
     if (state === null) {
       return [];
     }
-    return [
-      ...liveMatchesFrom(state.display.liveSeries, tournamentState),
-      ...bracketMatchesFrom(state.display.bracket),
-    ];
-  }, [state, tournamentState]);
+    const liveMatches = liveMatchesFrom(
+      state.display.liveSeries.filter((item) => item.stage !== "semifinal" && item.stage !== "final"),
+      tournamentState,
+    );
+    return [...liveMatches, ...playoffMatches];
+  }, [playoffMatches, state, tournamentState]);
 
   useEffect(() => {
     if (state !== null) {
@@ -244,8 +377,16 @@ export const TournamentBroadcastPanel = ({
   const selectedMatch = matches.find((match) => match.key === selectedMatchKey) ?? null;
   const startedAt = tournament ? stringValue(tournament.started_at) : undefined;
   const finishedAt = tournament ? stringValue(tournament.finished_at) : undefined;
-  const scoreboard = state?.display.scoreboard ?? [];
-  const bracket = state?.display.bracket ?? [];
+  const scoreboard = useMemo(() => state?.display.scoreboard ?? [], [state]);
+  const qualifiedEntries = useMemo(() => scoreboard
+    .filter((entry) => entry.qualification_status === "qualified")
+    .sort((first, second) => (integerValue(first.rank) ?? 0) - (integerValue(second.rank) ?? 0))
+    .slice(0, 4), [scoreboard]);
+
+  const selectMatch = (match: BroadcastMatch): void => {
+    setSelectedMatchKey(match.key);
+    updateSelectedMatch(match.key);
+  };
 
   return (
     <section
@@ -284,20 +425,11 @@ export const TournamentBroadcastPanel = ({
             <ul className={styles.matchList}>
               {matches.map((match) => (
                 <li className={styles.matchItem} key={match.key}>
-                  <button
-                    aria-pressed={selectedMatch?.key === match.key}
-                    className={styles.matchButton}
-                    data-selected={selectedMatch?.key === match.key ? "true" : "false"}
-                    onClick={() => {
-                      setSelectedMatchKey(match.key);
-                      updateSelectedMatch(match.key);
-                    }}
-                    type="button"
-                  >
-                    <span className={styles.matchMeta}>{match.stage} | {match.round}</span>
-                    <span className={styles.matchNames}>{match.firstName} - {match.secondName}</span>
-                    <span className={styles.matchScore}>{match.firstWins}:{match.secondWins}</span>
-                  </button>
+                  <MatchButton
+                    match={match}
+                    onSelect={selectMatch}
+                    selected={selectedMatch?.key === match.key}
+                  />
                 </li>
               ))}
             </ul>
@@ -321,6 +453,11 @@ export const TournamentBroadcastPanel = ({
                 <strong>{selectedMatch.firstWins}:{selectedMatch.secondWins}</strong>
                 <span>{selectedMatch.secondName}</span>
               </div>
+              {selectedMatch.winnerName && (
+                <p className={styles.serverOutcome}>
+                  {selectedMatch.stage === "Финал" ? "Чемпион" : "Победитель"}: {selectedMatch.winnerName}
+                </p>
+              )}
               <dl className={styles.matchFacts}>
                 <div>
                   <dt>Этап</dt>
@@ -350,8 +487,9 @@ export const TournamentBroadcastPanel = ({
       </div>
 
       <section className={styles.projections} aria-label="Публичные проекции турнира">
-        <div className={styles.tabs} role="tablist" aria-label="Таблица и сетка">
+        <div className={styles.tabs} role="tablist" aria-label="Таблица и этапы турнира">
           <button
+            aria-controls="broadcast-scoreboard"
             aria-selected={activeView === "scoreboard"}
             className={styles.tab}
             onClick={() => setActiveView("scoreboard")}
@@ -361,18 +499,29 @@ export const TournamentBroadcastPanel = ({
             Таблица
           </button>
           <button
-            aria-selected={activeView === "bracket"}
+            aria-controls="broadcast-swiss"
+            aria-selected={activeView === "swiss"}
             className={styles.tab}
-            onClick={() => setActiveView("bracket")}
+            onClick={() => setActiveView("swiss")}
             role="tab"
             type="button"
           >
-            Сетка
+            Swiss
+          </button>
+          <button
+            aria-controls="broadcast-playoff"
+            aria-selected={activeView === "playoff"}
+            className={styles.tab}
+            onClick={() => setActiveView("playoff")}
+            role="tab"
+            type="button"
+          >
+            Плей-офф
           </button>
         </div>
 
         {activeView === "scoreboard" ? (
-          <div className={styles.tableWrap} role="tabpanel">
+          <div className={styles.tableWrap} id="broadcast-scoreboard" role="tabpanel">
             {scoreboard.length === 0 ? (
               <p className={styles.empty}>Сервер пока не опубликовал состав таблицы.</p>
             ) : (
@@ -394,7 +543,7 @@ export const TournamentBroadcastPanel = ({
                   {scoreboard.map((entry, index) => (
                     <tr key={`${String(entry.display_name)}:${String(entry.rank)}:${index}`}>
                       <td>{integerValue(entry.rank) ?? "-"}</td>
-                      <th scope="row">{stringValue(entry.display_name) ?? "Участник"}</th>
+                      <th scope="row">{displayName(entry.display_name)}</th>
                       <td>{integerValue(entry.points) ?? "-"}</td>
                       <td>{integerValue(entry.wins) ?? "-"}</td>
                       <td>{integerValue(entry.losses) ?? "-"}</td>
@@ -418,17 +567,117 @@ export const TournamentBroadcastPanel = ({
               </table>
             )}
           </div>
+        ) : activeView === "swiss" ? (
+          <div className={styles.swiss} id="broadcast-swiss" role="tabpanel">
+            {swissRounds.length === 0 ? (
+              <p className={styles.empty}>Сервер пока не опубликовал Swiss-туры.</p>
+            ) : (
+              swissRounds.map((round) => {
+                const roundMatches = swissMatches.get(round.roundNumber) ?? [];
+                return (
+                  <section className={styles.swissRound} data-testid={`swiss-round-${round.roundNumber}`} key={round.roundNumber}>
+                    <div className={styles.swissRoundHeader}>
+                      <h3>Раунд {round.roundNumber}</h3>
+                      <span className={styles.roundState} data-state={round.state}>
+                        {formatWaveState(round.state)}
+                      </span>
+                    </div>
+                    {roundMatches.length > 0 ? (
+                      <ul className={styles.swissMatchList}>
+                        {roundMatches.map((match) => (
+                          <li key={match.key}>
+                            <MatchButton
+                              match={match}
+                              onSelect={selectMatch}
+                              selected={selectedMatch?.key === match.key}
+                            />
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className={styles.empty}>Пары пока не опубликованы.</p>
+                    )}
+                    {round.bye && (
+                      <div className={styles.byeRow} data-testid={`swiss-bye-${round.roundNumber}`}>
+                        <span><strong>Bye</strong> - {round.bye.displayName}</span>
+                        <strong>+{round.bye.pointsAwarded} {round.bye.pointsAwarded === 1 ? "очко" : "очка"}</strong>
+                      </div>
+                    )}
+                  </section>
+                );
+              })
+            )}
+          </div>
         ) : (
-          <div className={styles.bracket} role="tabpanel">
-            {bracket.length === 0 ? (
-              <p className={styles.empty}>Сетка появится после публикации плей-офф.</p>
-            ) : bracketMatchesFrom(bracket).map((match) => (
-              <article className={styles.bracketMatch} key={match.key}>
-                <span>{match.stage} | {match.round}</span>
-                <strong>{match.firstName} {match.firstWins}:{match.secondWins} {match.secondName}</strong>
-                <small>{formatSeriesState(match.state)}</small>
-              </article>
-            ))}
+          <div className={styles.playoff} id="broadcast-playoff" role="tabpanel">
+            <section className={styles.topFour} aria-labelledby="top-four-title">
+              <div className={styles.sectionHeading}>
+                <h3 id="top-four-title">Top 4</h3>
+                <span>{qualifiedEntries.length}</span>
+              </div>
+              {qualifiedEntries.length === 0 ? (
+                <p className={styles.empty}>Сервер пока не определил Top 4.</p>
+              ) : (
+                <ol className={styles.topFourList}>
+                  {qualifiedEntries.map((entry) => (
+                    <li key={`${String(entry.rank)}:${String(entry.display_name)}`}>
+                      <span className={styles.topFourRank}>#{integerValue(entry.rank) ?? "-"}</span>
+                      <span className={styles.topFourName}>{displayName(entry.display_name)}</span>
+                      <span className={styles.qualification} data-status={stringValue(entry.qualification_status) ?? "pending"}>
+                        {qualificationLabel(entry.qualification_status)}
+                      </span>
+                    </li>
+                  ))}
+                </ol>
+              )}
+            </section>
+
+            <div className={styles.bracketScroller}>
+              {playoffMatches.length === 0 ? (
+                <p className={styles.empty}>Сетка появится после публикации плей-офф.</p>
+              ) : (
+                <div className={styles.bracketStages}>
+                  {playoffMatches.slice(0, 2).map((match) => (
+                    <article className={styles.bracketMatch} data-testid={`playoff-${match.key}`} key={match.key}>
+                      <div className={styles.bracketMatchHeader}>
+                        <span>{match.stage} | {match.round}</span>
+                        <span className={styles.matchStateInline}>{formatSeriesState(match.state)}</span>
+                      </div>
+                      <MatchButton
+                        match={match}
+                        onSelect={selectMatch}
+                        selected={selectedMatch?.key === match.key}
+                      />
+                      {match.winnerName && (
+                        <p className={styles.bracketOutcome}>Прошел дальше: {match.winnerName}</p>
+                      )}
+                      {eliminatedNameFrom(match) && (
+                        <p className={styles.bracketElimination}>Выбыл: {eliminatedNameFrom(match)}</p>
+                      )}
+                    </article>
+                  ))}
+                  <article className={`${styles.bracketMatch} ${styles.finalMatch}`} data-testid="playoff-final">
+                    <div className={styles.bracketMatchHeader}>
+                      <span>Финал | Матч 1</span>
+                      <span className={styles.matchStateInline}>{formatSeriesState(playoffMatches[2]?.state)}</span>
+                    </div>
+                    {playoffMatches[2] && (
+                      <MatchButton
+                        match={playoffMatches[2]}
+                        onSelect={selectMatch}
+                        selected={selectedMatch?.key === playoffMatches[2].key}
+                      />
+                    )}
+                    {playoffMatches[2]?.winnerName && (
+                      <p className={styles.bracketOutcome}>Чемпион: {playoffMatches[2].winnerName}</p>
+                    )}
+                    {playoffMatches[2] && eliminatedNameFrom(playoffMatches[2]) && (
+                      <p className={styles.bracketElimination}>Выбыл: {eliminatedNameFrom(playoffMatches[2])}</p>
+                    )}
+                  </article>
+                </div>
+              )}
+            </div>
           </div>
         )}
       </section>

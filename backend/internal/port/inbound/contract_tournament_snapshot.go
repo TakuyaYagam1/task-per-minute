@@ -156,6 +156,7 @@ type PublicSnapshotView struct {
 	Tournament      PublicTournamentView
 	Scoreboard      []PublicScoreboardEntryView
 	Bracket         []PublicBracketMatchView
+	SwissRounds     []PublicSwissRoundView
 	LiveSeries      []PublicSeriesView
 	OfficialResults []PublicOfficialResultView
 	Draft           *PublicDraftView
@@ -186,12 +187,25 @@ type PublicScoreboardEntryView struct {
 type PublicBracketMatchView struct {
 	Stage             string
 	Position          int
-	FirstDisplayName  string
-	SecondDisplayName string
+	Format            string
+	FirstDisplayName  *string
+	SecondDisplayName *string
 	FirstWins         int
 	SecondWins        int
 	State             string
 	ScheduledAt       *time.Time
+	WinnerDisplayName *string
+}
+
+type PublicSwissRoundView struct {
+	RoundNumber int
+	State       string
+	Bye         *PublicSwissByeView
+}
+
+type PublicSwissByeView struct {
+	DisplayName   string
+	PointsAwarded int
 }
 
 type PublicSeriesView struct {

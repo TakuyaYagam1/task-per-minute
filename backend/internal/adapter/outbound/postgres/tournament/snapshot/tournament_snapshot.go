@@ -145,6 +145,7 @@ func (r *TournamentSnapshotPostgres) PublicSnapshot(
 	view := usecase.PublicSnapshotView{
 		Scoreboard:      []usecase.PublicScoreboardEntryView{},
 		Bracket:         []usecase.PublicBracketMatchView{},
+		SwissRounds:     []usecase.PublicSwissRoundView{},
 		LiveSeries:      []usecase.PublicSeriesView{},
 		OfficialResults: []usecase.PublicOfficialResultView{},
 	}
@@ -229,6 +230,10 @@ func (r *TournamentSnapshotPostgres) loadPublicSnapshot(
 		return err
 	}
 	view.Bracket, err = tournamentBracket(payloads.BracketPayload, names)
+	if err != nil {
+		return err
+	}
+	view.SwissRounds, err = publicTournamentReadSwissRounds(ctx, querier, tournamentID)
 	if err != nil {
 		return err
 	}

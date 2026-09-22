@@ -264,31 +264,43 @@ const publicBracket = (phase: Phase): PublicBracketResponse => ({
   matches: [
     {
       first_display_name: "Алиса",
+      format: "bo1",
       position: 1,
       score: { first_participant_wins: 1, second_participant_wins: 0 },
       scheduled_at: null,
       second_display_name: "Глеб",
       stage: "semifinal",
       state: "completed",
+      winner_display_name: "Алиса",
     },
     {
       first_display_name: "Боб",
+      format: "bo1",
       position: 2,
       score: { first_participant_wins: 1, second_participant_wins: 0 },
       scheduled_at: null,
       second_display_name: "Вера",
       stage: "semifinal",
       state: "completed",
+      winner_display_name: "Боб",
     },
-    ...(phase === "playoffs" ? [] : [{
-      first_display_name: "Алиса",
+    {
+      first_display_name: phase === "playoffs" ? null : "Алиса",
+      format: "bo3" as const,
       position: 1,
-      score: { first_participant_wins: 2, second_participant_wins: 1 },
+      score: phase === "playoffs"
+        ? { first_participant_wins: 0, second_participant_wins: 0 }
+        : { first_participant_wins: 2, second_participant_wins: 1 },
       scheduled_at: null,
-      second_display_name: "Боб",
+      second_display_name: phase === "playoffs" ? null : "Боб",
       stage: "final" as const,
-      state: phase === "completed" ? "completed" as const : "active" as const,
-    }]),
+      state: phase === "playoffs"
+        ? "planned" as const
+        : phase === "completed"
+          ? "completed" as const
+          : "active" as const,
+      winner_display_name: phase === "completed" ? "Алиса" : null,
+    },
   ],
   projection_revision: phaseRevision(phase),
   tournament_id: tournamentId,
@@ -548,7 +560,7 @@ test("управляет Golden и отображает официальный b
   await expect(bracket).toBeVisible();
   await expect(panel.getByTestId("server-seed")).toHaveCount(4);
   const matches = bracket.getByTestId("playoff-match");
-  await expect(matches).toHaveCount(2);
+  await expect(matches).toHaveCount(3);
   await expect(matches.nth(0)).toHaveAttribute("data-stage", "semifinal");
   await expect(matches.nth(0)).toContainText("Полуфинал 1 - BO1");
   await expect(matches.nth(0)).toContainText("Алиса (посев #1)");
@@ -559,6 +571,9 @@ test("управляет Golden и отображает официальный b
   await expect(matches.nth(1)).toContainText("Боб (посев #2)");
   await expect(matches.nth(1)).toContainText("Вера (посев #3)");
   await expect(matches.nth(1)).toContainText("1:0");
+  await expect(matches.nth(2)).toHaveAttribute("data-stage", "final");
+  await expect(matches.nth(2)).toContainText("Финал - BO3");
+  await expect(matches.nth(2)).toContainText("Ожидается");
   await expect(bracket).not.toContainText(/нижн|lower/i);
 
   harness.setPhase("playoffs-final");

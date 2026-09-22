@@ -2993,13 +2993,15 @@ type ProjectionRevisionProblem struct {
 
 // PublicBracketMatch defines model for PublicBracketMatch.
 type PublicBracketMatch struct {
-	FirstDisplayName  string                  `json:"first_display_name"`
+	FirstDisplayName  *string                 `json:"first_display_name"`
+	Format            SeriesFormat            `json:"format"`
 	Position          int32                   `json:"position"`
 	ScheduledAt       *time.Time              `json:"scheduled_at"`
 	Score             SeriesScore             `json:"score"`
-	SecondDisplayName string                  `json:"second_display_name"`
+	SecondDisplayName *string                 `json:"second_display_name"`
 	Stage             PublicBracketMatchStage `json:"stage"`
 	State             SeriesState             `json:"state"`
+	WinnerDisplayName *string                 `json:"winner_display_name"`
 }
 
 // PublicBracketMatchStage defines model for PublicBracketMatch.Stage.
@@ -3112,6 +3114,7 @@ type PublicRecoverySnapshot struct {
 	NextCursor      PublicRecoveryCursor     `json:"next_cursor"`
 	OfficialResults []PublicOfficialResult   `json:"official_results"`
 	Scoreboard      PublicScoreboardResponse `json:"scoreboard"`
+	SwissRounds     []PublicSwissRound       `json:"swiss_rounds"`
 	Tournament      PublicTournamentResponse `json:"tournament"`
 }
 
@@ -3140,6 +3143,19 @@ type PublicScoreboardResponse struct {
 type PublicSeriesScore struct {
 	FirstWins  int32 `json:"first_wins"`
 	SecondWins int32 `json:"second_wins"`
+}
+
+// PublicSwissBye defines model for PublicSwissBye.
+type PublicSwissBye struct {
+	DisplayName   string `json:"display_name"`
+	PointsAwarded int32  `json:"points_awarded"`
+}
+
+// PublicSwissRound defines model for PublicSwissRound.
+type PublicSwissRound struct {
+	Bye         *PublicSwissBye `json:"bye"`
+	RoundNumber int32           `json:"round_number"`
+	State       WaveState       `json:"state"`
 }
 
 // PublicTournamentResponse defines model for PublicTournamentResponse.

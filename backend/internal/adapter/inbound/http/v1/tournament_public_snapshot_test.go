@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/http/api"
+	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	inbound "github.com/TakuyaYagam1/task-per-minute/internal/port/inbound"
 	inboundmocks "github.com/TakuyaYagam1/task-per-minute/internal/port/inbound/mocks"
 )
@@ -48,6 +49,21 @@ func TestGetPublicSnapshotPropagatesCursorAndMapsAllowlistedCollections(t *testi
 	require.Equal(t, int32(1), payload.Scoreboard.Entries[0].Wins)
 	require.Equal(t, int32(1), payload.Scoreboard.Entries[0].ByeCount)
 	require.Equal(t, api.Pending, payload.Scoreboard.Entries[0].QualificationStatus)
+	require.Len(t, payload.SwissRounds, 2)
+	require.Equal(t, int32(1), payload.SwissRounds[0].RoundNumber)
+	require.Equal(t, api.WaveStateActive, payload.SwissRounds[0].State)
+	require.NotNil(t, payload.SwissRounds[0].Bye)
+	require.Equal(t, "alice", payload.SwissRounds[0].Bye.DisplayName)
+	require.Equal(t, int32(1), payload.SwissRounds[0].Bye.PointsAwarded)
+	require.Nil(t, payload.SwissRounds[1].Bye)
+	require.Len(t, payload.Bracket.Matches, 3)
+	require.Equal(t, api.Bo1, payload.Bracket.Matches[0].Format)
+	require.Equal(t, "alice", *payload.Bracket.Matches[0].FirstDisplayName)
+	require.Equal(t, "alice", *payload.Bracket.Matches[0].WinnerDisplayName)
+	require.Equal(t, api.Bo1, payload.Bracket.Matches[1].Format)
+	require.Equal(t, api.Bo3, payload.Bracket.Matches[2].Format)
+	require.Nil(t, payload.Bracket.Matches[2].FirstDisplayName)
+	require.Nil(t, payload.Bracket.Matches[2].WinnerDisplayName)
 	require.Len(t, payload.LiveSeries, 1)
 	require.Equal(t, api.PublicLiveSeriesStageSwiss, payload.LiveSeries[0].Stage)
 	require.NotNil(t, payload.LiveSeries[0].RoundNumber)
@@ -90,6 +106,17 @@ func TestGetPublicSnapshotWithoutCursorRequestsFreshSnapshot(t *testing.T) {
 	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &payload))
 	require.Len(t, payload.LiveSeries, 1)
 	require.Len(t, payload.OfficialResults, 1)
+}
+
+func TestPublicBracketResponseRejectsIncompletePlayoffTopology(t *testing.T) {
+	t.Parallel()
+
+	view := publicSnapshotHTTPView(uuid.MustParse("20000000-0000-4000-8000-000000000020"))
+	view.Bracket = view.Bracket[:2]
+
+	_, err := publicBracketResponse(view)
+
+	require.ErrorIs(t, err, domain.ErrInternal)
 }
 
 func TestGetPublicSnapshotMapsFutureCursorConflictToHTTP409(t *testing.T) {
@@ -141,7 +168,23 @@ func publicSnapshotHTTPView(tournamentID uuid.UUID) inbound.PublicSnapshotView {
 			Rank: 1, DisplayName: "alice", Points: 3, Wins: 1, Losses: 0, ByeCount: 1,
 			Buchholz: 2, EffectiveTimeMS: 4100, QualificationStatus: "pending",
 		}},
-		Bracket: []inbound.PublicBracketMatchView{},
+		SwissRounds: []inbound.PublicSwissRoundView{
+			{RoundNumber: 1, State: "active", Bye: &inbound.PublicSwissByeView{DisplayName: "alice", PointsAwarded: 1}},
+			{RoundNumber: 2, State: "planned"},
+		},
+		Bracket: []inbound.PublicBracketMatchView{
+			{
+				Stage: "semifinal", Position: 1, Format: "bo1",
+				FirstDisplayName: httpStringPointer("alice"), SecondDisplayName: httpStringPointer("bob"),
+				FirstWins: 1, SecondWins: 0, State: "completed", WinnerDisplayName: httpStringPointer("alice"),
+			},
+			{
+				Stage: "semifinal", Position: 2, Format: "bo1",
+				FirstDisplayName: httpStringPointer("carol"), SecondDisplayName: httpStringPointer("dave"),
+				FirstWins: 0, SecondWins: 0, State: "planned",
+			},
+			{Stage: "final", Position: 1, Format: "bo3", State: "planned"},
+		},
 		LiveSeries: []inbound.PublicSeriesView{{
 			SeriesID:            seriesID,
 			Stage:               "swiss",
@@ -164,4 +207,8 @@ func publicSnapshotHTTPView(tournamentID uuid.UUID) inbound.PublicSnapshotView {
 			RecordedAt:        recordedAt,
 		}},
 	}
+}
+
+func httpStringPointer(value string) *string {
+	return &value
 }

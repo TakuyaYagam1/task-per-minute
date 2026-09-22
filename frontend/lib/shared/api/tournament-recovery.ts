@@ -28,6 +28,7 @@ class UnknownRecoverySchemaError extends ApiContractError {
 type PublicDisplay = {
   tournament: Record<string, unknown>;
   scoreboard: readonly Record<string, unknown>[];
+  swissRounds: readonly Record<string, unknown>[];
   bracket: readonly Record<string, unknown>[];
   liveSeries: readonly Record<string, unknown>[];
   officialResults: readonly Record<string, unknown>[];
@@ -60,6 +61,7 @@ export type PublicRealtimeEnvelope = {
     last_sequence: number;
     tournament: Record<string, unknown>;
     scoreboard: readonly Record<string, unknown>[];
+    swiss_rounds: readonly Record<string, unknown>[];
     bracket: readonly Record<string, unknown>[];
     live_series: readonly Record<string, unknown>[];
     official_results: readonly Record<string, unknown>[];
@@ -112,6 +114,16 @@ const SERIES_STATES = new Set([
   "technical_pause",
   "completed",
   "cancelled",
+]);
+const WAVE_STATES = new Set([
+  "planned",
+  "ready_window_open",
+  "ready",
+  "active",
+  "paused",
+  "completed",
+  "ready_window_expired",
+  "superseded",
 ]);
 const PUBLIC_SERIES_STAGES = new Set([
   "swiss",
@@ -176,6 +188,9 @@ const isOptionalDateTime = (value: unknown): boolean =>
 const isNonBlank = (value: unknown): value is string =>
   typeof value === "string" && value.trim().length > 0;
 
+const isPublicDisplayName = (value: unknown): value is string =>
+  isNonBlank(value) && value.trim().length <= 64;
+
 const isCursor = (value: unknown): value is PublicRecoveryCursor =>
   isRecord(value) &&
   hasOnlyKeys(value, ["projection_revision", "event_sequence"]) &&
@@ -194,7 +209,9 @@ const isBracketScore = (value: unknown): boolean =>
   isRecord(value) &&
   hasOnlyKeys(value, ["first_participant_wins", "second_participant_wins"]) &&
   isNonNegativeInteger(value.first_participant_wins) &&
-  isNonNegativeInteger(value.second_participant_wins);
+  value.first_participant_wins <= 2 &&
+  isNonNegativeInteger(value.second_participant_wins) &&
+  value.second_participant_wins <= 2;
 
 const isTournament = (value: unknown, includeProjection: boolean): value is Record<string, unknown> => {
   if (!isRecord(value)) {
@@ -247,26 +264,127 @@ const isScoreboardEntry = (value: unknown): value is Record<string, unknown> =>
   isNonNegativeInteger(value.buchholz) &&
   isNonNegativeInteger(value.effective_time_ms);
 
-const isBracketMatch = (value: unknown, websocket: boolean): value is Record<string, unknown> =>
+const isPublicSwissBye = (value: unknown): value is Record<string, unknown> =>
   isRecord(value) &&
-  hasOnlyKeys(value, [
-    "stage",
-    "position",
-    "first_display_name",
-    "second_display_name",
-    "score",
-    "state",
-    "scheduled_at",
-  ]) &&
-  (value.stage === "semifinal" || value.stage === "final") &&
-  isPositiveInteger(value.position) &&
-  isNonBlank(value.first_display_name) &&
-  isNonBlank(value.second_display_name) &&
-  (websocket ? isPublicSeriesScore(value.score) : isBracketScore(value.score)) &&
-  typeof value.state === "string" &&
-  SERIES_STATES.has(value.state) &&
-  "scheduled_at" in value &&
-  isOptionalDateTime(value.scheduled_at);
+  hasOnlyKeys(value, ["display_name", "points_awarded"]) &&
+  isPublicDisplayName(value.display_name) &&
+  value.points_awarded === 1;
+
+const isPublicSwissRounds = (value: unknown): value is Record<string, unknown>[] => {
+  if (!Array.isArray(value) || value.length > 4) {
+    return false;
+  }
+  let previousRound = 0;
+  for (const item of value) {
+    if (
+      !isRecord(item) ||
+      !hasOnlyKeys(item, ["round_number", "state", "bye"]) ||
+      !isInteger(item.round_number) ||
+      item.round_number < 1 ||
+      item.round_number > 4 ||
+      item.round_number <= previousRound ||
+      typeof item.state !== "string" ||
+      !WAVE_STATES.has(item.state) ||
+      (item.bye !== null && !isPublicSwissBye(item.bye))
+    ) {
+      return false;
+    }
+    previousRound = item.round_number;
+  }
+  return true;
+};
+
+const isBracketMatch = (value: unknown, websocket: boolean): value is Record<string, unknown> => {
+  if (
+    !isRecord(value) ||
+    !hasOnlyKeys(value, [
+      "stage",
+      "position",
+      "format",
+      "first_display_name",
+      "second_display_name",
+      "score",
+      "state",
+      "scheduled_at",
+      "winner_display_name",
+    ]) ||
+    !isPositiveInteger(value.position) ||
+    (value.stage !== "semifinal" && value.stage !== "final") ||
+    (value.format !== "bo1" && value.format !== "bo3") ||
+    (value.stage === "semifinal" && value.format !== "bo1") ||
+    (value.stage === "final" && value.format !== "bo3") ||
+    typeof value.state !== "string" ||
+    !SERIES_STATES.has(value.state) ||
+    !("first_display_name" in value) ||
+    !("second_display_name" in value) ||
+    !("winner_display_name" in value) ||
+    !("scheduled_at" in value) ||
+    !isOptionalDateTime(value.scheduled_at) ||
+    (websocket ? !isPublicSeriesScore(value.score) : !isBracketScore(value.score))
+  ) {
+    return false;
+  }
+  const score = value.score as Record<string, unknown>;
+  const firstWins = websocket ? score.first_wins : score.first_participant_wins;
+  const secondWins = websocket ? score.second_wins : score.second_participant_wins;
+  const maxWins = value.stage === "semifinal" ? 1 : 2;
+  if (
+    typeof firstWins !== "number" ||
+    typeof secondWins !== "number" ||
+    firstWins > maxWins ||
+    secondWins > maxWins
+  ) {
+    return false;
+  }
+  const placeholder =
+    value.stage === "final" &&
+    value.state === "planned" &&
+    value.first_display_name === null &&
+    value.second_display_name === null &&
+    value.winner_display_name === null &&
+    firstWins === 0 &&
+    secondWins === 0;
+  if (placeholder) {
+    return true;
+  }
+  if (!isPublicDisplayName(value.first_display_name) || !isPublicDisplayName(value.second_display_name)) {
+    return false;
+  }
+  if (value.state !== "completed") {
+    return value.winner_display_name === null;
+  }
+  if (!isPublicDisplayName(value.winner_display_name) || firstWins === secondWins) {
+    return false;
+  }
+  return (
+    (firstWins > secondWins && value.winner_display_name === value.first_display_name) ||
+    (secondWins > firstWins && value.winner_display_name === value.second_display_name)
+  );
+};
+
+const isPublicBracket = (value: unknown, websocket: boolean): value is Record<string, unknown>[] => {
+  if (!isRecordArray(value, (item): item is Record<string, unknown> => isBracketMatch(item, websocket))) {
+    return false;
+  }
+  if (value.length === 0) {
+    return true;
+  }
+  if (value.length !== 3) {
+    return false;
+  }
+  const positions = new Set<string>();
+  for (const match of value) {
+    if (
+      (match.stage === "semifinal" && (match.position === 1 || match.position === 2)) ||
+      (match.stage === "final" && match.position === 1)
+    ) {
+      positions.add(`${match.stage}:${String(match.position)}`);
+      continue;
+    }
+    return false;
+  }
+  return positions.size === 3;
+};
 
 const isLiveSeries = (value: unknown): value is Record<string, unknown> =>
   isRecord(value) &&
@@ -357,6 +475,7 @@ export const isPublicRecoverySnapshot = (value: unknown): value is PublicRecover
     !hasOnlyKeys(value, [
       "tournament",
       "scoreboard",
+      "swiss_rounds",
       "bracket",
       "live_series",
       "official_results",
@@ -371,13 +490,12 @@ export const isPublicRecoverySnapshot = (value: unknown): value is PublicRecover
     value.scoreboard.tournament_id !== value.tournament.tournament_id ||
     value.scoreboard.projection_revision !== value.next_cursor.projection_revision ||
     !isRecordArray(value.scoreboard.entries, isScoreboardEntry) ||
+    !isPublicSwissRounds(value.swiss_rounds) ||
     !isRecord(value.bracket) ||
     !hasOnlyKeys(value.bracket, ["tournament_id", "projection_revision", "matches"]) ||
     value.bracket.tournament_id !== value.tournament.tournament_id ||
     value.bracket.projection_revision !== value.next_cursor.projection_revision ||
-    !isRecordArray(value.bracket.matches, (item): item is Record<string, unknown> =>
-      isBracketMatch(item, false),
-    ) ||
+    !isPublicBracket(value.bracket.matches, false) ||
     !isRecordArray(value.live_series, isLiveSeries) ||
     !isRecordArray(value.official_results, isOfficialResult) ||
     (value.live_draft !== null && !isDraft(value.live_draft, true))
@@ -421,6 +539,7 @@ const isPublicRealtimeEnvelope = (value: unknown): value is PublicRealtimeEnvelo
       "last_sequence",
       "tournament",
       "scoreboard",
+      "swiss_rounds",
       "bracket",
       "live_series",
       "official_results",
@@ -432,9 +551,8 @@ const isPublicRealtimeEnvelope = (value: unknown): value is PublicRealtimeEnvelo
     !isTournament(value.public.tournament, false) ||
     value.public.tournament.tournament_id !== value.tournament_id ||
     !isRecordArray(value.public.scoreboard, isScoreboardEntry) ||
-    !isRecordArray(value.public.bracket, (item): item is Record<string, unknown> =>
-      isBracketMatch(item, true),
-    ) ||
+    !isPublicSwissRounds(value.public.swiss_rounds) ||
+    !isPublicBracket(value.public.bracket, true) ||
     !isRecordArray(value.public.live_series, isLiveSeries) ||
     !isRecordArray(value.public.official_results, isOfficialResult) ||
     (value.public.draft !== undefined && !isDraft(value.public.draft, false))
@@ -484,6 +602,7 @@ export const isPublicRealtimeRejection = (value: unknown): boolean => {
 const restDisplay = (snapshot: PublicRecoverySnapshot): PublicDisplay => ({
   tournament: snapshot.tournament,
   scoreboard: snapshot.scoreboard.entries,
+  swissRounds: snapshot.swiss_rounds,
   bracket: snapshot.bracket.matches,
   liveSeries: snapshot.live_series,
   officialResults: snapshot.official_results,
@@ -493,6 +612,7 @@ const restDisplay = (snapshot: PublicRecoverySnapshot): PublicDisplay => ({
 const realtimeDisplay = (envelope: PublicRealtimeEnvelope): PublicDisplay => ({
   tournament: envelope.public.tournament,
   scoreboard: envelope.public.scoreboard,
+  swissRounds: envelope.public.swiss_rounds,
   bracket: envelope.public.bracket,
   liveSeries: envelope.public.live_series,
   officialResults: envelope.public.official_results,

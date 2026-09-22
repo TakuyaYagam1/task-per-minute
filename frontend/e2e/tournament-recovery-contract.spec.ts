@@ -376,6 +376,7 @@ const restSnapshot = (
     projection_revision: projectionRevision,
     matches: [
       {
+        format: "bo1",
         stage: "semifinal",
         position: 1,
         first_display_name: "alice",
@@ -383,6 +384,29 @@ const restSnapshot = (
         score: { first_participant_wins: 1, second_participant_wins: 0 },
         scheduled_at: null,
         state: "active",
+        winner_display_name: null,
+      },
+      {
+        format: "bo1",
+        stage: "semifinal",
+        position: 2,
+        first_display_name: "charlie",
+        second_display_name: "dana",
+        score: { first_participant_wins: 0, second_participant_wins: 0 },
+        scheduled_at: null,
+        state: "planned",
+        winner_display_name: null,
+      },
+      {
+        format: "bo3",
+        stage: "final",
+        position: 1,
+        first_display_name: null,
+        second_display_name: null,
+        score: { first_participant_wins: 0, second_participant_wins: 0 },
+        scheduled_at: null,
+        state: "planned",
+        winner_display_name: null,
       },
     ],
   },
@@ -411,6 +435,13 @@ const restSnapshot = (
     },
   ],
   live_draft: null,
+  swiss_rounds: [
+    {
+      bye: null,
+      round_number: 1,
+      state: "active",
+    },
+  ],
   next_cursor: {
     projection_revision: projectionRevision,
     event_sequence: eventSequence,
@@ -444,6 +475,7 @@ const realtimeEnvelope = (
     scoreboard: restSnapshot().scoreboard.entries,
     bracket: [
       {
+        format: "bo1",
         stage: "semifinal",
         position: 1,
         first_display_name: "alice",
@@ -451,10 +483,34 @@ const realtimeEnvelope = (
         score: { first_wins: 1, second_wins: 0 },
         scheduled_at: null,
         state: "active",
+        winner_display_name: null,
+      },
+      {
+        format: "bo1",
+        stage: "semifinal",
+        position: 2,
+        first_display_name: "charlie",
+        second_display_name: "dana",
+        score: { first_wins: 0, second_wins: 0 },
+        scheduled_at: null,
+        state: "planned",
+        winner_display_name: null,
+      },
+      {
+        format: "bo3",
+        stage: "final",
+        position: 1,
+        first_display_name: null,
+        second_display_name: null,
+        score: { first_wins: 0, second_wins: 0 },
+        scheduled_at: null,
+        state: "planned",
+        winner_display_name: null,
       },
     ],
     live_series: restSnapshot().live_series,
     official_results: restSnapshot().official_results,
+    swiss_rounds: restSnapshot().swiss_rounds,
   },
 });
 
@@ -642,6 +698,13 @@ test("public recovery rejects private and cross-tournament fields", () => {
 
   expect(isPublicRecoverySnapshot(privateSnapshot)).toBe(false);
   expect(() => recoverPublicTournament(privateSnapshot)).toThrow(
+    "Invalid public recovery snapshot",
+  );
+
+  const incompleteBracket = restSnapshot();
+  incompleteBracket.bracket.matches = incompleteBracket.bracket.matches.slice(0, 2);
+  expect(isPublicRecoverySnapshot(incompleteBracket)).toBe(false);
+  expect(() => recoverPublicTournament(incompleteBracket)).toThrow(
     "Invalid public recovery snapshot",
   );
 
@@ -1428,7 +1491,7 @@ test("FE-038 public match center keeps the selected server match in a direct lin
   })).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByRole("heading", { name: "Алиса - Боб" })).toBeVisible();
 
-  await broadcast.getByRole("tab", { name: "Сетка" }).click();
+  await broadcast.getByRole("tab", { name: "Плей-офф" }).click();
   await expect(broadcast.getByRole("tabpanel")).toContainText("Полуфинал");
   await expect(broadcast.getByTestId("server-countdown")).toHaveCount(0);
   await expect(broadcast.getByText("До серверного дедлайна")).toHaveCount(0);
@@ -1637,6 +1700,216 @@ test("FE-039 public scoreboard applies cutoff, Golden, bye, and correction from 
   await expect(page.getByRole("region", { name: "Состояние турнира" })).toContainText(
     "Ревизия сервера: 10",
   );
+});
+
+test("FE-040 public Swiss history and Single Elimination follow server snapshots", async ({ page }) => {
+  const serverTimestamp = "2026-09-15T10:00:00Z";
+  const base = publicRecoveryWithRoster(8, 11, 20);
+  const names = ["Алиса", "Боб", "Чарли", "Дана", "Ева", "Федор", "Глеб", "Ирина"];
+  const seriesIds = [
+    "00000000-0000-4000-8000-000000000201",
+    "00000000-0000-4000-8000-000000000202",
+    "00000000-0000-4000-8000-000000000203",
+    "00000000-0000-4000-8000-000000000204",
+    "00000000-0000-4000-8000-000000000205",
+  ];
+
+  const scoreboard = base.scoreboard.entries.map((entry, index) => ({
+    ...entry,
+    display_name: names[index] ?? entry.display_name,
+    qualification_status: index < 4 ? "qualified" as const : "eliminated" as const,
+    rank: index + 1,
+  }));
+  const swissRounds = [
+    { bye: null, round_number: 1, state: "completed" as const },
+    {
+      bye: { display_name: "Ева", points_awarded: 1 },
+      round_number: 2,
+      state: "active" as const,
+    },
+    { bye: null, round_number: 3, state: "planned" as const },
+    { bye: null, round_number: 4, state: "superseded" as const },
+  ];
+  const swissSeries = [
+    {
+      ...base.live_series[0]!,
+      series_id: seriesIds[0]!,
+      first_display_name: "Алиса",
+      second_display_name: "Боб",
+      score: { first_wins: 2, second_wins: 0 },
+      round_number: 1,
+      state: "completed" as const,
+    },
+    {
+      ...base.live_series[0]!,
+      series_id: seriesIds[1]!,
+      first_display_name: "Чарли",
+      second_display_name: "Дана",
+      score: { first_wins: 2, second_wins: 1 },
+      round_number: 1,
+      state: "completed" as const,
+    },
+    {
+      ...base.live_series[0]!,
+      series_id: seriesIds[2]!,
+      first_display_name: "Алиса",
+      second_display_name: "Чарли",
+      score: { first_wins: 1, second_wins: 0 },
+      round_number: 2,
+      state: "active" as const,
+    },
+    {
+      ...base.live_series[0]!,
+      series_id: seriesIds[3]!,
+      first_display_name: "Боб",
+      second_display_name: "Дана",
+      score: { first_wins: 0, second_wins: 0 },
+      round_number: 2,
+      state: "planned" as const,
+    },
+    {
+      ...base.live_series[0]!,
+      series_id: seriesIds[4]!,
+      first_display_name: "Ева",
+      second_display_name: "Федор",
+      score: { first_wins: 0, second_wins: 0 },
+      round_number: 4,
+      state: "cancelled" as const,
+    },
+  ];
+
+  const bracketFor = (
+    finalScore: readonly [number, number],
+    champion: string | null,
+  ) => ({
+    ...base.bracket,
+    matches: [
+      {
+        first_display_name: "Алиса",
+        second_display_name: "Боб",
+        format: "bo1" as const,
+        position: 1,
+        score: { first_participant_wins: 1, second_participant_wins: 0 },
+        scheduled_at: null,
+        stage: "semifinal" as const,
+        state: champion ? "completed" as const : "active" as const,
+        winner_display_name: champion ? "Алиса" : null,
+      },
+      {
+        first_display_name: "Чарли",
+        second_display_name: "Дана",
+        format: "bo1" as const,
+        position: 2,
+        score: { first_participant_wins: 1, second_participant_wins: 0 },
+        scheduled_at: null,
+        stage: "semifinal" as const,
+        state: champion ? "completed" as const : "active" as const,
+        winner_display_name: champion ? "Чарли" : null,
+      },
+      {
+        first_display_name: champion ? "Алиса" : null,
+        second_display_name: champion ? "Чарли" : null,
+        format: "bo3" as const,
+        position: 1,
+        score: {
+          first_participant_wins: finalScore[0]!,
+          second_participant_wins: finalScore[1]!,
+        },
+        scheduled_at: null,
+        stage: "final" as const,
+        state: champion ? "completed" as const : "planned" as const,
+        winner_display_name: champion,
+      },
+    ],
+  });
+
+  const snapshotFor = (
+    projectionRevision: number,
+    eventSequence: number,
+    tournamentState: "swiss" | "playoffs" | "completed",
+    finalScore: readonly [number, number],
+    champion: string | null,
+  ): ReturnType<typeof publicRecoveryWithRoster> => ({
+    ...base,
+    bracket: { ...bracketFor(finalScore, champion), projection_revision: projectionRevision },
+    live_series: swissSeries,
+    next_cursor: { event_sequence: eventSequence, projection_revision: projectionRevision },
+    scoreboard: { ...base.scoreboard, entries: scoreboard, projection_revision: projectionRevision },
+    swiss_rounds: swissRounds,
+    tournament: {
+      ...base.tournament,
+      finished_at: champion ? "2026-09-15T10:20:00Z" : null,
+      projection_revision: projectionRevision,
+      state: tournamentState,
+    },
+  });
+
+  const beforeFinal = snapshotFor(11, 20, "swiss", [0, 0], null);
+  const finalTwoZero = snapshotFor(12, 21, "playoffs", [2, 0], "Алиса");
+  const finalTwoOne = snapshotFor(13, 22, "completed", [2, 1], "Алиса");
+  let currentSnapshot = beforeFinal;
+
+  await page.clock.install({ time: serverTimestamp });
+  await installOperatorWebSocketStub(page);
+  await installArenaAccessRoutes(page, createTournamentFixtureSet());
+  await page.route(`**${arenaPublicSnapshotPath}*`, async (route) => {
+    expect(route.request().method()).toBe("GET");
+    await fulfillJSON(route, currentSnapshot, { date: new Date(serverTimestamp).toUTCString() });
+  });
+
+  await page.goto(`/arena/spectator/${arenaTournamentId}`, {
+    waitUntil: "domcontentloaded",
+  });
+  const broadcast = page.getByTestId("tournament-broadcast");
+  await expect(broadcast.getByRole("tab", { name: "Swiss" })).toBeVisible();
+  await expect(broadcast.getByRole("tab", { name: "Плей-офф" })).toBeVisible();
+
+  await broadcast.getByRole("tab", { name: "Swiss" }).click();
+  await expect(broadcast.getByTestId("swiss-round-1")).toContainText("Завершена");
+  await expect(broadcast.getByTestId("swiss-round-2")).toContainText("Идет");
+  await expect(broadcast.getByTestId("swiss-round-3")).toContainText("Запланирована");
+  await expect(broadcast.getByTestId("swiss-round-4")).toContainText("Заменена новой версией");
+  await expect(broadcast.getByTestId("swiss-bye-2")).toContainText("Ева");
+  await expect(broadcast.getByTestId("swiss-bye-2")).toContainText("+1 очко");
+  await expect(broadcast.getByTestId("swiss-round-1")).toContainText("Алиса - Боб");
+  await expect(broadcast.getByTestId("swiss-round-4")).toContainText("Отменена");
+
+  await broadcast.getByRole("tab", { name: "Плей-офф" }).click();
+  const playoff = broadcast.getByRole("tabpanel");
+  await expect(playoff.getByRole("heading", { name: "Top 4" })).toBeVisible();
+  await expect(playoff.locator('[data-testid^="playoff-bracket"]')).toHaveCount(2);
+  await expect(playoff.getByTestId("playoff-final")).toContainText("Ожидается");
+  await expect(playoff.getByTestId("playoff-final")).toContainText("BO3");
+  await expect(playoff).not.toContainText("Нижняя сетка");
+
+  const finalButton = playoff.getByTestId("playoff-final").locator("button[data-match-key]");
+  await finalButton.focus();
+  await expect(finalButton).toBeFocused();
+  await expect(finalButton).toHaveAttribute("aria-pressed", "false");
+  await finalButton.click();
+  await expect(finalButton).toHaveAttribute("aria-pressed", "true");
+  await expect.poll(() => new URL(page.url()).searchParams.get("match")).toBe("bracket:final:1");
+
+  for (const theme of ["Темная тема", "Светлая тема"] as const) {
+    await page.getByRole("button", { name: theme }).click();
+    await expect(page.locator("html")).toHaveAttribute(
+      "data-theme",
+      theme === "Темная тема" ? "dark" : "light",
+    );
+  }
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+
+  currentSnapshot = finalTwoZero;
+  await page.getByRole("button", { name: "Повторить синхронизацию" }).click();
+  await expect(broadcast.getByTestId("playoff-final")).toContainText("2:0");
+  await expect(broadcast.getByTestId("playoff-final")).toContainText("Чемпион: Алиса");
+
+  currentSnapshot = finalTwoOne;
+  await page.getByRole("button", { name: "Повторить синхронизацию" }).click();
+  await expect(broadcast.getByTestId("playoff-final")).toContainText("2:1");
+  await expect(broadcast.getByTestId("playoff-final")).toContainText("Чемпион: Алиса");
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });
 
 test("FE-038 public match center distinguishes every server tournament state in both themes", async ({ page }) => {

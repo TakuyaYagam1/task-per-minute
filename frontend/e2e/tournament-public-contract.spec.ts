@@ -206,11 +206,35 @@ const publicBracket = (
     {
       stage: "semifinal",
       position: 1,
+      format: "bo1",
       first_display_name: "Алиса",
-      second_display_name: "Боб",
+      second_display_name: "Глеб",
       score: { first_participant_wins: 1, second_participant_wins: 0 },
       scheduled_at: null,
-      state: "active",
+      state: "completed",
+      winner_display_name: "Алиса",
+    },
+    {
+      stage: "semifinal",
+      position: 2,
+      format: "bo1",
+      first_display_name: "Боб",
+      second_display_name: "Вера",
+      score: { first_participant_wins: 1, second_participant_wins: 0 },
+      scheduled_at: null,
+      state: "completed",
+      winner_display_name: "Боб",
+    },
+    {
+      stage: "final",
+      position: 1,
+      format: "bo3",
+      first_display_name: null,
+      second_display_name: null,
+      score: { first_participant_wins: 0, second_participant_wins: 0 },
+      scheduled_at: null,
+      state: "planned",
+      winner_display_name: null,
     },
   ],
 ): PublicBracketResponse => ({
@@ -277,7 +301,7 @@ const expectLastValidProjection = async (
   await expect(page.getByLabel("Ревизия сервера")).toHaveText("17");
   await expect(page.getByLabel("Размер ростера")).toHaveText(String(rosterSize));
   await expect(page.getByLabel("Записей таблицы")).toHaveText("1");
-  await expect(page.getByLabel("Матчей сетки")).toHaveText("1");
+  await expect(page.getByLabel("Матчей сетки")).toHaveText("3");
 };
 
 test("читает три public endpoint анонимно и сохраняет server projection revision", async ({ page }) => {

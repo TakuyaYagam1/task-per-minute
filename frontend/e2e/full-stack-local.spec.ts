@@ -72,6 +72,7 @@ type FullStackPreflightReport = {
 };
 
 type FullStackSwissRound = {
+  bye?: { participant_id: string } | null;
   locked: boolean;
   pairings: Array<{
     first_participant_id: string;
@@ -101,9 +102,39 @@ type FullStackOperatorSnapshot = {
   waves: FullStackWave[];
 };
 
+type FullStackPlayoffSeries = {
+  first_participant_id: string;
+  format: 'bo1' | 'bo3';
+  id: string;
+  second_participant_id: string;
+  score: {
+    first_participant_wins: number;
+    second_participant_wins: number;
+  };
+  slots: Array<{
+    attempts: Array<{ id: string; state: string }>;
+    position: number;
+  }>;
+  state: string;
+  winner_id: string | null;
+};
+
+type FullStackDraft = {
+  actions: Array<{ category: FullStackTaskInput['category'] }>;
+  current_action: 'ban' | 'pick' | null;
+  current_actor_id: string | null;
+  id: string;
+  legal_categories: FullStackTaskInput['category'][];
+  revision: number;
+  series_id: string;
+  state: string;
+  turn: number;
+};
+
 type FullStackParticipantSnapshot = {
   projection_revision: number;
   tournament_id?: string;
+  draft?: FullStackDraft | null;
   lobby?: {
     participant_id?: string;
     current_swiss_round?: number | null;
@@ -159,6 +190,46 @@ type FullStackParticipantSnapshot = {
     state: string;
     members: Array<{ participant_id: string; series_id?: string | null }>;
   } | null;
+};
+
+type FullStackPublicSnapshot = {
+  bracket: {
+    matches: Array<{
+      first_display_name: string | null;
+      second_display_name: string | null;
+      score: {
+        first_participant_wins: number;
+        second_participant_wins: number;
+      };
+      stage: 'semifinal' | 'final';
+      state: string;
+      position: number;
+      winner_display_name: string | null;
+    }>;
+  };
+  live_series: Array<{
+    first_display_name: string;
+    second_display_name: string;
+    round_number: number | null;
+    score: {
+      first_wins: number;
+      second_wins: number;
+    };
+    stage: string;
+    state: string;
+  }>;
+  swiss_rounds: Array<{
+    bye: {
+      display_name: string;
+      points_awarded: number;
+    } | null;
+    round_number: number;
+    state: string;
+  }>;
+  tournament: {
+    state: string;
+    tournament_id: string;
+  };
 };
 
 type FullStackConfigurationMutation = {
@@ -442,6 +513,20 @@ const readParticipantSnapshotViaApi = async (
   return snapshot;
 };
 
+const readPublicSnapshotViaApi = async (
+  context: BrowserContext,
+  tournamentID: string,
+): Promise<FullStackPublicSnapshot> => {
+  const response = await context.request.get(
+    `${backendURL}/api/v1/tournaments/${tournamentID}/snapshot`,
+    { headers: { Origin: frontendURL } },
+  );
+  expect(response.status(), `public snapshot failed with ${response.status()}`).toBe(200);
+  const snapshot = (await response.json()) as FullStackPublicSnapshot;
+  expect(snapshot.tournament.tournament_id).toBe(tournamentID);
+  return snapshot;
+};
+
 const applyOpenRegistrationViaApi = async (
   request: APIRequestContext,
   tournamentID: string,
@@ -502,6 +587,68 @@ const applyStartSwissViaApi = async (
     throw new Error('start Swiss did not issue a request');
   }
   return response;
+};
+
+const applyStartPlayoffsViaApi = async (
+  request: APIRequestContext,
+  tournamentID: string,
+  csrfToken: string,
+): Promise<APIResponse> => {
+  let projectionRevision = await getOperatorProjectionRevisionViaApi(request, tournamentID);
+  let response: APIResponse | null = null;
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    response = await request.post(`${backendURL}/api/v1/admin/tournaments/${tournamentID}/actions`, {
+      headers: {
+        'X-CSRF-Token': csrfToken,
+        'Idempotency-Key': randomUUID(),
+        Origin: frontendURL,
+      },
+      data: {
+        expected_projection_revision: projectionRevision,
+        action: 'start_playoffs',
+        confirmed: true,
+      },
+    });
+    if (response.status() !== 409) {
+      return response;
+    }
+
+    const conflict = (await response.json()) as { current_revision?: unknown };
+    if (
+      typeof conflict.current_revision !== 'number' ||
+      !Number.isSafeInteger(conflict.current_revision) ||
+      conflict.current_revision < 1
+    ) {
+      return response;
+    }
+    projectionRevision = conflict.current_revision;
+  }
+
+  if (!response) {
+    throw new Error('start playoffs did not issue a request');
+  }
+  return response;
+};
+
+const applyStartGoldenViaApi = async (
+  request: APIRequestContext,
+  tournamentID: string,
+  csrfToken: string,
+): Promise<APIResponse> => {
+  const projectionRevision = await getOperatorProjectionRevisionViaApi(request, tournamentID);
+  return request.post(`${backendURL}/api/v1/admin/tournaments/${tournamentID}/actions`, {
+    headers: {
+      'X-CSRF-Token': csrfToken,
+      'Idempotency-Key': randomUUID(),
+      Origin: frontendURL,
+    },
+    data: {
+      expected_projection_revision: projectionRevision,
+      action: 'start_golden',
+      confirmed: true,
+    },
+  });
 };
 
 const runRosterPreflightViaApi = async (
@@ -2485,23 +2632,10 @@ test.describe('local compose full stack e2e', () => {
         throw new Error('Swiss rounds did not produce a correction target');
       }
 
-      const startPlayoffs = await adminRequest.post(
-        `${backendURL}/api/v1/admin/tournaments/${tournament.id}/actions`,
-        {
-          headers: {
-            'X-CSRF-Token': adminAccessCSRFToken,
-            'Idempotency-Key': randomUUID(),
-            Origin: frontendURL,
-          },
-          data: {
-            action: 'start_playoffs',
-            confirmed: true,
-            expected_projection_revision: await getOperatorProjectionRevisionViaApi(
-              adminRequest,
-              tournament.id,
-            ),
-          },
-        },
+      const startPlayoffs = await applyStartPlayoffsViaApi(
+        adminRequest,
+        tournament.id,
+        adminAccessCSRFToken,
       );
       expect(startPlayoffs.status(), `start playoffs failed with ${startPlayoffs.status()}: ${await startPlayoffs.text()}`).toBe(200);
 
@@ -2631,6 +2765,891 @@ test.describe('local compose full stack e2e', () => {
         await anonymousContext.close();
       }
     } finally {
+      for (const context of playerContexts) {
+        await context.close();
+      }
+    }
+  });
+
+  test('FE-040 real backend spectator renders Swiss history and fixed Top 4 bracket', async ({ browser, request }) => {
+    test.setTimeout(900_000);
+
+    type FullStackPlayoffSnapshot = FullStackOperatorSnapshot & {
+      series: FullStackPlayoffSeries[];
+      tournament: { id: string; state: string };
+    };
+
+    const tournamentName = uniqueName('fe040-spectator');
+    const tournamentPublicID = uniqueName('fe040-public');
+    const playerNames = Array.from({ length: 5 }, (_, index) =>
+      uniqueName(`fe040-player-${index + 1}`));
+    const playerContexts: BrowserContext[] = [];
+    let spectatorContext: BrowserContext | null = null;
+
+    try {
+      const adminSession = await adminLogin(request);
+      const normalFlagsByTitle = new Map<string, string>();
+      const goldenFlagsByTitle = new Map<string, string>();
+      const normalTaskGroups: Array<{
+        category: FullStackTaskInput['category'];
+        count: number;
+      }> = [
+        { category: 'web', count: 27 },
+        { category: 'crypto', count: 27 },
+        { category: 'reverse', count: 27 },
+        { category: 'forensics', count: 3 },
+        { category: 'pwn', count: 3 },
+      ];
+
+      for (const group of normalTaskGroups) {
+        for (let index = 0; index < group.count; index += 1) {
+          const title = uniqueName(`fe040-${group.category}-${index + 1}`);
+          const flag = `flag{${title.replaceAll('-', '_')}}`;
+          normalFlagsByTitle.set(title, flag);
+          await createTaskViaApi(request, adminSession, {
+            title,
+            description: 'Normal task for the real backend spectator flow.',
+            kind: 'normal',
+            category: group.category,
+            difficulty: 'easy',
+            time_limit: 180,
+            flag,
+            hints: ['spectator hint one', 'spectator hint two', 'spectator hint three'],
+            task_url: 'https://example.com/fe040-normal',
+          });
+        }
+      }
+      for (let index = 0; index < 6; index += 1) {
+        const title = uniqueName(`fe040-golden-${index + 1}`);
+        const flag = `flag{${title.replaceAll('-', '_')}}`;
+        goldenFlagsByTitle.set(title, flag);
+        await createTaskViaApi(request, adminSession, {
+          title,
+          description: 'Golden task for the real backend spectator flow.',
+          kind: 'golden',
+          category: 'web',
+          difficulty: 'easy',
+          time_limit: 180,
+          flag,
+          hints: ['golden hint one', 'golden hint two', 'golden hint three'],
+          task_url: 'https://example.com/fe040-golden',
+        });
+      }
+
+      const contentRevision = await getTournamentContentRevision(request);
+      const tournament = await createTournamentViaApi(
+        request,
+        adminSession,
+        {
+          name: tournamentName,
+          content_revision: contentRevision,
+          planned_roster_size: 5,
+          public_id: tournamentPublicID,
+          preset: 'tournament_v1',
+          expected_revision: 0,
+        },
+      );
+
+      const players: FullStackPlayer[] = [];
+      for (const username of playerNames) {
+        const context = await browser.newContext({ baseURL: frontendURL });
+        playerContexts.push(context);
+        const playerPage = await context.newPage();
+        await joinAsPlayer(playerPage, username);
+        const meResponse = await context.request.get(`${backendURL}/api/v1/players/me`, {
+          headers: { Origin: frontendURL },
+        });
+        expect(meResponse.status(), `players/me failed with ${meResponse.status()}`).toBe(200);
+        const me = (await meResponse.json()) as { player: FullStackPlayer };
+        expect(me.player.username).toBe(username);
+        players.push(me.player);
+        await playerPage.close();
+      }
+
+      const roster = await getRosterViaApi(request, tournament.id);
+      const invitedParticipants: FullStackRosterParticipantInput[] = players.map(
+        (player, index) => ({
+          attendance: 'invited',
+          player_id: player.id,
+          seed: index + 1,
+        }),
+      );
+      const invitedRosterResponse = await replaceRosterViaApi(
+        request,
+        tournament.id,
+        adminSession.access_csrf_token,
+        await getOperatorProjectionRevisionViaApi(request, tournament.id),
+        invitedParticipants,
+      );
+      const invitedRoster = await readRosterResponse(invitedRosterResponse, tournament.id, roster.id);
+      expect(invitedRoster.participants).toHaveLength(5);
+
+      const openRegistration = await applyOpenRegistrationViaApi(
+        request,
+        tournament.id,
+        adminSession.access_csrf_token,
+      );
+      expect(openRegistration.status(), `open registration failed with ${openRegistration.status()}`).toBe(200);
+
+      const checkedInParticipants = invitedParticipants.map((participant) => ({
+        ...participant,
+        attendance: 'checked_in' as const,
+      }));
+      const checkedInRosterResponse = await replaceRosterViaApi(
+        request,
+        tournament.id,
+        adminSession.access_csrf_token,
+        await getOperatorProjectionRevisionViaApi(request, tournament.id),
+        checkedInParticipants,
+      );
+      const checkedInRoster = await readRosterResponse(
+        checkedInRosterResponse,
+        tournament.id,
+        roster.id,
+      );
+      const checkedInRosterParticipants = sortRosterParticipantsBySeed(checkedInRoster.participants);
+      expect(checkedInRosterParticipants).toHaveLength(5);
+      expect(checkedInRosterParticipants.every((participant) => participant.attendance === 'checked_in')).toBe(true);
+
+      let preflight: FullStackPreflightReport | null = null;
+      for (let attempt = 0; attempt < 12 && !preflight?.passed; attempt += 1) {
+        const preflightResponse = await runRosterPreflightViaApi(
+          request,
+          tournament.id,
+          adminSession.access_csrf_token,
+        );
+        expect(
+          preflightResponse.status(),
+          `roster preflight failed with ${preflightResponse.status()}`,
+        ).toBe(200);
+        preflight = (await preflightResponse.json()) as FullStackPreflightReport;
+        if (!preflight.passed) {
+          await new Promise((resolve) => setTimeout(resolve, 250));
+        }
+      }
+      expect(preflight, 'roster preflight did not return a report').not.toBeNull();
+      if (!preflight) {
+        throw new Error('roster preflight did not return a report');
+      }
+      expect(preflight.passed).toBe(true);
+
+      const lockResponse = await lockRosterViaApi(
+        request,
+        tournament.id,
+        adminSession.access_csrf_token,
+        preflight.id,
+        checkedInRosterParticipants.map((participant) => participant.player_id),
+      );
+      expect(lockResponse.status(), `roster lock failed with ${lockResponse.status()}`).toBe(200);
+      const lockedRoster = await readRosterResponse(lockResponse, tournament.id, roster.id);
+      expect(lockedRoster.locked).toBe(true);
+
+      const startSwiss = await applyStartSwissViaApi(
+        request,
+        tournament.id,
+        adminSession.access_csrf_token,
+      );
+      expect(startSwiss.status(), `start Swiss failed with ${startSwiss.status()}`).toBe(200);
+
+      const contextForParticipant = (participantID: string): BrowserContext => {
+        const rosterParticipant = checkedInRosterParticipants.find(
+          (participant) => participant.id === participantID,
+        );
+        expect(rosterParticipant, `missing roster participant ${participantID}`).toBeDefined();
+        if (!rosterParticipant) {
+          throw new Error(`missing roster participant ${participantID}`);
+        }
+        const playerIndex = players.findIndex((player) => player.id === rosterParticipant.player_id);
+        const context = playerContexts[playerIndex];
+        if (!context) {
+          throw new Error(`missing browser context for player ${rosterParticipant.player_id}`);
+        }
+        return context;
+      };
+
+      const qualifierParticipantIDs = new Set(
+        checkedInRosterParticipants.slice(0, 4).map((participant) => participant.id),
+      );
+      const swissPoints = new Map(
+        checkedInRosterParticipants.map((participant) => [participant.id, 0]),
+      );
+      const participantSeed = new Map(
+        checkedInRosterParticipants.map((participant) => [participant.id, participant.seed]),
+      );
+
+      type WaveAction = 'open_ready_window' | 'start' | 'complete';
+      const waveAction = async (waveID: string, action: WaveAction): Promise<FullStackWave> => {
+        const response = await request.post(
+          `${backendURL}/api/v1/admin/tournaments/${tournament.id}/waves/${waveID}/actions`,
+          {
+            headers: {
+              'X-CSRF-Token': adminSession.access_csrf_token,
+              'Idempotency-Key': randomUUID(),
+              Origin: frontendURL,
+            },
+            data: {
+              action,
+              confirmed: true,
+              expected_projection_revision: await getOperatorProjectionRevisionViaApi(
+                request,
+                tournament.id,
+              ),
+            },
+          },
+        );
+        expect(response.status(), `${action} Wave failed with ${response.status()}`).toBe(200);
+        return (await response.json()) as FullStackWave;
+      };
+
+      const prepareSwissRound = async (
+        roundNumber: number,
+        knownWaveIDs: ReadonlySet<string>,
+      ): Promise<FullStackWave> => {
+        const pairing = await request.post(
+          `${backendURL}/api/v1/admin/tournaments/${tournament.id}/pairings`,
+          {
+            headers: {
+              'X-CSRF-Token': adminSession.access_csrf_token,
+              'Idempotency-Key': randomUUID(),
+              Origin: frontendURL,
+            },
+            data: {
+              categories: ['web', 'crypto', 'forensics'],
+              category_mode: 'random',
+              expected_projection_revision: await getOperatorProjectionRevisionViaApi(
+                request,
+                tournament.id,
+              ),
+              pairing_mode: 'automatic',
+              round_number: roundNumber,
+            },
+          },
+        );
+        expect(pairing.status(), `Swiss round ${roundNumber} pairing failed with ${pairing.status()}`).toBe(200);
+        const configuredRound = (await pairing.json()) as FullStackSwissRound;
+        expect(configuredRound.round_number).toBe(roundNumber);
+        expect(configuredRound.pairings).toHaveLength(2);
+        expect(new Set(configuredRound.pairings.flatMap((pair) => [
+          pair.first_participant_id,
+          pair.second_participant_id,
+        ])).size).toBe(4);
+        if (configuredRound.bye) {
+          swissPoints.set(
+            configuredRound.bye.participant_id,
+            (swissPoints.get(configuredRound.bye.participant_id) ?? 0) + 1,
+          );
+        }
+
+        const snapshotResponse = await request.get(
+          `${backendURL}/api/v1/admin/tournaments/${tournament.id}/snapshot`,
+          { headers: { Origin: frontendURL } },
+        );
+        expect(snapshotResponse.status(), `operator snapshot failed with ${snapshotResponse.status()}`).toBe(200);
+        const snapshot = (await snapshotResponse.json()) as FullStackOperatorSnapshot;
+        const wave = snapshot.waves.find((candidate) => !knownWaveIDs.has(candidate.id));
+        expect(wave, `Swiss round ${roundNumber} did not create a Wave`).toBeDefined();
+        if (!wave) {
+          throw new Error(`Swiss round ${roundNumber} did not create a Wave`);
+        }
+
+        await waveAction(wave.id, 'open_ready_window');
+        for (const member of wave.members.filter((candidate) => candidate.series_id !== null)) {
+          const context = contextForParticipant(member.participant_id);
+          const participant = await readParticipantSnapshotViaApi(context, tournament.id);
+          const csrfToken = (await context.cookies()).find(
+            (cookie) => cookie.name === 'tpm_player_csrf',
+          )?.value;
+          expect(csrfToken, `participant ${member.participant_id} did not retain CSRF`).toBeTruthy();
+          const readiness = await context.request.post(
+            `${backendURL}/api/v1/tournaments/${tournament.id}/participant/waves/${wave.id}/ready`,
+            {
+              headers: {
+                'X-CSRF-Token': csrfToken ?? '',
+                'Idempotency-Key': randomUUID(),
+                Origin: frontendURL,
+              },
+              data: {
+                expected_projection_revision: participant.projection_revision,
+                ready: true,
+              },
+            },
+          );
+          expect(readiness.status(), `round ${roundNumber} readiness failed with ${readiness.status()}`).toBe(200);
+        }
+        return waveAction(wave.id, 'start');
+      };
+
+      const submitCorrectAssignment = async (
+        context: BrowserContext,
+        expectedSeriesID: string,
+      ): Promise<void> => {
+        const participant = await readParticipantSnapshotViaApi(context, tournament.id);
+        const assignment = participant.assignment;
+        expect(assignment, `participant did not receive assignment for ${expectedSeriesID}`).not.toBeNull();
+        if (!assignment) {
+          throw new Error(`participant did not receive assignment for ${expectedSeriesID}`);
+        }
+        expect(assignment.context.series_id).toBe(expectedSeriesID);
+        const flag = normalFlagsByTitle.get(assignment.active_snapshot.title);
+        expect(flag, `missing flag for ${assignment.active_snapshot.title}`).toBeTruthy();
+        if (!flag) {
+          throw new Error(`missing flag for ${assignment.active_snapshot.title}`);
+        }
+        const csrfToken = (await context.cookies()).find(
+          (cookie) => cookie.name === 'tpm_player_csrf',
+        )?.value;
+        expect(csrfToken, `participant did not retain CSRF for ${expectedSeriesID}`).toBeTruthy();
+        const submission = await context.request.post(
+          `${backendURL}/api/v1/tournaments/${tournament.id}/participant/series/${expectedSeriesID}/games/${assignment.context.game_id}/submissions`,
+          {
+            headers: {
+              'X-CSRF-Token': csrfToken ?? '',
+              'Idempotency-Key': randomUUID(),
+              Origin: frontendURL,
+            },
+            data: {
+              expected_projection_revision: participant.projection_revision,
+              submitted_flag: flag,
+            },
+          },
+        );
+        expect(submission.status(), `submission failed with ${submission.status()}`).toBe(200);
+      };
+
+      const settleWave = async (wave: FullStackWave): Promise<void> => {
+        const membersBySeries = new Map<string, FullStackWave['members']>();
+        for (const member of wave.members) {
+          if (!member.series_id) {
+            continue;
+          }
+          const members = membersBySeries.get(member.series_id) ?? [];
+          members.push(member);
+          membersBySeries.set(member.series_id, members);
+        }
+
+        for (const [seriesID, members] of membersBySeries) {
+          const orderedMembers = [...members].sort((first, second) => {
+            const firstQualifies = qualifierParticipantIDs.has(first.participant_id);
+            const secondQualifies = qualifierParticipantIDs.has(second.participant_id);
+            if (firstQualifies !== secondQualifies) {
+              return firstQualifies ? -1 : 1;
+            }
+            const firstPoints = swissPoints.get(first.participant_id) ?? 0;
+            const secondPoints = swissPoints.get(second.participant_id) ?? 0;
+            if (firstPoints !== secondPoints) {
+              return firstQualifies ? firstPoints - secondPoints : secondPoints - firstPoints;
+            }
+            return (participantSeed.get(first.participant_id) ?? 0) -
+              (participantSeed.get(second.participant_id) ?? 0);
+          });
+          const winner = orderedMembers[0];
+          expect(winner, `series ${seriesID} did not expose a winner candidate`).toBeDefined();
+          if (!winner) {
+            throw new Error(`series ${seriesID} did not expose a winner candidate`);
+          }
+          await submitCorrectAssignment(contextForParticipant(winner.participant_id), seriesID);
+          swissPoints.set(
+            winner.participant_id,
+            (swissPoints.get(winner.participant_id) ?? 0) + 1,
+          );
+        }
+
+        const snapshotResponse = await request.get(
+          `${backendURL}/api/v1/admin/tournaments/${tournament.id}/snapshot`,
+          { headers: { Origin: frontendURL } },
+        );
+        expect(snapshotResponse.status()).toBe(200);
+        const snapshot = (await snapshotResponse.json()) as FullStackOperatorSnapshot;
+        const currentWave = snapshot.waves.find((candidate) => candidate.id === wave.id);
+        expect(currentWave, `snapshot lost Wave ${wave.id}`).toBeDefined();
+        if (currentWave && currentWave.state !== 'completed') {
+          await waveAction(wave.id, 'complete');
+        }
+      };
+
+      const knownSwissWaveIDs = new Set<string>();
+      for (const roundNumber of [1, 2, 3]) {
+        const wave = await prepareSwissRound(roundNumber, knownSwissWaveIDs);
+        knownSwissWaveIDs.add(wave.id);
+        await settleWave(wave);
+      }
+
+      type GoldenGroup = {
+        attempt_id: string;
+        group_id: string;
+        members: Array<{ participant_id: string }>;
+        ready_window_id: string;
+        runtime_revision: number;
+        state: string;
+      };
+      type GoldenOperatorState = { groups: GoldenGroup[] };
+      type GoldenParticipantState = {
+        attempt_id: string;
+        ready_window_id: string;
+        runtime_revision: number;
+        state: string;
+        task: { title: string } | null;
+      };
+
+      const startGolden = await applyStartGoldenViaApi(
+        request,
+        tournament.id,
+        adminSession.access_csrf_token,
+      );
+      expect(startGolden.status(), `start Golden failed with ${startGolden.status()}: ${await startGolden.text()}`).toBe(200);
+
+      const openGolden = await request.post(
+        `${backendURL}/api/v1/admin/tournaments/${tournament.id}/golden/open`,
+        {
+          headers: {
+            'X-CSRF-Token': adminSession.access_csrf_token,
+            'Idempotency-Key': randomUUID(),
+            Origin: frontendURL,
+          },
+          data: {
+            expected_projection_revision: await getOperatorProjectionRevisionViaApi(
+              request,
+              tournament.id,
+            ),
+            expected_runtime_revision: 0,
+          },
+        },
+      );
+      expect(openGolden.status(), `open Golden failed with ${openGolden.status()}: ${await openGolden.text()}`).toBe(200);
+      const openedGolden = (await openGolden.json()) as GoldenOperatorState;
+      expect(openedGolden.groups.length, 'Golden must resolve the Swiss ordering ties').toBeGreaterThan(0);
+
+      const readGoldenParticipant = async (
+        participantID: string,
+      ): Promise<GoldenParticipantState> => {
+        const context = contextForParticipant(participantID);
+        const response = await context.request.get(
+          `${backendURL}/api/v1/tournaments/${tournament.id}/participant/golden`,
+          { headers: { Origin: frontendURL } },
+        );
+        expect(response.status(), `read Golden participant failed with ${response.status()}`).toBe(200);
+        return (await response.json()) as GoldenParticipantState;
+      };
+
+      for (const group of openedGolden.groups) {
+        for (const member of group.members) {
+          const context = contextForParticipant(member.participant_id);
+          const participant = await readGoldenParticipant(member.participant_id);
+          const csrfToken = (await context.cookies()).find(
+            (cookie) => cookie.name === 'tpm_player_csrf',
+          )?.value;
+          expect(csrfToken, `Golden participant ${member.participant_id} lost CSRF`).toBeTruthy();
+          const ready = await context.request.post(
+            `${backendURL}/api/v1/tournaments/${tournament.id}/participant/golden/ready`,
+            {
+              headers: {
+                'X-CSRF-Token': csrfToken ?? '',
+                'Idempotency-Key': randomUUID(),
+                Origin: frontendURL,
+              },
+              data: {
+                attempt_id: participant.attempt_id,
+                expected_runtime_revision: participant.runtime_revision,
+                ready: true,
+                ready_window_id: participant.ready_window_id,
+              },
+            },
+          );
+          expect(ready.status(), `Golden readiness failed with ${ready.status()}: ${await ready.text()}`).toBe(200);
+        }
+      }
+
+      for (const expectedGroup of openedGolden.groups) {
+        const operatorResponse = await request.get(
+          `${backendURL}/api/v1/admin/tournaments/${tournament.id}/golden`,
+          { headers: { Origin: frontendURL } },
+        );
+        expect(operatorResponse.status()).toBe(200);
+        const operator = (await operatorResponse.json()) as GoldenOperatorState;
+        const group = operator.groups.find((candidate) => candidate.group_id === expectedGroup.group_id);
+        expect(group, `Golden group ${expectedGroup.group_id} disappeared`).toBeDefined();
+        if (!group) {
+          throw new Error(`Golden group ${expectedGroup.group_id} disappeared`);
+        }
+        expect(group.state).toBe('ready');
+        const startAttempt = await request.post(
+          `${backendURL}/api/v1/admin/tournaments/${tournament.id}/golden/attempts/${group.attempt_id}/start`,
+          {
+            headers: {
+              'X-CSRF-Token': adminSession.access_csrf_token,
+              'Idempotency-Key': randomUUID(),
+              Origin: frontendURL,
+            },
+            data: {
+              expected_runtime_revision: group.runtime_revision,
+              ready_window_id: group.ready_window_id,
+            },
+          },
+        );
+        expect(startAttempt.status(), `start Golden attempt failed with ${startAttempt.status()}: ${await startAttempt.text()}`).toBe(200);
+
+        for (const member of group.members) {
+          const context = contextForParticipant(member.participant_id);
+          const participant = await readGoldenParticipant(member.participant_id);
+          expect(participant.task, `Golden task missing for ${member.participant_id}`).not.toBeNull();
+          const flag = participant.task ? goldenFlagsByTitle.get(participant.task.title) : undefined;
+          expect(flag, `Golden flag missing for ${participant.task?.title ?? 'unknown task'}`).toBeTruthy();
+          const csrfToken = (await context.cookies()).find(
+            (cookie) => cookie.name === 'tpm_player_csrf',
+          )?.value;
+          expect(csrfToken, `Golden participant ${member.participant_id} lost CSRF`).toBeTruthy();
+          const submission = await context.request.post(
+            `${backendURL}/api/v1/tournaments/${tournament.id}/participant/golden/submissions`,
+            {
+              headers: {
+                'X-CSRF-Token': csrfToken ?? '',
+                'Idempotency-Key': randomUUID(),
+                Origin: frontendURL,
+              },
+              data: {
+                attempt_id: participant.attempt_id,
+                expected_runtime_revision: participant.runtime_revision,
+                ready_window_id: participant.ready_window_id,
+                submitted_flag: flag ?? '',
+              },
+            },
+          );
+          expect(submission.status(), `Golden submission failed with ${submission.status()}: ${await submission.text()}`).toBe(200);
+        }
+      }
+
+      const completedGoldenResponse = await request.get(
+        `${backendURL}/api/v1/admin/tournaments/${tournament.id}/golden`,
+        { headers: { Origin: frontendURL } },
+      );
+      expect(completedGoldenResponse.status()).toBe(200);
+      const completedGolden = (await completedGoldenResponse.json()) as GoldenOperatorState;
+      expect(completedGolden.groups.every((group) => group.state === 'completed')).toBe(true);
+
+      const startPlayoffs = await applyStartPlayoffsViaApi(
+        request,
+        tournament.id,
+        adminSession.access_csrf_token,
+      );
+      expect(startPlayoffs.status(), `start playoffs failed with ${startPlayoffs.status()}`).toBe(200);
+
+      const readPlayoffSnapshot = async (): Promise<FullStackPlayoffSnapshot> => {
+        const response = await request.get(
+          `${backendURL}/api/v1/admin/tournaments/${tournament.id}/snapshot`,
+          { headers: { Origin: frontendURL } },
+        );
+        expect(response.status(), `playoff snapshot failed with ${response.status()}`).toBe(200);
+        const snapshot = (await response.json()) as FullStackPlayoffSnapshot;
+        expect(snapshot.series).toBeDefined();
+        expect(snapshot.tournament.id).toBe(tournament.id);
+        return snapshot;
+      };
+
+      const waveForSeries = (
+        snapshot: FullStackPlayoffSnapshot,
+        seriesID: string,
+      ): FullStackWave | undefined => {
+        let completedWave: FullStackWave | undefined;
+        for (const wave of snapshot.waves) {
+          if (!wave.members.some((member) => member.series_id === seriesID)) {
+            continue;
+          }
+          if (wave.state !== 'completed') {
+            return wave;
+          }
+          completedWave = wave;
+        }
+        return completedWave;
+      };
+
+      const runPlayoffSeries = async (
+        seriesID: string,
+        semifinalWinner: 'first' | 'second',
+      ): Promise<void> => {
+        for (let iteration = 0; iteration < 8; iteration += 1) {
+          let snapshot = await readPlayoffSnapshot();
+          const series = snapshot.series.find((candidate) => candidate.id === seriesID);
+          expect(series, `playoff series ${seriesID} disappeared`).toBeDefined();
+          if (!series) {
+            throw new Error(`playoff series ${seriesID} disappeared`);
+          }
+          if (series.state === 'completed') {
+            expect(series.winner_id).toBeTruthy();
+            return;
+          }
+
+          let wave = waveForSeries(snapshot, seriesID);
+          expect(wave, `playoff series ${seriesID} did not expose a Wave`).toBeDefined();
+          if (!wave) {
+            throw new Error(`playoff series ${seriesID} did not expose a Wave`);
+          }
+          if (wave.state === 'planned') {
+            await waveAction(wave.id, 'open_ready_window');
+          }
+
+          snapshot = await readPlayoffSnapshot();
+          wave = waveForSeries(snapshot, seriesID);
+          expect(wave, `playoff series ${seriesID} lost its Wave`).toBeDefined();
+          if (!wave) {
+            throw new Error(`playoff series ${seriesID} lost its Wave`);
+          }
+          if (wave.state === 'ready_window_open' || wave.state === 'ready') {
+            for (const member of wave.members.filter((candidate) => candidate.series_id === seriesID)) {
+              const context = contextForParticipant(member.participant_id);
+              const participant = await readParticipantSnapshotViaApi(context, tournament.id);
+              const csrfToken = (await context.cookies()).find(
+                (cookie) => cookie.name === 'tpm_player_csrf',
+              )?.value;
+              expect(csrfToken, `playoff participant ${member.participant_id} did not retain CSRF`).toBeTruthy();
+              const readiness = await context.request.post(
+                `${backendURL}/api/v1/tournaments/${tournament.id}/participant/waves/${wave.id}/ready`,
+                {
+                  headers: {
+                    'X-CSRF-Token': csrfToken ?? '',
+                    'Idempotency-Key': randomUUID(),
+                    Origin: frontendURL,
+                  },
+                  data: {
+                    expected_projection_revision: participant.projection_revision,
+                    ready: true,
+                  },
+                },
+              );
+              expect(readiness.status(), `playoff readiness failed with ${readiness.status()}`).toBe(200);
+            }
+            snapshot = await readPlayoffSnapshot();
+            wave = waveForSeries(snapshot, seriesID);
+            expect(wave).toBeDefined();
+            if (!wave) {
+              throw new Error(`playoff series ${seriesID} lost its ready Wave`);
+            }
+            if (wave.state !== 'active') {
+              wave = await waveAction(wave.id, 'start');
+            }
+          }
+          expect(wave.state).toBe('active');
+
+          const activeSeries = snapshot.series.find((candidate) => candidate.id === seriesID) ?? series;
+          let winnerParticipantID = activeSeries.first_participant_id;
+          if (activeSeries.format === 'bo1') {
+            winnerParticipantID = semifinalWinner === 'first'
+              ? activeSeries.first_participant_id
+              : activeSeries.second_participant_id;
+          } else {
+            const nextGameNumber =
+              activeSeries.score.first_participant_wins + activeSeries.score.second_participant_wins + 1;
+            winnerParticipantID = nextGameNumber === 2
+              ? activeSeries.second_participant_id
+              : activeSeries.first_participant_id;
+          }
+          const winnerMember = wave.members.find(
+            (member) => member.series_id === seriesID && member.participant_id === winnerParticipantID,
+          );
+          expect(winnerMember, `playoff winner ${winnerParticipantID} was not in Wave ${wave.id}`).toBeDefined();
+          if (!winnerMember) {
+            throw new Error(`playoff winner ${winnerParticipantID} was not in Wave ${wave.id}`);
+          }
+          await submitCorrectAssignment(contextForParticipant(winnerParticipantID), seriesID);
+
+          snapshot = await readPlayoffSnapshot();
+          if (snapshot.tournament.state === 'completed') {
+            const completedSeries = snapshot.series.find(
+              (candidate) => candidate.id === seriesID,
+            );
+            expect(completedSeries?.state).toBe('completed');
+            expect(completedSeries?.winner_id).toBeTruthy();
+            return;
+          }
+          const currentWave = snapshot.waves.find((candidate) => candidate.id === wave?.id);
+          if (currentWave && currentWave.state !== 'completed') {
+            await waveAction(currentWave.id, 'complete');
+          }
+        }
+        throw new Error(`playoff series ${seriesID} did not settle`);
+      };
+
+      let playoffSnapshot = await readPlayoffSnapshot();
+      const semifinalSeries = playoffSnapshot.series.filter(
+        (series) => series.format === 'bo1' && series.state !== 'completed' && series.winner_id === null,
+      );
+      expect(semifinalSeries).toHaveLength(2);
+      for (const [index, semifinal] of semifinalSeries.entries()) {
+        await runPlayoffSeries(semifinal.id, index === 0 ? 'first' : 'second');
+      }
+
+      let finalDraft: FullStackDraft | null = null;
+      for (let attempt = 0; attempt < 20 && !finalDraft; attempt += 1) {
+        for (const context of playerContexts) {
+          const participant = await readParticipantSnapshotViaApi(context, tournament.id);
+          if (participant.draft?.state === 'active') {
+            finalDraft = participant.draft;
+            break;
+          }
+        }
+        if (!finalDraft) {
+          await new Promise((resolve) => setTimeout(resolve, 250));
+        }
+      }
+      expect(finalDraft, 'final BO3 draft did not become active').not.toBeNull();
+      if (!finalDraft) {
+        throw new Error('final BO3 draft did not become active');
+      }
+
+      while (finalDraft.state === 'active') {
+        expect(finalDraft.current_actor_id).toBeTruthy();
+        expect(finalDraft.current_action).toBeTruthy();
+        if (!finalDraft.current_actor_id || !finalDraft.current_action) {
+          throw new Error('final draft did not expose its server-authoritative actor and action');
+        }
+        const actorContext = contextForParticipant(finalDraft.current_actor_id);
+        const participant = await readParticipantSnapshotViaApi(actorContext, tournament.id);
+        expect(participant.draft?.id).toBe(finalDraft.id);
+        const currentDraft = participant.draft;
+        expect(currentDraft).not.toBeNull();
+        if (!currentDraft) {
+          throw new Error('final draft disappeared from participant snapshot');
+        }
+        const preferredCategories = currentDraft.turn <= 2
+          ? (['pwn', 'forensics'] as const)
+          : ([] as const);
+        const category = preferredCategories.find((candidate) =>
+          currentDraft.legal_categories.includes(candidate)) ?? currentDraft.legal_categories[0];
+        expect(category, `final draft turn ${currentDraft.turn} did not expose a legal category`).toBeTruthy();
+        if (!category) {
+          throw new Error(`final draft turn ${currentDraft.turn} did not expose a legal category`);
+        }
+        const csrfToken = (await actorContext.cookies()).find(
+          (cookie) => cookie.name === 'tpm_player_csrf',
+        )?.value;
+        expect(csrfToken, 'final draft actor did not retain CSRF').toBeTruthy();
+        const draftAction = await actorContext.request.post(
+          `${backendURL}/api/v1/tournaments/${tournament.id}/participant/series/${currentDraft.series_id}/draft/actions`,
+          {
+            headers: {
+              'X-CSRF-Token': csrfToken ?? '',
+              'Idempotency-Key': randomUUID(),
+              Origin: frontendURL,
+            },
+            data: {
+              expected_projection_revision: participant.projection_revision,
+              expected_draft_revision: currentDraft.revision,
+              expected_turn: currentDraft.turn,
+              action: currentDraft.current_action,
+              category,
+            },
+          },
+        );
+        expect(draftAction.status(), `final draft action failed with ${draftAction.status()}`).toBe(200);
+        finalDraft = (await draftAction.json()) as FullStackDraft;
+      }
+      expect(finalDraft.state).toBe('completed');
+
+      playoffSnapshot = await readPlayoffSnapshot();
+      const finalSeries = playoffSnapshot.series.find(
+        (series) => series.id === finalDraft?.series_id,
+      );
+      expect(finalSeries, 'completed final draft did not expose its final Series').toBeDefined();
+      if (!finalSeries) {
+        throw new Error('completed final draft did not expose its final Series');
+      }
+      expect(finalSeries.format).toBe('bo3');
+      await runPlayoffSeries(finalSeries.id, 'first');
+
+      spectatorContext = await browser.newContext({ baseURL: frontendURL });
+      const publicSnapshot = await readPublicSnapshotViaApi(spectatorContext, tournament.id);
+      expect(publicSnapshot.tournament.state).toBe('completed');
+      expect(publicSnapshot.swiss_rounds).toHaveLength(3);
+      expect(publicSnapshot.swiss_rounds.filter((round) => round.bye !== null).length).toBeGreaterThan(0);
+      const swissSeries = publicSnapshot.live_series.filter((series) => series.stage === 'swiss');
+      expect(swissSeries.length).toBeGreaterThanOrEqual(6);
+      const firstRoundSeries = swissSeries.filter((series) => series.round_number === 1);
+      expect(firstRoundSeries).toHaveLength(2);
+      expect(firstRoundSeries.every((series) => (
+        series.state === 'completed' &&
+        series.score.first_wins + series.score.second_wins > 0 &&
+        series.score.first_wins !== series.score.second_wins
+      ))).toBe(true);
+
+      const bracketMatches = publicSnapshot.bracket.matches;
+      expect(bracketMatches).toHaveLength(3);
+      expect(bracketMatches.map((match) => `${match.stage}:${match.position}`).sort()).toEqual([
+        'final:1',
+        'semifinal:1',
+        'semifinal:2',
+      ]);
+      const publicFinal = bracketMatches.find(
+        (match) => match.stage === 'final' && match.position === 1,
+      );
+      expect(publicFinal).toBeDefined();
+      if (!publicFinal) {
+        throw new Error('public snapshot did not expose the final');
+      }
+      expect(publicFinal.state).toBe('completed');
+      expect(publicFinal.score).toEqual({ first_participant_wins: 2, second_participant_wins: 1 });
+      expect(publicFinal.winner_display_name).toBe(publicFinal.first_display_name);
+      const champion = publicFinal.winner_display_name;
+      expect(champion).toBeTruthy();
+      if (!champion) {
+        throw new Error('public final did not expose a server-derived champion');
+      }
+
+      const spectatorPage = await spectatorContext.newPage();
+      spectatorPage.setDefaultTimeout(15_000);
+      await spectatorPage.goto(`/arena/spectator/${tournament.id}`, { waitUntil: 'domcontentloaded' });
+      const broadcast = spectatorPage.getByTestId('tournament-broadcast');
+      await expect(broadcast).toBeVisible();
+
+      await broadcast.getByRole('tab', { name: 'Swiss' }).click();
+      for (const roundNumber of [1, 2, 3]) {
+        const round = broadcast.getByTestId(`swiss-round-${roundNumber}`);
+        await expect(round).toBeVisible();
+        await expect(round).toContainText('Завершена');
+        await expect(round.locator('button[data-match-key]')).toHaveCount(2);
+      }
+      const firstRoundPanel = broadcast.getByTestId('swiss-round-1');
+      await expect(firstRoundPanel).toContainText(firstRoundSeries[0]?.first_display_name ?? '');
+      await expect(firstRoundPanel).toContainText(firstRoundSeries[0]?.second_display_name ?? '');
+      await expect(firstRoundPanel.locator('button[data-match-key]').first()).toContainText(
+        `${firstRoundSeries[0]?.score.first_wins ?? 0}:${firstRoundSeries[0]?.score.second_wins ?? 0}`,
+      );
+      const byeRows = broadcast.locator('[data-testid^="swiss-bye-"]');
+      expect(await byeRows.count()).toBeGreaterThan(0);
+      const publicBye = publicSnapshot.swiss_rounds.find((round) => round.bye !== null)?.bye;
+      expect(publicBye).toBeDefined();
+      if (!publicBye) {
+        throw new Error('public snapshot did not expose a Swiss bye');
+      }
+      await expect(byeRows.first()).toContainText(publicBye.display_name);
+      await expect(byeRows.first()).toContainText('+1 очко');
+
+      await broadcast.getByRole('tab', { name: 'Плей-офф' }).click();
+      const playoff = broadcast.getByRole('tabpanel');
+      await expect(playoff.getByRole('heading', { name: 'Top 4' })).toBeVisible();
+      await expect(playoff.locator('ol').getByRole('listitem')).toHaveCount(4);
+      await expect(playoff.locator('[data-testid^="playoff-bracket"]')).toHaveCount(2);
+      await expect(playoff.getByTestId('playoff-final')).toHaveCount(1);
+      await expect(playoff.getByTestId('playoff-final')).toContainText('2:1');
+      await expect(playoff.getByTestId('playoff-final')).toContainText(`Чемпион: ${champion}`);
+
+      await spectatorPage.setViewportSize({ width: 390, height: 844 });
+      await expect
+        .poll(() => spectatorPage.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth))
+        .toBe(true);
+
+      const finalButton = playoff.getByTestId('playoff-final').locator('button[data-match-key]');
+      await finalButton.focus();
+      await expect(finalButton).toBeFocused();
+      await expect(finalButton).toHaveAttribute('aria-pressed', 'false');
+      await finalButton.press('Enter');
+      await expect(finalButton).toHaveAttribute('aria-pressed', 'true');
+      await expect
+        .poll(() => new URL(spectatorPage.url()).searchParams.get('match'))
+        .toBe('bracket:final:1');
+      await expect
+        .poll(() => spectatorPage.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth))
+        .toBe(true);
+    } finally {
+      await spectatorContext?.close();
       for (const context of playerContexts) {
         await context.close();
       }

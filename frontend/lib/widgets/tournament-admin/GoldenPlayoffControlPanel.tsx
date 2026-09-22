@@ -75,6 +75,8 @@ const formatDateTime = (value: string | null | undefined): string => {
   }).format(date);
 };
 
+const bracketDisplayName = (value: string | null): string => value ?? "Ожидается";
+
 const groupIsReady = (group: GoldenOperatorGroup): boolean =>
   group.state === "ready" &&
   group.members.length > 0 &&
@@ -603,21 +605,21 @@ export const GoldenPlayoffControlPanel = ({
                 </div>
                 <div className={styles.teams}>
                   <span>
-                    {match.first_display_name}
-                    {seedByDisplayName.has(match.first_display_name)
-                      ? ` (посев #${seedByDisplayName.get(match.first_display_name)})`
+                    {bracketDisplayName(match.first_display_name)}
+                    {seedByDisplayName.has(bracketDisplayName(match.first_display_name))
+                      ? ` (посев #${seedByDisplayName.get(bracketDisplayName(match.first_display_name))})`
                       : ""}
                   </span>
                   <strong>{match.score.first_participant_wins}</strong>
                   <span>
-                    {match.second_display_name}
-                    {seedByDisplayName.has(match.second_display_name)
-                      ? ` (посев #${seedByDisplayName.get(match.second_display_name)})`
+                    {bracketDisplayName(match.second_display_name)}
+                    {seedByDisplayName.has(bracketDisplayName(match.second_display_name))
+                      ? ` (посев #${seedByDisplayName.get(bracketDisplayName(match.second_display_name))})`
                       : ""}
                   </span>
                   <strong>{match.score.second_participant_wins}</strong>
                 </div>
-                <div className={styles.scoreLabel} aria-label={`Счет ${match.first_display_name} - ${match.second_display_name}`}>
+                <div className={styles.scoreLabel} aria-label={`Счет ${bracketDisplayName(match.first_display_name)} - ${bracketDisplayName(match.second_display_name)}`}>
                   {match.score.first_participant_wins}:{match.score.second_participant_wins}
                 </div>
               </article>

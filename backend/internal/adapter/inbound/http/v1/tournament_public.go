@@ -5,6 +5,7 @@ import (
 	"math"
 	"net/http"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 
@@ -182,6 +183,10 @@ func publicRecoverySnapshotResponse(
 	if err != nil {
 		return api.PublicRecoverySnapshot{}, err
 	}
+	swissRounds, err := publicSwissRoundsResponse(view)
+	if err != nil {
+		return api.PublicRecoverySnapshot{}, err
+	}
 	liveSeries, err := publicLiveSeriesResponse(view)
 	if err != nil {
 		return api.PublicRecoverySnapshot{}, err
@@ -201,6 +206,7 @@ func publicRecoverySnapshotResponse(
 		Tournament:      tournament,
 		Scoreboard:      scoreboard,
 		Bracket:         bracket,
+		SwissRounds:     swissRounds,
 		LiveSeries:      liveSeries,
 		OfficialResults: officialResults,
 		LiveDraft:       draft,
@@ -279,27 +285,34 @@ func publicScoreboardIntegerRange(item tournamentsnapshot.PublicScoreboardEntryV
 	return true
 }
 
+//nolint:gocyclo // The public boundary validates topology, enum, score, name, winner, and timestamp invariants together.
 func publicBracketResponse(
 	view tournamentsnapshot.PublicSnapshotView,
 ) (api.PublicBracketResponse, error) {
+	if !publicBracketTopologyValid(view.Bracket) {
+		return api.PublicBracketResponse{}, domain.ErrInternal
+	}
 	matches := make([]api.PublicBracketMatch, len(view.Bracket))
 	for index, item := range view.Bracket {
 		stage := api.PublicBracketMatchStage(item.Stage)
+		format := api.SeriesFormat(item.Format)
 		state := api.SeriesState(item.State)
 		if item.Position < 1 || item.Position > math.MaxInt32 || item.FirstWins < 0 ||
 			item.FirstWins > math.MaxInt32 || item.SecondWins < 0 || item.SecondWins > math.MaxInt32 ||
-			strings.TrimSpace(item.FirstDisplayName) == "" || strings.TrimSpace(item.SecondDisplayName) == "" ||
-			!stage.Valid() || !state.Valid() ||
+			!stage.Valid() || !format.Valid() || !state.Valid() ||
+			!publicBracketNamesValid(item, stage) || !publicBracketScoreValid(item, stage, format, state) ||
 			(item.ScheduledAt != nil && !domain.IsValidServerTime(*item.ScheduledAt)) {
 			return api.PublicBracketResponse{}, domain.ErrInternal
 		}
 		matches[index] = api.PublicBracketMatch{
 			Stage:             stage,
 			Position:          int32(item.Position),
-			FirstDisplayName:  item.FirstDisplayName,
-			SecondDisplayName: item.SecondDisplayName,
+			Format:            format,
+			FirstDisplayName:  cloneStringPointer(item.FirstDisplayName),
+			SecondDisplayName: cloneStringPointer(item.SecondDisplayName),
 			State:             state,
 			ScheduledAt:       cloneTimePointer(item.ScheduledAt),
+			WinnerDisplayName: cloneStringPointer(item.WinnerDisplayName),
 			Score: api.SeriesScore{
 				FirstParticipantWins:  int32(item.FirstWins),
 				SecondParticipantWins: int32(item.SecondWins),
@@ -311,6 +324,105 @@ func publicBracketResponse(
 		ProjectionRevision: view.Cursor.ProjectionRevision,
 		Matches:            matches,
 	}, nil
+}
+
+func publicBracketTopologyValid(matches []tournamentsnapshot.PublicBracketMatchView) bool {
+	if len(matches) == 0 {
+		return true
+	}
+	if len(matches) != 3 {
+		return false
+	}
+	seenSemifinalOne := false
+	seenSemifinalTwo := false
+	seenFinal := false
+	for _, match := range matches {
+		switch {
+		case match.Stage == "semifinal" && match.Position == 1 && !seenSemifinalOne:
+			seenSemifinalOne = true
+		case match.Stage == "semifinal" && match.Position == 2 && !seenSemifinalTwo:
+			seenSemifinalTwo = true
+		case match.Stage == "final" && match.Position == 1 && !seenFinal:
+			seenFinal = true
+		default:
+			return false
+		}
+	}
+	return seenSemifinalOne && seenSemifinalTwo && seenFinal
+}
+
+func publicBracketNamesValid(
+	item tournamentsnapshot.PublicBracketMatchView,
+	stage api.PublicBracketMatchStage,
+) bool {
+	if stage == api.PublicBracketMatchStageFinal && item.FirstDisplayName == nil && item.SecondDisplayName == nil {
+		return item.WinnerDisplayName == nil && item.FirstWins == 0 && item.SecondWins == 0 && item.State == "planned"
+	}
+	return item.FirstDisplayName != nil && item.SecondDisplayName != nil &&
+		publicDisplayNameValid(*item.FirstDisplayName) && publicDisplayNameValid(*item.SecondDisplayName)
+}
+
+//nolint:gocyclo // Stage-specific score and winner validation intentionally stays at the HTTP boundary.
+func publicBracketScoreValid(
+	item tournamentsnapshot.PublicBracketMatchView,
+	stage api.PublicBracketMatchStage,
+	format api.SeriesFormat,
+	state api.SeriesState,
+) bool {
+	var maxWins int
+	switch {
+	case stage == api.PublicBracketMatchStageSemifinal && format == api.Bo1:
+		maxWins = 1
+	case stage == api.PublicBracketMatchStageFinal && format == api.Bo3:
+		maxWins = 2
+	default:
+		return false
+	}
+	if item.FirstWins > maxWins || item.SecondWins > maxWins {
+		return false
+	}
+	if state == api.SeriesStateCompleted {
+		if item.WinnerDisplayName == nil || item.FirstWins == item.SecondWins {
+			return false
+		}
+		if !publicDisplayNameValid(*item.WinnerDisplayName) {
+			return false
+		}
+		winner := strings.TrimSpace(*item.WinnerDisplayName)
+		return (item.FirstWins > item.SecondWins && item.FirstDisplayName != nil && winner == *item.FirstDisplayName) ||
+			(item.SecondWins > item.FirstWins && item.SecondDisplayName != nil && winner == *item.SecondDisplayName)
+	}
+	return item.WinnerDisplayName == nil
+}
+
+func publicSwissRoundsResponse(
+	view tournamentsnapshot.PublicSnapshotView,
+) ([]api.PublicSwissRound, error) {
+	rounds := make([]api.PublicSwissRound, len(view.SwissRounds))
+	previousRound := 0
+	for index, item := range view.SwissRounds {
+		state := api.WaveState(item.State)
+		if item.RoundNumber < 1 || item.RoundNumber > 4 || item.RoundNumber <= previousRound || !state.Valid() {
+			return nil, domain.ErrInternal
+		}
+		previousRound = item.RoundNumber
+		round := api.PublicSwissRound{RoundNumber: int32(item.RoundNumber), State: state}
+		if item.Bye != nil {
+			if !publicDisplayNameValid(item.Bye.DisplayName) || item.Bye.PointsAwarded != 1 {
+				return nil, domain.ErrInternal
+			}
+			round.Bye = &api.PublicSwissBye{
+				DisplayName:   item.Bye.DisplayName,
+				PointsAwarded: int32(item.Bye.PointsAwarded),
+			}
+		}
+		rounds[index] = round
+	}
+	return rounds, nil
+}
+
+func publicDisplayNameValid(value string) bool {
+	return strings.TrimSpace(value) != "" && utf8.RuneCountInString(value) <= 64
 }
 
 func publicLiveSeriesResponse(

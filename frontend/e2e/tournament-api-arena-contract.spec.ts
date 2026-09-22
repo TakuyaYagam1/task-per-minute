@@ -106,11 +106,13 @@ const publicSnapshot = (): PublicSnapshot => ({
       {
         stage: 'semifinal',
         position: 1,
+        format: 'bo1',
         first_display_name: 'alice',
         second_display_name: 'bob',
         score: { first_participant_wins: 1, second_participant_wins: 0 },
         scheduled_at: null,
         state: 'active',
+        winner_display_name: null,
       },
     ],
   },
@@ -130,6 +132,7 @@ const publicSnapshot = (): PublicSnapshot => ({
   ],
   official_results: [],
   live_draft: null,
+  swiss_rounds: [{ bye: null, round_number: 1, state: 'active' }],
   next_cursor: { projection_revision: 4, event_sequence: 7 },
 });
 
