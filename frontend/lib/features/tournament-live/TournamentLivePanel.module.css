@@ -2,6 +2,7 @@
   display: grid;
   gap: 1.25rem;
   width: min(100%, 62rem);
+  min-width: 0;
   padding: clamp(1rem, 3vw, 1.75rem);
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -70,6 +71,7 @@
 
 .countdown {
   display: grid;
+  min-width: 0;
   gap: 0.35rem;
   padding: 1rem;
   border: 1px solid var(--border);
@@ -83,6 +85,8 @@
 }
 
 .countdownValue {
+  min-width: 0;
+  overflow-wrap: anywhere;
   font-size: clamp(1.8rem, 7vw, 3rem);
   font-variant-numeric: tabular-nums;
   line-height: 1;

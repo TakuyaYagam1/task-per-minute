@@ -231,10 +231,11 @@ test("participant waiting, assignment, and direct task context stay on the tourn
   await expect(page.getByTestId("participant-player-panel")).toHaveAttribute("data-state", "assigned");
   await expect(page.getByRole("link", { name: "Открыть назначенное задание" })).toHaveAttribute("href", taskURL);
   expect(page.url()).toContain(`/arena/participant/${tournamentId}`);
-  await expect(page.getByText("Очки")).toBeVisible();
-  await expect(page.getByText("Проверка участия")).toBeVisible();
-  await expect(page.getByText("Категория")).toBeVisible();
-  await expect(page.getByText("Требуемое действие")).toBeVisible();
+  const participantData = page.getByLabel("Данные участника");
+  await expect(participantData.getByText("Очки")).toBeVisible();
+  await expect(participantData.getByText("Проверка участия")).toBeVisible();
+  await expect(participantData.getByText("Категория")).toBeVisible();
+  await expect(participantData.getByText("Требуемое действие")).toBeVisible();
 });
 
 test("participant opens readiness only for the current window and ignores the old attempt", async ({ page }) => {
@@ -261,6 +262,7 @@ test("participant opens readiness only for the current window and ignores the ol
   });
   await page.goto(participantURL);
 
+  await expect(page.getByRole("region", { name: "Готовность к раунду", exact: true })).toBeVisible();
   const readyButton = page.getByRole("button", { name: "Подтвердить готовность", exact: true });
   await expect(readyButton).toBeEnabled();
   const oldKey = await page.getByTestId("participant-player-panel").getAttribute("data-ready-key");
@@ -384,6 +386,11 @@ test("participant reports a ready rate limit without retrying the command", asyn
   await page.goto(participantURL);
   await page.getByTestId("participant-ready-button").click();
   await expect(page.getByText("Слишком много попыток. Повторите после паузы.")).toBeVisible();
+  const readyError = page.getByTestId("participant-player-panel")
+    .getByRole("alert")
+    .filter({ hasText: "Слишком много попыток. Повторите после паузы." });
+  await expect(readyError).toHaveAttribute("role", "alert");
+  await expect(readyError).toHaveAttribute("aria-live", "assertive");
   expect(readyRequests).toBe(1);
 });
 
@@ -430,20 +437,30 @@ test("participant lobby keeps keyboard access and long Cyrillic copy across resp
   await page.goto(participantURL);
   await expect(page.getByRole("region", { name: "Турнирная позиция" })).toBeVisible();
   await expect(page.getByRole("region", { name: "Задание для игры" })).toContainText(longCopy);
-  await page.getByRole("button", { name: "Светлая тема" }).click();
-  await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
-  await page.getByRole("button", { name: "Темная тема" }).click();
-  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
-
-  for (const [width, height] of [[390, 844], [768, 1024], [1440, 900]] as const) {
-    await page.setViewportSize({ width, height });
-    await page.evaluate(() => {
-      document.documentElement.style.fontSize = "200%";
-    });
-    await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
-  }
+  await expect(page.getByRole("region", { name: "Готовность к раунду", exact: true })).toBeVisible();
 
   const readyButton = page.getByRole("button", { name: "Подтвердить готовность", exact: true });
+  for (const [label, theme] of [["Темная тема", "dark"], ["Светлая тема", "light"]] as const) {
+    await page.getByRole("button", { name: label }).click();
+    await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
+
+    for (const [width, height] of [[390, 844], [768, 1024], [1440, 900]] as const) {
+      await page.setViewportSize({ width, height });
+      await page.evaluate(() => {
+        document.documentElement.style.fontSize = "200%";
+      });
+      await expect.poll(() => page.evaluate(() => (
+        document.documentElement.scrollWidth <= window.innerWidth
+        && document.body.scrollWidth <= window.innerWidth
+      ))).toBe(true);
+      await expect(readyButton).toBeVisible();
+      const readyBounds = await readyButton.boundingBox();
+      expect(readyBounds).not.toBeNull();
+      expect(readyBounds?.x).toBeGreaterThanOrEqual(-1);
+      expect((readyBounds?.x ?? 0) + (readyBounds?.width ?? 0)).toBeLessThanOrEqual(width + 1);
+    }
+  }
+
   await readyButton.focus();
   await expect(readyButton).toBeFocused();
 });

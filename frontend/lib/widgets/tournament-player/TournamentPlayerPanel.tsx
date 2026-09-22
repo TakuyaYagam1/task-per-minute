@@ -1143,10 +1143,12 @@ export const TournamentPlayerPanel = ({
       </section>
 
       {showReadinessAction && (
-        <div className={styles.readiness}>
+        <section className={styles.readiness} aria-labelledby="participant-readiness-title">
           <div className={styles.readinessHeader}>
             <div>
-              <h3 className={styles.readinessTitle}>Готовность к раунду</h3>
+              <h3 className={styles.readinessTitle} id="participant-readiness-title">
+                Готовность к раунду
+              </h3>
               <p className={styles.readinessCopy} id="participant-readiness-help">
                 {view.readyWindowOpen
                   ? "Подтверждение действует только для текущего окна и назначения."
@@ -1181,7 +1183,7 @@ export const TournamentPlayerPanel = ({
               <p>{readiness.message}</p>
             </Message>
           )}
-        </div>
+        </section>
       )}
 
       <p className={styles.revision}>

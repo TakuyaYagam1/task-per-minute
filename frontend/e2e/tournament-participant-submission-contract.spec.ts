@@ -258,7 +258,9 @@ test("empty participant answer is rejected without a submission request", async 
   const input = answerInput(page);
   await expect(input).toHaveCount(1);
   await expect(input).toHaveValue("");
-  await submitButton(page).click();
+  await submitButton(page).focus();
+  await expect(submitButton(page)).toBeFocused();
+  await submitButton(page).press("Enter");
 
   await expect.poll(() => submissions).toBe(0);
   await expect(page.locator("body")).toContainText(/введите|обязатель|пуст/i);
@@ -267,7 +269,10 @@ test("empty participant answer is rejected without a submission request", async 
     "participant-submission-help participant-submission-status",
   );
   await expect(input).toHaveAttribute("aria-invalid", "true");
-  await expect(page.locator("#participant-submission-status")).toHaveAttribute("role", "alert");
+  const emptyStatus = page.getByTestId("participant-submission-status");
+  await expect(emptyStatus).toContainText(/введите|обязатель|пуст/i);
+  await expect(emptyStatus).toHaveAttribute("role", "status");
+  await expect(emptyStatus).toHaveAttribute("aria-live", "polite");
 });
 
 test("incorrect answer shows a server result and never exposes the submitted flag", async ({ page }) => {
@@ -296,6 +301,10 @@ test("incorrect answer shows a server result and never exposes the submitted fla
     "participant-submission-help participant-submission-status",
   );
   await expect(answerInput(page)).toHaveAttribute("aria-invalid", "true");
+  const incorrectStatus = page.getByTestId("participant-submission-status");
+  await expect(incorrectStatus).toContainText(/неверн|неправ|отклон|ошиб/i);
+  await expect(incorrectStatus).toHaveAttribute("role", "status");
+  await expect(incorrectStatus).toHaveAttribute("aria-live", "polite");
 
   expect(requests).toHaveLength(1);
   expect(requests[0]?.body).toEqual({
@@ -331,8 +340,9 @@ test("slow submission ignores a double click, keeps one idempotency key, and rec
 
   await answerInput(page).fill("flag{slow-answer}");
   await submitButton(page).click();
-  await expect(submitButton(page)).toBeDisabled();
-  await submitButton(page).click({ force: true }).catch(() => undefined);
+  const pendingSubmit = page.getByTestId("participant-submit-button");
+  await expect(pendingSubmit).toBeDisabled();
+  await pendingSubmit.click({ force: true }).catch(() => undefined);
   await expect.poll(() => submissions).toBe(1);
   releaseSubmission?.();
 
@@ -362,7 +372,9 @@ test("accepted answer reflects only the server boolean and never assigns a clien
   });
 
   await answerInput(page).fill(submittedFlag);
-  await submitButton(page).click();
+  await submitButton(page).focus();
+  await expect(submitButton(page)).toBeFocused();
+  await submitButton(page).press("Enter");
   await expect.poll(() => submissions).toBe(1);
   await expect(page.locator("body")).toContainText(/принят|верн|правил|подтвержд/i);
   await expect(page.locator("body")).not.toContainText(/winner_id/i);
@@ -381,9 +393,15 @@ test("rate limited answer surfaces Retry-After without leaking the value", async
   });
 
   await answerInput(page).fill("flag{rate-limited-answer}");
-  await submitButton(page).click();
+  await submitButton(page).focus();
+  await expect(submitButton(page)).toBeFocused();
+  await submitButton(page).press("Enter");
   await expect.poll(() => submissions).toBe(1);
   await expect(page.locator("body")).toContainText(/слишком|лимит|повтор|17/i);
+  const rateLimitStatus = page.getByTestId("participant-submission-status");
+  await expect(rateLimitStatus).toContainText(/слишком|лимит|повтор|17/i);
+  await expect(rateLimitStatus).toHaveAttribute("role", "alert");
+  await expect(rateLimitStatus).toHaveAttribute("aria-live", "assertive");
   await expect(page.locator("body")).not.toContainText(/winner_id/i);
 });
 
@@ -427,20 +445,62 @@ test("surrender cancel makes no request, confirmation sends one command, and the
   expect(keys).toEqual([expect.stringMatching(/^[0-9a-f-]{36}$/i)]);
 });
 
-test("participant submission controls preserve the dark/light themes and mobile layout", async ({ page }) => {
+test("participant submission controls preserve keyboard access, themes, scaling, and mobile layout", async ({ page }) => {
   const fixtureSet = createTournamentFixtureSet();
   const current = playSnapshotFor(fixtureSet);
+  const longCopy = "ОченьДлинноеИмяУчастникаБезПробелов".repeat(8);
+  if (current.assignment === null) {
+    throw new Error("participant fixture requires an active assignment");
+  }
+  current.assignment = {
+    ...current.assignment,
+    active_snapshot: {
+      ...current.assignment.active_snapshot,
+      description: `${longCopy}\n${longCopy}`,
+      title: longCopy,
+    },
+  };
+  await page.emulateMedia({ reducedMotion: "reduce" });
   await openParticipantPlay(page, fixtureSet, () => current);
 
-  await page.setViewportSize({ width: 390, height: 844 });
-  await expect(answerInput(page)).toBeVisible();
-  await expect(page.locator("main")).toBeVisible();
-  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  const countdown = page.getByTestId("server-countdown");
+  await expect(countdown).toHaveCount(1);
+  const countdownSemantics = await countdown.evaluate((element) => ({
+    ancestorLive: element.closest("[aria-live]")?.getAttribute("aria-live") ?? null,
+    ancestorRole: element.closest('[role="status"], [role="alert"]')?.getAttribute("role") ?? null,
+    ariaLive: element.getAttribute("aria-live"),
+    role: element.getAttribute("role"),
+  }));
+  expect(countdownSemantics).toEqual({
+    ancestorLive: null,
+    ancestorRole: null,
+    ariaLive: null,
+    role: null,
+  });
 
-  await page.getByRole("button", { name: "Светлая тема" }).click();
-  await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
-  await expect(answerInput(page)).toBeVisible();
-  await page.getByRole("button", { name: "Темная тема" }).click();
-  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
-  await expect(answerInput(page)).toBeVisible();
+  const keyActions = [answerInput(page), submitButton(page)];
+  for (const [label, theme] of [["Темная тема", "dark"], ["Светлая тема", "light"]] as const) {
+    await page.getByRole("button", { name: label }).click();
+    await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
+
+    for (const [width, height] of [[390, 844], [768, 1024], [1440, 900]] as const) {
+      await page.setViewportSize({ width, height });
+      await page.evaluate(() => {
+        document.documentElement.style.fontSize = "200%";
+      });
+      await expect(page.getByRole("main")).toBeVisible();
+      await expect.poll(() => page.evaluate(() => (
+        document.body.scrollWidth <= window.innerWidth
+        && document.documentElement.scrollWidth <= window.innerWidth
+      ))).toBe(true);
+
+      for (const control of keyActions) {
+        await expect(control).toBeVisible();
+        const bounds = await control.boundingBox();
+        expect(bounds).not.toBeNull();
+        expect(bounds?.x).toBeGreaterThanOrEqual(-1);
+        expect((bounds?.x ?? 0) + (bounds?.width ?? 0)).toBeLessThanOrEqual(width + 1);
+      }
+    }
+  }
 });

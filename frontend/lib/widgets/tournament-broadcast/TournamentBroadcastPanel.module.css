@@ -866,11 +866,13 @@
   }
 
   .tabs {
-    overflow-x: auto;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 8rem), 1fr));
   }
 
   .tab {
-    flex: 0 0 auto;
+    min-width: 0;
+    overflow-wrap: anywhere;
   }
 
   .bracketStages {

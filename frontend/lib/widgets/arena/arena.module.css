@@ -189,6 +189,7 @@
 
 .content {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   min-width: 0;
   gap: 1.25rem;
   margin-top: 1.25rem;

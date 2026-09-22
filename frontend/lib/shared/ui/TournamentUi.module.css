@@ -79,7 +79,9 @@
 
 .status {
   display: inline-flex;
+  max-width: 100%;
   min-height: 28px;
+  min-width: 0;
   align-items: center;
   gap: 7px;
   border: 1px solid var(--border);
@@ -90,7 +92,12 @@
   font-size: 0.78rem;
   font-weight: 700;
   line-height: 1.2;
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.status > span:last-child {
+  min-width: 0;
 }
 
 .status-small {

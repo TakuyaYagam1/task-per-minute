@@ -546,6 +546,11 @@ test("FE-042 keeps spectator tabs, names, focus, motion, and responsive actions 
         right: rect.right,
         scrollWidth: element.scrollWidth,
         clientWidth: element.clientWidth,
+        label: element.getAttribute("aria-label") ?? element.textContent?.trim() ?? "",
+        visible: getComputedStyle(element).display !== "none"
+          && getComputedStyle(element).visibility !== "hidden"
+          && rect.width > 0
+          && rect.height > 0,
       };
     });
     return {
@@ -558,6 +563,8 @@ test("FE-042 keeps spectator tabs, names, focus, motion, and responsive actions 
 
   await expect(broadcast).toBeVisible();
   await expect(page.getByRole("main")).toBeVisible();
+  const tablist = broadcast.getByRole("tablist", { name: "Таблица и этапы турнира" });
+  await expect(tablist).toBeVisible();
   await expect(broadcast.getByRole("heading", { name: /КиберспортивнаяКомандаСеверногоФронта/ })).toBeVisible();
 
   await firstMatch.focus();
@@ -584,7 +591,14 @@ test("FE-042 keeps spectator tabs, names, focus, motion, and responsive actions 
     if (controls === null) {
       throw new Error(`Projection tab ${index} has no aria-controls target`);
     }
+    const tabId = await tab.getAttribute("id");
+    if (tabId === null) {
+      throw new Error(`Projection tab ${index} has no id`);
+    }
+    await expect(tab).toHaveAccessibleName(/.+/);
     await expect(broadcast.locator(`#${controls}`)).toHaveCount(1);
+    await expect(broadcast.locator(`#${controls}`)).toHaveAttribute("role", "tabpanel");
+    await expect(broadcast.locator(`#${controls}`)).toHaveAttribute("aria-labelledby", tabId);
     await expect(tab).toHaveAttribute("tabindex", index === 0 ? "0" : "-1");
   }
 
@@ -662,6 +676,7 @@ test("FE-042 keeps spectator tabs, names, focus, motion, and responsive actions 
     expect(layout.document).toBeLessThanOrEqual(layout.viewport);
     expect(layout.body).toBeLessThanOrEqual(layout.viewport);
     for (const action of layout.actions) {
+      expect(action.visible, `broadcast action should be visible: ${action.label}`).toBe(true);
       expect(action.left).toBeGreaterThanOrEqual(-1);
       expect(action.right).toBeLessThanOrEqual(layout.viewport + 1);
       expect(action.scrollWidth).toBeLessThanOrEqual(action.clientWidth + 1);
@@ -676,6 +691,7 @@ test("FE-042 keeps spectator tabs, names, focus, motion, and responsive actions 
   expect(scaledLayout.document).toBeLessThanOrEqual(scaledLayout.viewport);
   expect(scaledLayout.body).toBeLessThanOrEqual(scaledLayout.viewport);
   for (const action of scaledLayout.actions) {
+    expect(action.visible, `scaled broadcast action should be visible: ${action.label}`).toBe(true);
     expect(action.left).toBeGreaterThanOrEqual(-1);
     expect(action.right).toBeLessThanOrEqual(scaledLayout.viewport + 1);
     expect(action.scrollWidth).toBeLessThanOrEqual(action.clientWidth + 1);

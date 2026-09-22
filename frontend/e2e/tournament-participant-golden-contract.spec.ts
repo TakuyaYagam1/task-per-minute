@@ -152,10 +152,41 @@ test("participant completes server-owned Golden readiness, task and placement fl
   await expect(panel.getByRole("heading", { name: longCopy, exact: true })).toBeVisible();
   await expect(panel.getByTestId("participant-golden-timer")).toHaveText(/^\d+:\d{2}$/);
 
+  const goldenTimer = panel.getByTestId("participant-golden-timer");
+  const timerSemantics = await goldenTimer.evaluate((element) => ({
+    ancestorLive: element.closest("[aria-live]")?.getAttribute("aria-live") ?? null,
+    ancestorRole: element.closest('[role="status"], [role="alert"]')?.getAttribute("role") ?? null,
+    ariaLive: element.getAttribute("aria-live"),
+    role: element.getAttribute("role"),
+  }));
+  expect(timerSemantics).toEqual({
+    ancestorLive: null,
+    ancestorRole: null,
+    ariaLive: null,
+    role: null,
+  });
+
   const goldenInput = panel.getByRole("textbox", { name: "Ответ Golden", exact: true });
+  await goldenInput.focus();
+  await expect(goldenInput).toBeFocused();
+  const focusState = await goldenInput.evaluate((element) => {
+    const styles = getComputedStyle(element);
+    return {
+      outlineColor: styles.outlineColor,
+      outlineStyle: styles.outlineStyle,
+      outlineWidth: styles.outlineWidth,
+    };
+  });
+  expect(focusState.outlineStyle).toBe("solid");
+  expect(focusState.outlineWidth).toBe("2px");
+  expect(focusState.outlineColor).not.toMatch(/rgba?\([^)]*,\s*0\)?$/);
   await goldenInput.press("Enter");
   await expect(goldenInput).toHaveAttribute("aria-describedby", "participant-golden-action-status");
   await expect(goldenInput).toHaveAttribute("aria-invalid", "true");
+  const goldenActionStatus = panel.getByTestId("participant-golden-action-status");
+  await expect(goldenActionStatus).toBeVisible();
+  await expect(goldenActionStatus).toHaveAttribute("role", "alert");
+  await expect(goldenActionStatus).toHaveAttribute("aria-live", "assertive");
   await goldenInput.fill("flag{golden_acceptance}");
   await goldenInput.press("Enter");
   await expect(panel).toContainText("Решение Golden принято сервером");
@@ -197,7 +228,10 @@ test("Golden loading error keeps a named landmark and an announced message", asy
   await expect(panel).toHaveAttribute("data-state", "error");
   await expect(page.getByRole("region", { name: "Golden Task", exact: true })).toBeVisible();
   await expect(panel.getByRole("heading", { name: "Golden Task", exact: true })).toBeVisible();
-  await expect(panel.getByRole("alert")).toContainText("Golden недоступен");
+  const goldenError = panel.getByRole("alert").filter({ hasText: "Golden недоступен" });
+  await expect(goldenError).toContainText("Golden недоступен");
+  await expect(goldenError).toHaveAttribute("role", "alert");
+  await expect(goldenError).toHaveAttribute("aria-live", "assertive");
 });
 
 test("Golden no-show and technical pause stay taskless and server-controlled", async ({ page }) => {
