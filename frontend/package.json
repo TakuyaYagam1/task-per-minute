@@ -18,6 +18,7 @@
     "test:e2e:live": "E2E_LIVE=1 node scripts/run-e2e.mjs e2e/live-backend.spec.ts",
     "test:e2e:full-stack": "bash ../scripts/release/verify-security-tools.sh --scope frontend && ../scripts/e2e-local-compose.sh",
     "validate:frontend": "node scripts/validate-frontend-baseline.mjs",
+    "verify:ci": "node scripts/verify-frontend-ci.mjs",
     "check": "npm run validate:frontend && npm run openapi:generate && npm run typecheck && npm run lint && npm run build && npm run test:e2e"
   },
   "dependencies": {
