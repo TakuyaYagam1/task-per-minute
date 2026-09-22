@@ -18,7 +18,7 @@ env:
 jobs:
   verify:
     name: verify
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, nix]
     timeout-minutes: 40
     env:
       FRONTEND_CI_REPORT_DIR: ${{ runner.temp }}/frontend-verify
@@ -44,6 +44,10 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
+      - name: configure reviewed frontend runtime
+        working-directory: ${{ env.FRONTEND_WORKDIR }}
+        run: node scripts/configure-ci-runtime.mjs
+
       - name: install openapi generator dependency
         run: python -m pip install --disable-pip-version-check PyYAML==6.0.3
 
@@ -55,15 +59,18 @@ jobs:
         working-directory: ${{ env.FRONTEND_WORKDIR }}
         run: npm run audit:dependencies
 
-      - name: install playwright browser
-        working-directory: ${{ env.FRONTEND_WORKDIR }}
-        run: ./node_modules/.bin/playwright install --with-deps chromium
-
       - name: frontend verification
         working-directory: ${{ env.FRONTEND_WORKDIR }}
         env:
           E2E_WORKERS: 1
         run: npm run verify:ci
+
+      - name: finalize verification evidence
+        if: ${{ always() }}
+        working-directory: ${{ env.FRONTEND_WORKDIR }}
+        env:
+          FRONTEND_CI_ERROR: frontend verification job did not complete successfully
+        run: node scripts/verify-frontend-ci.mjs --finalize
 
       - name: upload verification evidence
         if: ${{ always() }}
@@ -76,7 +83,7 @@ jobs:
 
   full-stack-e2e:
     name: full-stack e2e
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, nix]
     timeout-minutes: 60
     steps:
       - name: checkout
@@ -91,13 +98,13 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
+      - name: configure reviewed frontend runtime
+        working-directory: ${{ env.FRONTEND_WORKDIR }}
+        run: node scripts/configure-ci-runtime.mjs
+
       - name: install frontend dependencies
         working-directory: ${{ env.FRONTEND_WORKDIR }}
         run: npm ci --ignore-scripts --userconfig config/npm-empty-userconfig
-
-      - name: install playwright browser
-        working-directory: ${{ env.FRONTEND_WORKDIR }}
-        run: npx playwright install --with-deps chromium
 
       - name: write disposable e2e env
         run: |

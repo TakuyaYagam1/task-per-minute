@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -111,6 +111,32 @@ function verifyProductionBuild() {
     throw new Error(`production route manifest contains forbidden entries: ${forbiddenPaths.join(", ")}`);
   }
 
+  const forbiddenBundleMarkers = ["lib/pages/home", "frontend/e2e", "e2e/fixtures", "__fixture__"];
+  const bundleFiles = [];
+  function visitBundle(directory) {
+    for (const entry of readdirSync(directory)) {
+      const path = join(directory, entry);
+      if (statSync(path).isDirectory()) visitBundle(path);
+      else bundleFiles.push(path);
+    }
+  }
+  const serverDirectory = join(frontendRoot, ".next", "server");
+  visitBundle(serverDirectory);
+  const forbiddenBundleFiles = [];
+  for (const path of bundleFiles) {
+    const source = readFileSync(path, "utf8");
+    if (forbiddenBundleMarkers.some((marker) => source.includes(marker))) {
+      forbiddenBundleFiles.push(path);
+    }
+  }
+  if (forbiddenBundleFiles.length > 0) {
+    throw new Error(
+      `production bundle contains fixture or legacy modules: ${forbiddenBundleFiles
+        .map((path) => path.slice(frontendRoot.length + 1))
+        .join(", ")}`,
+    );
+  }
+
   report.steps.push({
     name: "production routes",
     command: "inspect .next/server/app-paths-manifest.json",
@@ -141,6 +167,27 @@ if (process.argv.includes("--init")) {
   report.status = "not_started";
   writeReport();
   process.stdout.write(`frontend CI evidence initialized: ${reportPath}\n`);
+  process.exit(0);
+}
+
+if (process.argv.includes("--finalize")) {
+  if (existsSync(reportPath)) {
+    try {
+      Object.assign(report, JSON.parse(readFileSync(reportPath, "utf8")));
+    } catch {
+      report.status = "failed";
+      report.exit_code = 1;
+      report.error = "frontend CI evidence is unreadable";
+    }
+  }
+  if (report.status === "not_started" || report.status === "running") {
+    report.status = "failed";
+    report.exit_code = 1;
+    report.error = process.env.FRONTEND_CI_ERROR || "frontend CI stopped before verification completed";
+    report.finished_at = new Date().toISOString();
+    writeReport();
+  }
+  process.stdout.write(`frontend CI evidence finalized: ${reportPath}\n`);
   process.exit(0);
 }
 
