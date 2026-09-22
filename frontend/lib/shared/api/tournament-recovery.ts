@@ -7,6 +7,7 @@ import {
 } from "./client";
 import {
   ApiContractError,
+  isGoldenOperatorGroup,
   isOperatorRecoverySnapshot,
   isParticipantRecoverySnapshot,
 } from "./guards";
@@ -1424,6 +1425,109 @@ export type OperatorRealtimeApplyResult = Readonly<{
   outcome: "applied" | "duplicate" | "out_of_order" | "wrong_tournament";
 }>;
 
+const hasRequiredOnlyKeys = (
+  value: Record<string, unknown>,
+  required: readonly string[],
+  optional: readonly string[] = [],
+): boolean =>
+  hasOnlyKeys(value, [...required, ...optional]) && required.every((key) => key in value);
+
+const isOperatorRealtimeWaveMember = (value: unknown): boolean =>
+  isRecord(value) &&
+  hasRequiredOnlyKeys(value, ["participant_id", "readiness_revision", "ready"], ["series_id"]) &&
+  isUUID(value.participant_id) &&
+  isPositiveInteger(value.readiness_revision) &&
+  typeof value.ready === "boolean" &&
+  (value.series_id === undefined || value.series_id === null || isUUID(value.series_id));
+
+const isOperatorRealtimeWave = (value: unknown): boolean =>
+  isRecord(value) &&
+  hasRequiredOnlyKeys(value, ["wave_id", "state", "members"], ["window_deadline"]) &&
+  isUUID(value.wave_id) &&
+  typeof value.state === "string" &&
+  WAVE_STATES.has(value.state) &&
+  Array.isArray(value.members) &&
+  isOptionalDateTime(value.window_deadline) &&
+  value.members.every(isOperatorRealtimeWaveMember);
+
+const isOperatorRealtimePresence = (value: unknown): boolean =>
+  isRecord(value) &&
+  hasRequiredOnlyKeys(value, [
+    "participant_id",
+    "series_id",
+    "state",
+    "presence_epoch",
+    "updated_at",
+  ]) &&
+  isUUID(value.participant_id) &&
+  isUUID(value.series_id) &&
+  (value.state === "connected" || value.state === "disconnected") &&
+  isPositiveInteger(value.presence_epoch) &&
+  isDateTime(value.updated_at);
+
+const isOperatorRealtimeReplay = (value: unknown): boolean =>
+  isRecord(value) &&
+  hasRequiredOnlyKeys(value, [
+    "series_id",
+    "slot_id",
+    "failed_game_id",
+    "replacement_game_id",
+    "replacement_wave_id",
+    "state",
+    "revision",
+  ]) &&
+  isUUID(value.series_id) &&
+  isUUID(value.slot_id) &&
+  isUUID(value.failed_game_id) &&
+  isUUID(value.replacement_game_id) &&
+  isUUID(value.replacement_wave_id) &&
+  isNonBlank(value.state) &&
+  isPositiveInteger(value.revision);
+
+const isOperatorRealtimeAuditLink = (value: unknown): boolean =>
+  isRecord(value) &&
+  hasRequiredOnlyKeys(value, [
+    "audit_event_id",
+    "entity_kind",
+    "entity_id",
+    "official_result_revision_id",
+  ]) &&
+  isUUID(value.audit_event_id) &&
+  isNonBlank(value.entity_kind) &&
+  isUUID(value.entity_id) &&
+  isUUID(value.official_result_revision_id);
+
+const isOperatorRealtimeGolden = (value: unknown): boolean =>
+  isGoldenOperatorGroup(value);
+
+const isOperatorRealtimePause = (value: unknown): boolean =>
+  isRecord(value) &&
+  hasRequiredOnlyKeys(value, [
+    "pause_id",
+    "state",
+    "reason",
+    "paused_at",
+    "graph_revision",
+  ], ["game_id", "frozen_remaining_ms", "reconnect_deadline"]) &&
+  isUUID(value.pause_id) &&
+  isNonBlank(value.state) &&
+  isNonBlank(value.reason) &&
+  isDateTime(value.paused_at) &&
+  isPositiveInteger(value.graph_revision) &&
+  (value.game_id === undefined || value.game_id === null || isUUID(value.game_id)) &&
+  (value.frozen_remaining_ms === undefined ||
+    value.frozen_remaining_ms === null ||
+    isPositiveInteger(value.frozen_remaining_ms)) &&
+  ((value.game_id === undefined || value.game_id === null) ===
+    (value.frozen_remaining_ms === undefined || value.frozen_remaining_ms === null)) &&
+  (value.reconnect_deadline === undefined || isUUID(value.game_id)) &&
+  isOptionalDateTime(value.reconnect_deadline);
+
+const isOperatorRealtimeRecordList = (
+  value: unknown,
+  guard: (item: unknown) => boolean,
+): boolean => Array.isArray(value) && value.every(guard);
+
 const isOperatorProjection = (value: unknown): value is OperatorProjection => {
   if (!isRecord(value) || !hasOnlyKeys(value, [
     "tournament_id",
@@ -1438,18 +1542,16 @@ const isOperatorProjection = (value: unknown): value is OperatorProjection => {
   ])) {
     return false;
   }
-  const isRecordList = (candidate: unknown): candidate is Record<string, unknown>[] =>
-    Array.isArray(candidate) && candidate.every(isRecord);
   return (
     isUUID(value.tournament_id) &&
     isPositiveInteger(value.revision) &&
     isNonNegativeInteger(value.last_sequence) &&
-    isRecordList(value.waves) &&
-    isRecordList(value.presence) &&
-    isRecordList(value.replays) &&
-    (value.pause === undefined || value.pause === null || isRecord(value.pause)) &&
-    isRecordList(value.audit_links) &&
-    isRecordList(value.golden)
+    isOperatorRealtimeRecordList(value.waves, isOperatorRealtimeWave) &&
+    isOperatorRealtimeRecordList(value.presence, isOperatorRealtimePresence) &&
+    isOperatorRealtimeRecordList(value.replays, isOperatorRealtimeReplay) &&
+    (value.pause === undefined || value.pause === null || isOperatorRealtimePause(value.pause)) &&
+    isOperatorRealtimeRecordList(value.audit_links, isOperatorRealtimeAuditLink) &&
+    isOperatorRealtimeRecordList(value.golden, isOperatorRealtimeGolden)
   );
 };
 

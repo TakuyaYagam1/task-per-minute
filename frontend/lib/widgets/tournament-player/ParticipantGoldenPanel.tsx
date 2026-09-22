@@ -7,7 +7,7 @@ import {
   useParticipantGolden,
   type ParticipantGoldenActionStatus,
 } from "../../features/tournament-player";
-import { formatCategory, formatGoldenState } from "../../shared/lib";
+import { formatCategory, formatGoldenState, getSafeTaskHref } from "../../shared/lib";
 import { Button, Message, Status } from "../../shared/ui";
 
 import styles from "./ParticipantGoldenPanel.module.css";
@@ -46,18 +46,6 @@ const formatTimestamp = (value: string | null): string => {
     dateStyle: "short",
     timeStyle: "medium",
   }).format(timestamp);
-};
-
-const safeTaskHref = (value: string | null | undefined): string | null => {
-  if (value === null || value === undefined || value.trim().length === 0) {
-    return null;
-  }
-  try {
-    const url = new URL(value, window.location.origin);
-    return url.protocol === "http:" || url.protocol === "https:" ? url.toString() : null;
-  } catch {
-    return null;
-  }
 };
 
 const stateTone = (
@@ -116,7 +104,7 @@ export const ParticipantGoldenPanel = ({
       }, [snapshot?.task, tournamentId]);
   const sourceFile = useParticipantAssignmentSourceFile(sourceTarget);
   const taskHref = useMemo(
-    () => safeTaskHref(snapshot?.task?.task_url),
+    () => getSafeTaskHref(snapshot?.task?.task_url),
     [snapshot?.task?.task_url],
   );
 

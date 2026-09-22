@@ -940,8 +940,130 @@ test("FE-011 operator realtime accepts only the wrapped strict DTO and fences st
     ...operatorRealtimeEnvelope(10, 7, revisionId),
     type: "tournament.public",
   };
+  const operatorBase = operatorRealtimeEnvelope(11, 8);
+  const validProjection = {
+    ...operatorBase,
+    payload: {
+      ...operatorBase.payload,
+      envelope: {
+        ...operatorBase.payload.envelope,
+        operator: {
+          ...operatorBase.payload.envelope.operator,
+          waves: [{
+            wave_id: seriesId,
+            state: "active",
+            window_deadline: "2026-09-08T10:10:00Z",
+            members: [{
+              participant_id: tournamentId,
+              ready: true,
+              readiness_revision: 2,
+              series_id: seriesId,
+            }],
+          }],
+          presence: [{
+            participant_id: tournamentId,
+            series_id: seriesId,
+            state: "connected",
+            presence_epoch: 1,
+            updated_at: "2026-09-08T10:06:00Z",
+          }],
+          replays: [{
+            series_id: seriesId,
+            slot_id: revisionId,
+            failed_game_id: firstEventId,
+            replacement_game_id: secondEventId,
+            replacement_wave_id: resumeId,
+            state: "planned",
+            revision: 1,
+          }],
+          pause: {
+            pause_id: revisionId,
+            state: "active",
+            reason: "operator_requested",
+            paused_at: "2026-09-08T10:06:00Z",
+            graph_revision: 3,
+            game_id: firstEventId,
+            frozen_remaining_ms: 90_000,
+            reconnect_deadline: "2026-09-08T10:10:00Z",
+          },
+          audit_links: [{
+            audit_event_id: firstEventId,
+            entity_kind: "game",
+            entity_id: secondEventId,
+            official_result_revision_id: revisionId,
+          }],
+        },
+      },
+    },
+  };
+  const pauseWithTaskId = {
+    ...validProjection,
+    payload: {
+      ...validProjection.payload,
+      envelope: {
+        ...validProjection.payload.envelope,
+        operator: {
+          ...validProjection.payload.envelope.operator,
+          pause: {
+            ...validProjection.payload.envelope.operator.pause,
+            task_id: "private",
+          },
+        },
+      },
+    },
+  };
+  const pauseWithSubmittedFlag = {
+    ...validProjection,
+    payload: {
+      ...validProjection.payload,
+      envelope: {
+        ...validProjection.payload.envelope,
+        operator: {
+          ...validProjection.payload.envelope.operator,
+          pause: {
+            ...validProjection.payload.envelope.operator.pause,
+            submitted_flag: true,
+          },
+        },
+      },
+    },
+  };
+  const pauseWithMismatchedTimer = {
+    ...validProjection,
+    payload: {
+      ...validProjection.payload,
+      envelope: {
+        ...validProjection.payload.envelope,
+        operator: {
+          ...validProjection.payload.envelope.operator,
+          pause: {
+            ...validProjection.payload.envelope.operator.pause,
+            game_id: null,
+          },
+        },
+      },
+    },
+  };
+  const pauseWithZeroRemaining = {
+    ...validProjection,
+    payload: {
+      ...validProjection.payload,
+      envelope: {
+        ...validProjection.payload.envelope,
+        operator: {
+          ...validProjection.payload.envelope.operator,
+          pause: {
+            ...validProjection.payload.envelope.operator.pause,
+            frozen_remaining_ms: 0,
+          },
+        },
+      },
+    },
+  };
 
   expect(parseOperatorRealtimeMessage(operatorRealtimeEnvelope(7, 4), tournamentId).sequence).toBe(7);
+  expect(parseOperatorRealtimeMessage(validProjection, tournamentId).operator.pause?.pause_id)
+    .toBe(revisionId);
   expect(applied.outcome).toBe("applied");
   expect(applied.state.projectionRevision).toBe(5);
   expect(applied.state.resumeId).toBe(resumeId);
@@ -952,6 +1074,18 @@ test("FE-011 operator realtime accepts only the wrapped strict DTO and fences st
   expect(wrongTournament.outcome).toBe("wrong_tournament");
   expect(wrongTournament.state).toBe(applied.state);
   expect(() => parseOperatorRealtimeMessage(malformed, tournamentId)).toThrow(
+    "Invalid operator realtime envelope",
+  );
+  expect(() => parseOperatorRealtimeMessage(pauseWithTaskId, tournamentId)).toThrow(
+    "Invalid operator realtime envelope",
+  );
+  expect(() => parseOperatorRealtimeMessage(pauseWithSubmittedFlag, tournamentId)).toThrow(
+    "Invalid operator realtime envelope",
+  );
+  expect(() => parseOperatorRealtimeMessage(pauseWithMismatchedTimer, tournamentId)).toThrow(
+    "Invalid operator realtime envelope",
+  );
+  expect(() => parseOperatorRealtimeMessage(pauseWithZeroRemaining, tournamentId)).toThrow(
     "Invalid operator realtime envelope",
   );
   expect(isOperatorRealtimeRejection({

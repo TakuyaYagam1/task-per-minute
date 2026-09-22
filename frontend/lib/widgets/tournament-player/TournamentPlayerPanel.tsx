@@ -25,6 +25,7 @@ import {
   formatResultReason,
   formatSeriesFormat,
   formatSeriesState,
+  getSafeTaskHref,
 } from "../../shared/lib";
 
 import styles from "./TournamentPlayerPanel.module.css";
@@ -88,23 +89,6 @@ const checkInLabel = (checkIn: ParticipantPlayerView["checkIn"]): string => {
       return "Ожидает подтверждения";
     case "unknown":
       return "Нет данных";
-  }
-};
-
-const safeTaskHref = (value: string | null): string | null => {
-  if (value === null || value.trim().length === 0) {
-    return null;
-  }
-
-  if (value.startsWith("/")) {
-    return value;
-  }
-
-  try {
-    const url = new URL(value);
-    return url.protocol === "http:" || url.protocol === "https:" ? value : null;
-  } catch {
-    return null;
   }
 };
 
@@ -364,7 +348,7 @@ export const TournamentPlayerPanel = ({
   const [hintsOpen, setHintsOpen] = useState(false);
   const [submittedFlag, setSubmittedFlag] = useState("");
   const taskHref = useMemo(
-    () => safeTaskHref(view?.assignment?.taskUrl ?? null),
+    () => getSafeTaskHref(view?.assignment?.taskUrl ?? null),
     [view?.assignment?.taskUrl],
   );
 

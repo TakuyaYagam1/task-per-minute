@@ -4,6 +4,7 @@ import {
   createTournamentFixtureSet,
   tournamentFixtureIds,
 } from "./tournament/fixtures";
+import { getSafeTaskHref } from "../lib/shared/lib/navigation";
 
 const tournamentId = tournamentFixtureIds.tournament;
 const publicPath = `/api/v1/tournaments/${tournamentId}`;
@@ -50,6 +51,30 @@ const fulfillProblem = async (
 };
 
 const withDate = { date: new Date(serverTimestamp).toUTCString() };
+
+test("task URL guard preserves safe targets and rejects browser boundary escapes", () => {
+  expect(getSafeTaskHref("/tasks/assigned?from=tournament", "https://arena.local")).toBe(
+    "/tasks/assigned?from=tournament",
+  );
+  expect(getSafeTaskHref("https://tasks.example/assigned", "https://arena.local")).toBe(
+    "https://tasks.example/assigned",
+  );
+  expect(getSafeTaskHref("http://tasks.example/assigned", "http://arena.local")).toBe(
+    "http://tasks.example/assigned",
+  );
+
+  for (const value of [
+    "//evil.example/task",
+    "https://user:password@evil.example/task",
+    "https://evil.example/task#fragment",
+    "ftp://evil.example/task",
+    "javascript:alert(1)",
+    "https:\\\\evil.example\\\\task",
+    "http://evil.example/task",
+  ]) {
+    expect(getSafeTaskHref(value, "https://arena.local")).toBeNull();
+  }
+});
 
 const readyWindow = (id: string, state: "open" | "expired" | "consumed" = "open") => ({
   consumed_at: state === "consumed" ? "2026-09-15T10:01:00Z" : null,

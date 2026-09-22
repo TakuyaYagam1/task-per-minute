@@ -10,6 +10,7 @@ import {
   isGoldenParticipantResponse,
   isGoldenRuntimeConflictProblem,
 } from "../lib/shared/api/guards";
+import { getSafeTaskHref } from "../lib/shared/lib/navigation";
 
 const frontendRoot = process.cwd();
 const fixtureRoot = resolve(frontendRoot, "e2e/fixtures/golden-api");
@@ -420,6 +421,25 @@ test("strict Golden guards reject metadata-only task and extra private fields", 
     private_task_material: "secret",
   })).toBe(false);
   expect(isGoldenRuntimeConflictProblem(problemBody(409, "Конфликт"))).toBe(true);
+});
+
+test("Golden task links reject unsafe server URLs", () => {
+  expect(getSafeTaskHref("/tasks/golden", "https://arena.local")).toBe("/tasks/golden");
+  expect(getSafeTaskHref("https://tasks.example/golden", "https://arena.local")).toBe(
+    "https://tasks.example/golden",
+  );
+
+  for (const value of [
+    "//evil.example/golden",
+    "https://user:password@evil.example/golden",
+    "https://evil.example/golden#fragment",
+    "ftp://evil.example/golden",
+    "javascript:alert(1)",
+    "https:\\\\evil.example\\\\golden",
+    "http://evil.example/golden",
+  ]) {
+    expect(getSafeTaskHref(value, "https://arena.local")).toBeNull();
+  }
 });
 
 test("Golden fixture switches themes and remains usable at mobile width", async ({ page }) => {
