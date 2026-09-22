@@ -97,6 +97,14 @@
   color: var(--text);
 }
 
+.utilityLink:focus-visible,
+.navLink:focus-visible,
+.stateAction:focus-visible,
+.roleCard:focus-visible {
+  outline: 2px solid var(--accent-strong);
+  outline-offset: 3px;
+}
+
 .roleNav {
   display: flex;
   min-width: 0;
@@ -350,6 +358,7 @@
 
 .overviewTitle {
   margin: 0;
+  overflow-wrap: anywhere;
   color: var(--text);
   font-size: clamp(1.15rem, 3vw, 1.55rem);
   line-height: 1.25;
@@ -435,6 +444,13 @@
     width: 100%;
   }
 
+  .utilityLink,
+  .navLink,
+  .stateAction {
+    min-height: 44px;
+    align-items: center;
+  }
+
   .contextAside {
     flex-wrap: wrap;
   }
@@ -446,5 +462,19 @@
 
   .overviewHeader {
     flex-direction: column;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .utilityLink,
+  .navLink,
+  .roleCard {
+    transition: none;
+  }
+
+  .navLink:hover,
+  .roleCard:hover,
+  .roleCard:focus-visible {
+    transform: none;
   }
 }

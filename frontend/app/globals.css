@@ -19,7 +19,7 @@
   --success-soft: #20352d;
   --warning: #e4b56c;
   --warning-soft: #3b3022;
-  --error: #ef4444;
+  --error: #ff6b6b;
   --error-soft: #451f25;
   --accent-ring: rgba(112, 181, 232, 0.3);
 
@@ -485,14 +485,11 @@ input::placeholder {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
+  html {
+    scroll-behavior: auto;
   }
 
+  body,
   .motion-page,
   .motion-panel,
   .motion-surface,

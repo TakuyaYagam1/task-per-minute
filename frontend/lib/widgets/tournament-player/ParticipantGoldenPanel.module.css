@@ -2,6 +2,7 @@
   display: grid;
   gap: 1rem;
   overflow: hidden;
+  overflow-wrap: anywhere;
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: clamp(1rem, 3vw, 1.5rem);
@@ -23,6 +24,11 @@
   gap: 1rem;
 }
 
+.header > div,
+.taskHeader > div {
+  min-width: 0;
+}
+
 .eyebrow,
 .title,
 .description,
@@ -31,6 +37,7 @@
 .actions p,
 .position p {
   margin: 0;
+  overflow-wrap: anywhere;
 }
 
 .eyebrow {
@@ -44,12 +51,14 @@
 
 .title {
   font-size: clamp(1.3rem, 4vw, 1.8rem);
+  overflow-wrap: anywhere;
 }
 
 .description {
   max-width: 66ch;
   margin-top: 0.35rem;
   color: var(--secondary);
+  overflow-wrap: anywhere;
   line-height: 1.5;
 }
 

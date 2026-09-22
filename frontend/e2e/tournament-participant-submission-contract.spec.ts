@@ -218,11 +218,11 @@ const openParticipantPlay = async (
   );
 };
 
-const answerInput = (page: Page) => page.getByTestId("participant-answer-input");
+const answerInput = (page: Page) => page.getByRole("textbox", { name: "Ответ", exact: true });
 
-const submitButton = (page: Page) => page.getByTestId("participant-submit-button");
+const submitButton = (page: Page) => page.getByRole("button", { name: "Отправить ответ", exact: true });
 
-const surrenderButton = (page: Page) => page.getByTestId("participant-surrender-button");
+const surrenderButton = (page: Page) => page.getByRole("button", { name: "Сдаться", exact: true });
 
 const assertFlagIsNotExposed = async (
   page: Page,
@@ -262,6 +262,12 @@ test("empty participant answer is rejected without a submission request", async 
 
   await expect.poll(() => submissions).toBe(0);
   await expect(page.locator("body")).toContainText(/введите|обязатель|пуст/i);
+  await expect(input).toHaveAttribute(
+    "aria-describedby",
+    "participant-submission-help participant-submission-status",
+  );
+  await expect(input).toHaveAttribute("aria-invalid", "true");
+  await expect(page.locator("#participant-submission-status")).toHaveAttribute("role", "alert");
 });
 
 test("incorrect answer shows a server result and never exposes the submitted flag", async ({ page }) => {
@@ -283,8 +289,13 @@ test("incorrect answer shows a server result and never exposes the submitted fla
   });
 
   await answerInput(page).fill(submittedFlag);
-  await submitButton(page).click();
+  await answerInput(page).press("Enter");
   await expect(page.locator("body")).toContainText(/неверн|неправ|отклон|ошиб/i);
+  await expect(answerInput(page)).toHaveAttribute(
+    "aria-describedby",
+    "participant-submission-help participant-submission-status",
+  );
+  await expect(answerInput(page)).toHaveAttribute("aria-invalid", "true");
 
   expect(requests).toHaveLength(1);
   expect(requests[0]?.body).toEqual({

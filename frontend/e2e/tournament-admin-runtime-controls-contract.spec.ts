@@ -361,7 +361,14 @@ const openOperatorArena = async (page: Page): Promise<void> => {
 
 const fillReasonAndConfirm = async (page: Page, reason: string): Promise<void> => {
   await page.getByLabel("Причина").fill(reason);
-  await page.getByLabel("Подтверждаю, что команда соответствует текущему авторитетному снимку.").check();
+  const confirmation = page.getByRole("checkbox", {
+    name: "Подтверждаю, что команда соответствует текущему авторитетному снимку.",
+    exact: true,
+  });
+  await confirmation.focus();
+  await expect(confirmation).toBeFocused();
+  await page.keyboard.press("Space");
+  await expect(confirmation).toBeChecked();
 };
 
 test("pause sends one exact command, has no optimistic success, and refreshes the snapshot", async ({ page }) => {
@@ -535,18 +542,29 @@ test("resume follows the server matrix and cancellation requires a dismissible d
   routes.setActionPlan({ nextSnapshot: cancelledSnapshot(14) });
   await actionSelect.selectOption("cancel");
   await page.getByLabel("Причина").fill("Турнир отменен решением главного судьи");
-  await page.getByLabel("Подтверждаю, что команда соответствует текущему авторитетному снимку.").check();
+  const cancellationConfirmation = page.getByRole("checkbox", {
+    name: "Подтверждаю, что команда соответствует текущему авторитетному снимку.",
+    exact: true,
+  });
+  await cancellationConfirmation.focus();
+  await page.keyboard.press("Space");
+  await expect(cancellationConfirmation).toBeChecked();
   await page.getByRole("button", { name: "Выполнить: Отменить турнир" }).click();
 
   const dialog = page.getByRole("dialog", { name: "Подтвердить отмену турнира" });
   await expect(dialog).toBeVisible();
-  await dialog.getByRole("button", { name: "Не отменять" }).click();
+  const dismissCancellation = dialog.getByRole("button", { name: "Не отменять", exact: true });
+  await dismissCancellation.focus();
+  await expect(dismissCancellation).toBeFocused();
+  await dismissCancellation.press("Enter");
   await expect(dialog).toBeHidden();
   expect(routes.actionRequests).toHaveLength(0);
 
   await page.getByRole("button", { name: "Выполнить: Отменить турнир" }).click();
   await expect(dialog).toBeVisible();
-  await dialog.getByRole("button", { name: "Подтвердить отмену" }).click();
+  const confirmCancellation = dialog.getByRole("button", { name: "Подтвердить отмену", exact: true });
+  await confirmCancellation.focus();
+  await confirmCancellation.press("Enter");
   await expect.poll(() => routes.actionRequests.length).toBe(1);
   expect(routes.actionRequests[0]?.body).toEqual({
     action: "cancel",

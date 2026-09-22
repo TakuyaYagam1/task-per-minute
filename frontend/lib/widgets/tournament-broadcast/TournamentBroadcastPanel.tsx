@@ -1,6 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+} from "react";
 
 import { formatCountdown, useServerCountdown } from "../../features/tournament-live";
 import type { PublicRecoveryState } from "../../shared/api";
@@ -94,6 +100,32 @@ type PublicDisplayWithSwissRounds = PublicRecoveryState["display"] & {
 
 type BroadcastPhase = "waiting" | "live" | "technical_pause" | "cancelled" | "completed";
 type ProjectionView = "scoreboard" | "swiss" | "playoff";
+
+const PROJECTION_TABS: ReadonlyArray<Readonly<{
+  view: ProjectionView;
+  label: string;
+  tabId: string;
+  panelId: string;
+}>> = [
+  {
+    view: "scoreboard",
+    label: "Таблица",
+    tabId: "broadcast-scoreboard-tab",
+    panelId: "broadcast-scoreboard",
+  },
+  {
+    view: "swiss",
+    label: "Swiss",
+    tabId: "broadcast-swiss-tab",
+    panelId: "broadcast-swiss",
+  },
+  {
+    view: "playoff",
+    label: "Плей-офф",
+    tabId: "broadcast-playoff-tab",
+    panelId: "broadcast-playoff",
+  },
+];
 
 const CONNECTION_LABELS: Readonly<Record<PublicConnectionStatus, string>> = {
   idle: "Ожидание",
@@ -760,6 +792,7 @@ export const TournamentBroadcastPanel = ({
   state,
 }: TournamentBroadcastPanelProps) => {
   const panelRef = useRef<HTMLElement | null>(null);
+  const tabRefs = useRef<Partial<Record<ProjectionView, HTMLButtonElement | null>>>({});
   const [selectedMatchKey, setSelectedMatchKey] = useState<string | null>(null);
   const [activeView, setActiveView] = useState<ProjectionView>("scoreboard");
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -838,6 +871,44 @@ export const TournamentBroadcastPanel = ({
   const selectMatch = (match: BroadcastMatch): void => {
     setSelectedMatchKey(match.key);
     updateSelectedMatch(match.key);
+  };
+
+  const selectProjectionView = (view: ProjectionView, moveFocus = false): void => {
+    setActiveView(view);
+    if (moveFocus) {
+      tabRefs.current[view]?.focus();
+    }
+  };
+
+  const handleProjectionKeyDown = (
+    event: KeyboardEvent<HTMLButtonElement>,
+    view: ProjectionView,
+  ): void => {
+    const currentIndex = PROJECTION_TABS.findIndex((tab) => tab.view === view);
+    if (currentIndex < 0) {
+      return;
+    }
+
+    let nextIndex: number | null = null;
+    if (event.key === "ArrowRight") {
+      nextIndex = (currentIndex + 1) % PROJECTION_TABS.length;
+    } else if (event.key === "ArrowLeft") {
+      nextIndex = (currentIndex - 1 + PROJECTION_TABS.length) % PROJECTION_TABS.length;
+    } else if (event.key === "Home") {
+      nextIndex = 0;
+    } else if (event.key === "End") {
+      nextIndex = PROJECTION_TABS.length - 1;
+    }
+
+    if (nextIndex === null) {
+      return;
+    }
+
+    event.preventDefault();
+    const nextTab = PROJECTION_TABS[nextIndex];
+    if (nextTab !== undefined) {
+      selectProjectionView(nextTab.view, true);
+    }
   };
 
   useEffect(() => {
@@ -1005,39 +1076,25 @@ export const TournamentBroadcastPanel = ({
 
       <section className={styles.projections} aria-label="Публичные проекции турнира">
         <div className={styles.tabs} role="tablist" aria-label="Таблица и этапы турнира">
-          <button
-            aria-controls="broadcast-scoreboard"
-            aria-selected={activeView === "scoreboard"}
-            className={styles.tab}
-            id="broadcast-scoreboard-tab"
-            onClick={() => setActiveView("scoreboard")}
-            role="tab"
-            type="button"
-          >
-            Таблица
-          </button>
-          <button
-            aria-controls="broadcast-swiss"
-            aria-selected={activeView === "swiss"}
-            className={styles.tab}
-            id="broadcast-swiss-tab"
-            onClick={() => setActiveView("swiss")}
-            role="tab"
-            type="button"
-          >
-            Swiss
-          </button>
-          <button
-            aria-controls="broadcast-playoff"
-            aria-selected={activeView === "playoff"}
-            className={styles.tab}
-            id="broadcast-playoff-tab"
-            onClick={() => setActiveView("playoff")}
-            role="tab"
-            type="button"
-          >
-            Плей-офф
-          </button>
+          {PROJECTION_TABS.map((tab) => (
+            <button
+              aria-controls={tab.panelId}
+              aria-selected={activeView === tab.view}
+              className={styles.tab}
+              id={tab.tabId}
+              key={tab.view}
+              onClick={() => selectProjectionView(tab.view)}
+              onKeyDown={(event) => handleProjectionKeyDown(event, tab.view)}
+              ref={(element) => {
+                tabRefs.current[tab.view] = element;
+              }}
+              role="tab"
+              tabIndex={activeView === tab.view ? 0 : -1}
+              type="button"
+            >
+              {tab.label}
+            </button>
+          ))}
         </div>
 
         {activeView === "scoreboard" ? (
@@ -1214,6 +1271,30 @@ export const TournamentBroadcastPanel = ({
               )}
             </div>
           </div>
+        )}
+        {activeView !== "scoreboard" && (
+          <div
+            aria-labelledby="broadcast-scoreboard-tab"
+            hidden
+            id="broadcast-scoreboard"
+            role="tabpanel"
+          />
+        )}
+        {activeView !== "swiss" && (
+          <div
+            aria-labelledby="broadcast-swiss-tab"
+            hidden
+            id="broadcast-swiss"
+            role="tabpanel"
+          />
+        )}
+        {activeView !== "playoff" && (
+          <div
+            aria-labelledby="broadcast-playoff-tab"
+            hidden
+            id="broadcast-playoff"
+            role="tabpanel"
+          />
         )}
       </section>
     </section>

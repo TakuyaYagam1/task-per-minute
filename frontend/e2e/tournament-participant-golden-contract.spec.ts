@@ -76,6 +76,7 @@ const participantRealtimeFrame = (sequence: number): string => JSON.stringify({
 
 test("participant completes server-owned Golden readiness, task and placement flow", async ({ page }) => {
   const fixtureSet = createTournamentFixtureSet();
+  const longCopy = "ОченьДлинноеНазваниеGoldenЗаданияБезПробелов".repeat(8);
   let current: GoldenParticipant = {
     ...fixtureSet.golden.participant,
     deadline: null,
@@ -90,6 +91,7 @@ test("participant completes server-owned Golden readiness, task and placement fl
   const mutationBodies: unknown[] = [];
   const realtimeSockets: WebSocketRoute[] = [];
   await installParticipantShell(page, fixtureSet);
+  await page.emulateMedia({ reducedMotion: "reduce" });
   await page.context().routeWebSocket(
     (url) => url.pathname === participantRealtimePath,
     (socket: WebSocketRoute) => {
@@ -123,7 +125,7 @@ test("participant completes server-owned Golden readiness, task and placement fl
   await expect(panel).toContainText("Это не BO1-серия");
   await expect(panel.getByText("Материалы попытки")).toHaveCount(0);
 
-  await panel.getByTestId("participant-golden-ready").click();
+  await panel.getByRole("button", { name: "Готов к Golden", exact: true }).click();
   await expect(panel).toHaveAttribute("data-golden-state", "ready");
   expect(mutationBodies[0]).toEqual({
     attempt_id: tournamentFixtureIds.attempt,
@@ -133,14 +135,29 @@ test("participant completes server-owned Golden readiness, task and placement fl
   });
 
   current = activeGolden(fixtureSet.golden.participant);
+  if (current.task === null) {
+    throw new Error("Golden fixture requires a task");
+  }
+  current = {
+    ...current,
+    task: {
+      ...current.task,
+      description: `${longCopy}\n${longCopy}`,
+      title: longCopy,
+    },
+  };
   await expect.poll(() => realtimeSockets.length).toBe(1);
   realtimeSockets[0]?.send(participantRealtimeFrame(2));
   await expect(panel).toHaveAttribute("data-golden-state", "active");
-  await expect(panel.getByRole("heading", { name: "Golden проверка" })).toBeVisible();
+  await expect(panel.getByRole("heading", { name: longCopy, exact: true })).toBeVisible();
   await expect(panel.getByTestId("participant-golden-timer")).toHaveText(/^\d+:\d{2}$/);
 
-  await panel.getByLabel("Ответ Golden").fill("flag{golden_acceptance}");
-  await panel.getByTestId("participant-golden-submit").click();
+  const goldenInput = panel.getByRole("textbox", { name: "Ответ Golden", exact: true });
+  await goldenInput.press("Enter");
+  await expect(goldenInput).toHaveAttribute("aria-describedby", "participant-golden-action-status");
+  await expect(goldenInput).toHaveAttribute("aria-invalid", "true");
+  await goldenInput.fill("flag{golden_acceptance}");
+  await goldenInput.press("Enter");
   await expect(panel).toContainText("Решение Golden принято сервером");
   expect(mutationBodies[1]).toEqual({
     attempt_id: tournamentFixtureIds.attempt,
@@ -157,11 +174,30 @@ test("participant completes server-owned Golden readiness, task and placement fl
     "Следующий этап определяет только серверный lobby",
   );
 
-  await page.setViewportSize({ width: 390, height: 844 });
   await page.getByRole("button", { name: "Светлая тема" }).click();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
-  const noOverflow = await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth);
-  expect(noOverflow).toBe(true);
+  await page.getByRole("button", { name: "Темная тема" }).click();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+  for (const [width, height] of [[390, 844], [768, 1024], [1440, 900]] as const) {
+    await page.setViewportSize({ width, height });
+    await page.evaluate(() => {
+      document.documentElement.style.fontSize = "200%";
+    });
+    await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  }
+});
+
+test("Golden loading error keeps a named landmark and an announced message", async ({ page }) => {
+  const fixtureSet = createTournamentFixtureSet();
+  await installParticipantShell(page, fixtureSet);
+  await page.route(`**${goldenPath}**`, (route) => fulfillJSON(route, fixtureSet.golden.participant, 503));
+
+  await page.goto(participantURL);
+  const panel = page.getByTestId("participant-golden-panel");
+  await expect(panel).toHaveAttribute("data-state", "error");
+  await expect(page.getByRole("region", { name: "Golden Task", exact: true })).toBeVisible();
+  await expect(panel.getByRole("heading", { name: "Golden Task", exact: true })).toBeVisible();
+  await expect(panel.getByRole("alert")).toContainText("Golden недоступен");
 });
 
 test("Golden no-show and technical pause stay taskless and server-controlled", async ({ page }) => {
@@ -184,7 +220,7 @@ test("Golden no-show and technical pause stay taskless and server-controlled", a
   await panel.getByRole("button", { name: "Обновить Golden" }).click();
   await expect(panel).toContainText("Техническая пауза");
   await expect(panel.getByTestId("participant-golden-timer")).toHaveText("Остановлен сервером");
-  await expect(panel.getByTestId("participant-golden-submit")).toHaveCount(0);
+  await expect(panel.getByRole("button", { name: "Отправить ответ", exact: true })).toHaveCount(0);
 });
 
 test("Golden archive uses its immutable assignment without an ordinary assignment lookup", async ({ page }) => {
@@ -277,7 +313,7 @@ test("stale Golden submission recovers a continuation attempt without replay", a
   await page.goto(participantURL);
   const panel = page.getByTestId("participant-golden-panel");
   await panel.getByLabel("Ответ Golden").fill("flag{stale}");
-  await panel.getByTestId("participant-golden-submit").click();
+  await panel.getByRole("button", { name: "Отправить ответ", exact: true }).click();
 
   await expect(panel).toHaveAttribute("data-attempt-id", nextAttemptId);
   await expect(panel.getByTestId("participant-golden-action-status")).toHaveAttribute(

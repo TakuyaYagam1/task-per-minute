@@ -402,6 +402,15 @@ export const TournamentPlayerPanel = ({
     view.state === "completed";
   const showReadinessAction = view.state !== "bye" && view.state !== "eliminated" && view.state !== "completed";
   const showDraft = view.draft !== null && (view.draft.format === "bo1" || view.draft.format === "bo3");
+  const submissionHasError =
+    submission.status === "empty" ||
+    submission.status === "incorrect" ||
+    submission.status === "conflict" ||
+    submission.status === "rate_limited" ||
+    submission.status === "error";
+  const submissionDescribedBy = submission.message === null
+    ? "participant-submission-help"
+    : "participant-submission-help participant-submission-status";
 
   return (
     <section
@@ -1036,7 +1045,8 @@ export const TournamentPlayerPanel = ({
               </label>
               <div className={styles.submissionControls}>
                 <input
-                  aria-describedby="participant-submission-help"
+                  aria-describedby={submissionDescribedBy}
+                  aria-invalid={submissionHasError}
                   className={styles.submissionInput}
                   data-testid="participant-answer-input"
                   disabled={submission.status === "pending" || view.pause.active}
@@ -1066,6 +1076,7 @@ export const TournamentPlayerPanel = ({
                 <Message
                   data-status={submission.status}
                   data-testid="participant-submission-status"
+                  id="participant-submission-status"
                   tone={submissionTone(submission.status)}
                   title={submission.status === "accepted" ? "Ответ принят" : "Отправка ответа"}
                 >

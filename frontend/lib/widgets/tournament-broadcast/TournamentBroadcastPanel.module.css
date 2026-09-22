@@ -217,7 +217,7 @@
 
 .matchButton:focus-visible,
 .tab:focus-visible {
-  outline: 3px solid var(--accent-ring);
+  outline: 3px solid var(--accent);
   outline-offset: 2px;
 }
 
@@ -268,7 +268,12 @@
 
 .selectedHeader h3 {
   margin-top: 0.2rem;
+  overflow-wrap: anywhere;
   font-size: clamp(1.15rem, 3vw, 1.5rem);
+}
+
+.selectedHeader > div {
+  min-width: 0;
 }
 
 .matchState {
@@ -876,5 +881,23 @@
   .byeRow {
     align-items: flex-start;
     flex-direction: column;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fullscreenButton,
+  .matchButton,
+  .tab {
+    transition: none !important;
+  }
+
+  .fullscreenButton:hover:not(:disabled),
+  .fullscreenButton:active:not(:disabled),
+  .matchButton:hover:not(:disabled),
+  .matchButton:active:not(:disabled),
+  .tab:hover:not(:disabled),
+  .tab:active:not(:disabled) {
+    filter: none;
+    transform: none;
   }
 }

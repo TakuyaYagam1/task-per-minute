@@ -56,6 +56,12 @@
   outline-offset: 2px;
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .button {
+    transition: none;
+  }
+}
+
 @media (max-width: 479px) {
   .toggle {
     top: 12px;

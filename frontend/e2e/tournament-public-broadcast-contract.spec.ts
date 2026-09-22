@@ -339,21 +339,45 @@ const publicRealtimeFrame = (
   };
 };
 
-const installArenaRoutes = async (page: Page, mode: () => SnapshotMode): Promise<void> => {
+type SnapshotFactory = (mode: SnapshotMode) => Record<string, unknown>;
+
+const installArenaRoutes = async (
+  page: Page,
+  mode: () => SnapshotMode,
+  snapshotFactory: SnapshotFactory = publicSnapshot,
+): Promise<void> => {
   await page.route(`**${tournamentPath}`, async (route) => {
     await route.fulfill({
-      body: JSON.stringify(publicSnapshot(mode()).tournament),
+      body: JSON.stringify(snapshotFactory(mode()).tournament),
       headers: jsonHeaders,
       status: 200,
     });
   });
   await page.route(`**${snapshotPath}*`, async (route) => {
     await route.fulfill({
-      body: JSON.stringify(publicSnapshot(mode())),
+      body: JSON.stringify(snapshotFactory(mode())),
       headers: jsonHeaders,
       status: 200,
     });
   });
+};
+
+const longCyrillicSnapshot = (): Record<string, unknown> => {
+  const snapshot = publicSnapshot("live");
+  const longName = "КиберспортивнаяКомандаСеверногоФронта";
+  const liveSeries = snapshot.live_series as Array<Record<string, unknown>>;
+  const firstSeries = liveSeries.find((series) => series.series_id === firstSeriesId);
+  if (firstSeries !== undefined) {
+    firstSeries.first_display_name = longName;
+    firstSeries.second_display_name = `${longName}Партнер`;
+  }
+  const scoreboard = snapshot.scoreboard as Record<string, unknown>;
+  const entries = scoreboard.entries as Array<Record<string, unknown>>;
+  const firstEntry = entries[0];
+  if (firstEntry !== undefined) {
+    firstEntry.display_name = longName;
+  }
+  return snapshot;
 };
 
 test("FE-041 public match center binds selected series, game timers, and passive draft", async ({ page }) => {
@@ -494,4 +518,166 @@ test("FE-041 anchors countdown to the latest public websocket timestamp", async 
     "2026-09-15T10:05:00Z",
   );
   await expect(broadcast.getByTestId("broadcast-game-countdown")).toHaveText("4:00");
+});
+
+test("FE-042 keeps spectator tabs, names, focus, motion, and responsive actions accessible", async ({ page }) => {
+  await page.clock.install({ time: serverTimestamp });
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await installSocketStub(page);
+  await installFullscreenMock(page);
+  await installArenaRoutes(page, () => "live", () => longCyrillicSnapshot());
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`/arena/spectator/${tournamentId}?match=series:${firstSeriesId}`, {
+    waitUntil: "domcontentloaded",
+  });
+
+  const broadcast = page.getByTestId("tournament-broadcast");
+  const html = page.locator("html");
+  const firstMatch = broadcast.locator(`[data-match-key="series:${firstSeriesId}"]`);
+
+  const readLayout = async () => page.evaluate(() => {
+    const viewport = window.innerWidth;
+    const actions = Array.from(
+      document.querySelectorAll<HTMLElement>('[data-testid="tournament-broadcast"] button'),
+    ).map((element) => {
+      const rect = element.getBoundingClientRect();
+      return {
+        left: rect.left,
+        right: rect.right,
+        scrollWidth: element.scrollWidth,
+        clientWidth: element.clientWidth,
+      };
+    });
+    return {
+      body: document.body.scrollWidth,
+      document: document.documentElement.scrollWidth,
+      viewport,
+      actions,
+    };
+  });
+
+  await expect(broadcast).toBeVisible();
+  await expect(page.getByRole("main")).toBeVisible();
+  await expect(broadcast.getByRole("heading", { name: /КиберспортивнаяКомандаСеверногоФронта/ })).toBeVisible();
+
+  await firstMatch.focus();
+  await firstMatch.press("Space");
+  await expect(firstMatch).toHaveAttribute("aria-pressed", "true");
+  const selectedHeading = broadcast.getByRole("heading", { name: /КиберспортивнаяКомандаСеверногоФронта/ });
+  const selectedHeadingMetrics = await selectedHeading.evaluate((element) => ({
+    clientWidth: element.clientWidth,
+    scrollWidth: element.scrollWidth,
+  }));
+  expect(selectedHeadingMetrics.scrollWidth).toBeLessThanOrEqual(selectedHeadingMetrics.clientWidth + 1);
+
+  const secondMatch = broadcast.locator(`[data-match-key="series:${secondSeriesId}"]`);
+  await secondMatch.focus();
+  await secondMatch.press("Enter");
+  await expect(secondMatch).toHaveAttribute("aria-pressed", "true");
+  await expect.poll(() => new URL(page.url()).searchParams.get("match")).toBe(`series:${secondSeriesId}`);
+
+  const tabs = broadcast.getByRole("tab");
+  await expect(tabs).toHaveCount(3);
+  for (let index = 0; index < 3; index += 1) {
+    const tab = tabs.nth(index);
+    const controls = await tab.getAttribute("aria-controls");
+    if (controls === null) {
+      throw new Error(`Projection tab ${index} has no aria-controls target`);
+    }
+    await expect(broadcast.locator(`#${controls}`)).toHaveCount(1);
+    await expect(tab).toHaveAttribute("tabindex", index === 0 ? "0" : "-1");
+  }
+
+  await tabs.nth(0).focus();
+  await tabs.nth(0).press("ArrowRight");
+  await expect(tabs.nth(1)).toBeFocused();
+  await expect(tabs.nth(1)).toHaveAttribute("aria-selected", "true");
+  await expect(broadcast.locator('[role="tabpanel"]:visible')).toHaveAttribute("id", "broadcast-swiss");
+
+  await tabs.nth(1).press("ArrowRight");
+  await expect(tabs.nth(2)).toBeFocused();
+  await expect(tabs.nth(2)).toHaveAttribute("aria-selected", "true");
+  await expect(broadcast.locator('[role="tabpanel"]:visible')).toHaveAttribute("id", "broadcast-playoff");
+
+  await tabs.nth(2).press("ArrowRight");
+  await expect(tabs.nth(0)).toBeFocused();
+  await expect(tabs.nth(0)).toHaveAttribute("aria-selected", "true");
+  await tabs.nth(0).press("End");
+  await expect(tabs.nth(2)).toBeFocused();
+  await tabs.nth(2).press("Home");
+  await expect(tabs.nth(0)).toBeFocused();
+
+  const countdown = broadcast.getByTestId("broadcast-game-countdown");
+  const countdownSemantics = await countdown.evaluate((element) => ({
+    ancestorLive: element.closest("[aria-live]")?.getAttribute("aria-live") ?? null,
+    ancestorRole: element.closest('[role="status"], [role="alert"]')?.getAttribute("role") ?? null,
+    ariaLive: element.getAttribute("aria-live"),
+    role: element.getAttribute("role"),
+  }));
+  expect(countdownSemantics).toEqual({
+    ancestorLive: null,
+    ancestorRole: null,
+    ariaLive: null,
+    role: null,
+  });
+
+  for (const theme of ["dark", "light"] as const) {
+    await page.getByRole("button", { name: theme === "dark" ? "Темная тема" : "Светлая тема" }).click();
+    await expect(html).toHaveAttribute("data-theme", theme);
+    await firstMatch.focus();
+    await page.keyboard.press("Shift+Tab");
+    await page.keyboard.press("Tab");
+    await expect(firstMatch).toBeFocused();
+    const focusState = await firstMatch.evaluate((element) => {
+      const styles = getComputedStyle(element);
+      return {
+        outlineColor: styles.outlineColor,
+        outlineStyle: styles.outlineStyle,
+        outlineWidth: styles.outlineWidth,
+      };
+    });
+    expect(focusState.outlineStyle).toBe("solid");
+    expect(focusState.outlineWidth).toBe("3px");
+    expect(focusState.outlineColor).not.toMatch(/rgba?\([^)]*,\s*0\)?$/);
+  }
+
+  await firstMatch.hover();
+  const reducedMotionState = await firstMatch.evaluate((element) => {
+    const styles = getComputedStyle(element);
+    return {
+      filter: styles.filter,
+      transform: styles.transform,
+      transitionProperty: styles.transitionProperty,
+    };
+  });
+  expect(reducedMotionState).toEqual({
+    filter: "none",
+    transform: "none",
+    transitionProperty: "none",
+  });
+
+  for (const width of [390, 768, 1440] as const) {
+    await page.setViewportSize({ width, height: 900 });
+    const layout = await readLayout();
+    expect(layout.document).toBeLessThanOrEqual(layout.viewport);
+    expect(layout.body).toBeLessThanOrEqual(layout.viewport);
+    for (const action of layout.actions) {
+      expect(action.left).toBeGreaterThanOrEqual(-1);
+      expect(action.right).toBeLessThanOrEqual(layout.viewport + 1);
+      expect(action.scrollWidth).toBeLessThanOrEqual(action.clientWidth + 1);
+    }
+  }
+
+  await page.setViewportSize({ width: 390, height: 900 });
+  await page.evaluate(() => {
+    document.documentElement.style.fontSize = "28px";
+  });
+  const scaledLayout = await readLayout();
+  expect(scaledLayout.document).toBeLessThanOrEqual(scaledLayout.viewport);
+  expect(scaledLayout.body).toBeLessThanOrEqual(scaledLayout.viewport);
+  for (const action of scaledLayout.actions) {
+    expect(action.left).toBeGreaterThanOrEqual(-1);
+    expect(action.right).toBeLessThanOrEqual(scaledLayout.viewport + 1);
+    expect(action.scrollWidth).toBeLessThanOrEqual(action.clientWidth + 1);
+  }
 });

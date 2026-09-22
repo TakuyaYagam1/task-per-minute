@@ -1,6 +1,7 @@
 .panel {
   display: grid;
   gap: 1.25rem;
+  overflow-wrap: anywhere;
   width: min(100%, 62rem);
   min-width: 0;
   border: 1px solid var(--border);
@@ -21,10 +22,17 @@
   gap: 1rem;
 }
 
+.header > div,
+.assignmentHeader > div,
+.readinessHeader > div {
+  min-width: 0;
+}
+
 .title,
 .assignmentTitle,
 .readinessTitle {
   margin: 0;
+  overflow-wrap: anywhere;
   line-height: 1.25;
 }
 
@@ -587,11 +595,13 @@
   margin: 0;
   font-size: 1.05rem;
   font-weight: 750;
+  overflow-wrap: anywhere;
 }
 
 .assignmentDescription {
   margin: 0;
   color: var(--text);
+  overflow-wrap: anywhere;
   line-height: 1.6;
   white-space: pre-wrap;
 }

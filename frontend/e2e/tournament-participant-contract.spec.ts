@@ -261,10 +261,12 @@ test("participant opens readiness only for the current window and ignores the ol
   });
   await page.goto(participantURL);
 
-  const readyButton = page.getByTestId("participant-ready-button");
+  const readyButton = page.getByRole("button", { name: "Подтвердить готовность", exact: true });
   await expect(readyButton).toBeEnabled();
   const oldKey = await page.getByTestId("participant-player-panel").getAttribute("data-ready-key");
-  const pendingClick = readyButton.click();
+  await readyButton.focus();
+  await expect(readyButton).toBeFocused();
+  const pendingClick = readyButton.press("Enter");
   await expect.poll(() => readyRequests).toBe(1);
 
   current = readyRecovery(
@@ -407,20 +409,41 @@ test("participant keeps the last valid view while recovery becomes stale", async
   await expect(page.getByTestId("participant-player-panel")).toHaveAttribute("data-state", "assigned");
 });
 
-test("participant lobby remains keyboard reachable on the light 390px surface", async ({ page }) => {
+test("participant lobby keeps keyboard access and long Cyrillic copy across responsive surfaces", async ({ page }) => {
   const fixtureSet = createTournamentFixtureSet();
+  const longCopy = "ОченьДлинноеНазваниеЗаданияБезПробелов".repeat(10);
+  const current = readyRecovery(fixtureSet.participant.recovery);
+  if (current.assignment === null) {
+    throw new Error("participant fixture requires an assignment");
+  }
+  current.assignment = {
+    ...current.assignment,
+    active_snapshot: {
+      ...current.assignment.active_snapshot,
+      description: `${longCopy}\n${longCopy}`,
+      title: longCopy,
+    },
+  };
   await installAccess(page, fixtureSet);
-  await installSnapshot(page, readyRecovery(fixtureSet.participant.recovery));
+  await installSnapshot(page, current);
+  await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto(participantURL);
+  await expect(page.getByRole("region", { name: "Турнирная позиция" })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Задание для игры" })).toContainText(longCopy);
   await page.getByRole("button", { name: "Светлая тема" }).click();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
-  await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByRole("button", { name: "Темная тема" }).click();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
 
-  await expect.poll(() => page.evaluate(() => ({
-    body: document.body.scrollWidth,
-    document: document.documentElement.scrollWidth,
-    viewport: window.innerWidth,
-  }))).toEqual({ body: 390, document: 390, viewport: 390 });
-  await page.getByTestId("participant-ready-button").focus();
-  await expect(page.getByTestId("participant-ready-button")).toBeFocused();
+  for (const [width, height] of [[390, 844], [768, 1024], [1440, 900]] as const) {
+    await page.setViewportSize({ width, height });
+    await page.evaluate(() => {
+      document.documentElement.style.fontSize = "200%";
+    });
+    await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  }
+
+  const readyButton = page.getByRole("button", { name: "Подтвердить готовность", exact: true });
+  await readyButton.focus();
+  await expect(readyButton).toBeFocused();
 });

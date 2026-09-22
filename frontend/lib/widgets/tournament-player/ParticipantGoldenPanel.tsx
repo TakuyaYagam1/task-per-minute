@@ -139,11 +139,16 @@ export const ParticipantGoldenPanel = ({
 
   if (snapshot === null) {
     return (
-      <section className={styles.panel} data-state={golden.loadStatus} data-testid="participant-golden-panel">
+      <section
+        aria-labelledby="participant-golden-title"
+        className={styles.panel}
+        data-state={golden.loadStatus}
+        data-testid="participant-golden-panel"
+      >
         <div className={styles.header}>
           <div>
             <p className={styles.eyebrow}>Групповое задание</p>
-            <h2 className={styles.title}>Golden Task</h2>
+            <h2 className={styles.title} id="participant-golden-title">Golden Task</h2>
           </div>
           <Status tone={golden.loadStatus === "loading" ? "loading" : "error"}>
             {golden.loadStatus === "loading" ? "Получаем состояние" : "Нет связи"}
@@ -162,6 +167,14 @@ export const ParticipantGoldenPanel = ({
   const readyAllowed = snapshot.state === "prepared" && !snapshot.ready;
   const submitAllowed = snapshot.state === "active" && snapshot.task !== null && !snapshot.submitted;
   const paused = snapshot.state === "technical_pause";
+  const goldenSubmitHasError =
+    golden.actionStatus === "incorrect" ||
+    golden.actionStatus === "conflict" ||
+    golden.actionStatus === "rate_limited" ||
+    golden.actionStatus === "error";
+  const goldenSubmitDescribedBy = golden.actionMessage === null
+    ? undefined
+    : "participant-golden-action-status";
   const submitAnswer = (event: FormEvent<HTMLFormElement>): void => {
     event.preventDefault();
     const value = submittedFlag;
@@ -303,6 +316,8 @@ export const ParticipantGoldenPanel = ({
           <label htmlFor="participant-golden-answer">Ответ Golden</label>
           <div className={styles.submitRow}>
             <input
+              aria-describedby={goldenSubmitDescribedBy}
+              aria-invalid={goldenSubmitHasError}
               autoComplete="off"
               id="participant-golden-answer"
               onChange={(event) => setSubmittedFlag(event.target.value)}
@@ -343,6 +358,7 @@ export const ParticipantGoldenPanel = ({
         <Message
           data-status={golden.actionStatus}
           data-testid="participant-golden-action-status"
+          id="participant-golden-action-status"
           tone={actionTone(golden.actionStatus)}
           title={golden.actionStatus === "accepted" ? "Сервер подтвердил действие" : "Golden"}
         >

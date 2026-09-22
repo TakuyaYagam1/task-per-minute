@@ -8,6 +8,10 @@ type ThemeTokens = {
   text: string;
   secondary: string;
   accent: string;
+  accentStrong: string;
+  accentSoft: string;
+  error: string;
+  errorSoft: string;
 };
 
 type ThemeProbe = {
@@ -31,7 +35,7 @@ type ThemeControl =
 type RGB = [number, number, number];
 
 const themeStorageKey = 'task-per-minute-theme';
-const viewportWidths = [390, 1440] as const;
+const viewportWidths = [390, 768, 1440] as const;
 
 const expectedTokens: Record<Theme, ThemeTokens> = {
   dark: {
@@ -40,6 +44,10 @@ const expectedTokens: Record<Theme, ThemeTokens> = {
     text: '#F2F5F7',
     secondary: '#A8B3BE',
     accent: '#70B5E8',
+    accentStrong: '#9BD2F5',
+    accentSoft: '#23394B',
+    error: '#FF6B6B',
+    errorSoft: '#451F25',
   },
   light: {
     bg: '#F5F7FA',
@@ -47,6 +55,10 @@ const expectedTokens: Record<Theme, ThemeTokens> = {
     text: '#18212B',
     secondary: '#526173',
     accent: '#175CD3',
+    accentStrong: '#124BB0',
+    accentSoft: '#E6EFFF',
+    error: '#B42318',
+    errorSoft: '#FEF3F2',
   },
 };
 
@@ -195,6 +207,10 @@ const readThemeState = async (page: Page) => page.evaluate(() => {
       text: rootStyles.getPropertyValue('--text').trim(),
       secondary: rootStyles.getPropertyValue('--secondary').trim(),
       accent: rootStyles.getPropertyValue('--accent').trim(),
+      accentStrong: rootStyles.getPropertyValue('--accent-strong').trim(),
+      accentSoft: rootStyles.getPropertyValue('--accent-soft').trim(),
+      error: rootStyles.getPropertyValue('--error').trim(),
+      errorSoft: rootStyles.getPropertyValue('--error-soft').trim(),
     },
     colorScheme: rootStyles.colorScheme,
     bodyBackground: bodyStyles.backgroundColor,
@@ -293,6 +309,10 @@ const assertThemeVisualContract = async (page: Page, theme: Theme): Promise<void
     text: tokens.text.toLowerCase(),
     secondary: tokens.secondary.toLowerCase(),
     accent: tokens.accent.toLowerCase(),
+    accentStrong: tokens.accentStrong.toLowerCase(),
+    accentSoft: tokens.accentSoft.toLowerCase(),
+    error: tokens.error.toLowerCase(),
+    errorSoft: tokens.errorSoft.toLowerCase(),
   });
   expect(state.colorScheme).toBe(theme);
 
@@ -318,6 +338,15 @@ const assertThemeVisualContract = async (page: Page, theme: Theme): Promise<void
   expect(contrastRatio(expectedText, expectedBackground)).toBeGreaterThanOrEqual(4.5);
   expect(contrastRatio(accentTextColor, surfaceBackground)).toBeGreaterThanOrEqual(4.5);
   expect(contrastRatio(secondaryTextColor, surfaceBackground)).toBeGreaterThanOrEqual(4.5);
+  const focusColor = parseColor(tokens.accentStrong);
+  const focusSurface = parseColor(tokens.accentSoft);
+  const errorColor = parseColor(tokens.error);
+  const errorSurface = parseColor(tokens.errorSoft);
+  if (!focusColor || !focusSurface || !errorColor || !errorSurface) {
+    throw new Error('Focus or error colors could not be parsed from theme tokens');
+  }
+  expect(contrastRatio(focusColor, focusSurface)).toBeGreaterThanOrEqual(3);
+  expect(contrastRatio(errorColor, errorSurface)).toBeGreaterThanOrEqual(4.5);
   expect(state.documentScrollWidth).toBeLessThanOrEqual(state.viewportWidth);
   expect(state.bodyScrollWidth).toBeLessThanOrEqual(state.viewportWidth);
 };
