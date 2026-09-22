@@ -1778,7 +1778,6 @@ test('malformed admin retry refresh clears an active cookie session', async ({ p
   await page.goto('/admin');
   await page.getByPlaceholder('Введите пароль...').fill('correct-password');
   await page.getByRole('button', { name: 'Войти' }).click();
-  await openTournamentTaskCatalog(page);
 
   await expect(page.getByText('Сессия истекла. Войдите снова.')).toBeVisible();
   await expect(page.getByText('Авторизация')).toBeVisible();
