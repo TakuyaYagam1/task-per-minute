@@ -115,9 +115,12 @@ jobs:
         run: node scripts/configure-ci-runtime.mjs --verify-packages
 
       - name: write disposable e2e env
+        env:
+          FULL_STACK_ENV_FILE: ${{ runner.temp }}/task-per-minute-e2e.env
         run: |
           set -Eeuo pipefail
-          cat > .env.local <<'ENV'
+          umask 077
+          cat > "$FULL_STACK_ENV_FILE" <<'ENV'
           BACKEND_PORT=18080
           FRONTEND_PORT=3100
           POSTGRES_PORT=15432
@@ -173,5 +176,24 @@ jobs:
       - name: full-stack e2e
         env:
           E2E_ADMIN_PASSWORD: tpm-ci-admin-password
+          E2E_COMPOSE_ENV_FILE: ${{ runner.temp }}/task-per-minute-e2e.env
+          E2E_COMPOSE_REPORT_FILE: ${{ runner.temp }}/frontend-full-stack/full-stack-verify.json
+          E2E_COMPOSE_SYNTHETIC: '1'
+          E2E_COMPOSE_CLEAN: '0'
           E2E_COMPOSE_PROJECT_NAME: task-per-minute-ci-${{ github.run_id }}-${{ github.run_attempt }}
-        run: npm --prefix frontend run test:e2e:full-stack
+          E2E_FRONTEND_PORT: '3100'
+          E2E_BACKEND_PORT: '18080'
+          E2E_POSTGRES_PORT: '15432'
+          E2E_REDIS_PORT: '16379'
+          E2E_SEAWEEDFS_MASTER_PORT: '19333'
+          E2E_SEAWEEDFS_S3_PORT: '18333'
+        run: bash scripts/e2e-local-compose.sh
+
+      - name: upload full-stack evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: frontend-full-stack-${{ inputs.target_sha }}
+          path: ${{ runner.temp }}/frontend-full-stack
+          if-no-files-found: error
+          retention-days: 14
