@@ -284,7 +284,7 @@ ParticipantDraftActionRequest:
 PublicDraftAction:
   type: object
   additionalProperties: false
-  required: [turn, actor_display_name, action, category, occurred_at]
+  required: [turn, actor_display_name, action, category, occurred_at, automatic]
   properties:
     turn:
       type: integer
@@ -300,11 +300,15 @@ PublicDraftAction:
     occurred_at:
       type: string
       format: date-time
+    automatic:
+      type: boolean
+      description: Whether the server recorded this action automatically after the turn deadline.
+      readOnly: true
 
 PublicLiveDraftResponse:
   type: object
   additionalProperties: false
-  required: [tournament_id, series_id, projection_revision, format, state, pool, actions, selected_categories]
+  required: [tournament_id, series_id, projection_revision, format, state, first_actor_display_name, current_turn, current_action, current_actor_display_name, turn_deadline, auto_action_pending, pool, actions, selected_categories]
   properties:
     tournament_id:
       type: string
@@ -320,6 +324,36 @@ PublicLiveDraftResponse:
       $ref: '#/SeriesFormat'
     state:
       $ref: '#/DraftState'
+    first_actor_display_name:
+      type: string
+      maxLength: 64
+      description: Display name of the participant who owns the first draft turn.
+    current_turn:
+      type: integer
+      format: int32
+      minimum: 1
+      nullable: true
+      readOnly: true
+    current_action:
+      type: string
+      nullable: true
+      readOnly: true
+      allOf:
+        - $ref: '#/DraftActionType'
+    current_actor_display_name:
+      type: string
+      maxLength: 64
+      nullable: true
+      readOnly: true
+    turn_deadline:
+      type: string
+      format: date-time
+      nullable: true
+      readOnly: true
+    auto_action_pending:
+      type: boolean
+      description: Whether the active turn is past its server-authoritative deadline.
+      readOnly: true
     pool:
       type: array
       maxItems: 5

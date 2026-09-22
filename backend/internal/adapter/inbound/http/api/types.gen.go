@@ -1104,6 +1104,27 @@ func (e PublicBracketMatchStage) Valid() bool {
 	}
 }
 
+// Defines values for PublicConnectionStatus.
+const (
+	PublicConnected    PublicConnectionStatus = "connected"
+	PublicDisconnected PublicConnectionStatus = "disconnected"
+	PublicUnknown      PublicConnectionStatus = "unknown"
+)
+
+// Valid indicates whether the value is a known member of the PublicConnectionStatus enum.
+func (e PublicConnectionStatus) Valid() bool {
+	switch e {
+	case PublicConnected:
+		return true
+	case PublicDisconnected:
+		return true
+	case PublicUnknown:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for PublicLiveSeriesStage.
 const (
 	PublicLiveSeriesStageFinal     PublicLiveSeriesStage = "final"
@@ -3014,36 +3035,69 @@ type PublicBracketResponse struct {
 	TournamentId       openapi_types.UUID   `json:"tournament_id"`
 }
 
+// PublicConnectionStatus defines model for PublicConnectionStatus.
+type PublicConnectionStatus string
+
 // PublicDraftAction defines model for PublicDraftAction.
 type PublicDraftAction struct {
 	Action           DraftActionType `json:"action"`
 	ActorDisplayName string          `json:"actor_display_name"`
-	Category         Category        `json:"category"`
-	OccurredAt       time.Time       `json:"occurred_at"`
-	Turn             int32           `json:"turn"`
+
+	// Automatic Whether the server recorded this action automatically after the turn deadline.
+	Automatic  bool      `json:"automatic"`
+	Category   Category  `json:"category"`
+	OccurredAt time.Time `json:"occurred_at"`
+	Turn       int32     `json:"turn"`
 }
 
 // PublicLiveDraftResponse defines model for PublicLiveDraftResponse.
 type PublicLiveDraftResponse struct {
-	Actions            []PublicDraftAction `json:"actions"`
-	Format             SeriesFormat        `json:"format"`
-	Pool               []Category          `json:"pool"`
-	ProjectionRevision int64               `json:"projection_revision"`
-	SelectedCategories []Category          `json:"selected_categories"`
-	SeriesId           openapi_types.UUID  `json:"series_id"`
+	Actions []PublicDraftAction `json:"actions"`
+
+	// AutoActionPending Whether the active turn is past its server-authoritative deadline.
+	AutoActionPending       bool             `json:"auto_action_pending"`
+	CurrentAction           *DraftActionType `json:"current_action"`
+	CurrentActorDisplayName *string          `json:"current_actor_display_name"`
+	CurrentTurn             *int32           `json:"current_turn"`
+
+	// FirstActorDisplayName Display name of the participant who owns the first draft turn.
+	FirstActorDisplayName string             `json:"first_actor_display_name"`
+	Format                SeriesFormat       `json:"format"`
+	Pool                  []Category         `json:"pool"`
+	ProjectionRevision    int64              `json:"projection_revision"`
+	SelectedCategories    []Category         `json:"selected_categories"`
+	SeriesId              openapi_types.UUID `json:"series_id"`
 
 	// State Durable draft execution state. Only an active draft accepts participant actions.
 	State        DraftState         `json:"state"`
 	TournamentId openapi_types.UUID `json:"tournament_id"`
+	TurnDeadline *time.Time         `json:"turn_deadline"`
+}
+
+// PublicLiveGame Allowlisted live game display data without private execution evidence.
+type PublicLiveGame struct {
+	Category Category `json:"category"`
+
+	// EffectiveDeadline Server-authoritative deadline. Null while paused or after a terminal transition.
+	EffectiveDeadline      *time.Time             `json:"effective_deadline"`
+	FinishedAt             *time.Time             `json:"finished_at"`
+	FirstConnectionStatus  PublicConnectionStatus `json:"first_connection_status"`
+	Position               int32                  `json:"position"`
+	ResultReason           *string                `json:"result_reason"`
+	SecondConnectionStatus PublicConnectionStatus `json:"second_connection_status"`
+	StartedAt              *time.Time             `json:"started_at"`
+	State                  GameState              `json:"state"`
+	WinnerDisplayName      *string                `json:"winner_display_name"`
 }
 
 // PublicLiveSeries Allowlisted live series display data; participant and task data are excluded.
 type PublicLiveSeries struct {
-	CurrentGamePosition *int32       `json:"current_game_position,omitempty"`
-	FirstDisplayName    string       `json:"first_display_name"`
-	Format              SeriesFormat `json:"format"`
-	RoundNumber         *int32       `json:"round_number"`
-	ScheduledAt         *time.Time   `json:"scheduled_at"`
+	CurrentGame         *PublicLiveGame `json:"current_game"`
+	CurrentGamePosition *int32          `json:"current_game_position,omitempty"`
+	FirstDisplayName    string          `json:"first_display_name"`
+	Format              SeriesFormat    `json:"format"`
+	RoundNumber         *int32          `json:"round_number"`
+	ScheduledAt         *time.Time      `json:"scheduled_at"`
 
 	// Score Public score fields shared with the tournament WebSocket view.
 	Score             PublicSeriesScore     `json:"score"`

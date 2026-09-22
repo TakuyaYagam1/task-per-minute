@@ -85,7 +85,21 @@ type PublicSeriesInput struct {
 	FirstWins           int
 	SecondWins          int
 	CurrentGamePosition int
+	CurrentGame         *PublicCurrentGameInput
 	ScheduledAt         *time.Time
+}
+
+type PublicCurrentGameInput struct {
+	Position               int
+	Category               string
+	State                  string
+	StartedAt              *time.Time
+	EffectiveDeadline      *time.Time
+	FinishedAt             *time.Time
+	ResultReason           *string
+	WinnerDisplayName      *string
+	FirstConnectionStatus  string
+	SecondConnectionStatus string
 }
 
 type PublicOfficialResultInput struct {
@@ -100,13 +114,19 @@ type PublicOfficialResultInput struct {
 }
 
 type PublicDraftInput struct {
-	TournamentID       uuid.UUID
-	SeriesID           uuid.UUID
-	Format             string
-	State              string
-	Pool               []string
-	SelectedCategories []string
-	Actions            []PublicDraftActionInput
+	TournamentID            uuid.UUID
+	SeriesID                uuid.UUID
+	Format                  string
+	State                   string
+	FirstActorDisplayName   string
+	CurrentTurn             *int
+	CurrentAction           *string
+	CurrentActorDisplayName *string
+	TurnDeadline            *time.Time
+	AutoActionPending       bool
+	Pool                    []string
+	SelectedCategories      []string
+	Actions                 []PublicDraftActionInput
 }
 
 type PublicDraftActionInput struct {
@@ -115,6 +135,7 @@ type PublicDraftActionInput struct {
 	Category         string
 	ActorDisplayName string
 	OccurredAt       time.Time
+	Automatic        bool
 }
 
 type PublicSnapshot struct {
@@ -180,16 +201,30 @@ type PublicBracketMatch struct {
 }
 
 type PublicSeries struct {
-	SeriesID            uuid.UUID         `json:"series_id"`
-	Stage               string            `json:"stage"`
-	RoundNumber         *int              `json:"round_number"`
-	Format              string            `json:"format"`
-	State               string            `json:"state"`
-	FirstDisplayName    string            `json:"first_display_name"`
-	SecondDisplayName   string            `json:"second_display_name"`
-	Score               PublicSeriesScore `json:"score"`
-	CurrentGamePosition int               `json:"current_game_position,omitempty"`
-	ScheduledAt         *time.Time        `json:"scheduled_at"`
+	SeriesID            uuid.UUID          `json:"series_id"`
+	Stage               string             `json:"stage"`
+	RoundNumber         *int               `json:"round_number"`
+	Format              string             `json:"format"`
+	State               string             `json:"state"`
+	FirstDisplayName    string             `json:"first_display_name"`
+	SecondDisplayName   string             `json:"second_display_name"`
+	Score               PublicSeriesScore  `json:"score"`
+	CurrentGamePosition int                `json:"current_game_position,omitempty"`
+	CurrentGame         *PublicCurrentGame `json:"current_game"`
+	ScheduledAt         *time.Time         `json:"scheduled_at"`
+}
+
+type PublicCurrentGame struct {
+	Position               int        `json:"position"`
+	Category               string     `json:"category"`
+	State                  string     `json:"state"`
+	StartedAt              *time.Time `json:"started_at"`
+	EffectiveDeadline      *time.Time `json:"effective_deadline"`
+	FinishedAt             *time.Time `json:"finished_at"`
+	ResultReason           *string    `json:"result_reason"`
+	WinnerDisplayName      *string    `json:"winner_display_name"`
+	FirstConnectionStatus  string     `json:"first_connection_status"`
+	SecondConnectionStatus string     `json:"second_connection_status"`
 }
 
 type PublicOfficialResult struct {
@@ -202,12 +237,18 @@ type PublicOfficialResult struct {
 }
 
 type PublicDraft struct {
-	SeriesID           uuid.UUID           `json:"series_id"`
-	Format             string              `json:"format"`
-	State              string              `json:"state"`
-	Pool               []string            `json:"pool"`
-	SelectedCategories []string            `json:"selected_categories"`
-	Actions            []PublicDraftAction `json:"actions"`
+	SeriesID                uuid.UUID           `json:"series_id"`
+	Format                  string              `json:"format"`
+	State                   string              `json:"state"`
+	FirstActorDisplayName   string              `json:"first_actor_display_name"`
+	CurrentTurn             *int                `json:"current_turn"`
+	CurrentAction           *string             `json:"current_action"`
+	CurrentActorDisplayName *string             `json:"current_actor_display_name"`
+	TurnDeadline            *time.Time          `json:"turn_deadline"`
+	AutoActionPending       bool                `json:"auto_action_pending"`
+	Pool                    []string            `json:"pool"`
+	SelectedCategories      []string            `json:"selected_categories"`
+	Actions                 []PublicDraftAction `json:"actions"`
 }
 
 type PublicDraftAction struct {
@@ -216,6 +257,7 @@ type PublicDraftAction struct {
 	Category         string    `json:"category"`
 	ActorDisplayName string    `json:"actor_display_name"`
 	OccurredAt       time.Time `json:"occurred_at"`
+	Automatic        bool      `json:"automatic"`
 }
 
 //nolint:gocyclo // The constructor copies each public allowlist projection and enforces one tournament scope.
@@ -283,7 +325,7 @@ func NewPublicSnapshot(tournamentID uuid.UUID, input PublicSnapshotInput) (Publi
 		if series.TournamentID != tournamentID {
 			return PublicSnapshot{}, fmt.Errorf("%w: live series crosses tournament", ErrInvalidPublicSnapshot)
 		}
-		snapshot.LiveSeries[index] = PublicSeries{SeriesID: series.SeriesID, Stage: series.Stage, RoundNumber: cloneInt(series.RoundNumber), Format: series.Format, State: series.State, FirstDisplayName: series.FirstDisplayName, SecondDisplayName: series.SecondDisplayName, Score: PublicSeriesScore{FirstWins: series.FirstWins, SecondWins: series.SecondWins}, CurrentGamePosition: series.CurrentGamePosition, ScheduledAt: cloneTime(series.ScheduledAt)}
+		snapshot.LiveSeries[index] = PublicSeries{SeriesID: series.SeriesID, Stage: series.Stage, RoundNumber: cloneInt(series.RoundNumber), Format: series.Format, State: series.State, FirstDisplayName: series.FirstDisplayName, SecondDisplayName: series.SecondDisplayName, Score: PublicSeriesScore{FirstWins: series.FirstWins, SecondWins: series.SecondWins}, CurrentGamePosition: series.CurrentGamePosition, CurrentGame: currentGameFromInput(series.CurrentGame), ScheduledAt: cloneTime(series.ScheduledAt)}
 	}
 	for index, result := range input.OfficialResults {
 		if result.TournamentID != tournamentID {
@@ -296,12 +338,18 @@ func NewPublicSnapshot(tournamentID uuid.UUID, input PublicSnapshotInput) (Publi
 			return PublicSnapshot{}, fmt.Errorf("%w: draft crosses tournament", ErrInvalidPublicSnapshot)
 		}
 		draft := PublicDraft{
-			SeriesID:           input.Draft.SeriesID,
-			Format:             input.Draft.Format,
-			State:              input.Draft.State,
-			Pool:               append([]string{}, input.Draft.Pool...),
-			SelectedCategories: append([]string{}, input.Draft.SelectedCategories...),
-			Actions:            make([]PublicDraftAction, len(input.Draft.Actions)),
+			SeriesID:                input.Draft.SeriesID,
+			Format:                  input.Draft.Format,
+			State:                   input.Draft.State,
+			FirstActorDisplayName:   input.Draft.FirstActorDisplayName,
+			CurrentTurn:             cloneInt(input.Draft.CurrentTurn),
+			CurrentAction:           cloneString(input.Draft.CurrentAction),
+			CurrentActorDisplayName: cloneString(input.Draft.CurrentActorDisplayName),
+			TurnDeadline:            cloneTime(input.Draft.TurnDeadline),
+			AutoActionPending:       input.Draft.AutoActionPending,
+			Pool:                    append([]string{}, input.Draft.Pool...),
+			SelectedCategories:      append([]string{}, input.Draft.SelectedCategories...),
+			Actions:                 make([]PublicDraftAction, len(input.Draft.Actions)),
 		}
 		for index, action := range input.Draft.Actions {
 			draft.Actions[index] = PublicDraftAction(action)
@@ -353,6 +401,12 @@ func (s PublicSnapshot) Validate() error {
 	for _, series := range s.LiveSeries {
 		if series.SeriesID == uuid.Nil || !validPublicStage(series.Stage) || (series.Stage == "swiss" && (series.RoundNumber == nil || *series.RoundNumber < 1 || *series.RoundNumber > 4)) || (series.Stage != "swiss" && series.RoundNumber != nil) || series.CurrentGamePosition < 0 || !validPublicLabels(series.Format, series.State, series.FirstDisplayName, series.SecondDisplayName) || !series.Score.valid() || !validOptionalUTC(series.ScheduledAt) {
 			return fmt.Errorf("%w: invalid live series", ErrInvalidPublicSnapshot)
+		}
+		if series.CurrentGame != nil && series.CurrentGamePosition != series.CurrentGame.Position {
+			return fmt.Errorf("%w: current game compatibility mismatch", ErrInvalidPublicSnapshot)
+		}
+		if series.CurrentGame != nil && !series.CurrentGame.valid() {
+			return fmt.Errorf("%w: invalid current game", ErrInvalidPublicSnapshot)
 		}
 	}
 	for _, result := range s.OfficialResults {
@@ -466,6 +520,7 @@ func (s PublicSnapshot) clone() PublicSnapshot {
 	}
 	for index := range clone.LiveSeries {
 		clone.LiveSeries[index].RoundNumber = cloneInt(s.LiveSeries[index].RoundNumber)
+		clone.LiveSeries[index].CurrentGame = cloneCurrentGame(s.LiveSeries[index].CurrentGame)
 		clone.LiveSeries[index].ScheduledAt = cloneTime(s.LiveSeries[index].ScheduledAt)
 	}
 	clone.OfficialResults = append([]PublicOfficialResult{}, s.OfficialResults...)
@@ -474,6 +529,10 @@ func (s PublicSnapshot) clone() PublicSnapshot {
 		draft.Pool = append([]string{}, s.Draft.Pool...)
 		draft.SelectedCategories = append([]string{}, s.Draft.SelectedCategories...)
 		draft.Actions = append([]PublicDraftAction{}, s.Draft.Actions...)
+		draft.CurrentTurn = cloneInt(s.Draft.CurrentTurn)
+		draft.CurrentAction = cloneString(s.Draft.CurrentAction)
+		draft.CurrentActorDisplayName = cloneString(s.Draft.CurrentActorDisplayName)
+		draft.TurnDeadline = cloneTime(s.Draft.TurnDeadline)
 		clone.Draft = &draft
 	}
 	return clone
@@ -483,22 +542,224 @@ func (s PublicSeriesScore) valid() bool {
 	return s.FirstWins >= 0 && s.SecondWins >= 0
 }
 
+func currentGameFromInput(value *PublicCurrentGameInput) *PublicCurrentGame {
+	if value == nil {
+		return nil
+	}
+	return &PublicCurrentGame{
+		Position:               value.Position,
+		Category:               value.Category,
+		State:                  value.State,
+		StartedAt:              cloneTime(value.StartedAt),
+		EffectiveDeadline:      cloneTime(value.EffectiveDeadline),
+		FinishedAt:             cloneTime(value.FinishedAt),
+		ResultReason:           cloneString(value.ResultReason),
+		WinnerDisplayName:      cloneString(value.WinnerDisplayName),
+		FirstConnectionStatus:  value.FirstConnectionStatus,
+		SecondConnectionStatus: value.SecondConnectionStatus,
+	}
+}
+
+func cloneCurrentGame(value *PublicCurrentGame) *PublicCurrentGame {
+	if value == nil {
+		return nil
+	}
+	return &PublicCurrentGame{
+		Position:               value.Position,
+		Category:               value.Category,
+		State:                  value.State,
+		StartedAt:              cloneTime(value.StartedAt),
+		EffectiveDeadline:      cloneTime(value.EffectiveDeadline),
+		FinishedAt:             cloneTime(value.FinishedAt),
+		ResultReason:           cloneString(value.ResultReason),
+		WinnerDisplayName:      cloneString(value.WinnerDisplayName),
+		FirstConnectionStatus:  value.FirstConnectionStatus,
+		SecondConnectionStatus: value.SecondConnectionStatus,
+	}
+}
+
+func (g PublicCurrentGame) valid() bool {
+	state := domain.GameState(g.State)
+	if !validPublicCurrentGameIdentity(g, state) || !validPublicCurrentGameLifecycle(g, state) {
+		return false
+	}
+	return validPublicCurrentGameResult(g, state)
+}
+
+func validPublicCurrentGameIdentity(g PublicCurrentGame, state domain.GameState) bool {
+	return g.Position >= 1 && g.Position <= 3 && domain.Category(g.Category).IsValid() && state.IsValid() &&
+		validPublicConnectionStatus(g.FirstConnectionStatus) && validPublicConnectionStatus(g.SecondConnectionStatus) &&
+		validOptionalUTC(g.StartedAt) && validOptionalUTC(g.EffectiveDeadline) && validOptionalUTC(g.FinishedAt)
+}
+
+func validPublicCurrentGameLifecycle(g PublicCurrentGame, state domain.GameState) bool {
+	if !state.IsTerminal() && g.FinishedAt != nil {
+		return false
+	}
+	if state.IsTerminal() && g.FinishedAt == nil {
+		return false
+	}
+	if (state == domain.GameStateActive || state == domain.GameStatePaused) && g.StartedAt == nil {
+		return false
+	}
+	if state == domain.GameStateActive && g.EffectiveDeadline == nil {
+		return false
+	}
+	if state == domain.GameStatePaused && g.EffectiveDeadline != nil {
+		return false
+	}
+	return !state.IsTerminal() || g.EffectiveDeadline == nil
+}
+
+func validPublicCurrentGameResult(g PublicCurrentGame, state domain.GameState) bool {
+	if !state.IsTerminal() {
+		return g.ResultReason == nil && g.WinnerDisplayName == nil
+	}
+	if g.ResultReason == nil || !domain.GameResultReason(*g.ResultReason).IsLegalFor(state) {
+		return false
+	}
+	if state == domain.GameStateCompleted {
+		return g.WinnerDisplayName != nil && validPublicDisplayName(*g.WinnerDisplayName)
+	}
+	return g.WinnerDisplayName == nil
+}
+
 func (d PublicDraft) validate() error {
-	if d.SeriesID == uuid.Nil || !validPublicLabels(d.Format, d.State) || d.Pool == nil || d.SelectedCategories == nil || d.Actions == nil ||
-		!validRealtimeCollections(len(d.Pool), len(d.SelectedCategories), len(d.Actions)) {
+	if !validPublicDraftHeader(d) {
 		return fmt.Errorf("%w: invalid draft view", ErrInvalidPublicSnapshot)
 	}
+	poolSize, actionCount, selectedCount, ok := publicDraftCardinality(d.Format)
+	if !ok {
+		return fmt.Errorf("%w: invalid draft format", ErrInvalidPublicSnapshot)
+	}
+	if len(d.Pool) != poolSize || len(d.SelectedCategories) > selectedCount || len(d.Actions) > actionCount {
+		return fmt.Errorf("%w: invalid draft cardinality", ErrInvalidPublicSnapshot)
+	}
+	if err := validatePublicDraftCategories(d); err != nil {
+		return err
+	}
+	if err := validatePublicDraftActions(d); err != nil {
+		return err
+	}
+	if err := validatePublicDraftStateFields(d, actionCount, selectedCount); err != nil {
+		return err
+	}
+	if !validOptionalUTC(d.TurnDeadline) {
+		return fmt.Errorf("%w: invalid draft deadline", ErrInvalidPublicSnapshot)
+	}
+	return nil
+}
+
+func validPublicDraftHeader(d PublicDraft) bool {
+	return d.SeriesID != uuid.Nil && validPublicLabels(d.Format, d.State, d.FirstActorDisplayName) &&
+		validPublicDraftState(d.State) && d.Pool != nil && d.SelectedCategories != nil && d.Actions != nil &&
+		validRealtimeCollections(len(d.Pool), len(d.SelectedCategories), len(d.Actions))
+}
+
+func publicDraftCardinality(format string) (poolSize, actionCount, selectedCount int, ok bool) {
+	switch format {
+	case "bo1":
+		return 3, 2, 1, true
+	case "bo3":
+		return 5, 4, 3, true
+	default:
+		return 0, 0, 0, false
+	}
+}
+
+func validatePublicDraftCategories(d PublicDraft) error {
 	for _, value := range append(append([]string{}, d.Pool...), d.SelectedCategories...) {
-		if !validRealtimeString(value) {
+		if !validRealtimeString(value) || !domain.Category(value).IsValid() {
 			return fmt.Errorf("%w: empty draft category", ErrInvalidPublicSnapshot)
 		}
 	}
-	for _, action := range d.Actions {
-		if action.Turn < 1 || !validPublicLabels(action.Action, action.Category, action.ActorDisplayName) || !isServerUTC(action.OccurredAt) {
+	seenPool := make(map[string]struct{}, len(d.Pool))
+	for _, value := range d.Pool {
+		if _, exists := seenPool[value]; exists {
+			return fmt.Errorf("%w: duplicate draft pool category", ErrInvalidPublicSnapshot)
+		}
+		seenPool[value] = struct{}{}
+	}
+	seenSelected := make(map[string]struct{}, len(d.SelectedCategories))
+	for _, value := range d.SelectedCategories {
+		if _, exists := seenPool[value]; !exists {
+			return fmt.Errorf("%w: selected category outside pool", ErrInvalidPublicSnapshot)
+		}
+		if _, exists := seenSelected[value]; exists {
+			return fmt.Errorf("%w: duplicate selected category", ErrInvalidPublicSnapshot)
+		}
+		seenSelected[value] = struct{}{}
+	}
+	return nil
+}
+
+func validatePublicDraftActions(d PublicDraft) error {
+	for index, action := range d.Actions {
+		if action.Turn != index+1 || action.Turn < 1 || action.Turn > 4 ||
+			!domain.DraftActionType(action.Action).IsValid() || !validPublicLabels(action.Category, action.ActorDisplayName) ||
+			!domain.IsValidServerTime(action.OccurredAt) {
 			return fmt.Errorf("%w: invalid draft action", ErrInvalidPublicSnapshot)
 		}
 	}
 	return nil
+}
+
+func validatePublicDraftStateFields(d PublicDraft, actionCount, selectedCount int) error {
+	switch d.State {
+	case "completed":
+		return validateCompletedPublicDraft(d, actionCount, selectedCount)
+	case "superseded":
+		return validateSupersededPublicDraft(d)
+	case "active", "paused", "recovery_required":
+		return validateActivePublicDraft(d, actionCount)
+	}
+	return nil
+}
+
+func validateCompletedPublicDraft(d PublicDraft, actionCount, selectedCount int) error {
+	if len(d.Actions) != actionCount || len(d.SelectedCategories) != selectedCount ||
+		d.CurrentTurn != nil || d.CurrentAction != nil || d.CurrentActorDisplayName != nil ||
+		d.TurnDeadline != nil || d.AutoActionPending {
+		return fmt.Errorf("%w: invalid completed draft", ErrInvalidPublicSnapshot)
+	}
+	return nil
+}
+
+func validateSupersededPublicDraft(d PublicDraft) error {
+	if d.CurrentTurn != nil || d.CurrentAction != nil || d.CurrentActorDisplayName != nil ||
+		d.TurnDeadline != nil || d.AutoActionPending {
+		return fmt.Errorf("%w: invalid superseded draft", ErrInvalidPublicSnapshot)
+	}
+	return nil
+}
+
+func validateActivePublicDraft(d PublicDraft, actionCount int) error {
+	if len(d.SelectedCategories) != 0 || d.CurrentTurn == nil || *d.CurrentTurn != len(d.Actions)+1 ||
+		*d.CurrentTurn > actionCount || d.CurrentAction == nil ||
+		!domain.DraftActionType(*d.CurrentAction).IsValid() || d.CurrentActorDisplayName == nil ||
+		!validPublicDisplayName(*d.CurrentActorDisplayName) {
+		return fmt.Errorf("%w: invalid current draft turn", ErrInvalidPublicSnapshot)
+	}
+	if d.State == "active" && d.TurnDeadline == nil {
+		return fmt.Errorf("%w: active draft deadline missing", ErrInvalidPublicSnapshot)
+	}
+	if d.State != "active" && d.TurnDeadline != nil {
+		return fmt.Errorf("%w: paused draft deadline present", ErrInvalidPublicSnapshot)
+	}
+	return nil
+}
+
+func validPublicDraftState(value string) bool {
+	switch value {
+	case "active", "paused", "recovery_required", "completed", "superseded":
+		return true
+	default:
+		return false
+	}
+}
+
+func validPublicConnectionStatus(value string) bool {
+	return value == "connected" || value == "disconnected" || value == "unknown"
 }
 
 func validPublicLabels(values ...string) bool {

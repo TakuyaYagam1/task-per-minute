@@ -335,6 +335,21 @@ func publicSnapshotInput(view usecase.PublicSnapshotView) tournamentws.PublicSna
 			CurrentGamePosition: series.CurrentGamePosition,
 			ScheduledAt:         series.ScheduledAt,
 		}
+		if series.CurrentGame != nil {
+			game := series.CurrentGame
+			input.LiveSeries[index].CurrentGame = &tournamentws.PublicCurrentGameInput{
+				Position:               game.Position,
+				Category:               game.Category,
+				State:                  game.State,
+				StartedAt:              game.StartedAt,
+				EffectiveDeadline:      game.EffectiveDeadline,
+				FinishedAt:             game.FinishedAt,
+				ResultReason:           game.ResultReason,
+				WinnerDisplayName:      game.WinnerDisplayName,
+				FirstConnectionStatus:  game.FirstConnectionStatus,
+				SecondConnectionStatus: game.SecondConnectionStatus,
+			}
+		}
 	}
 	for index, result := range view.OfficialResults {
 		input.OfficialResults[index] = tournamentws.PublicOfficialResultInput{
@@ -351,13 +366,19 @@ func publicSnapshotInput(view usecase.PublicSnapshotView) tournamentws.PublicSna
 	if view.Draft != nil {
 		draft := view.Draft
 		input.Draft = &tournamentws.PublicDraftInput{
-			TournamentID:       tournamentID,
-			SeriesID:           draft.SeriesID,
-			Format:             draft.Format,
-			State:              draft.State,
-			Pool:               append([]string{}, draft.Pool...),
-			SelectedCategories: append([]string{}, draft.SelectedCategories...),
-			Actions:            make([]tournamentws.PublicDraftActionInput, len(draft.Actions)),
+			TournamentID:            tournamentID,
+			SeriesID:                draft.SeriesID,
+			Format:                  draft.Format,
+			State:                   draft.State,
+			FirstActorDisplayName:   draft.FirstActorDisplayName,
+			CurrentTurn:             draft.CurrentTurn,
+			CurrentAction:           draft.CurrentAction,
+			CurrentActorDisplayName: draft.CurrentActorDisplayName,
+			TurnDeadline:            draft.TurnDeadline,
+			AutoActionPending:       draft.AutoActionPending,
+			Pool:                    append([]string{}, draft.Pool...),
+			SelectedCategories:      append([]string{}, draft.SelectedCategories...),
+			Actions:                 make([]tournamentws.PublicDraftActionInput, len(draft.Actions)),
 		}
 		for index, action := range draft.Actions {
 			input.Draft.Actions[index] = tournamentws.PublicDraftActionInput{
@@ -366,6 +387,7 @@ func publicSnapshotInput(view usecase.PublicSnapshotView) tournamentws.PublicSna
 				Category:         action.Category,
 				ActorDisplayName: action.ActorDisplayName,
 				OccurredAt:       action.OccurredAt,
+				Automatic:        action.Automatic,
 			}
 		}
 	}

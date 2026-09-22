@@ -365,3 +365,15 @@ func TestPublicSeriesReadSQLUsesStoredStageLineageAndNullableSchedule(t *testing
 	require.NotContains(t, seriesQuery, "started_at AS scheduled_at")
 	require.NotContains(t, seriesQuery, "created_at AS scheduled_at")
 }
+
+func TestPublicSeriesReadSQLUsesFixedTournamentTaskDurationForActiveDeadline(t *testing.T) {
+	t.Parallel()
+
+	contents, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "..", "..", "db", "queries", "tournament_read.sql"))
+	require.NoError(t, err)
+	start := strings.Index(string(contents), "-- name: ListPublicTournamentReadSeries")
+	require.NotEqual(t, -1, start)
+	query := string(contents)[start:]
+	require.Contains(t, query, "attempt.started_at + INTERVAL '180 seconds'")
+	require.NotContains(t, query, "active_snapshot.time_limit")
+}

@@ -124,6 +124,7 @@ const publicSnapshot = (): PublicSnapshot => ({
       first_display_name: 'alice',
       second_display_name: 'bob',
       score: { first_wins: 1, second_wins: 0 },
+      current_game: null,
       current_game_position: 2,
       stage: 'swiss',
       round_number: 1,

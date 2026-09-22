@@ -38,6 +38,8 @@ type PublicDisplay = {
 export type PublicRecoveryState = {
   tournamentId: string;
   cursor: PublicRecoveryCursor;
+  /** Latest server-authoritative timestamp from the accepted public WS frame. */
+  serverTimestamp?: string;
   resumeId: string | null;
   seenEventIds: readonly string[];
   display: PublicDisplay;
@@ -115,6 +117,23 @@ const SERIES_STATES = new Set([
   "completed",
   "cancelled",
 ]);
+const GAME_STATES = new Set([
+  "planned",
+  "ready",
+  "active",
+  "paused",
+  "completed",
+  "void",
+  "cancelled",
+  "superseded",
+]);
+const DRAFT_STATES = new Set([
+  "active",
+  "paused",
+  "recovery_required",
+  "completed",
+  "superseded",
+]);
 const WAVE_STATES = new Set([
   "planned",
   "ready_window_open",
@@ -185,11 +204,35 @@ const isServerTimestamp = (value: unknown): value is string =>
 const isOptionalDateTime = (value: unknown): boolean =>
   value === null || value === undefined || isDateTime(value);
 
+const isNullableDateTime = (value: unknown): boolean =>
+  value === null || isDateTime(value);
+
 const isNonBlank = (value: unknown): value is string =>
   typeof value === "string" && value.trim().length > 0;
 
 const isPublicDisplayName = (value: unknown): value is string =>
   isNonBlank(value) && value.trim().length <= 64;
+
+const isPublicConnectionStatus = (value: unknown): boolean =>
+  value === "connected" || value === "disconnected" || value === "unknown";
+
+const isPublicGameResultReason = (state: unknown, reason: unknown): boolean => {
+  if (typeof reason !== "string") {
+    return false;
+  }
+  switch (state) {
+    case "completed":
+      return new Set(["solved", "surrender", "operator_forfeit"]).has(reason);
+    case "void":
+      return new Set(["no_solve", "task_failure", "common_platform_failure", "disconnect", "execution_epoch_break"]).has(reason);
+    case "cancelled":
+      return new Set(["no_show", "series_cancelled", "tournament_cancelled"]).has(reason);
+    case "superseded":
+      return reason === "derived_revision_superseded";
+    default:
+      return false;
+  }
+};
 
 const isCursor = (value: unknown): value is PublicRecoveryCursor =>
   isRecord(value) &&
@@ -212,6 +255,69 @@ const isBracketScore = (value: unknown): boolean =>
   value.first_participant_wins <= 2 &&
   isNonNegativeInteger(value.second_participant_wins) &&
   value.second_participant_wins <= 2;
+
+const isPublicLiveGame = (value: unknown): value is Record<string, unknown> => {
+  if (
+    !isRecord(value) ||
+    !hasOnlyKeys(value, [
+      "position",
+      "category",
+      "state",
+      "started_at",
+      "effective_deadline",
+      "finished_at",
+      "result_reason",
+      "winner_display_name",
+      "first_connection_status",
+      "second_connection_status",
+    ]) ||
+    !isPositiveInteger(value.position) ||
+    value.position > 3 ||
+    typeof value.category !== "string" ||
+    !CATEGORIES.has(value.category) ||
+    typeof value.state !== "string" ||
+    !GAME_STATES.has(value.state) ||
+    !isNullableDateTime(value.started_at) ||
+    !isNullableDateTime(value.effective_deadline) ||
+    !isNullableDateTime(value.finished_at) ||
+    (value.result_reason !== null && !isNonBlank(value.result_reason)) ||
+    (value.winner_display_name !== null && !isPublicDisplayName(value.winner_display_name)) ||
+    !isPublicConnectionStatus(value.first_connection_status) ||
+    !isPublicConnectionStatus(value.second_connection_status)
+  ) {
+    return false;
+  }
+
+  const terminal = value.state === "completed" || value.state === "void" ||
+    value.state === "cancelled" || value.state === "superseded";
+  if (terminal) {
+    if (
+      value.finished_at === null ||
+      value.effective_deadline !== null ||
+      !isPublicGameResultReason(value.state, value.result_reason)
+    ) {
+      return false;
+    }
+    if (value.state === "completed" && value.winner_display_name === null) {
+      return false;
+    }
+    if (value.state !== "completed" && value.winner_display_name !== null) {
+      return false;
+    }
+    return true;
+  }
+
+  if (value.finished_at !== null || value.result_reason !== null || value.winner_display_name !== null) {
+    return false;
+  }
+  if (value.state === "active") {
+    return value.started_at !== null && value.effective_deadline !== null;
+  }
+  if (value.state === "paused") {
+    return value.started_at !== null && value.effective_deadline === null;
+  }
+  return value.effective_deadline === null;
+};
 
 const isTournament = (value: unknown, includeProjection: boolean): value is Record<string, unknown> => {
   if (!isRecord(value)) {
@@ -395,6 +501,7 @@ const isLiveSeries = (value: unknown): value is Record<string, unknown> =>
     "first_display_name",
     "second_display_name",
     "score",
+    "current_game",
     "current_game_position",
     "stage",
     "round_number",
@@ -407,6 +514,8 @@ const isLiveSeries = (value: unknown): value is Record<string, unknown> =>
   isNonBlank(value.first_display_name) &&
   isNonBlank(value.second_display_name) &&
   isPublicSeriesScore(value.score) &&
+  "current_game" in value &&
+  (value.current_game === null || isPublicLiveGame(value.current_game)) &&
   typeof value.stage === "string" &&
   PUBLIC_SERIES_STAGES.has(value.stage) &&
   "round_number" in value &&
@@ -414,7 +523,10 @@ const isLiveSeries = (value: unknown): value is Record<string, unknown> =>
   "scheduled_at" in value &&
   isOptionalDateTime(value.scheduled_at) &&
   (value.current_game_position === undefined ||
-    (isNonNegativeInteger(value.current_game_position) && value.current_game_position <= 3));
+    (isNonNegativeInteger(value.current_game_position) && value.current_game_position <= 3)) &&
+  (value.current_game === null ||
+    value.current_game_position === undefined ||
+    value.current_game_position === value.current_game.position);
 
 const isOfficialResult = (value: unknown): value is Record<string, unknown> =>
   isRecord(value) &&
@@ -434,7 +546,20 @@ const isDraft = (
   if (!isRecord(value)) {
     return false;
   }
-  const allowed = ["series_id", "format", "state", "pool", "selected_categories", "actions"];
+  const allowed = [
+    "series_id",
+    "format",
+    "state",
+    "first_actor_display_name",
+    "current_turn",
+    "current_action",
+    "current_actor_display_name",
+    "turn_deadline",
+    "auto_action_pending",
+    "pool",
+    "selected_categories",
+    "actions",
+  ];
   if (includeProjection) {
     allowed.push("tournament_id", "projection_revision");
   }
@@ -442,13 +567,16 @@ const isDraft = (
     hasOnlyKeys(value, allowed) &&
     isUUID(value.series_id) &&
     (value.format === "bo1" || value.format === "bo3") &&
-    (value.state === "active" || value.state === "completed") &&
+    typeof value.state === "string" &&
+    DRAFT_STATES.has(value.state) &&
+    isPublicDisplayName(value.first_actor_display_name) &&
     Array.isArray(value.pool) &&
     value.pool.every((item) => typeof item === "string" && CATEGORIES.has(item)) &&
     Array.isArray(value.selected_categories) &&
     value.selected_categories.every((item) => typeof item === "string" && CATEGORIES.has(item)) &&
     Array.isArray(value.actions) &&
     value.actions.every(isDraftAction) &&
+    isDraftCardinality(value) &&
     (!includeProjection ||
       (isUUID(value.tournament_id) && isPositiveInteger(value.projection_revision)))
   );
@@ -456,13 +584,86 @@ const isDraft = (
 
 const isDraftAction = (value: unknown): boolean =>
   isRecord(value) &&
-  hasOnlyKeys(value, ["turn", "action", "category", "actor_display_name", "occurred_at"]) &&
+  hasOnlyKeys(value, ["turn", "action", "category", "actor_display_name", "occurred_at", "automatic"]) &&
   isPositiveInteger(value.turn) &&
   (value.action === "ban" || value.action === "pick") &&
   typeof value.category === "string" &&
   CATEGORIES.has(value.category) &&
-  isNonBlank(value.actor_display_name) &&
-  isDateTime(value.occurred_at);
+  isPublicDisplayName(value.actor_display_name) &&
+  isDateTime(value.occurred_at) &&
+  typeof value.automatic === "boolean";
+
+const isDraftCardinality = (value: Record<string, unknown>): boolean => {
+  const actionCount = value.format === "bo1" ? 2 : value.format === "bo3" ? 4 : 0;
+  const poolSize = value.format === "bo1" ? 3 : value.format === "bo3" ? 5 : 0;
+  const selectedCount = value.format === "bo1" ? 1 : value.format === "bo3" ? 3 : 0;
+  if (poolSize === 0 || !Array.isArray(value.pool) || value.pool.length !== poolSize) {
+    return false;
+  }
+  const pool = value.pool;
+  if (!pool.every((category): category is string => typeof category === "string" && CATEGORIES.has(category))) {
+    return false;
+  }
+  if (new Set(pool).size !== pool.length || !Array.isArray(value.selected_categories)) {
+    return false;
+  }
+  const selectedCategories = value.selected_categories;
+  if (
+    !selectedCategories.every((category): category is string => typeof category === "string" && CATEGORIES.has(category)) ||
+    new Set(selectedCategories).size !== selectedCategories.length ||
+    selectedCategories.some((category) => !pool.includes(category))
+  ) {
+    return false;
+  }
+  if (!Array.isArray(value.actions) || value.actions.length > actionCount) {
+    return false;
+  }
+  const actionCategories = new Set<string>();
+  for (const [index, action] of value.actions.entries()) {
+    if (
+      !isRecord(action) ||
+      action.turn !== index + 1 ||
+      typeof action.category !== "string" ||
+      !pool.includes(action.category) ||
+      actionCategories.has(action.category)
+    ) {
+      return false;
+    }
+    actionCategories.add(action.category);
+  }
+
+  const state = value.state;
+  const terminal = state === "completed" || state === "superseded";
+  if (state === "completed" &&
+      (value.actions.length !== actionCount || value.selected_categories.length !== selectedCount)) {
+    return false;
+  }
+  if (!terminal && value.selected_categories.length !== 0) {
+    return false;
+  }
+  if (terminal) {
+    return value.current_turn === null &&
+      value.current_action === null &&
+      value.current_actor_display_name === null &&
+      value.turn_deadline === null &&
+      value.auto_action_pending === false;
+  }
+
+  if (
+    !isPositiveInteger(value.current_turn) ||
+    value.current_turn !== value.actions.length + 1 ||
+    value.current_turn > actionCount ||
+    (value.current_action !== "ban" && value.current_action !== "pick") ||
+    !isPublicDisplayName(value.current_actor_display_name) ||
+    typeof value.auto_action_pending !== "boolean"
+  ) {
+    return false;
+  }
+  if (state === "active") {
+    return isDateTime(value.turn_deadline);
+  }
+  return value.turn_deadline === null && value.auto_action_pending === false;
+};
 
 const isRecordArray = (
   value: unknown,
@@ -645,6 +846,7 @@ export const openPublicRealtime = (value: unknown): PublicRecoveryState => {
       projection_revision: value.projection_revision,
       event_sequence: value.sequence,
     },
+    serverTimestamp: value.occurred_at,
     resumeId: value.resume_id ?? null,
     seenEventIds: [value.event_id],
     display: realtimeDisplay(value),
@@ -684,6 +886,7 @@ export const applyPublicRealtime = (
   const nextState: PublicRecoveryState = {
     tournamentId: state.tournamentId,
     cursor: nextCursor,
+    serverTimestamp: value.occurred_at,
     resumeId: value.resume_id ?? state.resumeId,
     seenEventIds: [...state.seenEventIds, value.event_id].slice(-128),
     display: realtimeDisplay(value),

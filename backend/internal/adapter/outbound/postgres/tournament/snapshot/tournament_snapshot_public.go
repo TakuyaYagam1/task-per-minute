@@ -519,6 +519,10 @@ func publicTournamentReadSeries(
 			(domain.SeriesScore{FirstParticipantWins: int(row.FirstParticipantWins), SecondParticipantWins: int(row.SecondParticipantWins)}).Validate(format) != nil {
 			return nil, tournamentSnapshotInvalidError("series stage")
 		}
+		currentGame, err := publicTournamentReadCurrentGame(row)
+		if err != nil {
+			return nil, err
+		}
 		var roundNumber *int
 		if row.RoundNumber > 0 {
 			value := int(row.RoundNumber)
@@ -535,10 +539,125 @@ func publicTournamentReadSeries(
 			FirstWins:           int(row.FirstParticipantWins),
 			SecondWins:          int(row.SecondParticipantWins),
 			CurrentGamePosition: int(row.CurrentGamePosition),
+			CurrentGame:         currentGame,
 			ScheduledAt:         utcNullableTime(row.ScheduledAt),
 		}
 	}
 	return view, nil
+}
+
+func publicTournamentReadCurrentGame(row sqlc.ListPublicTournamentReadSeriesRow) (*usecase.PublicCurrentGameView, error) {
+	if row.CurrentGamePosition == 0 {
+		return publicTournamentReadAbsentCurrentGame(row)
+	}
+	state := domain.GameState(row.CurrentGameState)
+	if err := validatePublicCurrentGameIdentity(row, state); err != nil {
+		return nil, err
+	}
+	startedAt := utcNullableTime(row.CurrentGameStartedAt)
+	finishedAt := utcNullableTime(row.CurrentGameFinishedAt)
+	deadline := utcNullableTime(row.CurrentGameEffectiveDeadline)
+	if err := validatePublicCurrentGameLifecycle(state, startedAt, finishedAt, deadline); err != nil {
+		return nil, err
+	}
+	resultReason, err := publicTournamentReadCurrentGameReason(row.CurrentGameResultReason, state)
+	if err != nil {
+		return nil, err
+	}
+	winnerDisplayName, err := publicTournamentReadCurrentGameWinner(row.CurrentGameWinnerDisplayName, state)
+	if err != nil {
+		return nil, err
+	}
+	return &usecase.PublicCurrentGameView{
+		Position:               int(row.CurrentGamePosition),
+		Category:               row.CurrentGameCategory,
+		State:                  row.CurrentGameState,
+		StartedAt:              startedAt,
+		EffectiveDeadline:      deadline,
+		FinishedAt:             finishedAt,
+		ResultReason:           resultReason,
+		WinnerDisplayName:      winnerDisplayName,
+		FirstConnectionStatus:  row.FirstConnectionStatus,
+		SecondConnectionStatus: row.SecondConnectionStatus,
+	}, nil
+}
+
+func publicTournamentReadAbsentCurrentGame(row sqlc.ListPublicTournamentReadSeriesRow) (*usecase.PublicCurrentGameView, error) {
+	if row.CurrentGameCategory != "" || row.CurrentGameState != "" ||
+		row.CurrentGameStartedAt.Valid || row.CurrentGameEffectiveDeadline.Valid ||
+		row.CurrentGameFinishedAt.Valid || row.CurrentGameResultReason != "" ||
+		row.CurrentGameWinnerDisplayName != nil || row.FirstConnectionStatus != "unknown" ||
+		row.SecondConnectionStatus != "unknown" {
+		return nil, tournamentSnapshotInvalidError("current game absence")
+	}
+	return nil, nil
+}
+
+func validatePublicCurrentGameIdentity(row sqlc.ListPublicTournamentReadSeriesRow, state domain.GameState) error {
+	if row.CurrentGamePosition < 1 || row.CurrentGamePosition > 3 ||
+		!domain.Category(row.CurrentGameCategory).IsValid() || !state.IsValid() ||
+		!validPublicConnectionStatus(row.FirstConnectionStatus) ||
+		!validPublicConnectionStatus(row.SecondConnectionStatus) {
+		return tournamentSnapshotInvalidError("current game identity")
+	}
+	return nil
+}
+
+func validatePublicCurrentGameLifecycle(
+	state domain.GameState,
+	startedAt, finishedAt, deadline *time.Time,
+) error {
+	if !state.IsTerminal() && finishedAt != nil {
+		return tournamentSnapshotInvalidError("current game terminal timestamp")
+	}
+	if state.IsTerminal() && finishedAt == nil {
+		return tournamentSnapshotInvalidError("current game finished timestamp")
+	}
+	if (state == domain.GameStateActive || state == domain.GameStatePaused) && startedAt == nil {
+		return tournamentSnapshotInvalidError("current game started timestamp")
+	}
+	if state == domain.GameStateActive && deadline == nil {
+		return tournamentSnapshotInvalidError("current game deadline")
+	}
+	if state == domain.GameStatePaused && deadline != nil {
+		return tournamentSnapshotInvalidError("current game paused deadline")
+	}
+	if state.IsTerminal() && deadline != nil {
+		return tournamentSnapshotInvalidError("current game terminal deadline")
+	}
+	return nil
+}
+
+func publicTournamentReadCurrentGameReason(reason string, state domain.GameState) (*string, error) {
+	reason = strings.TrimSpace(reason)
+	if reason == "" {
+		if state.IsTerminal() {
+			return nil, tournamentSnapshotInvalidError("current game result reason")
+		}
+		return nil, nil
+	}
+	if !domain.GameResultReason(reason).IsLegalFor(state) {
+		return nil, tournamentSnapshotInvalidError("current game result reason")
+	}
+	return &reason, nil
+}
+
+func publicTournamentReadCurrentGameWinner(winner *string, state domain.GameState) (*string, error) {
+	if winner == nil {
+		if state == domain.GameStateCompleted {
+			return nil, tournamentSnapshotInvalidError("current game winner")
+		}
+		return nil, nil
+	}
+	value := strings.TrimSpace(*winner)
+	if value == "" || utf8.RuneCountInString(value) > 64 || state != domain.GameStateCompleted {
+		return nil, tournamentSnapshotInvalidError("current game winner")
+	}
+	return &value, nil
+}
+
+func validPublicConnectionStatus(value string) bool {
+	return value == "connected" || value == "disconnected" || value == "unknown"
 }
 
 func publicTournamentReadResults(
@@ -572,6 +691,7 @@ func publicTournamentReadDraft(
 	ctx context.Context,
 	querier *sqlc.Queries,
 	tournamentID uuid.UUID,
+	observedAt time.Time,
 ) (*usecase.PublicDraftView, error) {
 	row, err := querier.GetPublicTournamentReadDraft(ctx, tournamentID)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -579,6 +699,10 @@ func publicTournamentReadDraft(
 	}
 	if err != nil {
 		return nil, fmt.Errorf("TournamentSnapshotPostgres - PublicSnapshot - draft: %w", err)
+	}
+	format := domain.SeriesFormat(row.Format)
+	if err := validatePublicDraftRow(row, format); err != nil {
+		return nil, err
 	}
 	pool, err := tournamentStringList(row.CategoryPool, "draft pool")
 	if err != nil {
@@ -588,15 +712,74 @@ func publicTournamentReadDraft(
 	if err != nil {
 		return nil, err
 	}
-	actionRows, err := querier.ListPublicTournamentReadDraftActions(ctx, row.DraftID)
+	actions, err := publicTournamentReadDraftActions(ctx, querier, row.DraftID)
+	if err != nil {
+		return nil, err
+	}
+	if err := validatePublicDraftCardinality(format, pool, selected, actions); err != nil {
+		return nil, err
+	}
+	if err := validatePublicDraftSelection(row.State, format, selected, actions); err != nil {
+		return nil, err
+	}
+	turn, err := publicTournamentReadDraftTurn(row, len(actions), observedAt)
+	if err != nil {
+		return nil, err
+	}
+	return &usecase.PublicDraftView{
+		SeriesID:                row.SeriesID,
+		Format:                  row.Format,
+		State:                   row.State,
+		FirstActorDisplayName:   row.FirstActorDisplayName,
+		CurrentTurn:             turn.current,
+		CurrentAction:           turn.action,
+		CurrentActorDisplayName: turn.actor,
+		TurnDeadline:            turn.deadline,
+		AutoActionPending:       turn.autoActionPending,
+		Pool:                    pool,
+		SelectedCategories:      selected,
+		Actions:                 actions,
+	}, nil
+}
+
+func validatePublicDraftRow(row sqlc.GetPublicTournamentReadDraftRow, format domain.SeriesFormat) error {
+	if row.SeriesID == uuid.Nil || !format.IsValid() || strings.TrimSpace(row.FirstActorDisplayName) == "" ||
+		utf8.RuneCountInString(row.FirstActorDisplayName) > 64 || !validPublicDraftState(row.State) {
+		return tournamentSnapshotInvalidError("draft state")
+	}
+	return nil
+}
+
+func validatePublicDraftSelection(
+	state string,
+	format domain.SeriesFormat,
+	selected []string,
+	actions []usecase.PublicDraftActionView,
+) error {
+	if state == "completed" && (len(actions) != draftActionCount(format) || len(selected) != draftSelectedCount(format)) {
+		return tournamentSnapshotInvalidError("draft completed cardinality")
+	}
+	if state != "completed" && state != "superseded" && len(selected) != 0 {
+		return tournamentSnapshotInvalidError("draft active selection")
+	}
+	return nil
+}
+
+func publicTournamentReadDraftActions(
+	ctx context.Context,
+	querier *sqlc.Queries,
+	draftID uuid.UUID,
+) ([]usecase.PublicDraftActionView, error) {
+	actionRows, err := querier.ListPublicTournamentReadDraftActions(ctx, draftID)
 	if err != nil {
 		return nil, fmt.Errorf("TournamentSnapshotPostgres - PublicSnapshot - draft actions: %w", err)
 	}
 	actions := make([]usecase.PublicDraftActionView, len(actionRows))
 	for index, action := range actionRows {
-		if action.Turn < 1 || strings.TrimSpace(action.Action) == "" ||
-			strings.TrimSpace(action.Category) == "" || strings.TrimSpace(action.ActorDisplayName) == "" ||
-			!action.OccurredAt.Valid {
+		if action.Turn < 1 || action.Turn > 4 || !domain.DraftActionType(action.Action).IsValid() ||
+			!domain.Category(action.Category).IsValid() || strings.TrimSpace(action.ActorDisplayName) == "" ||
+			utf8.RuneCountInString(action.ActorDisplayName) > 64 || !action.OccurredAt.Valid ||
+			!validServerTime(action.OccurredAt.Time.UTC()) || int(action.Turn) != index+1 {
 			return nil, tournamentSnapshotInvalidError("draft action")
 		}
 		actions[index] = usecase.PublicDraftActionView{
@@ -605,14 +788,163 @@ func publicTournamentReadDraft(
 			Category:         action.Category,
 			ActorDisplayName: action.ActorDisplayName,
 			OccurredAt:       action.OccurredAt.Time.UTC(),
+			Automatic:        action.Automatic,
 		}
 	}
-	return &usecase.PublicDraftView{
-		SeriesID:           row.SeriesID,
-		Format:             row.Format,
-		State:              row.State,
-		Pool:               pool,
-		SelectedCategories: selected,
-		Actions:            actions,
-	}, nil
+	return actions, nil
+}
+
+type publicDraftTurnView struct {
+	current           *int
+	action            *string
+	actor             *string
+	deadline          *time.Time
+	autoActionPending bool
+}
+
+func publicTournamentReadDraftTurn(
+	row sqlc.GetPublicTournamentReadDraftRow,
+	actions int,
+	observedAt time.Time,
+) (publicDraftTurnView, error) {
+	turnDeadline := utcNullableTime(row.TurnDeadline)
+	switch row.State {
+	case "active", "paused", "recovery_required":
+		return publicTournamentReadActiveDraftTurn(row, actions, turnDeadline, observedAt)
+	case "completed", "superseded":
+		return publicTournamentReadTerminalDraftTurn(row, turnDeadline)
+	default:
+		return publicDraftTurnView{}, tournamentSnapshotInvalidError("draft state")
+	}
+}
+
+func publicTournamentReadActiveDraftTurn(
+	row sqlc.GetPublicTournamentReadDraftRow,
+	actions int,
+	turnDeadline *time.Time,
+	observedAt time.Time,
+) (publicDraftTurnView, error) {
+	if row.CurrentTurn < 1 || row.CurrentTurn > 4 || int(row.CurrentTurn) != actions+1 ||
+		row.CurrentAction == nil || !domain.DraftActionType(*row.CurrentAction).IsValid() ||
+		row.CurrentActorDisplayName == nil || strings.TrimSpace(*row.CurrentActorDisplayName) == "" ||
+		utf8.RuneCountInString(*row.CurrentActorDisplayName) > 64 {
+		return publicDraftTurnView{}, tournamentSnapshotInvalidError("draft current turn")
+	}
+	turn := int(row.CurrentTurn)
+	action := *row.CurrentAction
+	actor := strings.TrimSpace(*row.CurrentActorDisplayName)
+	view := publicDraftTurnView{
+		current:  &turn,
+		action:   &action,
+		actor:    &actor,
+		deadline: turnDeadline,
+	}
+	if row.State == "active" {
+		if turnDeadline == nil {
+			return publicDraftTurnView{}, tournamentSnapshotInvalidError("draft deadline")
+		}
+		view.autoActionPending = !turnDeadline.After(observedAt.UTC())
+		return view, nil
+	}
+	if turnDeadline != nil {
+		return publicDraftTurnView{}, tournamentSnapshotInvalidError("draft paused deadline")
+	}
+	return view, nil
+}
+
+func publicTournamentReadTerminalDraftTurn(
+	row sqlc.GetPublicTournamentReadDraftRow,
+	turnDeadline *time.Time,
+) (publicDraftTurnView, error) {
+	if row.CurrentTurn < 1 || row.CurrentTurn > 4 || row.CurrentAction != nil ||
+		row.CurrentActorDisplayName != nil || turnDeadline != nil {
+		return publicDraftTurnView{}, tournamentSnapshotInvalidError("draft terminal turn")
+	}
+	return publicDraftTurnView{}, nil
+}
+
+func validPublicDraftState(state string) bool {
+	switch state {
+	case "active", "paused", "recovery_required", "completed", "superseded":
+		return true
+	default:
+		return false
+	}
+}
+
+func validatePublicDraftCardinality(
+	format domain.SeriesFormat,
+	pool []string,
+	selected []string,
+	actions []usecase.PublicDraftActionView,
+) error {
+	poolSize, actionCount, selectedCount, ok := publicDraftCounts(format)
+	if !ok {
+		return tournamentSnapshotInvalidError("draft format")
+	}
+	if len(pool) != poolSize || len(selected) > selectedCount || len(actions) > actionCount {
+		return tournamentSnapshotInvalidError("draft cardinality")
+	}
+	if err := validatePublicDraftCategories(pool, selected); err != nil {
+		return err
+	}
+	return validatePublicDraftActionSequence(actions)
+}
+
+func publicDraftCounts(format domain.SeriesFormat) (poolSize, actionCount, selectedCount int, ok bool) {
+	switch format {
+	case domain.SeriesFormatBO1:
+		return 3, 2, 1, true
+	case domain.SeriesFormatBO3:
+		return 5, 4, 3, true
+	default:
+		return 0, 0, 0, false
+	}
+}
+
+func validatePublicDraftCategories(pool, selected []string) error {
+	seenPool := make(map[string]struct{}, len(pool))
+	for _, category := range pool {
+		if !domain.Category(category).IsValid() {
+			return tournamentSnapshotInvalidError("draft pool category")
+		}
+		if _, ok := seenPool[category]; ok {
+			return tournamentSnapshotInvalidError("draft pool duplicate")
+		}
+		seenPool[category] = struct{}{}
+	}
+	seenSelected := make(map[string]struct{}, len(selected))
+	for _, category := range selected {
+		if _, ok := seenPool[category]; !ok {
+			return tournamentSnapshotInvalidError("draft selection category")
+		}
+		if _, ok := seenSelected[category]; ok {
+			return tournamentSnapshotInvalidError("draft selection duplicate")
+		}
+		seenSelected[category] = struct{}{}
+	}
+	return nil
+}
+
+func validatePublicDraftActionSequence(actions []usecase.PublicDraftActionView) error {
+	for index, action := range actions {
+		if action.Turn != index+1 || action.Action == "" || action.Category == "" {
+			return tournamentSnapshotInvalidError("draft action sequence")
+		}
+	}
+	return nil
+}
+
+func draftActionCount(format domain.SeriesFormat) int {
+	if format == domain.SeriesFormatBO1 {
+		return 2
+	}
+	return 4
+}
+
+func draftSelectedCount(format domain.SeriesFormat) int {
+	if format == domain.SeriesFormatBO1 {
+		return 1
+	}
+	return 3
 }

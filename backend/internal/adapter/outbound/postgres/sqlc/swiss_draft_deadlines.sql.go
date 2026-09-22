@@ -27,10 +27,11 @@ type GetSwissDraftDeadlineIdentityRow struct {
 	RosterID     uuid.UUID
 }
 
-// Swiss BO1 draft deadlines are scanned from the immutable current draft
-// revision.  The Swiss Wave link excludes playoff drafts, while the
-// tournament and Series predicates keep paused, cancelled, and already
-// materialized rows out of the automatic-action path.
+// Normal draft deadlines are scanned from the immutable current draft
+// revision. Swiss BO1 drafts are linked through their planned Wave, while
+// playoff final BO3 drafts are linked through their immutable final-stage
+// record. The tournament and Series predicates keep paused, cancelled, and
+// already materialized rows out of the automatic-action path.
 func (q *Queries) GetSwissDraftDeadlineIdentity(ctx context.Context, draftID uuid.UUID) (GetSwissDraftDeadlineIdentityRow, error) {
 	row := q.db.QueryRow(ctx, getSwissDraftDeadlineIdentity, draftID)
 	var i GetSwissDraftDeadlineIdentityRow
@@ -49,32 +50,34 @@ FROM drafts AS draft
 INNER JOIN series
     ON series.id = draft.series_id
     AND series.roster_id = draft.roster_id
-    AND series.format = 'bo1'
-    AND series.state = 'planned'
-INNER JOIN wave_series
+LEFT JOIN wave_series
     ON wave_series.series_id = series.id
     AND wave_series.tournament_id = series.tournament_id
     AND wave_series.roster_id = series.roster_id
-INNER JOIN waves AS wave
+LEFT JOIN waves AS wave
     ON wave.id = wave_series.wave_id
     AND wave.tournament_id = series.tournament_id
     AND wave.roster_id = series.roster_id
     AND wave.state = 'planned'
-INNER JOIN swiss_wave_links AS swiss_link
+LEFT JOIN swiss_wave_links AS swiss_link
     ON swiss_link.wave_id = wave.id
     AND swiss_link.tournament_id = series.tournament_id
     AND swiss_link.roster_id = series.roster_id
-INNER JOIN swiss_rounds AS round
+LEFT JOIN swiss_rounds AS round
     ON round.id = swiss_link.round_id
     AND round.roster_id = swiss_link.roster_id
 INNER JOIN tournaments AS tournament
     ON tournament.id = series.tournament_id
-    AND tournament.state = 'swiss'
 INNER JOIN category_revisions AS category
     ON category.id = draft.category_revision_id
     AND category.series_id = draft.series_id
     AND category.roster_id = draft.roster_id
     AND category.mode = 'draft'
+LEFT JOIN tournament_stage_playoff_finals AS final_stage
+    ON final_stage.draft_id = draft.id
+    AND final_stage.final_series_id = series.id
+    AND final_stage.tournament_id = series.tournament_id
+    AND final_stage.roster_id = series.roster_id
 INNER JOIN LATERAL (
     SELECT revision.draft_id,
         revision.id,
@@ -91,10 +94,28 @@ INNER JOIN LATERAL (
         revision.id DESC
     LIMIT 1
 ) AS current_revision ON TRUE
-WHERE draft.format = 'bo1'
-    AND current_revision.state = 'active'
+WHERE current_revision.state = 'active'
     AND current_revision.absolute_deadline IS NOT NULL
     AND current_revision.absolute_deadline <= $1::TIMESTAMPTZ
+    AND (
+        (
+            tournament.state = 'swiss'
+            AND series.format = 'bo1'
+            AND series.state = 'planned'
+            AND draft.format = 'bo1'
+            AND wave.id IS NOT NULL
+            AND wave.state = 'planned'
+            AND swiss_link.wave_id IS NOT NULL
+            AND round.id IS NOT NULL
+        )
+        OR (
+            tournament.state = 'playoffs'
+            AND series.format = 'bo3'
+            AND series.state = 'planned'
+            AND draft.format = 'bo3'
+            AND final_stage.draft_id = draft.id
+        )
+    )
 ORDER BY current_revision.absolute_deadline,
     current_revision.draft_id
 LIMIT $2
@@ -139,6 +160,111 @@ func (q *Queries) ListDueSwissDraftDeadlines(ctx context.Context, arg ListDueSwi
 		return nil, err
 	}
 	return items, nil
+}
+
+const lockFinalDraftDeadlineCommit = `-- name: LockFinalDraftDeadlineCommit :one
+SELECT tournament.id AS tournament_id,
+    tournament.state AS tournament_state,
+    series.id AS series_id,
+    series.roster_id,
+    series.format AS series_format,
+    series.state AS series_state,
+    draft.id AS draft_id,
+    draft.format AS draft_format,
+    final_stage.draft_id AS final_draft_id,
+    revision.id AS revision_id,
+    revision.revision,
+    revision.service_epoch,
+    revision.state AS revision_state,
+    revision.turn_number,
+    revision.absolute_deadline
+FROM tournaments AS tournament
+INNER JOIN series
+    ON series.tournament_id = tournament.id
+    AND series.tournament_id = $1
+    AND series.roster_id = $2
+INNER JOIN drafts AS draft
+    ON draft.series_id = series.id
+    AND draft.roster_id = series.roster_id
+INNER JOIN tournament_stage_playoff_finals AS final_stage
+    ON final_stage.draft_id = draft.id
+    AND final_stage.final_series_id = series.id
+    AND final_stage.tournament_id = series.tournament_id
+    AND final_stage.roster_id = series.roster_id
+INNER JOIN LATERAL (
+    SELECT current_revision.id,
+        current_revision.revision,
+        current_revision.service_epoch,
+        current_revision.state,
+        current_revision.turn_number,
+        current_revision.absolute_deadline
+    FROM draft_revisions AS current_revision
+    WHERE current_revision.draft_id = draft.id
+        AND current_revision.series_id = draft.series_id
+        AND current_revision.roster_id = draft.roster_id
+    ORDER BY current_revision.revision DESC,
+        current_revision.id DESC
+    LIMIT 1
+    FOR UPDATE OF current_revision
+) AS revision ON TRUE
+WHERE draft.id = $3
+    AND series.id = draft.series_id
+    AND series.roster_id = draft.roster_id
+    AND tournament.state = 'playoffs'
+    AND series.format = 'bo3'
+    AND series.state = 'planned'
+    AND draft.format = 'bo3'
+FOR UPDATE OF series, draft, final_stage
+`
+
+type LockFinalDraftDeadlineCommitParams struct {
+	TournamentID uuid.UUID
+	RosterID     uuid.UUID
+	DraftID      uuid.UUID
+}
+
+type LockFinalDraftDeadlineCommitRow struct {
+	TournamentID     uuid.UUID
+	TournamentState  string
+	SeriesID         uuid.UUID
+	RosterID         uuid.UUID
+	SeriesFormat     string
+	SeriesState      string
+	DraftID          uuid.UUID
+	DraftFormat      string
+	FinalDraftID     uuid.UUID
+	RevisionID       uuid.UUID
+	Revision         int64
+	ServiceEpoch     uuid.UUID
+	RevisionState    string
+	TurnNumber       int16
+	AbsoluteDeadline pgtype.Timestamptz
+}
+
+// Final BO3 drafts have no Swiss Wave link before activation. Lock their
+// immutable final-stage authority separately because PostgreSQL does not
+// permit row-locking clauses on a UNION query.
+func (q *Queries) LockFinalDraftDeadlineCommit(ctx context.Context, arg LockFinalDraftDeadlineCommitParams) (LockFinalDraftDeadlineCommitRow, error) {
+	row := q.db.QueryRow(ctx, lockFinalDraftDeadlineCommit, arg.TournamentID, arg.RosterID, arg.DraftID)
+	var i LockFinalDraftDeadlineCommitRow
+	err := row.Scan(
+		&i.TournamentID,
+		&i.TournamentState,
+		&i.SeriesID,
+		&i.RosterID,
+		&i.SeriesFormat,
+		&i.SeriesState,
+		&i.DraftID,
+		&i.DraftFormat,
+		&i.FinalDraftID,
+		&i.RevisionID,
+		&i.Revision,
+		&i.ServiceEpoch,
+		&i.RevisionState,
+		&i.TurnNumber,
+		&i.AbsoluteDeadline,
+	)
+	return i, err
 }
 
 const lockSwissDraftDeadlineCommit = `-- name: LockSwissDraftDeadlineCommit :one
@@ -197,6 +323,11 @@ INNER JOIN LATERAL (
 WHERE draft.id = $3
     AND series.id = draft.series_id
     AND series.roster_id = draft.roster_id
+    AND tournament.state = 'swiss'
+    AND series.format = 'bo1'
+    AND series.state = 'planned'
+    AND draft.format = 'bo1'
+    AND wave.state = 'planned'
 FOR UPDATE OF series, wave, draft
 `
 
@@ -226,8 +357,9 @@ type LockSwissDraftDeadlineCommitRow struct {
 }
 
 // The caller takes the Tournament -> Roster/Projection prefix first. This
-// query then locks only the Swiss draft scope and its current immutable
-// revision, so pause/cancel and participant actions serialize before CAS.
+// query then locks the draft scope and its current immutable revision, so
+// pause/cancel, final activation, and participant actions serialize before
+// CAS.
 func (q *Queries) LockSwissDraftDeadlineCommit(ctx context.Context, arg LockSwissDraftDeadlineCommitParams) (LockSwissDraftDeadlineCommitRow, error) {
 	row := q.db.QueryRow(ctx, lockSwissDraftDeadlineCommit, arg.TournamentID, arg.RosterID, arg.DraftID)
 	var i LockSwissDraftDeadlineCommitRow

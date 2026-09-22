@@ -152,7 +152,7 @@ func initializeApp(runtime *RuntimeContext, cfg *config.Config, log logkit.Logge
 		return nil, nil, err
 	}
 	participantDraftRepository := provideParticipantDraftRepository(v2, draftPostgres)
-	swissDraftDeadlinePostgres := deadline.NewSwissDraftDeadlinePostgres(v2, participantDraftRepository)
+	swissDraftDeadlinePostgres := deadline.NewSwissDraftDeadlinePostgresWithActivator(v2, participantDraftRepository, v4)
 	deadlineWorker, err := provideSwissDraftDeadlineWorker(swissDraftDeadlinePostgres, bootstrapClockFunc)
 	if err != nil {
 		cleanup2()

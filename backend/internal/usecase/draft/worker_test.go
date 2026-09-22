@@ -6,8 +6,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
+	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/draft"
 	draftmocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/draft/mocks"
 )
@@ -124,6 +126,61 @@ func TestDeadlineWorkerResolvesAndReplaysSwissDraftTimeout(t *testing.T) {
 	require.Len(t, current.Actions, 1)
 	require.True(t, current.Actions[0].Automatic)
 	require.Equal(t, initial.TurnDeadline, current.Actions[0].OccurredAt)
+}
+
+func TestDeadlineWorkerResolvesBO3FinalTurnAndCompletesDraft(t *testing.T) {
+	t.Parallel()
+
+	startedAt := time.Date(2026, time.August, 30, 16, 30, 0, 0, time.UTC)
+	revision := task029CategoryRevision(t, domain.TournamentStageFinal, true, task030ID(101), startedAt.Add(-time.Minute))
+	initial, err := draft.StartExecution(draft.ExecutionStartCommand{
+		CategoryRevision:   revision,
+		DraftID:            task030ID(102),
+		InitialRevisionID:  task030ID(103),
+		DecisionEvidenceID: task030ID(104),
+		ParticipantIDs:     [2]uuid.UUID{task030ID(105), task030ID(106)},
+		ServiceEpoch:       task030ID(107),
+		CommandID:          task030ID(108),
+		StartedAt:          startedAt,
+	})
+	require.NoError(t, err)
+
+	harness := newDraftRepositoryHarness(t, initial)
+	current := initial
+	for index, category := range []domain.Category{domain.CategoryWeb, domain.CategoryCrypto, domain.CategoryReverse} {
+		useCase := draft.NewActionUseCase(harness.mock, newDraftClock(t, current.TurnDeadline))
+		result, applyErr := useCase.Apply(t.Context(), task030ActionCommand(current, task030ID(120+index), category))
+		require.NoError(t, applyErr)
+		current = result.Draft
+	}
+	require.Equal(t, draft.ExecutionStateActive, current.State)
+	require.Equal(t, 4, current.Turn)
+	require.NotNil(t, current.AbsoluteDeadline)
+
+	repository := &deadlineRepository{
+		MockRepository: harness.mock,
+		due: []draft.SwissDraftDeadline{{
+			DraftID: current.ID, RevisionID: current.RevisionID, Revision: current.Revision,
+			ServiceEpoch: current.ServiceEpoch, Turn: current.Turn, Deadline: *current.AbsoluteDeadline,
+		}},
+	}
+	worker, err := draft.NewDeadlineWorker(
+		repository,
+		newDraftClock(t, *current.AbsoluteDeadline),
+		draft.DeadlineWorkerConfig{BatchSize: 1, PollInterval: time.Millisecond, ScanTimeout: time.Second, StaleAfter: time.Minute},
+	)
+	require.NoError(t, err)
+
+	result, err := worker.Process(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, draft.DeadlineProcessResult{Scanned: 1, Changed: 1}, result)
+
+	completed, err := harness.mock.LoadDraft(t.Context(), initial.ID)
+	require.NoError(t, err)
+	require.Equal(t, draft.ExecutionStateCompleted, completed.State)
+	require.Len(t, completed.Actions, 4)
+	require.True(t, completed.Actions[3].Automatic)
+	require.Len(t, completed.SelectedCategories, 3)
 }
 
 func TestDeadlineWorkerRejectsInvalidDeadlineSnapshot(t *testing.T) {

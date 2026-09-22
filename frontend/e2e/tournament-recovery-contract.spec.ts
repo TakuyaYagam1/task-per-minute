@@ -418,6 +418,7 @@ const restSnapshot = (
       first_display_name: "alice",
       second_display_name: "bob",
       score: { first_wins: 1, second_wins: 0 },
+      current_game: null,
       current_game_position: 2,
       stage: "swiss",
       round_number: 1,
@@ -453,12 +454,13 @@ const realtimeEnvelope = (
   projectionRevision: number,
   eventId = firstEventId,
   envelopeTournamentId = tournamentId,
+  occurredAt = "2026-09-08T10:06:00Z",
 ) => ({
   schema_version: 1,
   tournament_id: envelopeTournamentId,
   sequence,
   event_id: eventId,
-  occurred_at: "2026-09-08T10:06:00Z",
+  occurred_at: occurredAt,
   projection_revision: projectionRevision,
   resume_id: resumeId,
   public: {
@@ -573,12 +575,57 @@ test("fresh connection accepts one complete public recovery snapshot", () => {
   expect(state.display.officialResults).toHaveLength(1);
 });
 
+test("FE-041 accepts redacted current game and live draft projections", () => {
+  const snapshot = restSnapshot() as unknown as {
+    live_series: Array<Record<string, unknown>>;
+    live_draft: Record<string, unknown> | null;
+  };
+  snapshot.live_series[0].current_game = {
+    category: "web",
+    effective_deadline: "2026-09-08T10:03:00Z",
+    finished_at: null,
+    first_connection_status: "connected",
+    position: 2,
+    result_reason: null,
+    second_connection_status: "unknown",
+    started_at: "2026-09-08T10:00:00Z",
+    state: "active",
+    winner_display_name: null,
+  };
+  snapshot.live_draft = {
+    actions: [],
+    auto_action_pending: false,
+    current_action: "ban",
+    current_actor_display_name: "bob",
+    current_turn: 1,
+    first_actor_display_name: "alice",
+    format: "bo3",
+    pool: ["web", "crypto", "forensics", "reverse", "pwn"],
+    projection_revision: 4,
+    selected_categories: [],
+    series_id: seriesId,
+    state: "active",
+    tournament_id: tournamentId,
+    turn_deadline: "2026-09-08T10:02:00Z",
+  };
+
+  expect(isPublicRecoverySnapshot(snapshot)).toBe(true);
+
+  const currentGame = snapshot.live_series[0].current_game;
+  if (!currentGame || typeof currentGame !== "object") {
+    throw new Error("Current game fixture is missing");
+  }
+  (currentGame as Record<string, unknown>).task_id = "private-task";
+  expect(isPublicRecoverySnapshot(snapshot)).toBe(false);
+});
+
 test("fresh WebSocket connection accepts an initial zero sequence snapshot", () => {
   const state = openPublicRealtime(realtimeEnvelope(0, 1));
 
   expect(state.cursor).toEqual({ projection_revision: 1, event_sequence: 0 });
   expect(state.display.liveSeries).toHaveLength(1);
   expect(state.resumeId).toBe(resumeId);
+  expect(state.serverTimestamp).toBe("2026-09-08T10:06:00Z");
 });
 
 test("a full realtime snapshot safely closes a missed sequence gap", () => {
@@ -625,21 +672,27 @@ test("future cursor conflicts preserve requested and authoritative watermarks", 
 });
 
 test("duplicate and out-of-order realtime events cannot roll state backward", () => {
-  const initial = recoverPublicTournament(restSnapshot(4, 7));
-  const applied = applyPublicRealtime(initial, realtimeEnvelope(8, 4, firstEventId));
+  const initial = openPublicRealtime(realtimeEnvelope(7, 4, firstEventId, tournamentId, "2026-09-08T10:06:00Z"));
+  const applied = applyPublicRealtime(
+    initial,
+    realtimeEnvelope(8, 4, secondEventId, tournamentId, "2026-09-08T10:06:01Z"),
+  );
   const duplicate = applyPublicRealtime(
     applied.state,
-    realtimeEnvelope(9, 5, firstEventId),
+    realtimeEnvelope(9, 5, secondEventId, tournamentId, "2026-09-08T10:06:02Z"),
   );
   const outOfOrder = applyPublicRealtime(
     applied.state,
-    realtimeEnvelope(6, 4, secondEventId),
+    realtimeEnvelope(6, 4, revisionId, tournamentId, "2026-09-08T10:05:59Z"),
   );
 
   expect(duplicate.outcome).toBe("duplicate");
   expect(duplicate.state).toBe(applied.state);
   expect(outOfOrder.outcome).toBe("out_of_order");
   expect(outOfOrder.state).toBe(applied.state);
+  expect(applied.state.serverTimestamp).toBe("2026-09-08T10:06:01Z");
+  expect(duplicate.state.serverTimestamp).toBe("2026-09-08T10:06:01Z");
+  expect(outOfOrder.state.serverTimestamp).toBe("2026-09-08T10:06:01Z");
 });
 
 test("FE-012 public realtime requires its wrapper, keeps public data, and detects gaps", () => {

@@ -509,9 +509,13 @@ export const ArenaRolePage = ({ role, tournamentId }: ArenaRolePageProps) => {
           </TournamentRecoveryPanel>
         ) : role === "spectator" ? (
           <TournamentRecoveryPanel role={role} tournamentId={tournamentId}>
-            {({ publicConnectionStatus, publicState }) => (
+            {({ publicConnectionStatus, publicState, receivedAtMonotonicMs, recovery }) => (
               <TournamentBroadcastPanel
                 connectionStatus={publicConnectionStatus}
+                receivedAtMonotonicMs={publicState?.serverTimestamp === undefined
+                  ? receivedAtMonotonicMs
+                  : undefined}
+                serverTimestamp={publicState?.serverTimestamp ?? recovery?.serverTimestamp}
                 state={publicState}
               />
             )}

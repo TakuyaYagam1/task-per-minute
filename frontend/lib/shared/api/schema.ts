@@ -3274,6 +3274,8 @@ export interface components {
         PublicDraftAction: {
             action: components["schemas"]["DraftActionType"];
             actor_display_name: string;
+            /** @description Whether the server recorded this action automatically after the turn deadline. */
+            readonly automatic: boolean;
             category: components["schemas"]["Category"];
             /** Format: date-time */
             occurred_at: string;
@@ -3282,6 +3284,14 @@ export interface components {
         };
         PublicLiveDraftResponse: {
             actions: components["schemas"]["PublicDraftAction"][];
+            /** @description Whether the active turn is past its server-authoritative deadline. */
+            readonly auto_action_pending: boolean;
+            readonly current_action: (string & components["schemas"]["DraftActionType"]) | null;
+            readonly current_actor_display_name: string | null;
+            /** Format: int32 */
+            readonly current_turn: number | null;
+            /** @description Display name of the participant who owns the first draft turn. */
+            first_actor_display_name: string;
             format: components["schemas"]["SeriesFormat"];
             pool: components["schemas"]["Category"][];
             /** Format: int64 */
@@ -3292,6 +3302,8 @@ export interface components {
             state: components["schemas"]["DraftState"];
             /** Format: uuid */
             tournament_id: string;
+            /** Format: date-time */
+            readonly turn_deadline: string | null;
         };
         /** @description Optional public recovery watermark. A missing, older, or equal watermark returns one fresh full snapshot. A projection revision or durable event sequence ahead of the server watermark is rejected with HTTP 409. */
         PublicRecoveryCursor: {
@@ -3299,6 +3311,28 @@ export interface components {
             event_sequence: number;
             /** Format: int64 */
             projection_revision: number;
+        };
+        /** @enum {string} */
+        PublicConnectionStatus: "connected" | "disconnected" | "unknown";
+        /** @description Allowlisted live game display data without private execution evidence. */
+        PublicLiveGame: {
+            category: components["schemas"]["Category"];
+            /**
+             * Format: date-time
+             * @description Server-authoritative deadline. Null while paused or after a terminal transition.
+             */
+            readonly effective_deadline: string | null;
+            /** Format: date-time */
+            readonly finished_at: string | null;
+            first_connection_status: components["schemas"]["PublicConnectionStatus"];
+            /** Format: int32 */
+            position: number;
+            readonly result_reason: string | null;
+            second_connection_status: components["schemas"]["PublicConnectionStatus"];
+            /** Format: date-time */
+            readonly started_at: string | null;
+            state: components["schemas"]["GameState"];
+            readonly winner_display_name: string | null;
         };
         /** @description Public score fields shared with the tournament WebSocket view. */
         PublicSeriesScore: {
@@ -3309,6 +3343,7 @@ export interface components {
         };
         /** @description Allowlisted live series display data; participant and task data are excluded. */
         PublicLiveSeries: {
+            current_game: components["schemas"]["PublicLiveGame"] | null;
             /** Format: int32 */
             current_game_position?: number;
             first_display_name: string;

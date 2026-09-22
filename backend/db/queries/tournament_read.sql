@@ -310,7 +310,16 @@ SELECT series.id AS series_id,
     second_player.username AS second_display_name,
     series.first_participant_wins,
     series.second_participant_wins,
-    COALESCE(current_slot.slot_number, 0)::INTEGER AS current_game_position,
+    COALESCE(current_game.current_game_position, 0)::INTEGER AS current_game_position,
+    COALESCE(current_game.current_game_category, '')::TEXT AS current_game_category,
+    COALESCE(current_game.current_game_state, '')::TEXT AS current_game_state,
+    current_game.current_game_started_at,
+    current_game.current_game_effective_deadline,
+    current_game.current_game_finished_at,
+    COALESCE(current_game.current_game_result_reason, '')::TEXT AS current_game_result_reason,
+    current_game.current_game_winner_display_name,
+    COALESCE(current_game.first_connection_status, 'unknown')::TEXT AS first_connection_status,
+    COALESCE(current_game.second_connection_status, 'unknown')::TEXT AS second_connection_status,
     NULL::TIMESTAMPTZ AS scheduled_at
 FROM series
 JOIN participants AS first_participant
@@ -371,14 +380,78 @@ LEFT JOIN LATERAL (
     LIMIT 1
 ) AS series_stage ON TRUE
 LEFT JOIN LATERAL (
-    SELECT slot.slot_number
+    SELECT slot.slot_number AS current_game_position,
+        slot.category::TEXT AS current_game_category,
+        attempt.state::TEXT AS current_game_state,
+        attempt.started_at AS current_game_started_at,
+        CASE
+            WHEN attempt.state <> 'active' THEN NULL::TIMESTAMPTZ
+            WHEN EXISTS (
+                SELECT 1
+                FROM pauses AS pause
+                WHERE pause.tournament_id = series.tournament_id
+                    AND pause.roster_id = series.roster_id
+                    AND pause.state = 'active'
+                    AND (
+                        pause.scope_kind = 'tournament'
+                        OR (pause.scope_kind = 'series' AND pause.scope_id = series.id)
+                        OR (pause.scope_kind = 'game_attempt' AND pause.scope_id = attempt.id)
+                        OR (
+                            pause.scope_kind = 'wave'
+                            AND EXISTS (
+                                SELECT 1
+                                FROM wave_series AS paused_wave_series
+                                WHERE paused_wave_series.wave_id = pause.scope_id
+                                    AND paused_wave_series.series_id = series.id
+                                    AND paused_wave_series.roster_id = series.roster_id
+                            )
+                        )
+                    )
+            ) THEN NULL::TIMESTAMPTZ
+            WHEN latest_clock.resumed_deadline IS NOT NULL THEN latest_clock.resumed_deadline
+            WHEN attempt.started_at IS NOT NULL THEN attempt.started_at + INTERVAL '180 seconds'
+            ELSE NULL::TIMESTAMPTZ
+        END AS current_game_effective_deadline,
+        attempt.finished_at AS current_game_finished_at,
+        attempt.result_reason::TEXT AS current_game_result_reason,
+        winner_player.username AS current_game_winner_display_name,
+        first_presence.state::TEXT AS first_connection_status,
+        second_presence.state::TEXT AS second_connection_status
     FROM game_slots AS slot
-    JOIN game_attempts AS attempt ON attempt.slot_id = slot.id
+    JOIN game_attempts AS attempt
+        ON attempt.slot_id = slot.id
+        AND attempt.series_id = slot.series_id
+        AND attempt.roster_id = slot.roster_id
+    LEFT JOIN LATERAL (
+        SELECT clock.resumed_deadline
+        FROM pause_clocks AS clock
+        WHERE clock.game_attempt_id = attempt.id
+            AND clock.resumed_deadline IS NOT NULL
+        ORDER BY clock.updated_at DESC,
+            clock.pause_id DESC
+        LIMIT 1
+    ) AS latest_clock ON TRUE
+    LEFT JOIN participants AS winner
+        ON winner.id = attempt.winner_id
+        AND winner.roster_id = series.roster_id
+    LEFT JOIN players AS winner_player ON winner_player.id = winner.player_id
+    LEFT JOIN presence_states AS first_presence
+        ON first_presence.tournament_id = series.tournament_id
+        AND first_presence.roster_id = series.roster_id
+        AND first_presence.series_id = series.id
+        AND first_presence.participant_id = series.first_participant_id
+    LEFT JOIN presence_states AS second_presence
+        ON second_presence.tournament_id = series.tournament_id
+        AND second_presence.roster_id = series.roster_id
+        AND second_presence.series_id = series.id
+        AND second_presence.participant_id = series.second_participant_id
     WHERE slot.series_id = series.id
+        AND slot.roster_id = series.roster_id
     ORDER BY attempt.created_at DESC,
-        attempt.attempt_number DESC
+        attempt.attempt_number DESC,
+        attempt.id DESC
     LIMIT 1
-) AS current_slot ON TRUE
+) AS current_game ON TRUE
 WHERE series.tournament_id = sqlc.arg(tournament_id)
     AND series.state <> 'superseded'
 ORDER BY series.created_at,
@@ -407,20 +480,37 @@ ORDER BY revision.created_at,
 SELECT draft.id AS draft_id,
     draft.series_id,
     draft.format,
+    first_player.username AS first_actor_display_name,
     revision.state,
+    revision.turn_number AS current_turn,
+    revision.current_action,
+    current_actor_player.username AS current_actor_display_name,
+    revision.absolute_deadline AS turn_deadline,
     category.category_pool,
     revision.selected_categories
 FROM drafts AS draft
 JOIN series ON series.id = draft.series_id
+JOIN participants AS first_participant
+    ON first_participant.id = draft.first_participant_id
+    AND first_participant.roster_id = draft.roster_id
+JOIN players AS first_player ON first_player.id = first_participant.player_id
 JOIN category_revisions AS category ON category.id = draft.category_revision_id
 JOIN LATERAL (
     SELECT draft_revision.state,
+        draft_revision.turn_number,
+        draft_revision.current_action,
+        draft_revision.current_actor_id,
+        draft_revision.absolute_deadline,
         draft_revision.selected_categories
     FROM draft_revisions AS draft_revision
     WHERE draft_revision.draft_id = draft.id
     ORDER BY draft_revision.revision DESC
     LIMIT 1
 ) AS revision ON TRUE
+LEFT JOIN participants AS current_actor
+    ON current_actor.id = revision.current_actor_id
+    AND current_actor.roster_id = draft.roster_id
+LEFT JOIN players AS current_actor_player ON current_actor_player.id = current_actor.player_id
 WHERE series.tournament_id = sqlc.arg(tournament_id)
     AND revision.state <> 'superseded'
 ORDER BY draft.created_at DESC,
@@ -432,7 +522,8 @@ SELECT action.turn_number AS turn,
     action.action,
     action.category,
     COALESCE(player.username, '')::TEXT AS actor_display_name,
-    action.occurred_at
+    action.occurred_at,
+    action.automatic
 FROM draft_actions AS action
 JOIN drafts AS draft ON draft.id = action.draft_id
 LEFT JOIN participants AS participant

@@ -219,7 +219,21 @@ type PublicSeriesView struct {
 	FirstWins           int
 	SecondWins          int
 	CurrentGamePosition int
+	CurrentGame         *PublicCurrentGameView
 	ScheduledAt         *time.Time
+}
+
+type PublicCurrentGameView struct {
+	Position               int
+	Category               string
+	State                  string
+	StartedAt              *time.Time
+	EffectiveDeadline      *time.Time
+	FinishedAt             *time.Time
+	ResultReason           *string
+	WinnerDisplayName      *string
+	FirstConnectionStatus  string
+	SecondConnectionStatus string
 }
 
 type PublicOfficialResultView struct {
@@ -233,12 +247,18 @@ type PublicOfficialResultView struct {
 }
 
 type PublicDraftView struct {
-	SeriesID           uuid.UUID
-	Format             string
-	State              string
-	Pool               []string
-	SelectedCategories []string
-	Actions            []PublicDraftActionView
+	SeriesID                uuid.UUID
+	Format                  string
+	State                   string
+	FirstActorDisplayName   string
+	CurrentTurn             *int
+	CurrentAction           *string
+	CurrentActorDisplayName *string
+	TurnDeadline            *time.Time
+	AutoActionPending       bool
+	Pool                    []string
+	SelectedCategories      []string
+	Actions                 []PublicDraftActionView
 }
 
 type PublicDraftActionView struct {
@@ -247,6 +267,7 @@ type PublicDraftActionView struct {
 	Category         string
 	ActorDisplayName string
 	OccurredAt       time.Time
+	Automatic        bool
 }
 
 type OperatorSnapshotView struct {

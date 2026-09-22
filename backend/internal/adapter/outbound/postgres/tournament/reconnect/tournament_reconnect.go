@@ -1126,10 +1126,11 @@ func validateReconnectMutationDelta(
 		next.Series.TournamentID != current.Scope.TournamentID {
 		return domain.ErrValidation
 	}
-	if next.Game.State != current.Game.State &&
-		!((current.Game.State == domain.GameStateActive && next.Game.State == domain.GameStatePaused) ||
+	stateTransitionAllowed :=
+		(current.Game.State == domain.GameStateActive && next.Game.State == domain.GameStatePaused) ||
 			(current.Game.State == domain.GameStatePaused && next.Game.State == domain.GameStateActive) ||
-			next.Game.State.IsTerminal()) {
+			next.Game.State.IsTerminal()
+	if next.Game.State != current.Game.State && !stateTransitionAllowed {
 		return domain.ErrValidation
 	}
 	if next.Game.State.IsTerminal() {

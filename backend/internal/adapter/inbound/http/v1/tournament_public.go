@@ -456,6 +456,14 @@ func publicLiveSeriesItem(item tournamentsnapshot.PublicSeriesView) (api.PublicL
 		value := int32(*item.RoundNumber) //nolint:gosec // the public round range is validated immediately above
 		roundNumber = &value
 	}
+	var currentGame *api.PublicLiveGame
+	if item.CurrentGame != nil {
+		game, ok := publicLiveGameItem(*item.CurrentGame)
+		if !ok {
+			return api.PublicLiveSeries{}, domain.ErrInternal
+		}
+		currentGame = &game
+	}
 	firstWins := int32(item.FirstWins)   //nolint:gosec // the public score range is validated immediately above
 	secondWins := int32(item.SecondWins) //nolint:gosec // the public score range is validated immediately above
 	return api.PublicLiveSeries{
@@ -468,8 +476,105 @@ func publicLiveSeriesItem(item tournamentsnapshot.PublicSeriesView) (api.PublicL
 		SecondDisplayName:   item.SecondDisplayName,
 		Score:               api.PublicSeriesScore{FirstWins: firstWins, SecondWins: secondWins},
 		CurrentGamePosition: currentGamePosition,
+		CurrentGame:         currentGame,
 		ScheduledAt:         cloneTimePointer(item.ScheduledAt),
 	}, nil
+}
+
+func publicLiveGameItem(item tournamentsnapshot.PublicCurrentGameView) (api.PublicLiveGame, bool) {
+	state := api.GameState(item.State)
+	category := api.Category(item.Category)
+	firstStatus := api.PublicConnectionStatus(item.FirstConnectionStatus)
+	secondStatus := api.PublicConnectionStatus(item.SecondConnectionStatus)
+	if !validPublicLiveGameIdentity(item, category, state, firstStatus, secondStatus) ||
+		!validPublicLiveGameLifecycle(item, state) {
+		return api.PublicLiveGame{}, false
+	}
+	reason, ok := publicLiveGameResultReason(item, state)
+	if !ok {
+		return api.PublicLiveGame{}, false
+	}
+	winner, ok := publicLiveGameWinner(item, state)
+	if !ok {
+		return api.PublicLiveGame{}, false
+	}
+	return api.PublicLiveGame{
+		Position:               int32(item.Position), //nolint:gosec // position range is validated above
+		Category:               category,
+		State:                  state,
+		StartedAt:              cloneTimePointer(item.StartedAt),
+		EffectiveDeadline:      cloneTimePointer(item.EffectiveDeadline),
+		FinishedAt:             cloneTimePointer(item.FinishedAt),
+		ResultReason:           reason,
+		WinnerDisplayName:      winner,
+		FirstConnectionStatus:  firstStatus,
+		SecondConnectionStatus: secondStatus,
+	}, true
+}
+
+func validPublicLiveGameIdentity(
+	item tournamentsnapshot.PublicCurrentGameView,
+	category api.Category,
+	state api.GameState,
+	firstStatus api.PublicConnectionStatus,
+	secondStatus api.PublicConnectionStatus,
+) bool {
+	return item.Position >= 1 && item.Position <= 3 && category.Valid() && state.Valid() &&
+		firstStatus.Valid() && secondStatus.Valid() &&
+		(item.StartedAt == nil || domain.IsValidServerTime(*item.StartedAt)) &&
+		(item.EffectiveDeadline == nil || domain.IsValidServerTime(*item.EffectiveDeadline)) &&
+		(item.FinishedAt == nil || domain.IsValidServerTime(*item.FinishedAt))
+}
+
+func validPublicLiveGameLifecycle(item tournamentsnapshot.PublicCurrentGameView, state api.GameState) bool {
+	if !stateTerminal(state) && item.FinishedAt != nil {
+		return false
+	}
+	if stateTerminal(state) && item.FinishedAt == nil {
+		return false
+	}
+	if (state == api.GameStateActive || state == api.GameStatePaused) && item.StartedAt == nil {
+		return false
+	}
+	if state == api.GameStateActive && item.EffectiveDeadline == nil {
+		return false
+	}
+	if state == api.GameStatePaused && item.EffectiveDeadline != nil {
+		return false
+	}
+	return !stateTerminal(state) || item.EffectiveDeadline == nil
+}
+
+func publicLiveGameResultReason(item tournamentsnapshot.PublicCurrentGameView, state api.GameState) (*string, bool) {
+	if item.ResultReason == nil {
+		return nil, !stateTerminal(state)
+	}
+	if !domain.GameResultReason(*item.ResultReason).IsLegalFor(domain.GameState(state)) {
+		return nil, false
+	}
+	value := *item.ResultReason
+	return &value, true
+}
+
+func publicLiveGameWinner(item tournamentsnapshot.PublicCurrentGameView, state api.GameState) (*string, bool) {
+	if item.WinnerDisplayName == nil {
+		return nil, state != api.GameStateCompleted
+	}
+	if !publicDisplayNameValid(*item.WinnerDisplayName) || state != api.GameStateCompleted {
+		return nil, false
+	}
+	value := *item.WinnerDisplayName
+	return &value, true
+}
+
+func stateTerminal(state api.GameState) bool {
+	switch state {
+	case api.GameStateCompleted, api.GameStateVoid, api.GameStateCancelled, api.GameStateSuperseded:
+		return true
+	case api.GameStateActive, api.GameStatePaused, api.GameStatePlanned, api.GameStateReady:
+		return false
+	}
+	return false
 }
 
 func validPublicLiveSeries(
@@ -481,6 +586,7 @@ func validPublicLiveSeries(
 	return validPublicLiveSeriesIdentity(item, stage, format, state) &&
 		validPublicLiveSeriesScore(item) &&
 		validPublicLiveSeriesRound(stage, item.RoundNumber) &&
+		(item.CurrentGame == nil || item.CurrentGamePosition == item.CurrentGame.Position) &&
 		(item.ScheduledAt == nil || domain.IsValidServerTime(*item.ScheduledAt))
 }
 
@@ -547,7 +653,9 @@ func publicLiveDraftResponse(
 	draft := view.Draft
 	format := api.SeriesFormat(draft.Format)
 	state := api.DraftState(draft.State)
-	if draft.SeriesID == uuid.Nil || !format.Valid() || !state.Valid() {
+	if draft.SeriesID == uuid.Nil || !format.Valid() || !state.Valid() ||
+		!publicDisplayNameValid(draft.FirstActorDisplayName) ||
+		!validPublicDraftCardinalityHTTP(format, draft.Pool, draft.SelectedCategories, draft.Actions, state) {
 		return nil, domain.ErrInternal
 	}
 	pool := make([]api.Category, len(draft.Pool))
@@ -568,8 +676,8 @@ func publicLiveDraftResponse(
 	for index, item := range draft.Actions {
 		action := api.DraftActionType(item.Action)
 		category := api.Category(item.Category)
-		if item.Turn < 1 || item.Turn > math.MaxInt32 || !action.Valid() || !category.Valid() ||
-			strings.TrimSpace(item.ActorDisplayName) == "" || !domain.IsValidServerTime(item.OccurredAt) {
+		if item.Turn != index+1 || item.Turn < 1 || item.Turn > math.MaxInt32 || !action.Valid() || !category.Valid() ||
+			!publicDisplayNameValid(item.ActorDisplayName) || !domain.IsValidServerTime(item.OccurredAt) {
 			return nil, domain.ErrInternal
 		}
 		actions[index] = api.PublicDraftAction{
@@ -578,16 +686,103 @@ func publicLiveDraftResponse(
 			Category:         category,
 			ActorDisplayName: item.ActorDisplayName,
 			OccurredAt:       item.OccurredAt,
+			Automatic:        item.Automatic,
 		}
 	}
+	var currentTurn *int32
+	if draft.CurrentTurn != nil {
+		if *draft.CurrentTurn < 1 || *draft.CurrentTurn > 4 {
+			return nil, domain.ErrInternal
+		}
+		value := int32(*draft.CurrentTurn)
+		currentTurn = &value
+	}
+	var currentAction *api.DraftActionType
+	if draft.CurrentAction != nil {
+		action := api.DraftActionType(*draft.CurrentAction)
+		if !action.Valid() {
+			return nil, domain.ErrInternal
+		}
+		currentAction = &action
+	}
+	if draft.CurrentActorDisplayName != nil && !publicDisplayNameValid(*draft.CurrentActorDisplayName) {
+		return nil, domain.ErrInternal
+	}
+	if draft.TurnDeadline != nil && !domain.IsValidServerTime(*draft.TurnDeadline) {
+		return nil, domain.ErrInternal
+	}
+	if state == api.DraftStateActive || state == api.DraftStatePaused || state == api.DraftStateRecoveryRequired {
+		if currentTurn == nil || currentAction == nil || draft.CurrentActorDisplayName == nil {
+			return nil, domain.ErrInternal
+		}
+		if state == api.DraftStateActive && draft.TurnDeadline == nil {
+			return nil, domain.ErrInternal
+		}
+		if state != api.DraftStateActive && draft.TurnDeadline != nil {
+			return nil, domain.ErrInternal
+		}
+	} else if currentTurn != nil || currentAction != nil || draft.CurrentActorDisplayName != nil || draft.TurnDeadline != nil || draft.AutoActionPending {
+		return nil, domain.ErrInternal
+	}
 	return &api.PublicLiveDraftResponse{
-		TournamentId:       view.Tournament.TournamentID,
-		ProjectionRevision: view.Cursor.ProjectionRevision,
-		SeriesId:           draft.SeriesID,
-		Format:             format,
-		State:              state,
-		Pool:               pool,
-		SelectedCategories: selected,
-		Actions:            actions,
+		TournamentId:            view.Tournament.TournamentID,
+		ProjectionRevision:      view.Cursor.ProjectionRevision,
+		SeriesId:                draft.SeriesID,
+		Format:                  format,
+		State:                   state,
+		FirstActorDisplayName:   draft.FirstActorDisplayName,
+		CurrentTurn:             currentTurn,
+		CurrentAction:           currentAction,
+		CurrentActorDisplayName: cloneStringPointer(draft.CurrentActorDisplayName),
+		TurnDeadline:            cloneTimePointer(draft.TurnDeadline),
+		AutoActionPending:       draft.AutoActionPending,
+		Pool:                    pool,
+		SelectedCategories:      selected,
+		Actions:                 actions,
 	}, nil
+}
+
+func validPublicDraftCardinalityHTTP(
+	format api.SeriesFormat,
+	pool []string,
+	selected []string,
+	actions []tournamentsnapshot.PublicDraftActionView,
+	state api.DraftState,
+) bool {
+	var poolCount, actionCount, selectedCount int
+	switch format {
+	case api.Bo1:
+		poolCount, actionCount, selectedCount = 3, 2, 1
+	case api.Bo3:
+		poolCount, actionCount, selectedCount = 5, 4, 3
+	default:
+		return false
+	}
+	if len(pool) != poolCount || len(selected) > selectedCount || len(actions) > actionCount {
+		return false
+	}
+	seenPool := make(map[string]struct{}, len(pool))
+	for _, value := range pool {
+		if !api.Category(value).Valid() {
+			return false
+		}
+		if _, exists := seenPool[value]; exists {
+			return false
+		}
+		seenPool[value] = struct{}{}
+	}
+	seenSelected := make(map[string]struct{}, len(selected))
+	for _, value := range selected {
+		if _, exists := seenPool[value]; !exists {
+			return false
+		}
+		if _, exists := seenSelected[value]; exists {
+			return false
+		}
+		seenSelected[value] = struct{}{}
+	}
+	if state == api.DraftStateCompleted {
+		return len(actions) == actionCount && len(selected) == selectedCount
+	}
+	return len(selected) == 0
 }

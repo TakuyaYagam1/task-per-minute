@@ -243,7 +243,7 @@ func (r *TournamentSnapshotPostgres) loadPublicSnapshot(
 	if view.OfficialResults, err = publicTournamentReadResults(ctx, querier, tournamentID); err != nil {
 		return err
 	}
-	view.Draft, err = publicTournamentReadDraft(ctx, querier, tournamentID)
+	view.Draft, err = publicTournamentReadDraft(ctx, querier, tournamentID, cursor.ObservedAt)
 	return err
 }
 

@@ -1,6 +1,7 @@
 PresenceState:
   type: string
   enum: [connected, disconnected]
+  x-enum-varnames: [Connected, Disconnected]
 
 ReconnectState:
   type: string
@@ -477,11 +478,62 @@ PublicSeriesScore:
       minimum: 0
       maximum: 2
 
+PublicConnectionStatus:
+  type: string
+  enum: [connected, disconnected, unknown]
+  x-enum-varnames: [PublicConnected, PublicDisconnected, PublicUnknown]
+
+PublicLiveGame:
+  type: object
+  description: Allowlisted live game display data without private execution evidence.
+  additionalProperties: false
+  required: [position, category, state, started_at, effective_deadline, finished_at, result_reason, winner_display_name, first_connection_status, second_connection_status]
+  properties:
+    position:
+      type: integer
+      format: int32
+      minimum: 1
+      maximum: 3
+    category:
+      $ref: '#/Category'
+    state:
+      $ref: '#/GameState'
+    started_at:
+      type: string
+      format: date-time
+      nullable: true
+      readOnly: true
+    effective_deadline:
+      type: string
+      format: date-time
+      nullable: true
+      description: Server-authoritative deadline. Null while paused or after a terminal transition.
+      readOnly: true
+    finished_at:
+      type: string
+      format: date-time
+      nullable: true
+      readOnly: true
+    result_reason:
+      type: string
+      nullable: true
+      maxLength: 40
+      readOnly: true
+    winner_display_name:
+      type: string
+      nullable: true
+      maxLength: 64
+      readOnly: true
+    first_connection_status:
+      $ref: '#/PublicConnectionStatus'
+    second_connection_status:
+      $ref: '#/PublicConnectionStatus'
+
 PublicLiveSeries:
   type: object
   description: Allowlisted live series display data; participant and task data are excluded.
   additionalProperties: false
-  required: [series_id, stage, round_number, format, state, first_display_name, second_display_name, score, scheduled_at]
+  required: [series_id, stage, round_number, format, state, first_display_name, second_display_name, score, current_game, scheduled_at]
   properties:
     series_id:
       type: string
@@ -514,6 +566,11 @@ PublicLiveSeries:
       format: int32
       minimum: 0
       maximum: 3
+    current_game:
+      type: object
+      nullable: true
+      allOf:
+        - $ref: '#/PublicLiveGame'
     scheduled_at:
       type: string
       format: date-time

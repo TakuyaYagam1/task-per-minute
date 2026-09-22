@@ -520,10 +520,11 @@ type Querier interface {
 	GetResultSubmissionEventByIdempotencyKey(ctx context.Context, idempotencyKey uuid.UUID) (SubmissionEvent, error)
 	GetSeriesScoreRevisionByID(ctx context.Context, id uuid.UUID) (SeriesScoreRevision, error)
 	GetSwissBye(ctx context.Context, roundID uuid.UUID) (SwissBye, error)
-	// Swiss BO1 draft deadlines are scanned from the immutable current draft
-	// revision.  The Swiss Wave link excludes playoff drafts, while the
-	// tournament and Series predicates keep paused, cancelled, and already
-	// materialized rows out of the automatic-action path.
+	// Normal draft deadlines are scanned from the immutable current draft
+	// revision. Swiss BO1 drafts are linked through their planned Wave, while
+	// playoff final BO3 drafts are linked through their immutable final-stage
+	// record. The tournament and Series predicates keep paused, cancelled, and
+	// already materialized rows out of the automatic-action path.
 	GetSwissDraftDeadlineIdentity(ctx context.Context, draftID uuid.UUID) (GetSwissDraftDeadlineIdentityRow, error)
 	GetSwissRepeatOverride(ctx context.Context, roundID uuid.UUID) (SwissRepeatOverride, error)
 	GetSwissRound(ctx context.Context, id uuid.UUID) (SwissRound, error)
@@ -800,6 +801,10 @@ type Querier interface {
 	LockExactNormalAssignmentSwissStage(ctx context.Context, arg LockExactNormalAssignmentSwissStageParams) (LockExactNormalAssignmentSwissStageRow, error)
 	LockExecutionAuthorityScope(ctx context.Context, tournamentID uuid.UUID) (uuid.UUID, error)
 	LockExecutionEpochReplayFence(ctx context.Context, arg LockExecutionEpochReplayFenceParams) (LockExecutionEpochReplayFenceRow, error)
+	// Final BO3 drafts have no Swiss Wave link before activation. Lock their
+	// immutable final-stage authority separately because PostgreSQL does not
+	// permit row-locking clauses on a UNION query.
+	LockFinalDraftDeadlineCommit(ctx context.Context, arg LockFinalDraftDeadlineCommitParams) (LockFinalDraftDeadlineCommitRow, error)
 	LockFinalProjectionAggregate(ctx context.Context, arg LockFinalProjectionAggregateParams) (LockFinalProjectionAggregateRow, error)
 	LockFinalProjectionAttempts(ctx context.Context, arg LockFinalProjectionAttemptsParams) ([]LockFinalProjectionAttemptsRow, error)
 	LockFinalProjectionResultCommits(ctx context.Context, arg LockFinalProjectionResultCommitsParams) ([]LockFinalProjectionResultCommitsRow, error)
@@ -921,8 +926,9 @@ type Querier interface {
 	LockSwissDraftAssignmentSource(ctx context.Context, planID uuid.UUID) (LockSwissDraftAssignmentSourceRow, error)
 	LockSwissDraftCompletion(ctx context.Context, draftID uuid.UUID) (LockSwissDraftCompletionRow, error)
 	// The caller takes the Tournament -> Roster/Projection prefix first. This
-	// query then locks only the Swiss draft scope and its current immutable
-	// revision, so pause/cancel and participant actions serialize before CAS.
+	// query then locks the draft scope and its current immutable revision, so
+	// pause/cancel, final activation, and participant actions serialize before
+	// CAS.
 	LockSwissDraftDeadlineCommit(ctx context.Context, arg LockSwissDraftDeadlineCommitParams) (LockSwissDraftDeadlineCommitRow, error)
 	LockSwissDraftPlanningCandidates(ctx context.Context, arg LockSwissDraftPlanningCandidatesParams) ([]LockSwissDraftPlanningCandidatesRow, error)
 	LockSwissDraftPlanningHistory(ctx context.Context, draftID uuid.UUID) ([]LockSwissDraftPlanningHistoryRow, error)

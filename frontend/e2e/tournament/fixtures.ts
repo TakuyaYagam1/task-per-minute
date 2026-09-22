@@ -204,6 +204,7 @@ export const publicRecovery = (projectionRevision = 9, eventSequence = 14): Sche
   bracket: publicBracket(projectionRevision),
   live_draft: null,
   live_series: [{
+    current_game: null,
     current_game_position: 2,
     first_display_name: "Алиса",
     format: "bo3",
