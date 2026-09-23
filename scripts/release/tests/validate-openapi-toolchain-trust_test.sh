@@ -7,9 +7,8 @@ POLICY="$REPO_ROOT/docs/engineering/openapi-toolchain-trust.md"
 PACKAGE_JSON="$REPO_ROOT/frontend/package.json"
 PACKAGE_LOCK="$REPO_ROOT/frontend/package-lock.json"
 NPM_USERCONFIG="$REPO_ROOT/frontend/config/npm-empty-userconfig"
-GO_MOD="$REPO_ROOT/backend/tools/openapi/go.mod"
-GO_SUM="$REPO_ROOT/backend/tools/openapi/go.sum"
-TOOLS_GO="$REPO_ROOT/backend/tools/openapi/tools.go"
+GO_MOD="$REPO_ROOT/backend/go.mod"
+GO_SUM="$REPO_ROOT/backend/go.sum"
 
 TEST_TMP="$(mktemp -d "${TMPDIR:-/tmp}/openapi-trust-test.XXXXXX")"
 trap 'rm -rf -- "$TEST_TMP"' EXIT
@@ -21,8 +20,7 @@ run_validator() {
     --package-lock "$1/package-lock.json" \
     --npm-userconfig "$1/npm-empty-userconfig" \
     --go-mod "$1/go.mod" \
-    --go-sum "$1/go.sum" \
-    --tools-go "$1/tools.go"
+    --go-sum "$1/go.sum"
 }
 
 make_fixture() {
@@ -35,7 +33,6 @@ make_fixture() {
   cp "$NPM_USERCONFIG" "$fixture/npm-empty-userconfig"
   cp "$GO_MOD" "$fixture/go.mod"
   cp "$GO_SUM" "$fixture/go.sum"
-  cp "$TOOLS_GO" "$fixture/tools.go"
   printf '%s\n' "$fixture"
 }
 
@@ -106,7 +103,7 @@ sed -i 's#openapi-typescript/-/openapi-typescript-7.13.0.tgz#openapi-typescript/
 expect_reject wrong-openapi-typescript-tarball "$fixture"
 
 fixture="$(make_fixture advisory-gate-bypass)"
-sed -i 's# && bash ../scripts/release/validate-openapi-toolchain-trust.sh##' "$fixture/package.json"
+sed -i 's# && bash ../scripts/release/run-npm-build-tool-audit.sh##' "$fixture/package.json"
 expect_reject advisory-gate-bypass "$fixture"
 
 fixture="$(make_fixture unnamed-trust-decision)"

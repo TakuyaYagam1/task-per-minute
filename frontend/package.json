@@ -13,7 +13,7 @@
     "openapi:generate": "bash ../backend/scripts/openapi-generate.sh",
     "codegen": "npm run openapi:generate",
     "gen:types": "npm run openapi:generate",
-    "audit:dependencies": "node ../scripts/release/validate-dependency-advisories.mjs && bash ../scripts/release/validate-openapi-toolchain-trust.sh",
+    "audit:dependencies": "bash ../scripts/release/run-npm-audit.sh && bash ../scripts/release/run-npm-build-tool-audit.sh",
     "test:e2e": "node scripts/run-e2e.mjs",
     "test:e2e:live": "E2E_LIVE=1 node scripts/run-e2e.mjs e2e/live-backend.spec.ts",
     "test:e2e:full-stack": "bash ../scripts/release/verify-security-tools.sh --scope frontend && ../scripts/e2e-local-compose.sh",

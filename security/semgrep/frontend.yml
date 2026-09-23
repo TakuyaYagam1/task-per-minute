@@ -1,0 +1,21 @@
+rules:
+  - id: frontend-no-dynamic-code
+    languages: [javascript, typescript]
+    message: Dynamic code execution is not allowed in the frontend boundary.
+    severity: ERROR
+    patterns:
+      - pattern-either:
+          - pattern: eval(...)
+          - pattern: new Function(...)
+
+  - id: frontend-no-document-write
+    languages: [javascript, typescript]
+    message: document.write can bypass the frontend rendering boundary.
+    severity: ERROR
+    pattern: document.write(...)
+
+  - id: frontend-no-inner-html-assignment
+    languages: [javascript, typescript]
+    message: Direct innerHTML assignment is not allowed in frontend sources.
+    severity: ERROR
+    pattern: $TARGET.innerHTML = $VALUE

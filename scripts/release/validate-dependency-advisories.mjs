@@ -1,39 +1,113 @@
 #!/usr/bin/env node
 
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = resolve(scriptDir, "../..");
-const frontendRoot = resolve(repositoryRoot, "frontend");
+const frontendRoot = resolve(
+  process.env.DEPENDENCY_AUDIT_FRONTEND_ROOT || resolve(repositoryRoot, "frontend"),
+);
 const userConfig = resolve(frontendRoot, "config/npm-empty-userconfig");
 const exceptionPath = process.env.DEPENDENCY_AUDIT_EXCEPTIONS ||
   resolve(frontendRoot, "config/npm-audit-exceptions.json");
 const npmCommand = process.env.NPM_BIN || "npm";
+let expectedDependencyTotal;
+try {
+  const lockfile = JSON.parse(readFileSync(resolve(frontendRoot, "package-lock.json"), "utf8"));
+  expectedDependencyTotal = Object.keys(lockfile.packages || {}).filter((name) => name !== "").length;
+} catch (error) {
+  fail(`cannot read package-lock.json: ${error.message}`);
+}
+if (!Number.isInteger(expectedDependencyTotal) || expectedDependencyTotal < 1) {
+  fail("package-lock.json has no resolved dependency entries");
+}
 
 function fail(message) {
   process.stderr.write(`dependency advisory validation: ${message}\n`);
   process.exit(1);
 }
 
-function audit(argumentsList) {
-  const result = spawnSync(npmCommand, ["audit", ...argumentsList, "--json"], {
+function audit(name, argumentsList) {
+  const command = process.env.NPM_NODE && process.env.NPM_CLI ? process.env.NPM_NODE : npmCommand;
+  const commandArguments = process.env.NPM_NODE && process.env.NPM_CLI
+    ? [process.env.NPM_CLI, "audit", ...argumentsList, "--json"]
+    : ["audit", ...argumentsList, "--json"];
+  const result = spawnSync(command, commandArguments, {
     cwd: frontendRoot,
     encoding: "utf8",
     env: {
-      ...process.env,
+      HOME: "/nonexistent",
+      LANG: "C",
+      LC_ALL: "C",
+      NO_COLOR: "1",
+      PATH: process.env.AUDIT_RUNTIME_PATH || "/run/current-system/sw/bin:/usr/bin:/bin",
       npm_config_ignore_scripts: "true",
       npm_config_userconfig: userConfig,
+      npm_config_registry: "https://registry.npmjs.org/",
     },
   });
   if (result.error) fail(`cannot execute npm audit: ${result.error.message}`);
   if (result.status !== 0 && result.status !== 1) {
     fail(`npm audit failed with status ${result.status}: ${result.stderr.trim()}`);
   }
+  if (process.env.DEPENDENCY_AUDIT_REPORT_DIR) {
+    writeFileSync(
+      resolve(process.env.DEPENDENCY_AUDIT_REPORT_DIR, `${name}.json`),
+      result.stdout,
+      { mode: 0o600 },
+    );
+  }
   try {
-    return JSON.parse(result.stdout);
+    const report = JSON.parse(result.stdout);
+    if (!report || typeof report !== "object" || Array.isArray(report)) fail("npm audit returned a non-object report");
+    if (report.error) fail("npm audit returned an error object");
+    if (report.auditReportVersion !== 2 || !report.metadata || typeof report.metadata !== "object") {
+      fail("npm audit report is incomplete");
+    }
+    if (!report.metadata.dependencies || typeof report.metadata.dependencies !== "object") {
+      fail("npm audit dependency scope is missing");
+    }
+    if (!Number.isInteger(report.metadata.dependencies.total)) {
+      fail("npm audit dependency total is missing");
+    }
+    for (const field of ["prod", "dev", "optional", "peer", "peerOptional", "total"]) {
+      if (!Number.isInteger(report.metadata.dependencies[field]) || report.metadata.dependencies[field] < 0) {
+        fail(`npm audit dependency scope field is missing: ${field}`);
+      }
+    }
+    if (!report.vulnerabilities || typeof report.vulnerabilities !== "object" || Array.isArray(report.vulnerabilities)) {
+      fail("npm audit vulnerability scope is missing");
+    }
+    for (const field of ["info", "low", "moderate", "high", "critical", "total"]) {
+      if (!Number.isInteger(report.metadata.vulnerabilities?.[field]) || report.metadata.vulnerabilities[field] < 0) {
+        fail(`npm audit vulnerability scope field is missing: ${field}`);
+      }
+    }
+    const severityCounts = { info: 0, low: 0, moderate: 0, high: 0, critical: 0 };
+    for (const [packageName, vulnerability] of Object.entries(report.vulnerabilities)) {
+      if (!vulnerability || typeof vulnerability !== "object" || !Object.hasOwn(severityCounts, vulnerability.severity)) {
+        fail("npm audit vulnerability entry is malformed: " + packageName);
+      }
+      if (!Array.isArray(vulnerability.via) || vulnerability.via.length === 0) {
+        fail("npm audit vulnerability entry has no causes: " + packageName);
+      }
+      severityCounts[vulnerability.severity] += 1;
+    }
+    for (const field of Object.keys(severityCounts)) {
+      if (report.metadata.vulnerabilities[field] !== severityCounts[field]) {
+        fail("npm audit vulnerability counter disagrees with findings: " + field);
+      }
+    }
+    if (report.metadata.vulnerabilities.total !== Object.keys(report.vulnerabilities).length) {
+      fail("npm audit vulnerability total disagrees with findings");
+    }
+    if (report.metadata.dependencies.total !== expectedDependencyTotal) {
+      fail(`npm audit dependency total does not cover package-lock.json: ${report.metadata.dependencies.total} != ${expectedDependencyTotal}`);
+    }
+    return report;
   } catch {
     fail("npm audit returned malformed JSON");
   }
@@ -90,11 +164,10 @@ function totalFindings(report) {
 }
 
 const exceptions = loadExceptions();
-const production = audit(["--omit=dev"]);
+const production = audit("production", ["--omit=dev", "--package-lock-only", "--include=prod"]);
 const productionTotal = totalFindings(production);
-if (productionTotal !== 0) fail(`${productionTotal} production findings are not exception eligible`);
 
-const complete = audit([]);
+const complete = audit("complete", ["--package-lock-only", "--include=dev"]);
 const completeTotal = totalFindings(complete);
 const advisories = [];
 for (const [packageName, vulnerability] of Object.entries(complete.vulnerabilities || {})) {
@@ -115,5 +188,6 @@ if (completeTotal !== 0 && unique.size === 0) fail("npm audit findings have no r
 for (const exception of exceptions) {
   if (!exception.used) fail(`stale exception ${exception.advisory_id} in ${exception.package}`);
 }
+if (productionTotal !== 0) fail(`${productionTotal} production findings are not exception eligible`);
 
 process.stdout.write(`dependency advisory validation passed: ${completeTotal} findings, ${exceptions.length} reviewed exceptions\n`);

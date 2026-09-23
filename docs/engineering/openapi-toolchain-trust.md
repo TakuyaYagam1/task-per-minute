@@ -160,7 +160,7 @@ Official evidence:
 
 The Go proxy and checksum database map v2.8.0 to the official repository tag
 and commit `de2d8b2b0afb287198554eb305bb0d2687d26a85`. The release requires Go
-1.24.4 or newer; the isolated tools module records Go 1.25 and the repository
+1.24.4 or newer; the backend main module records Go 1.26.8 and the repository
 uses Go 1.26. The module and go.mod checksums are pinned above.
 
 Version 2.8.0 follows the v2.7.x fixes for generated-code injection through
@@ -193,7 +193,7 @@ registry archives with SHA-512 integrity. Lock preparation and installation use
 the credential-free npm config and disable lifecycle scripts. The generator
 requires installed local binaries whose identities match the lock.
 
-`backend/tools/openapi/go.sum` locks the isolated Go tool graph. Normal
+`backend/go.sum` locks the module-managed Go tool graph. Normal
 generation runs `go mod verify` and builds with local toolchain, offline module
 resolution, read-only module mode, and no workspace override. Missing cached
 dependencies fail closed.

@@ -6,9 +6,8 @@ POLICY="$REPO_ROOT/docs/engineering/openapi-toolchain-trust.md"
 PACKAGE_JSON="$REPO_ROOT/frontend/package.json"
 PACKAGE_LOCK="$REPO_ROOT/frontend/package-lock.json"
 NPM_USERCONFIG="$REPO_ROOT/frontend/config/npm-empty-userconfig"
-GO_MOD="$REPO_ROOT/backend/tools/openapi/go.mod"
-GO_SUM="$REPO_ROOT/backend/tools/openapi/go.sum"
-TOOLS_GO="$REPO_ROOT/backend/tools/openapi/tools.go"
+GO_MOD="$REPO_ROOT/backend/go.mod"
+GO_SUM="$REPO_ROOT/backend/go.sum"
 
 fail() {
   printf 'openapi toolchain trust: %s\n' "$*" >&2
@@ -16,7 +15,7 @@ fail() {
 }
 
 usage() {
-  printf '%s\n' 'usage: validate-openapi-toolchain-trust.sh [--policy PATH] [--package-json PATH] [--package-lock PATH] [--npm-userconfig PATH] [--go-mod PATH] [--go-sum PATH] [--tools-go PATH]'
+  printf '%s\n' 'usage: validate-openapi-toolchain-trust.sh [--policy PATH] [--package-json PATH] [--package-lock PATH] [--npm-userconfig PATH] [--go-mod PATH] [--go-sum PATH]'
 }
 
 while [ "$#" -gt 0 ]; do
@@ -27,13 +26,12 @@ while [ "$#" -gt 0 ]; do
     --npm-userconfig) NPM_USERCONFIG="${2:-}"; shift 2 ;;
     --go-mod) GO_MOD="${2:-}"; shift 2 ;;
     --go-sum) GO_SUM="${2:-}"; shift 2 ;;
-    --tools-go) TOOLS_GO="${2:-}"; shift 2 ;;
     --help) usage; exit 0 ;;
     *) usage >&2; fail "unknown argument: $1" ;;
   esac
 done
 
-for required_file in "$POLICY" "$PACKAGE_JSON" "$PACKAGE_LOCK" "$NPM_USERCONFIG" "$GO_MOD" "$GO_SUM" "$TOOLS_GO"; do
+for required_file in "$POLICY" "$PACKAGE_JSON" "$PACKAGE_LOCK" "$NPM_USERCONFIG" "$GO_MOD" "$GO_SUM"; do
   [ -f "$required_file" ] || fail "required file not found: $required_file"
 done
 
@@ -178,7 +176,7 @@ const expectedYamlIntegrity = process.argv[5];
 const expectedOpenapiTypescriptIntegrity = process.argv[6];
 const expectedJsYamlIntegrity = process.argv[7];
 const lifecycle = ['preinstall', 'install', 'postinstall', 'prepare'];
-const auditScript = 'node ../scripts/release/validate-dependency-advisories.mjs && bash ../scripts/release/validate-openapi-toolchain-trust.sh';
+const auditScript = 'bash ../scripts/release/run-npm-audit.sh && bash ../scripts/release/run-npm-build-tool-audit.sh';
 
 if (packageJson.devDependencies?.['@redocly/cli'] !== '2.51.2') {
   fail('package.json must pin @redocly/cli to 2.51.2');
@@ -273,11 +271,14 @@ for (const [name, entry] of Object.entries(packageLock.packages || {})) {
 }
 NODE
 
-grep -Fxq 'module task-per-minute/tools/openapi' "$GO_MOD" || fail 'unexpected tools module identity'
-grep -Fxq 'go 1.25.0' "$GO_MOD" || fail 'unexpected tools module Go version'
-grep -Fxq 'require github.com/oapi-codegen/oapi-codegen/v2 v2.8.0' "$GO_MOD" || fail 'oapi-codegen requirement is missing or mutable'
+grep -Fxq 'module github.com/TakuyaYagam1/task-per-minute' "$GO_MOD" || fail 'unexpected backend module identity'
+grep -Fxq 'go 1.26.8' "$GO_MOD" || fail 'unexpected backend module Go version'
+awk '
+  $1 == "github.com/oapi-codegen/oapi-codegen/v2" && $2 == "v2.8.0" { count++ }
+  END { exit count == 1 ? 0 : 1 }
+' "$GO_MOD" || fail 'oapi-codegen tool is missing or mutable'
 if grep -Eq '^(replace|exclude|retract|toolchain)[[:space:]]' "$GO_MOD"; then
-  fail 'tools module contains a version or source override'
+  fail 'backend module contains a version or source override'
 fi
 
 grep -Fxq "github.com/oapi-codegen/oapi-codegen/v2 v2.8.0 $OAPI_MODULE_SUM" "$GO_SUM" || fail 'oapi-codegen module checksum mismatch'
@@ -296,9 +297,16 @@ done < <(
   ' "$GO_MOD"
 )
 
-grep -Fxq 'import _ "github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen"' "$TOOLS_GO" || fail 'tools.go command identity is missing'
-if grep -Eq 'go:generate|go[[:space:]]+run|@v?[0-9]' "$TOOLS_GO"; then
-  fail 'tools.go contains a transient executor or version override'
-fi
+awk '
+  /^tool \(/ { in_tool = 1; next }
+  in_tool && /^\)/ { in_tool = 0 }
+  in_tool {
+    line = $0
+    sub(/[[:space:]]*\/\/.*$/, "", line)
+    if (line ~ /^[[:space:]]*github\.com\/oapi-codegen\/oapi-codegen\/v2\/cmd\/oapi-codegen[[:space:]]*$/) oapi++
+    if (line ~ /^[[:space:]]*github\.com\/google\/wire\/cmd\/wire[[:space:]]*$/) wire++
+  }
+  END { exit (oapi == 1 && wire == 1) ? 0 : 1 }
+' "$GO_MOD" || fail 'go.mod tool block is missing an exact active command pin'
 
 printf 'openapi toolchain trust validation passed\n'

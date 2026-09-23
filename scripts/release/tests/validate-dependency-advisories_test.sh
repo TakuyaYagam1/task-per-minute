@@ -11,6 +11,8 @@ cat >"$FAKE_NPM" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 
+fixture="$(basename "$0")"
+fixture="${fixture#npm-}"
 is_production=false
 for argument in "$@"; do
   if [ "$argument" = "--omit=dev" ]; then
@@ -18,12 +20,21 @@ for argument in "$@"; do
   fi
 done
 
-if [ "${AUDIT_FIXTURE:-clean}" = "production" ] || { [ "${AUDIT_FIXTURE:-clean}" = "development" ] && [ "$is_production" = false ]; }; then
-  printf '%s\n' '{"vulnerabilities":{"fixture-package":{"via":[{"source":12345}],"severity":"high"}},"metadata":{"vulnerabilities":{"total":1}}}'
+if [ "$fixture" = "wrong-format" ]; then
+  printf '%s\n' '{"auditReportVersion":1,"vulnerabilities":{},"metadata":{"dependencies":{"prod":22,"dev":398,"optional":61,"peer":0,"peerOptional":0,"total":458},"vulnerabilities":{"info":0,"low":0,"moderate":0,"high":0,"critical":0,"total":0}}}'
+  exit 0
+fi
+if [ "$fixture" = "inconsistent" ]; then
+  printf '%s\n' '{"auditReportVersion":2,"vulnerabilities":{"fixture-package":{"via":[{"source":12345}],"severity":"high"}},"metadata":{"dependencies":{"prod":22,"dev":398,"optional":61,"peer":0,"peerOptional":0,"total":458},"vulnerabilities":{"info":0,"low":0,"moderate":0,"high":0,"critical":0,"total":0}}}'
+  exit 0
+fi
+
+if [ "$fixture" = "production" ] || { [ "$fixture" = "development" ] && [ "$is_production" = false ]; }; then
+  printf '%s\n' '{"auditReportVersion":2,"vulnerabilities":{"fixture-package":{"via":[{"source":12345}],"severity":"high"}},"metadata":{"dependencies":{"prod":22,"dev":398,"optional":61,"peer":0,"peerOptional":0,"total":458},"vulnerabilities":{"info":0,"low":0,"moderate":0,"high":1,"critical":0,"total":1}}}'
   exit 1
 fi
 
-printf '%s\n' '{"vulnerabilities":{},"metadata":{"vulnerabilities":{"total":0}}}'
+printf '%s\n' '{"auditReportVersion":2,"vulnerabilities":{},"metadata":{"dependencies":{"prod":22,"dev":398,"optional":61,"peer":0,"peerOptional":0,"total":458},"vulnerabilities":{"info":0,"low":0,"moderate":0,"high":0,"critical":0,"total":0}}}'
 EOF
 chmod +x "$FAKE_NPM"
 
@@ -36,9 +47,10 @@ EOF
 }
 
 run_validator() {
+  local fixture="$1"
+  ln -sf -- "$FAKE_NPM" "$TEST_TMP/npm-$fixture"
   DEPENDENCY_AUDIT_EXCEPTIONS="$TEST_TMP/exceptions.json" \
-    NPM_BIN="$FAKE_NPM" \
-    AUDIT_FIXTURE="$1" \
+    NPM_BIN="$TEST_TMP/npm-$fixture" \
     node "$VALIDATOR"
 }
 
@@ -58,6 +70,8 @@ printf 'PASS: accepted clean dependency graph\n'
 
 expect_reject production-finding production
 expect_reject unreviewed-development-finding development
+expect_reject wrong-audit-format wrong-format
+expect_reject inconsistent-audit inconsistent
 
 reviewed_on="$(date -u +%Y-%m-%d)"
 expires_on="$(date -u -d '+30 days' +%Y-%m-%d)"
