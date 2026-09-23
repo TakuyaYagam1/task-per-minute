@@ -294,6 +294,10 @@ type FullStackPublicSnapshot = {
     round_number: number;
     state: string;
   }>;
+  next_cursor: {
+    event_sequence: number;
+    projection_revision: number;
+  };
   tournament: {
     state: string;
     tournament_id: string;
@@ -589,8 +593,9 @@ const readPublicSnapshotViaApi = async (
     `${backendURL}/api/v1/tournaments/${tournamentID}/snapshot`,
     { headers: { Origin: frontendURL } },
   );
-  expect(response.status(), `public snapshot failed with ${response.status()}`).toBe(200);
-  const snapshot = (await response.json()) as FullStackPublicSnapshot;
+  const responseBody = await response.text();
+  expect(response.status(), `public snapshot failed with ${response.status()}: ${responseBody}`).toBe(200);
+  const snapshot = JSON.parse(responseBody) as FullStackPublicSnapshot;
   expect(snapshot.tournament.tournament_id).toBe(tournamentID);
   return snapshot;
 };
@@ -614,7 +619,7 @@ const collectJSONKeys = (value: unknown, keys: Set<string>): void => {
 const assertPublicProjectionRedacted = (payload: unknown): void => {
   const keys = new Set<string>();
   collectJSONKeys(payload, keys);
-  expect([...keys]).not.toEqual(expect.arrayContaining([
+  const forbiddenKeys = [
     'assignment',
     'assignment_id',
     'audit',
@@ -651,7 +656,10 @@ const assertPublicProjectionRedacted = (payload: unknown): void => {
     'presence_epoch',
     'reconnect_epoch',
     'winner_id',
-  ]));
+  ];
+  for (const key of forbiddenKeys) {
+    expect(keys.has(key), `public projection leaked key ${key}`).toBe(false);
+  }
 };
 
 const applyOpenRegistrationViaApi = async (
@@ -2427,7 +2435,7 @@ test.describe('local compose full stack e2e', () => {
     }
   });
 
-  test('FE-036 and FE-037 real backend correct a result and export its audit evidence', async ({ page, browser }) => {
+  test('FE-036, FE-037, and FE-050 real backend correction audit cancellation and privacy', async ({ page, browser }) => {
     test.setTimeout(600_000);
     page.setDefaultTimeout(15_000);
 
@@ -2435,6 +2443,10 @@ test.describe('local compose full stack e2e', () => {
       first_participant_id: string;
       id: string;
       second_participant_id: string;
+      score: {
+        first_participant_wins: number;
+        second_participant_wins: number;
+      };
       slots: Array<{
         attempts: Array<{
           id: string;
@@ -2452,6 +2464,8 @@ test.describe('local compose full stack e2e', () => {
     const tournamentName = uniqueName('correction');
     const tournamentPublicID = uniqueName('correction-public');
     const playerContexts: BrowserContext[] = [];
+    let publicContext: BrowserContext | null = null;
+    let spectatorPage: Page | null = null;
 
     try {
       await loginThroughAdminUI(page);
@@ -2472,6 +2486,7 @@ test.describe('local compose full stack e2e', () => {
         { category: 'pwn', count: 3 },
       ];
       const normalFlagsByTitle = new Map<string, string>();
+      const privateTaskURL = 'https://example.com/private/correction-normal.zip?expires=1893456000&signature=FE050-private-canary';
       for (const group of normalTaskGroups) {
         for (let index = 0; index < group.count; index += 1) {
           const title = uniqueName(`correction-${group.category}-${index + 1}`);
@@ -2486,7 +2501,7 @@ test.describe('local compose full stack e2e', () => {
             time_limit: 180,
             flag,
             hints: ['correction hint one', 'correction hint two', 'correction hint three'],
-            task_url: 'https://example.com/correction-normal',
+            task_url: privateTaskURL,
           });
         }
       }
@@ -2812,9 +2827,12 @@ test.describe('local compose full stack e2e', () => {
       expect(targetSeries, 'correction target Series missing from operator snapshot').toBeDefined();
       expect(targetGame?.result_revision_id, 'correction target has no source result revision').toBeTruthy();
       expect(operatorSnapshot.tournament.state).toBe('playoffs');
-      if (!targetGame?.result_revision_id) {
-        throw new Error('correction target has no source result revision');
+      if (!targetSeries || !targetGame?.result_revision_id) {
+        throw new Error('correction target has no source result revision or Series');
       }
+      const sourceProjectionRevision = operatorSnapshot.next_cursor.projection_revision;
+      const sourceSeriesScore = targetSeries.score;
+      const sourcePairing = [targetSeries.first_participant_id, targetSeries.second_participant_id];
 
       await page.goto(`/arena/operator/${tournament.id}`, { waitUntil: 'domcontentloaded' });
       await expect(page.getByRole('heading', { name: 'Коррекция результата' })).toBeVisible();
@@ -2851,6 +2869,367 @@ test.describe('local compose full stack e2e', () => {
       expect(Array.isArray(preparedCorrection.unlock_intents)).toBe(true);
       await expect(page.getByText('Новая проекция подтверждена.')).toBeVisible();
 
+      const correctedOperatorSnapshotResponse = await adminRequest.get(
+        `${backendURL}/api/v1/admin/tournaments/${tournament.id}/snapshot`,
+        { headers: { Origin: frontendURL } },
+      );
+      expect(correctedOperatorSnapshotResponse.status()).toBe(200);
+      const correctedOperatorSnapshot = (await correctedOperatorSnapshotResponse.json()) as CorrectionSnapshot;
+      expect(correctedOperatorSnapshot.next_cursor.projection_revision)
+        .toBeGreaterThan(sourceProjectionRevision);
+      const correctedSeries = correctedOperatorSnapshot.series.find(
+        (series) => series.id === correctionTarget.seriesID,
+      );
+      const correctedGame = correctedSeries?.slots.flatMap((slot) => slot.attempts).find(
+        (attempt) => attempt.id === correctionTarget?.gameID,
+      );
+      expect(correctedSeries, 'corrected Series missing from operator projection').toBeDefined();
+      expect(correctedGame?.result_revision_id)
+        .toBeTruthy();
+      expect(correctedGame?.result_revision_id).not.toBe(targetGame.result_revision_id);
+      expect(correctedSeries?.score).not.toEqual(sourceSeriesScore);
+      expect(correctedSeries && [correctedSeries.first_participant_id, correctedSeries.second_participant_id])
+        .toEqual(sourcePairing);
+      expect(
+        correctedOperatorSnapshot.waves.some((wave) =>
+          wave.members.some((member) => member.series_id === correctionTarget?.seriesID)),
+      ).toBe(true);
+
+      const targetParticipantIDs = new Set([
+        targetSeries.first_participant_id,
+        targetSeries.second_participant_id,
+      ]);
+      const targetParticipantIDsInOrder = [
+        targetSeries.first_participant_id,
+        targetSeries.second_participant_id,
+      ];
+      const repeatedCorrectionDraft = {
+        confirmed: preparedCorrection.confirmed,
+        explanation: preparedCorrection.explanation,
+        fields: preparedCorrection.fields,
+        patch: preparedCorrection.patch,
+        reason: preparedCorrection.reason,
+        source_result_revision: preparedCorrection.source_result_revision,
+        expected_projection_revision: correctedOperatorSnapshot.next_cursor.projection_revision,
+      };
+      const repeatedCorrectionResponse = await adminRequest.post(
+        `${backendURL}/api/v1/admin/tournaments/${tournament.id}/series/${correctionTarget.seriesID}/games/${correctionTarget.gameID}/corrections/preflight`,
+        {
+          headers: {
+            'X-CSRF-Token': adminAccessCSRFToken,
+            'Idempotency-Key': randomUUID(),
+            Origin: frontendURL,
+          },
+          data: repeatedCorrectionDraft,
+        },
+      );
+      expect(repeatedCorrectionResponse.status()).toBe(409);
+      const repeatedCorrectionProblem = (await repeatedCorrectionResponse.json()) as {
+        code?: string;
+        current_revision?: number;
+        expected_revision?: number;
+      };
+      expect(repeatedCorrectionProblem.code).toBe('stale_result');
+      expect(repeatedCorrectionProblem.expected_revision)
+        .toBe(correctedOperatorSnapshot.next_cursor.projection_revision);
+      expect(repeatedCorrectionProblem.current_revision)
+        .toBe(correctedOperatorSnapshot.next_cursor.projection_revision);
+      const afterRejectedCorrectionResponse = await adminRequest.get(
+        `${backendURL}/api/v1/admin/tournaments/${tournament.id}/snapshot`,
+        { headers: { Origin: frontendURL } },
+      );
+      expect(afterRejectedCorrectionResponse.status()).toBe(200);
+      expect(await afterRejectedCorrectionResponse.json()).toEqual(correctedOperatorSnapshot);
+
+      let dependentCutoffCode: 'cutoff_wave_started' | 'cutoff_golden_direct_allocated';
+      let startedDependentSnapshot: CorrectionSnapshot;
+      if (correctedOperatorSnapshot.tournament.state === 'golden') {
+        type CorrectionGoldenGroup = {
+          attempt_id: string;
+          group_id: string;
+          members: Array<{ participant_id: string }>;
+          ready_window_id: string;
+          runtime_revision: number;
+          state: string;
+        };
+        type CorrectionGoldenOperatorState = { groups: CorrectionGoldenGroup[] };
+        type CorrectionGoldenParticipantState = {
+          attempt_id: string;
+          ready_window_id: string;
+          runtime_revision: number;
+        };
+
+        const openGoldenResponse = await adminRequest.post(
+          `${backendURL}/api/v1/admin/tournaments/${tournament.id}/golden/open`,
+          {
+            headers: {
+              'X-CSRF-Token': adminAccessCSRFToken,
+              'Idempotency-Key': randomUUID(),
+              Origin: frontendURL,
+            },
+            data: {
+              expected_projection_revision: await getOperatorProjectionRevisionViaApi(adminRequest, tournament.id),
+              expected_runtime_revision: 0,
+            },
+          },
+        );
+        expect(openGoldenResponse.status(), `open dependent Golden failed with ${openGoldenResponse.status()}: ${await openGoldenResponse.text()}`).toBe(200);
+        let goldenState = (await openGoldenResponse.json()) as CorrectionGoldenOperatorState;
+        expect(goldenState.groups.length, `Golden open returned no runtime groups for ${tournament.id}`).toBeGreaterThan(0);
+        const dependentGoldenGroup = goldenState.groups.find((group) =>
+          group.members.some((member) => targetParticipantIDs.has(member.participant_id)),
+        ) ?? goldenState.groups[0];
+        expect(dependentGoldenGroup).toBeDefined();
+        if (!dependentGoldenGroup) {
+          throw new Error('Golden correction did not materialize a dependent group');
+        }
+        const openedGoldenGroup = goldenState.groups.find((group) =>
+          group.group_id === dependentGoldenGroup.group_id,
+        );
+        if (!openedGoldenGroup) {
+          throw new Error('dependent Golden group disappeared after open');
+        }
+        if (openedGoldenGroup.state !== 'active') {
+          for (const member of openedGoldenGroup.members) {
+            const context = contextForParticipant(member.participant_id);
+            const participantResponse = await context.request.get(
+              `${backendURL}/api/v1/tournaments/${tournament.id}/participant/golden`,
+              { headers: { Origin: frontendURL } },
+            );
+            expect(participantResponse.status()).toBe(200);
+            const participant = (await participantResponse.json()) as CorrectionGoldenParticipantState;
+            const csrfToken = (await context.cookies()).find(
+              (cookie) => cookie.name === 'tpm_player_csrf',
+            )?.value;
+            expect(csrfToken).toBeTruthy();
+            const readiness = await context.request.post(
+              `${backendURL}/api/v1/tournaments/${tournament.id}/participant/golden/ready`,
+              {
+                headers: {
+                  'X-CSRF-Token': csrfToken ?? '',
+                  'Idempotency-Key': randomUUID(),
+                  Origin: frontendURL,
+                },
+                data: {
+                  attempt_id: participant.attempt_id,
+                  expected_runtime_revision: participant.runtime_revision,
+                  ready: true,
+                  ready_window_id: participant.ready_window_id,
+                },
+              },
+            );
+            expect(readiness.status(), `dependent Golden readiness failed with ${readiness.status()}: ${await readiness.text()}`).toBe(200);
+          }
+        }
+        const readyGoldenResponse = await adminRequest.get(
+          `${backendURL}/api/v1/admin/tournaments/${tournament.id}/golden`,
+          { headers: { Origin: frontendURL } },
+        );
+        expect(readyGoldenResponse.status()).toBe(200);
+        const readyGoldenState = (await readyGoldenResponse.json()) as CorrectionGoldenOperatorState;
+        const readyGoldenGroup = readyGoldenState.groups.find(
+          (group) => group.group_id === dependentGoldenGroup.group_id,
+        );
+        expect(['active', 'ready']).toContain(readyGoldenGroup?.state);
+        if (!readyGoldenGroup) {
+          throw new Error('dependent Golden group disappeared after readiness');
+        }
+        if (readyGoldenGroup.state !== 'active') {
+          const startGoldenResponse = await adminRequest.post(
+            `${backendURL}/api/v1/admin/tournaments/${tournament.id}/golden/attempts/${readyGoldenGroup.attempt_id}/start`,
+            {
+              headers: {
+                'X-CSRF-Token': adminAccessCSRFToken,
+                'Idempotency-Key': randomUUID(),
+                Origin: frontendURL,
+              },
+              data: {
+                expected_runtime_revision: readyGoldenGroup.runtime_revision,
+                ready_window_id: readyGoldenGroup.ready_window_id,
+              },
+            },
+          );
+          expect(startGoldenResponse.status(), `start dependent Golden failed with ${startGoldenResponse.status()}: ${await startGoldenResponse.text()}`).toBe(200);
+        }
+        dependentCutoffCode = 'cutoff_golden_direct_allocated';
+      } else {
+        const dependentWave = correctedOperatorSnapshot.waves.find((wave) =>
+          wave.state === 'planned' && wave.members.some((member) => targetParticipantIDs.has(member.participant_id)),
+        ) ?? correctedOperatorSnapshot.waves.find((wave) => wave.state === 'planned');
+        expect(dependentWave, 'correction did not materialize a dependent playoff Wave').toBeDefined();
+        if (!dependentWave) {
+          throw new Error('correction did not materialize a dependent playoff Wave');
+        }
+        await waveAction(dependentWave.id, 'open_ready_window');
+        for (const member of dependentWave.members) {
+          const context = contextForParticipant(member.participant_id);
+          const participant = await readParticipantSnapshotViaApi(context, tournament.id);
+          const csrfToken = (await context.cookies()).find(
+            (cookie) => cookie.name === 'tpm_player_csrf',
+          )?.value;
+          expect(csrfToken, `dependent Wave participant ${member.participant_id} did not retain CSRF`).toBeTruthy();
+          const readiness = await context.request.post(
+            `${backendURL}/api/v1/tournaments/${tournament.id}/participant/waves/${dependentWave.id}/ready`,
+            {
+              headers: {
+                'X-CSRF-Token': csrfToken ?? '',
+                'Idempotency-Key': randomUUID(),
+                Origin: frontendURL,
+              },
+              data: {
+                expected_projection_revision: participant.projection_revision,
+                ready: true,
+              },
+            },
+          );
+          expect(readiness.status(), `dependent Wave readiness failed with ${readiness.status()}: ${await readiness.text()}`).toBe(200);
+        }
+        await waveAction(dependentWave.id, 'start');
+        dependentCutoffCode = 'cutoff_wave_started';
+      }
+
+      const startedDependentSnapshotResponse = await adminRequest.get(
+        `${backendURL}/api/v1/admin/tournaments/${tournament.id}/snapshot`,
+        { headers: { Origin: frontendURL } },
+      );
+      expect(startedDependentSnapshotResponse.status()).toBe(200);
+      startedDependentSnapshot = (await startedDependentSnapshotResponse.json()) as CorrectionSnapshot;
+      expect(startedDependentSnapshot.next_cursor.projection_revision)
+        .toBeGreaterThanOrEqual(correctedOperatorSnapshot.next_cursor.projection_revision);
+
+      const lateCorrectionKey = randomUUID();
+      const latePreflightResponse = await adminRequest.post(
+        `${backendURL}/api/v1/admin/tournaments/${tournament.id}/series/${correctionTarget.seriesID}/games/${correctionTarget.gameID}/corrections/preflight`,
+        {
+          headers: {
+            'X-CSRF-Token': adminAccessCSRFToken,
+            'Idempotency-Key': lateCorrectionKey,
+            Origin: frontendURL,
+          },
+          data: {
+            ...repeatedCorrectionDraft,
+            source_result_revision: correctedGame?.result_revision_id,
+            expected_projection_revision: startedDependentSnapshot.next_cursor.projection_revision,
+          },
+        },
+      );
+      expect(latePreflightResponse.status()).toBe(409);
+      const dependentCorrectionProblem = (await latePreflightResponse.json()) as {
+        code?: string;
+        current_revision?: number;
+        expected_revision?: number;
+      };
+      expect(dependentCorrectionProblem.code).toBe(dependentCutoffCode);
+      expect(dependentCorrectionProblem.expected_revision)
+        .toBe(startedDependentSnapshot.next_cursor.projection_revision);
+      expect(dependentCorrectionProblem.current_revision)
+        .toBe(startedDependentSnapshot.next_cursor.projection_revision);
+      const afterDependentCorrectionResponse = await adminRequest.get(
+        `${backendURL}/api/v1/admin/tournaments/${tournament.id}/snapshot`,
+        { headers: { Origin: frontendURL } },
+      );
+      expect(afterDependentCorrectionResponse.status()).toBe(200);
+      expect(await afterDependentCorrectionResponse.json()).toEqual(startedDependentSnapshot);
+
+      const expectedParticipantSeries = new Map<string, string>();
+      for (const wave of startedDependentSnapshot.waves) {
+        if (wave.state === 'completed') {
+          continue;
+        }
+        for (const member of wave.members) {
+          if (
+            targetParticipantIDs.has(member.participant_id) &&
+            typeof member.series_id === 'string' &&
+            member.series_id !== correctionTarget.seriesID
+          ) {
+            expectedParticipantSeries.set(member.participant_id, member.series_id);
+          }
+        }
+      }
+      for (const participantID of targetParticipantIDsInOrder) {
+        expect(expectedParticipantSeries.get(participantID), `missing dependent series for participant ${participantID}`).toEqual(expect.any(String));
+      }
+
+      const correctedParticipantSnapshots = await Promise.all(
+        targetParticipantIDsInOrder.map((participantID) =>
+          readParticipantSnapshotViaApi(contextForParticipant(participantID), tournament.id)),
+      );
+      for (const [index, participantSnapshot] of correctedParticipantSnapshots.entries()) {
+        const participantID = targetParticipantIDsInOrder[index];
+        expect(participantSnapshot.projection_revision)
+          .toBeGreaterThanOrEqual(startedDependentSnapshot.next_cursor.projection_revision);
+        expect(participantSnapshot.series).not.toBeNull();
+        expect(participantSnapshot.series?.id)
+          .toBe(expectedParticipantSeries.get(participantID));
+        expect(participantSnapshot.assignment?.context.series_id)
+          .toBe(participantSnapshot.series?.id);
+        expect(participantSnapshot.series?.slots.length).toBeGreaterThan(0);
+      }
+
+      const correctionTaskTitles = [...normalFlagsByTitle.keys()];
+      const cancellationReason = `FE-050 cancellation ${uniqueName('audit-reason')}`;
+      const privateCanaries = [
+        ...correctionTaskTitles,
+        ...normalFlagsByTitle.values(),
+        privateTaskURL,
+        'correction hint one',
+        'correction hint two',
+        'correction hint three',
+        cancellationReason,
+      ];
+      publicContext = await browser.newContext({ baseURL: frontendURL });
+      const publicFrames: string[] = [];
+      const publicRequests: Array<{ headers: Record<string, string>; url: string }> = [];
+      spectatorPage = await publicContext.newPage();
+      spectatorPage.on('request', (requestEvent) => {
+        if (requestEvent.url().includes(`/api/v1/tournaments/${tournament.id}/`)) {
+          publicRequests.push({ headers: requestEvent.headers(), url: requestEvent.url() });
+        }
+      });
+      spectatorPage.on('websocket', (socket) => {
+        if (!new URL(socket.url()).pathname.endsWith(`/api/v1/tournaments/${tournament.id}/realtime`)) {
+          return;
+        }
+        socket.on('framereceived', (frame) => {
+          publicFrames.push(
+            typeof frame.payload === 'string' ? frame.payload : frame.payload.toString('utf8'),
+          );
+        });
+      });
+      await spectatorPage.goto(`/arena/spectator/${tournament.id}`, { waitUntil: 'domcontentloaded' });
+      const correctedPublicSnapshot = await readPublicSnapshotViaApi(publicContext, tournament.id);
+      expect(correctedPublicSnapshot.next_cursor.projection_revision)
+        .toBeGreaterThanOrEqual(correctedOperatorSnapshot.next_cursor.projection_revision);
+      const correctedPublicResult = correctedPublicSnapshot.official_results.find(
+        (result) => result.series_id === correctionTarget.seriesID,
+      );
+      expect(correctedPublicResult).toBeDefined();
+      expect(correctedPublicResult?.score).toEqual({
+        first_wins: correctedSeries?.score.first_participant_wins,
+        second_wins: correctedSeries?.score.second_participant_wins,
+      });
+      assertPublicProjectionRedacted(correctedPublicSnapshot);
+      const assertPublicWireRedacted = (): void => {
+        for (const frame of publicFrames) {
+          let payload: unknown;
+          try {
+            payload = JSON.parse(frame) as unknown;
+          } catch {
+            continue;
+          }
+          assertPublicProjectionRedacted(payload);
+        }
+        const publicWire = publicFrames.join('\\n');
+        for (const privateCanary of privateCanaries) {
+          expect(publicWire).not.toContain(privateCanary);
+        }
+      };
+      for (const privateCanary of privateCanaries) {
+        expect(JSON.stringify(correctedPublicSnapshot)).not.toContain(privateCanary);
+      }
+      await expect.poll(() => publicFrames.length).toBeGreaterThan(0);
+      assertPublicWireRedacted();
+
       await page.goto('/admin', { waitUntil: 'domcontentloaded' });
       await expect(page.getByRole('button', { name: 'Турниры' })).toBeVisible();
       await page.getByRole('button', { name: 'Турниры' }).click();
@@ -2875,6 +3254,136 @@ test.describe('local compose full stack e2e', () => {
       await expect(auditRegion.getByText('Заменена').first()).toBeVisible();
       await expect(auditRegion.getByText(targetGame.result_revision_id, { exact: true }).first())
         .toBeVisible();
+
+      const currentAdminAccessCSRFToken = (await page.context().cookies()).find(
+        (cookie) => cookie.name === 'tpm_admin_access_csrf',
+      )?.value ?? adminAccessCSRFToken;
+      const revisionBeforeCancellation = await getOperatorProjectionRevisionViaApi(
+        adminRequest,
+        tournament.id,
+      );
+      const cancellationResponse = await adminRequest.post(
+        `${backendURL}/api/v1/admin/tournaments/${tournament.id}/actions`,
+        {
+          headers: {
+            'X-CSRF-Token': currentAdminAccessCSRFToken,
+            'Idempotency-Key': randomUUID(),
+            Origin: frontendURL,
+          },
+          data: {
+            action: 'cancel',
+            confirmed: true,
+            expected_projection_revision: revisionBeforeCancellation,
+            reason: cancellationReason,
+          },
+        },
+      );
+      expect(
+        cancellationResponse.status(),
+        `tournament cancellation failed with ${cancellationResponse.status()}: ${await cancellationResponse.text()}`,
+      ).toBe(200);
+      const cancelledTournament = (await cancellationResponse.json()) as { revision: number; state: string };
+      expect(cancelledTournament.state).toBe('cancelled');
+      expect(cancelledTournament.revision).toBeGreaterThan(0);
+
+      const cancelledProjectionRevision = await getOperatorProjectionRevisionViaApi(
+        adminRequest,
+        tournament.id,
+      );
+      expect(cancelledProjectionRevision).toBeGreaterThanOrEqual(revisionBeforeCancellation);
+      const cancelledOperatorSnapshotResponse = await adminRequest.get(
+        `${backendURL}/api/v1/admin/tournaments/${tournament.id}/snapshot`,
+        { headers: { Origin: frontendURL } },
+      );
+      expect(cancelledOperatorSnapshotResponse.status()).toBe(200);
+      const cancelledOperatorSnapshot = (await cancelledOperatorSnapshotResponse.json()) as CorrectionSnapshot;
+      expect(cancelledOperatorSnapshot.tournament.state).toBe('cancelled');
+      const blockedCommand = await adminRequest.post(
+        `${backendURL}/api/v1/admin/tournaments/${tournament.id}/actions`,
+        {
+          headers: {
+            'X-CSRF-Token': currentAdminAccessCSRFToken,
+            'Idempotency-Key': randomUUID(),
+            Origin: frontendURL,
+          },
+          data: {
+            action: 'pause',
+            confirmed: true,
+            expected_projection_revision: cancelledProjectionRevision,
+            reason: 'FE-050 command after cancellation must be rejected',
+          },
+        },
+      );
+      expect(blockedCommand.status()).toBe(409);
+      const blockedProblem = (await blockedCommand.json()) as {
+        current_revision?: number;
+        current_state?: string;
+        expected_revision?: number;
+      };
+      expect(blockedProblem).toMatchObject({
+        current_revision: cancelledProjectionRevision,
+        current_state: 'cancelled',
+        expected_revision: cancelledProjectionRevision,
+      });
+      const afterBlockedCommandResponse = await adminRequest.get(
+        `${backendURL}/api/v1/admin/tournaments/${tournament.id}/snapshot`,
+        { headers: { Origin: frontendURL } },
+      );
+      expect(afterBlockedCommandResponse.status()).toBe(200);
+      expect(await afterBlockedCommandResponse.json()).toEqual(cancelledOperatorSnapshot);
+
+      const cancelledAuditResponse = await adminRequest.get(
+        `${backendURL}/api/v1/admin/tournament-audit?tournament_id=${tournament.id}`,
+        { headers: { Origin: frontendURL } },
+      );
+      expect(cancelledAuditResponse.status()).toBe(200);
+      const cancelledAudit = (await cancelledAuditResponse.json()) as {
+        events: unknown[];
+        cancellation?: {
+          reason: string;
+          resulting_revision: number;
+          source_projection_revision: number;
+          source_projection_revision_id: string;
+          source_revision: number;
+        };
+      };
+      expect(cancelledAudit.events.length).toBeGreaterThan(0);
+      expect(cancelledAudit.cancellation).toMatchObject({
+        reason: cancellationReason,
+        source_revision: cancelledTournament.revision - 1,
+        resulting_revision: cancelledTournament.revision,
+        source_projection_revision: revisionBeforeCancellation,
+      });
+      expect(cancelledAudit.cancellation?.source_projection_revision_id).toMatch(
+        /^[0-9a-f-]{36}$/,
+      );
+
+      const participantPage = await playerContexts[0]!.newPage();
+      await participantPage.goto(`/arena/participant/${tournament.id}`, { waitUntil: 'domcontentloaded' });
+      await expect(participantPage.getByTestId('participant-player-panel')).toBeVisible();
+      await expect(participantPage.getByTestId('participant-player-panel')).toContainText('Отменен');
+      await expect(participantPage.getByTestId('participant-submit-button')).toHaveCount(0);
+
+      if (!publicContext || !spectatorPage) {
+        throw new Error('public context was not initialized');
+      }
+      const broadcast = spectatorPage.getByTestId('tournament-broadcast');
+      await spectatorPage.reload({ waitUntil: 'domcontentloaded' });
+      await expect(broadcast.getByTestId('broadcast-phase-title')).toHaveText('Турнир отменен');
+      const publicSnapshot = await readPublicSnapshotViaApi(publicContext, tournament.id);
+      const publicSerialized = JSON.stringify(publicSnapshot);
+      assertPublicProjectionRedacted(publicSnapshot);
+      for (const privateCanary of privateCanaries) {
+        expect(publicSerialized).not.toContain(privateCanary);
+      }
+      await expect.poll(() => publicFrames.length).toBeGreaterThan(0);
+      assertPublicWireRedacted();
+      for (const publicRequest of publicRequests) {
+        expect(publicRequest.headers.authorization).toBeUndefined();
+        expect(publicRequest.headers['x-csrf-token']).toBeUndefined();
+        expect(publicRequest.headers.cookie ?? '').not.toContain('tpm_');
+      }
+      await participantPage.close();
 
       const incidentResponsePromise = page.waitForResponse(
         (response) =>
@@ -2905,6 +3414,13 @@ test.describe('local compose full stack e2e', () => {
       expect(Date.parse(incidentBundle.generated_at)).not.toBeNaN();
       expect(incidentBundle.sha256).toMatch(/^[0-9a-f]{64}$/);
       expect(incidentBundle.canonical_content).toBeTruthy();
+      const incidentCanonicalContent = Buffer.from(incidentBundle.canonical_content, 'base64').toString('utf8');
+      expect(incidentCanonicalContent).toContain(cancellationReason);
+      expect(incidentCanonicalContent).toContain(`"source_revision":${cancelledTournament.revision - 1}`);
+      expect(incidentCanonicalContent).toContain(`"resulting_revision":${cancelledTournament.revision}`);
+      for (const privateCanary of privateCanaries.filter((canary) => canary !== cancellationReason)) {
+        expect(incidentCanonicalContent).not.toContain(privateCanary);
+      }
       await expect(page.getByText(incidentBundle.canonical_content, { exact: false })).toHaveCount(0);
 
       const playerIncident = await playerContexts[0]?.request.get(
@@ -2925,6 +3441,8 @@ test.describe('local compose full stack e2e', () => {
         await anonymousContext.close();
       }
     } finally {
+      await spectatorPage?.close();
+      await publicContext?.close();
       for (const context of playerContexts) {
         await context.close();
       }

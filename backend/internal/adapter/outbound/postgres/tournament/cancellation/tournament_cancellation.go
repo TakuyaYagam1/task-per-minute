@@ -247,7 +247,9 @@ func createCancellationEvidence(
 			ID: evidence.auditID, TournamentID: in.TournamentID, RosterID: authority.RosterID,
 			ActorID: nullableUUIDValue(in.ActorID), Reason: in.Reason,
 			SourceRevision: in.ExpectedRevision, ResultingRevision: in.ExpectedRevision + 1,
-			CancelledAt: tstz(in.CancelledAt),
+			SourceProjectionRevisionID: authority.ProjectionRevisionID,
+			SourceProjectionRevision:   authority.ProjectionRevision,
+			CancelledAt:                tstz(in.CancelledAt),
 		},
 	)
 	if err != nil {

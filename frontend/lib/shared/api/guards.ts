@@ -1256,6 +1256,7 @@ export type OperatorAuditRedactedPayload = Readonly<Partial<{
 export type OperatorAuditEvent = Omit<components["schemas"]["AuditEvent"], "redacted_payload"> & {
   readonly redacted_payload: OperatorAuditRedactedPayload;
 };
+export type OperatorCancellationAuditEvent = components["schemas"]["AuditCancellationEvent"];
 export type OperatorAuditPage = Omit<components["schemas"]["AuditPage"], "events"> & {
   readonly events: OperatorAuditEvent[];
 };
@@ -2334,9 +2335,39 @@ export const isAuditEvent = (value: unknown): value is AuditEvent =>
   isNonNilUUID(value.tournament_id) &&
   isOperatorUUIDOrNull(value.winner_id);
 
+export const isCancellationAuditEvent = (value: unknown): value is OperatorCancellationAuditEvent =>
+  isRecord(value) &&
+  hasExactKeys(value, [
+    "actor_id",
+    "audit_event_id",
+    "command_id",
+    "reason",
+    "resulting_revision",
+    "roster_id",
+    "source_projection_revision",
+    "source_projection_revision_id",
+    "source_revision",
+    "tournament_id",
+  ]) &&
+		isNonNilUUID(value.actor_id) &&
+		isNonNilUUID(value.audit_event_id) &&
+		isNonNilUUID(value.command_id) &&
+		isOperatorNonBlank(value.reason) &&
+		value.reason === value.reason.trim() &&
+		value.reason.length <= 512 &&
+		isSafePositiveInteger(value.resulting_revision) &&
+  isNonNilUUID(value.roster_id) &&
+  isSafePositiveInteger(value.source_projection_revision) &&
+  isNonNilUUID(value.source_projection_revision_id) &&
+  isSafePositiveInteger(value.source_revision) &&
+  isNonNilUUID(value.tournament_id) &&
+  value.resulting_revision === value.source_revision + 1;
+
 export const isAuditPage = (value: unknown): value is AuditPage =>
   isRecord(value) &&
-  hasExactKeys(value, ["events", "next_cursor"]) &&
+  (hasExactKeys(value, ["events", "next_cursor"]) ||
+    (hasExactKeys(value, ["events", "next_cursor", "cancellation"]) &&
+      isCancellationAuditEvent(value.cancellation))) &&
   Array.isArray(value.events) &&
   value.events.length <= 200 &&
   value.events.every(isAuditEvent) &&

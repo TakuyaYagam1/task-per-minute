@@ -1739,6 +1739,20 @@ type ArtifactKind string
 // AttendanceState defines model for AttendanceState.
 type AttendanceState string
 
+// AuditCancellationEvent Redacted operator audit for tournament cancellation.
+type AuditCancellationEvent struct {
+	ActorId                    openapi_types.UUID `json:"actor_id"`
+	AuditEventId               openapi_types.UUID `json:"audit_event_id"`
+	CommandId                  openapi_types.UUID `json:"command_id"`
+	Reason                     string             `json:"reason"`
+	ResultingRevision          int64              `json:"resulting_revision"`
+	RosterId                   openapi_types.UUID `json:"roster_id"`
+	SourceProjectionRevision   int64              `json:"source_projection_revision"`
+	SourceProjectionRevisionId openapi_types.UUID `json:"source_projection_revision_id"`
+	SourceRevision             int64              `json:"source_revision"`
+	TournamentId               openapi_types.UUID `json:"tournament_id"`
+}
+
 // AuditCursor Stable keyset cursor ordered by occurrence time, audit event ID, and immutable result revision ID.
 type AuditCursor struct {
 	AuditEventId openapi_types.UUID `json:"audit_event_id"`
@@ -1778,8 +1792,10 @@ type AuditEvent struct {
 
 // AuditPage defines model for AuditPage.
 type AuditPage struct {
-	Events     []AuditEvent `json:"events"`
-	NextCursor *AuditCursor `json:"next_cursor"`
+	// Cancellation Redacted operator audit for tournament cancellation.
+	Cancellation *AuditCancellationEvent `json:"cancellation,omitempty"`
+	Events       []AuditEvent            `json:"events"`
+	NextCursor   *AuditCursor            `json:"next_cursor"`
 }
 
 // Category defines model for Category.

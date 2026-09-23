@@ -6,6 +6,7 @@ import {
   applyPublicRealtime,
   isPublicRealtimeGap,
   isPublicRealtimeRejection,
+  isPublicRealtimeTerminal,
   openPublicRealtimeMessage,
   parsePublicRealtimeMessage,
   publicRealtimeUrl,
@@ -170,6 +171,26 @@ export const usePublicTournamentRealtime = ({
             socket.close(1008, "public realtime rejected");
             return;
           }
+          if (isPublicRealtimeTerminal(value, tournamentId)) {
+            const terminalState = (value as { payload: { state: "cancelled" | "completed" } }).payload.state;
+            const currentState = stateRef.current;
+            if (currentState !== null) {
+              const terminalRealtimeState: PublicRecoveryState = {
+                ...currentState,
+                display: {
+                  ...currentState.display,
+                  tournament: {
+                    ...currentState.display.tournament,
+                    state: terminalState,
+                  },
+                },
+              };
+              stateRef.current = terminalRealtimeState;
+              setState(terminalRealtimeState);
+            }
+            requestRestRecovery(generation);
+            return;
+          }
           if (!receivedInitialFrame) {
             const nextState = openPublicRealtimeMessage(value, tournamentId);
             receivedInitialFrame = true;
@@ -221,6 +242,10 @@ export const usePublicTournamentRealtime = ({
           TERMINAL_CLOSE_CODES.has(event.code)
         ) {
           setStatus("rejected");
+          return;
+        }
+        if (event.code === 1000 && stateRef.current !== null) {
+          requestRestRecovery(generation);
           return;
         }
         scheduleReconnect(generation);

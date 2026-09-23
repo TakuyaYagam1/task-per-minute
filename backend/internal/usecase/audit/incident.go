@@ -28,6 +28,7 @@ type IncidentBundleSnapshot struct {
 	ProjectionRevision int64
 	GeneratedAt        time.Time
 	Events             []AuditEvent
+	Cancellation       *CancellationAuditEvent
 }
 
 type IncidentBundle struct {
@@ -42,10 +43,25 @@ type IncidentBundle struct {
 }
 
 type incidentBundleDocument struct {
-	TournamentID       string                  `json:"tournament_id"`
-	ProjectionRevision int64                   `json:"projection_revision"`
-	GeneratedAt        string                  `json:"generated_at"`
-	Events             []incidentAuditDocument `json:"audit_events"`
+	TournamentID       string                        `json:"tournament_id"`
+	ProjectionRevision int64                         `json:"projection_revision"`
+	GeneratedAt        string                        `json:"generated_at"`
+	Events             []incidentAuditDocument       `json:"audit_events"`
+	Cancellation       *incidentCancellationDocument `json:"cancellation,omitempty"`
+}
+
+type incidentCancellationDocument struct {
+	CommandID                  string `json:"command_id"`
+	TournamentID               string `json:"tournament_id"`
+	RosterID                   string `json:"roster_id"`
+	SourceRevision             int64  `json:"source_revision"`
+	ResultingRevision          int64  `json:"resulting_revision"`
+	SourceProjectionRevisionID string `json:"source_projection_revision_id"`
+	SourceProjectionRevision   int64  `json:"source_projection_revision"`
+	ActorID                    string `json:"actor_id"`
+	Reason                     string `json:"reason"`
+	AuditEventID               string `json:"audit_event_id"`
+	CancelledAt                string `json:"cancelled_at"`
 }
 
 type incidentAuditDocument struct {
@@ -70,9 +86,11 @@ type incidentAuditDocument struct {
 	RedactedPayload          json.RawMessage `json:"redacted_payload"`
 }
 
+//nolint:gocyclo // Bundle generation keeps event and cancellation evidence in one canonical boundary.
 func GenerateIncidentBundle(snapshot IncidentBundleSnapshot) (IncidentBundle, error) {
 	if snapshot.TournamentID == uuid.Nil || snapshot.ProjectionRevision < 1 ||
-		!domain.IsValidServerTime(snapshot.GeneratedAt) || len(snapshot.Events) == 0 ||
+		!domain.IsValidServerTime(snapshot.GeneratedAt) ||
+		(len(snapshot.Events) == 0 && snapshot.Cancellation == nil) ||
 		len(snapshot.Events) > maxIncidentBundleEvents {
 		return IncidentBundle{}, ErrInvalidIncidentBundle
 	}
@@ -84,6 +102,14 @@ func GenerateIncidentBundle(snapshot IncidentBundleSnapshot) (IncidentBundle, er
 		TournamentID: snapshot.TournamentID.String(), ProjectionRevision: snapshot.ProjectionRevision,
 		GeneratedAt: snapshot.GeneratedAt.Format(time.RFC3339Nano),
 		Events:      make([]incidentAuditDocument, len(ordered)),
+	}
+	if snapshot.Cancellation != nil {
+		if !ValidCancellationAuditEvent(*snapshot.Cancellation) ||
+			snapshot.Cancellation.TournamentID != snapshot.TournamentID ||
+			snapshot.Cancellation.OccurredAt.After(snapshot.GeneratedAt) {
+			return IncidentBundle{}, ErrInvalidIncidentBundle
+		}
+		document.Cancellation = incidentCancellation(*snapshot.Cancellation)
 	}
 	for index, event := range ordered {
 		if event.TournamentID != snapshot.TournamentID || event.OccurredAt.After(snapshot.GeneratedAt) {
@@ -156,10 +182,14 @@ func validIncidentBundleKeyID(value string) bool {
 
 func decodeIncidentBundleDocument(bundle IncidentBundle) (incidentBundleDocument, error) {
 	var document incidentBundleDocument
-	if err := json.Unmarshal(bundle.CanonicalContent, &document); err != nil || len(document.Events) == 0 ||
+	if err := json.Unmarshal(bundle.CanonicalContent, &document); err != nil ||
+		(len(document.Events) == 0 && document.Cancellation == nil) ||
 		document.TournamentID != bundle.TournamentID.String() ||
 		document.ProjectionRevision != bundle.ProjectionRevision ||
 		document.GeneratedAt != bundle.GeneratedAt.Format(time.RFC3339Nano) {
+		return incidentBundleDocument{}, ErrInvalidIncidentBundle
+	}
+	if document.Cancellation != nil && !validIncidentCancellationDocument(*document.Cancellation, bundle.TournamentID, bundle.GeneratedAt) {
 		return incidentBundleDocument{}, ErrInvalidIncidentBundle
 	}
 	return document, nil
@@ -187,6 +217,40 @@ func incidentAuditEvent(event AuditEvent, payload json.RawMessage) incidentAudit
 		EntityID: event.EntityID.String(), RevisionNumber: event.RevisionNumber,
 		IsCurrent: event.IsCurrent, IsSuperseded: event.IsSuperseded, RedactedPayload: payload,
 	}
+}
+
+func incidentCancellation(value CancellationAuditEvent) *incidentCancellationDocument {
+	return &incidentCancellationDocument{
+		CommandID: value.CommandID.String(), TournamentID: value.TournamentID.String(),
+		RosterID: value.RosterID.String(), SourceRevision: value.SourceRevision,
+		ResultingRevision: value.ResultingRevision, ActorID: value.ActorID.String(),
+		SourceProjectionRevisionID: value.SourceProjectionRevisionID.String(),
+		SourceProjectionRevision:   value.SourceProjectionRevision,
+		Reason:                     value.Reason, AuditEventID: value.AuditEventID.String(),
+		CancelledAt: value.OccurredAt.Format(time.RFC3339Nano),
+	}
+}
+
+//nolint:gocyclo // The signed cancellation document has one explicit fail-closed invariant set.
+func validIncidentCancellationDocument(value incidentCancellationDocument, tournamentID uuid.UUID, generatedAt time.Time) bool {
+	commandID, commandErr := uuid.Parse(value.CommandID)
+	storedTournamentID, tournamentErr := uuid.Parse(value.TournamentID)
+	rosterID, rosterErr := uuid.Parse(value.RosterID)
+	sourceProjectionRevisionID, sourceProjectionRevisionErr := uuid.Parse(value.SourceProjectionRevisionID)
+	actorID, actorErr := uuid.Parse(value.ActorID)
+	auditEventID, auditErr := uuid.Parse(value.AuditEventID)
+	cancelledAt, timeErr := time.Parse(time.RFC3339Nano, value.CancelledAt)
+	return commandErr == nil && tournamentErr == nil && storedTournamentID == tournamentID && rosterErr == nil &&
+		sourceProjectionRevisionErr == nil && actorErr == nil &&
+		auditErr == nil && commandID != uuid.Nil && rosterID != uuid.Nil && actorID != uuid.Nil &&
+		auditEventID != uuid.Nil && sourceProjectionRevisionID != uuid.Nil && value.SourceRevision >= 1 &&
+		value.SourceProjectionRevision >= 1 &&
+		value.ResultingRevision == value.SourceRevision+1 && validIncidentReason(value.Reason) &&
+		timeErr == nil && domain.IsValidServerTime(cancelledAt) && !cancelledAt.After(generatedAt)
+}
+
+func validIncidentReason(value string) bool {
+	return value != "" && value == strings.TrimSpace(value) && len(value) <= 512
 }
 
 func canonicalIncidentPayload(payload json.RawMessage) (json.RawMessage, error) {

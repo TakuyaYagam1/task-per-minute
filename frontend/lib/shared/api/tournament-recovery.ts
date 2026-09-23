@@ -792,6 +792,8 @@ const publicRejectionCodes = new Set([
   "tournament.rate_limited",
 ]);
 
+const PUBLIC_TERMINAL_STATES = new Set(["completed", "cancelled"]);
+
 export const isPublicRealtimeRejection = (value: unknown): boolean => {
   if (!isRecord(value) || !hasOnlyKeys(value, ["type", "code", "message"]) ||
       value.type !== "tournament.rejected" || !isNonBlank(value.code) ||
@@ -799,6 +801,38 @@ export const isPublicRealtimeRejection = (value: unknown): boolean => {
     return false;
   }
   return isNonBlank(value.message);
+};
+
+export const isPublicRealtimeTerminal = (
+  value: unknown,
+  expectedTournamentId: string,
+): boolean => {
+  if (
+    !isRecord(value) ||
+    !hasOnlyKeys(value, ["type", "payload"]) ||
+    value.type !== "tournament.terminal" ||
+    !isRecord(value.payload) ||
+    !hasOnlyKeys(value.payload, [
+      "schema_version",
+      "tournament_id",
+      "sequence",
+      "event_id",
+      "occurred_at",
+      "state",
+    ])
+  ) {
+    return false;
+  }
+  return (
+    value.payload.schema_version === 1 &&
+    value.payload.tournament_id === expectedTournamentId &&
+    isUUID(value.payload.tournament_id) &&
+    isPositiveInteger(value.payload.sequence) &&
+    isUUID(value.payload.event_id) &&
+    isDateTime(value.payload.occurred_at) &&
+    typeof value.payload.state === "string" &&
+    PUBLIC_TERMINAL_STATES.has(value.payload.state)
+  );
 };
 
 const restDisplay = (snapshot: PublicRecoverySnapshot): PublicDisplay => ({

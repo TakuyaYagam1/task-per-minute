@@ -45,7 +45,56 @@ func (r *TournamentAdminAuditPostgres) ListAudit(
 	if err != nil {
 		return audit.AuditPage{}, fmt.Errorf("TournamentAdminAuditPostgres - ListAudit: %w", err)
 	}
-	return tournamentAuditPage(page, query.Filter.TournamentID)
+	result, err := tournamentAuditPage(page, query.Filter.TournamentID)
+	if err != nil {
+		return audit.AuditPage{}, err
+	}
+	result.Cancellation, err = r.cancellationAudit(ctx, query.Filter)
+	if err != nil {
+		return audit.AuditPage{}, err
+	}
+	return result, nil
+}
+
+//nolint:gocyclo // Cancellation filtering must preserve the audit query contract and fail closed.
+func (r *TournamentAdminAuditPostgres) cancellationAudit(
+	ctx context.Context,
+	filter audit.AuditFilter,
+) (*audit.CancellationAuditEvent, error) {
+	if filter.Cursor != nil || filter.EntityKind != "" || filter.EntityID != nil ||
+		filter.ResultReason != "" ||
+		(filter.EventType != "" && filter.EventType != "tournament.cancelled") ||
+		(filter.ActorKind != "" && filter.ActorKind != domain.ResultActorOperator) ||
+		(filter.ActorID != nil && *filter.ActorID == uuid.Nil) {
+		return nil, nil
+	}
+	row, err := r.tx.Querier(ctx).GetTournamentCancellationAudit(ctx, filter.TournamentID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("TournamentAdminAuditPostgres - ListAudit - load cancellation: %w", err)
+	}
+	if filter.ActorID != nil && *filter.ActorID != row.ActorID {
+		return nil, nil
+	}
+	if filter.OccurredFrom != nil && row.CancelledAt.Time.Before(*filter.OccurredFrom) {
+		return nil, nil
+	}
+	if filter.OccurredTo != nil && row.CancelledAt.Time.After(*filter.OccurredTo) {
+		return nil, nil
+	}
+	event := audit.CancellationAuditEvent{
+		CommandID: row.CommandID, TournamentID: row.TournamentID, RosterID: row.RosterID,
+		SourceRevision: row.SourceRevision, ResultingRevision: row.ResultingRevision,
+		SourceProjectionRevisionID: row.SourceProjectionRevisionID,
+		SourceProjectionRevision:   row.SourceProjectionRevision, ActorID: row.ActorID,
+		Reason: row.Reason, AuditEventID: row.AuditEventID, OccurredAt: row.CancelledAt.Time.UTC(),
+	}
+	if !audit.ValidCancellationAuditEvent(event) {
+		return nil, fmt.Errorf("TournamentAdminAuditPostgres - invalid cancellation audit: %w", domain.ErrInternal)
+	}
+	return &event, nil
 }
 
 func (r *TournamentAdminAuditPostgres) LoadIncidentSnapshot(
@@ -67,11 +116,16 @@ func (r *TournamentAdminAuditPostgres) LoadIncidentSnapshot(
 		if err != nil {
 			return err
 		}
+		cancellation, err := tournamentIncidentCancellation(snapshotCtx, r.tx.Querier(snapshotCtx), query.TournamentID)
+		if err != nil {
+			return err
+		}
 		snapshot = audit.IncidentBundleSnapshot{
 			TournamentID:       query.TournamentID,
 			ProjectionRevision: header.projectionRevision,
 			GeneratedAt:        header.observedAt,
 			Events:             events,
+			Cancellation:       cancellation,
 		}
 		return nil
 	})
@@ -79,6 +133,42 @@ func (r *TournamentAdminAuditPostgres) LoadIncidentSnapshot(
 		return audit.IncidentBundleSnapshot{}, err
 	}
 	return snapshot, nil
+}
+
+func tournamentIncidentCancellation(
+	ctx context.Context,
+	querier *sqlc.Queries,
+	tournamentID uuid.UUID,
+) (*audit.CancellationAuditEvent, error) {
+	row, err := querier.GetTournamentCancellationAudit(ctx, tournamentID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf(
+			"TournamentAdminAuditPostgres - LoadIncidentSnapshot - load cancellation: %w",
+			err,
+		)
+	}
+	if !row.CancelledAt.Valid {
+		return nil, fmt.Errorf(
+			"TournamentAdminAuditPostgres - LoadIncidentSnapshot - invalid cancellation timestamp: %w",
+			domain.ErrInternal,
+		)
+	}
+	return &audit.CancellationAuditEvent{
+		CommandID:                  row.CommandID,
+		TournamentID:               row.TournamentID,
+		RosterID:                   row.RosterID,
+		SourceRevision:             row.SourceRevision,
+		ResultingRevision:          row.ResultingRevision,
+		ActorID:                    row.ActorID,
+		Reason:                     row.Reason,
+		AuditEventID:               row.AuditEventID,
+		SourceProjectionRevisionID: row.SourceProjectionRevisionID,
+		SourceProjectionRevision:   row.SourceProjectionRevision,
+		OccurredAt:                 row.CancelledAt.Time.UTC(),
+	}, nil
 }
 
 type tournamentIncidentSnapshot struct {

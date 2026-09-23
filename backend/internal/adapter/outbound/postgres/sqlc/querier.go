@@ -542,6 +542,7 @@ type Querier interface {
 	GetTournamentAdminReplayTime(ctx context.Context) (pgtype.Timestamptz, error)
 	GetTournamentAdminRoster(ctx context.Context, tournamentID uuid.UUID) (Roster, error)
 	GetTournamentAdminSnapshotHeader(ctx context.Context, tournamentID uuid.UUID) (GetTournamentAdminSnapshotHeaderRow, error)
+	GetTournamentCancellationAudit(ctx context.Context, tournamentID uuid.UUID) (GetTournamentCancellationAuditRow, error)
 	GetTournamentConfigurationEditAuthority(ctx context.Context, arg GetTournamentConfigurationEditAuthorityParams) (GetTournamentConfigurationEditAuthorityRow, error)
 	GetTournamentConfigurationEditCommand(ctx context.Context, arg GetTournamentConfigurationEditCommandParams) (TournamentConfigurationEditCommand, error)
 	GetTournamentConfigurationEditConfiguration(ctx context.Context, arg GetTournamentConfigurationEditConfigurationParams) (GetTournamentConfigurationEditConfigurationRow, error)

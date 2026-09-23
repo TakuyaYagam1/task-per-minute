@@ -440,11 +440,62 @@ AuditPage:
       maxItems: 200
       items:
         $ref: '#/AuditEvent'
+    cancellation:
+      $ref: '#/AuditCancellationEvent'
     next_cursor:
       type: object
       nullable: true
       allOf:
         - $ref: '#/AuditCursor'
+
+AuditCancellationEvent:
+  type: object
+  description: Redacted operator audit for tournament cancellation.
+  required: [command_id, tournament_id, roster_id, actor_id, audit_event_id, source_revision, resulting_revision, source_projection_revision_id, source_projection_revision, reason]
+  properties:
+    command_id:
+      type: string
+      format: uuid
+      readOnly: true
+    tournament_id:
+      type: string
+      format: uuid
+      readOnly: true
+    roster_id:
+      type: string
+      format: uuid
+      readOnly: true
+    actor_id:
+      type: string
+      format: uuid
+      readOnly: true
+    audit_event_id:
+      type: string
+      format: uuid
+      readOnly: true
+    source_revision:
+      type: integer
+      format: int64
+      minimum: 1
+      readOnly: true
+    resulting_revision:
+      type: integer
+      format: int64
+      minimum: 2
+      readOnly: true
+    source_projection_revision_id:
+      type: string
+      format: uuid
+      readOnly: true
+    source_projection_revision:
+      type: integer
+      format: int64
+      minimum: 1
+      readOnly: true
+    reason:
+      type: string
+      maxLength: 512
+      readOnly: true
 
 IncidentBundle:
   type: object

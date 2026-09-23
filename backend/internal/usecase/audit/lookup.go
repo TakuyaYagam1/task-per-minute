@@ -73,9 +73,32 @@ type AuditEvent struct {
 	IsSuperseded             bool
 }
 
+type CancellationAuditEvent struct {
+	CommandID                  uuid.UUID
+	TournamentID               uuid.UUID
+	RosterID                   uuid.UUID
+	SourceRevision             int64
+	ResultingRevision          int64
+	SourceProjectionRevisionID uuid.UUID
+	SourceProjectionRevision   int64
+	ActorID                    uuid.UUID
+	Reason                     string
+	AuditEventID               uuid.UUID
+	OccurredAt                 time.Time
+}
+
 type AuditPage struct {
-	Events     []AuditEvent
-	NextCursor *Cursor
+	Events       []AuditEvent
+	Cancellation *CancellationAuditEvent
+	NextCursor   *Cursor
+}
+
+func ValidCancellationAuditEvent(event CancellationAuditEvent) bool {
+	return event.CommandID != uuid.Nil && event.TournamentID != uuid.Nil && event.RosterID != uuid.Nil &&
+		event.SourceRevision >= 1 && event.ResultingRevision == event.SourceRevision+1 &&
+		event.SourceProjectionRevisionID != uuid.Nil && event.SourceProjectionRevision >= 1 &&
+		event.ActorID != uuid.Nil && validAuditText(event.Reason, 512) && event.AuditEventID != uuid.Nil &&
+		domain.IsValidServerTime(event.OccurredAt)
 }
 
 func LookupAudit(events []AuditEvent, filter AuditFilter) (AuditPage, error) {

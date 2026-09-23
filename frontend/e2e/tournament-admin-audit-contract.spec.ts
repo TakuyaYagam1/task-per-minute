@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 
 import { expect, test, type Page, type Route } from "@playwright/test";
 
+import { isCancellationAuditEvent } from "../lib/shared/api/guards";
 import { jsonHeaders } from "./support/common";
 
 const tournamentId = "10000000-0000-4000-8000-000000000010";
@@ -363,4 +364,24 @@ test("FE-037 remains usable in both themes at mobile width", async ({ page }) =>
   await page.getByRole("button", { name: "Темная тема" }).click();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+});
+
+test("FE-050 rejects cancellation audit reasons with unsafe whitespace or length", () => {
+  const validCancellation = {
+    actor_id: actorId,
+    audit_event_id: currentEventId,
+    command_id: correctionEventId,
+    reason: "operator cancellation",
+    resulting_revision: 9,
+    roster_id: rosterId,
+    source_projection_revision: 8,
+    source_projection_revision_id: currentRevisionId,
+    source_revision: 8,
+    tournament_id: tournamentId,
+  };
+
+  expect(isCancellationAuditEvent(validCancellation)).toBe(true);
+  expect(isCancellationAuditEvent({ ...validCancellation, reason: " operator cancellation" })).toBe(false);
+  expect(isCancellationAuditEvent({ ...validCancellation, reason: "operator cancellation " })).toBe(false);
+  expect(isCancellationAuditEvent({ ...validCancellation, reason: "x".repeat(513) })).toBe(false);
 });

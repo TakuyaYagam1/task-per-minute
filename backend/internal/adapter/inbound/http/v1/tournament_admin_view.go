@@ -283,7 +283,18 @@ func tournamentAuditPageResponse(page inbound.AdminAuditPage) (api.AuditPage, er
 			RevisionId: page.NextCursor.RevisionID, SnapshotBound: page.NextCursor.SnapshotBound,
 		}
 	}
-	return api.AuditPage{Events: events, NextCursor: cursor}, nil
+	var cancellation *api.AuditCancellationEvent
+	if page.Cancellation != nil {
+		value := page.Cancellation
+		cancellation = &api.AuditCancellationEvent{
+			ActorId: value.ActorID, AuditEventId: value.AuditEventID, CommandId: value.CommandID,
+			Reason: value.Reason, ResultingRevision: value.ResultingRevision, RosterId: value.RosterID,
+			SourceProjectionRevision:   value.SourceProjectionRevision,
+			SourceProjectionRevisionId: value.SourceProjectionRevisionID,
+			SourceRevision:             value.SourceRevision, TournamentId: value.TournamentID,
+		}
+	}
+	return api.AuditPage{Events: events, Cancellation: cancellation, NextCursor: cursor}, nil
 }
 
 func tournamentIncidentResponse(bundle inbound.AdminIncidentBundle) api.IncidentBundle {

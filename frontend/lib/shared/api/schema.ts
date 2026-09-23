@@ -2299,6 +2299,28 @@ export interface components {
             /** @description Opaque database snapshot bound preserving a stable audit page across concurrent commits. */
             snapshot_bound: string;
         };
+        /** @description Redacted operator audit for tournament cancellation. */
+        AuditCancellationEvent: {
+            /** Format: uuid */
+            readonly actor_id: string;
+            /** Format: uuid */
+            readonly audit_event_id: string;
+            /** Format: uuid */
+            readonly command_id: string;
+            readonly reason: string;
+            /** Format: int64 */
+            readonly resulting_revision: number;
+            /** Format: uuid */
+            readonly roster_id: string;
+            /** Format: int64 */
+            readonly source_projection_revision: number;
+            /** Format: uuid */
+            readonly source_projection_revision_id: string;
+            /** Format: int64 */
+            readonly source_revision: number;
+            /** Format: uuid */
+            readonly tournament_id: string;
+        };
         /** @description Redacted immutable audit projection. Raw internal payload is never included. */
         AuditEvent: {
             /** Format: uuid */
@@ -2335,6 +2357,7 @@ export interface components {
             readonly winner_id: string | null;
         };
         AuditPage: {
+            cancellation?: components["schemas"]["AuditCancellationEvent"];
             events: components["schemas"]["AuditEvent"][];
             next_cursor: components["schemas"]["AuditCursor"] | null;
         };

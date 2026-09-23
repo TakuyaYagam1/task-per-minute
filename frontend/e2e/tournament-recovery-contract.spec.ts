@@ -19,6 +19,7 @@ import {
   isOperatorRealtimeRejection,
   isPublicRealtimeGap,
   isPublicRealtimeRejection,
+  isPublicRealtimeTerminal,
   operatorRealtimeUrl,
   openPublicRealtimeMessage,
   parsePublicRealtimeMessage,
@@ -2350,6 +2351,102 @@ test("FE-012 public realtime rejection is terminal and visible", async ({ page }
   await expect(state).toHaveAttribute("data-connection", "rejected");
   await expect(state).toContainText("Доступ отклонен");
   await expect(state).toHaveAttribute("data-ready", "false");
+});
+
+test("FE-050 public terminal frame recovers the cancelled snapshot", async ({ page }) => {
+  const fixtureSet = createTournamentFixtureSet();
+  const serverTimestamp = "2026-09-15T10:00:00Z";
+  const snapshotRequests: URL[] = [];
+
+  await page.clock.install({ time: serverTimestamp });
+  await installOperatorWebSocketStub(page);
+  await installArenaAccessRoutes(page, fixtureSet);
+  await page.route(`**${arenaPublicSnapshotPath}*`, async (route) => {
+    const requestURL = new URL(route.request().url());
+    snapshotRequests.push(requestURL);
+    const snapshot = publicRecovery(requestURL.search === "" ? 9 : 10);
+    if (requestURL.search !== "") {
+      snapshot.tournament.state = "cancelled";
+      snapshot.live_series[0]!.state = "cancelled";
+    }
+    await fulfillJSON(
+      route,
+      snapshot,
+      { date: new Date(serverTimestamp).toUTCString() },
+    );
+  });
+
+  await page.goto(`/arena/spectator/${arenaTournamentId}`, { waitUntil: "domcontentloaded" });
+  const state = page.getByTestId("public-realtime-summary");
+  await expect.poll(() => snapshotRequests.length).toBeGreaterThan(0);
+  const initialSnapshotRequestCount = snapshotRequests.length;
+  await expect.poll(async () => {
+    const sockets = await page.evaluate(() => {
+      const control = (window as unknown as {
+        __operatorWebSocketControl?: { get: () => Array<{ url: string; sent: string[] }> };
+      }).__operatorWebSocketControl;
+      return control?.get() ?? [];
+    });
+    return sockets.length;
+  }).toBe(1);
+
+  const terminal = {
+    type: "tournament.terminal",
+    payload: {
+      schema_version: 1,
+      tournament_id: arenaTournamentId,
+      sequence: 10,
+      event_id: secondEventId,
+      occurred_at: serverTimestamp,
+      state: "cancelled",
+    },
+  };
+  expect(isPublicRealtimeTerminal(terminal, arenaTournamentId)).toBe(true);
+  await page.evaluate((message) => {
+    const control = (window as unknown as {
+      __operatorWebSocketControl: { emit: (index: number, value: unknown) => void };
+    }).__operatorWebSocketControl;
+    control.emit(0, message);
+  }, terminal);
+
+  await expect.poll(() => snapshotRequests.length)
+    .toBe(initialSnapshotRequestCount + 1);
+  const recoveredRealtimeMessage = publicRealtimeMessage(
+    11,
+    10,
+    secondEventId,
+    arenaTournamentId,
+  );
+  recoveredRealtimeMessage.payload.envelope.public.tournament.state = "cancelled";
+  recoveredRealtimeMessage.payload.envelope.public.live_series[0]!.state = "cancelled";
+  await expect.poll(async () => {
+    const sockets = await page.evaluate(() => {
+      const control = (window as unknown as {
+        __operatorWebSocketControl?: { get: () => Array<{ url: string; sent: string[] }> };
+      }).__operatorWebSocketControl;
+      return control?.get() ?? [];
+    });
+    return sockets.length;
+  }).toBe(2);
+  await page.evaluate((message) => {
+    const control = (window as unknown as {
+      __operatorWebSocketControl: { emit: (index: number, value: unknown) => void };
+    }).__operatorWebSocketControl;
+    control.emit(1, message);
+  }, recoveredRealtimeMessage);
+  await expect(state).toHaveAttribute("data-connection", "connected");
+  await expect(state).toHaveAttribute("data-ready", "true");
+  await expect(page.getByTestId("tournament-broadcast").getByTestId("broadcast-phase-title"))
+    .toHaveText("Турнир отменен");
+  await page.waitForTimeout(250);
+  const socketsAfterRecovery = await page.evaluate(() => {
+    const control = (window as unknown as {
+      __operatorWebSocketControl?: { get: () => Array<{ url: string; sent: string[] }> };
+    }).__operatorWebSocketControl;
+    return control?.get() ?? [];
+  });
+  expect(socketsAfterRecovery).toHaveLength(2);
+  expect(snapshotRequests).toHaveLength(initialSnapshotRequestCount + 1);
 });
 
 test("FE-013 operator route mounts operator recovery and keeps only the operator cursor", async ({ page }) => {

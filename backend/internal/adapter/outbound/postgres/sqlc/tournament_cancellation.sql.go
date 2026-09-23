@@ -245,23 +245,27 @@ VALUES (
     jsonb_build_object(
         'reason', $5::TEXT,
         'source_revision', $6::BIGINT,
-        'resulting_revision', $7::BIGINT
+        'resulting_revision', $7::BIGINT,
+        'source_projection_revision_id', $8::UUID,
+        'source_projection_revision', $9::BIGINT
     ),
-    $8,
-    $8
+    $10,
+    $10
 )
 RETURNING id
 `
 
 type CreateTournamentCancellationAuditEventParams struct {
-	ID                uuid.UUID
-	TournamentID      uuid.UUID
-	RosterID          uuid.UUID
-	ActorID           uuid.NullUUID
-	Reason            string
-	SourceRevision    int64
-	ResultingRevision int64
-	CancelledAt       pgtype.Timestamptz
+	ID                         uuid.UUID
+	TournamentID               uuid.UUID
+	RosterID                   uuid.UUID
+	ActorID                    uuid.NullUUID
+	Reason                     string
+	SourceRevision             int64
+	ResultingRevision          int64
+	SourceProjectionRevisionID uuid.UUID
+	SourceProjectionRevision   int64
+	CancelledAt                pgtype.Timestamptz
 }
 
 func (q *Queries) CreateTournamentCancellationAuditEvent(ctx context.Context, arg CreateTournamentCancellationAuditEventParams) (uuid.UUID, error) {
@@ -273,6 +277,8 @@ func (q *Queries) CreateTournamentCancellationAuditEvent(ctx context.Context, ar
 		arg.Reason,
 		arg.SourceRevision,
 		arg.ResultingRevision,
+		arg.SourceProjectionRevisionID,
+		arg.SourceProjectionRevision,
 		arg.CancelledAt,
 	)
 	var id uuid.UUID
@@ -570,6 +576,60 @@ func (q *Queries) FindTournamentCancellation(ctx context.Context, arg FindTourna
 		&i.TournamentRevision,
 		&i.TournamentUpdatedAt,
 		&i.TournamentFinishedAt,
+	)
+	return i, err
+}
+
+const getTournamentCancellationAudit = `-- name: GetTournamentCancellationAudit :one
+SELECT cancellation.command_id,
+    cancellation.tournament_id,
+    cancellation.roster_id,
+    cancellation.source_revision,
+    cancellation.resulting_revision,
+    cancellation.actor_id,
+    cancellation.reason,
+    cancellation.audit_event_id,
+    cancellation.cancelled_at,
+    source.projection_revision_id AS source_projection_revision_id,
+    source.projection_revision AS source_projection_revision
+FROM tournament_cancellations AS cancellation
+INNER JOIN outbox_tournament_cancellation_sources AS source
+    ON source.cancellation_command_id = cancellation.command_id
+    AND source.tournament_id = cancellation.tournament_id
+    AND source.roster_id = cancellation.roster_id
+    AND source.outbox_event_id = cancellation.outbox_event_id
+WHERE cancellation.tournament_id = $1
+`
+
+type GetTournamentCancellationAuditRow struct {
+	CommandID                  uuid.UUID
+	TournamentID               uuid.UUID
+	RosterID                   uuid.UUID
+	SourceRevision             int64
+	ResultingRevision          int64
+	ActorID                    uuid.UUID
+	Reason                     string
+	AuditEventID               uuid.UUID
+	CancelledAt                pgtype.Timestamptz
+	SourceProjectionRevisionID uuid.UUID
+	SourceProjectionRevision   int64
+}
+
+func (q *Queries) GetTournamentCancellationAudit(ctx context.Context, tournamentID uuid.UUID) (GetTournamentCancellationAuditRow, error) {
+	row := q.db.QueryRow(ctx, getTournamentCancellationAudit, tournamentID)
+	var i GetTournamentCancellationAuditRow
+	err := row.Scan(
+		&i.CommandID,
+		&i.TournamentID,
+		&i.RosterID,
+		&i.SourceRevision,
+		&i.ResultingRevision,
+		&i.ActorID,
+		&i.Reason,
+		&i.AuditEventID,
+		&i.CancelledAt,
+		&i.SourceProjectionRevisionID,
+		&i.SourceProjectionRevision,
 	)
 	return i, err
 }

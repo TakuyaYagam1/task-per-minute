@@ -55,6 +55,9 @@ func ValidAuditPage(page audit.AuditPage, tournamentID uuid.UUID) bool {
 	if page.Events == nil || len(page.Events) > maxAuditEvents {
 		return false
 	}
+	if page.Cancellation != nil && !audit.ValidCancellationAuditEvent(*page.Cancellation) {
+		return false
+	}
 	for _, event := range page.Events {
 		if event.TournamentID != tournamentID || !json.Valid(event.RedactedPayload) {
 			return false

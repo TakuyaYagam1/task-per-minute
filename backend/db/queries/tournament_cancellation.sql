@@ -40,6 +40,26 @@ INNER JOIN tournaments AS tournament ON tournament.id = cancellation.tournament_
 WHERE cancellation.tournament_id = sqlc.arg(tournament_id)
     AND cancellation.command_id = sqlc.arg(command_id);
 
+-- name: GetTournamentCancellationAudit :one
+SELECT cancellation.command_id,
+    cancellation.tournament_id,
+    cancellation.roster_id,
+    cancellation.source_revision,
+    cancellation.resulting_revision,
+    cancellation.actor_id,
+    cancellation.reason,
+    cancellation.audit_event_id,
+    cancellation.cancelled_at,
+    source.projection_revision_id AS source_projection_revision_id,
+    source.projection_revision AS source_projection_revision
+FROM tournament_cancellations AS cancellation
+INNER JOIN outbox_tournament_cancellation_sources AS source
+    ON source.cancellation_command_id = cancellation.command_id
+    AND source.tournament_id = cancellation.tournament_id
+    AND source.roster_id = cancellation.roster_id
+    AND source.outbox_event_id = cancellation.outbox_event_id
+WHERE cancellation.tournament_id = sqlc.arg(tournament_id);
+
 -- name: CancelTournamentForCancellationCAS :one
 UPDATE tournaments
 SET state = 'cancelled',
@@ -91,7 +111,9 @@ VALUES (
     jsonb_build_object(
         'reason', sqlc.arg(reason)::TEXT,
         'source_revision', sqlc.arg(source_revision)::BIGINT,
-        'resulting_revision', sqlc.arg(resulting_revision)::BIGINT
+        'resulting_revision', sqlc.arg(resulting_revision)::BIGINT,
+        'source_projection_revision_id', sqlc.arg(source_projection_revision_id)::UUID,
+        'source_projection_revision', sqlc.arg(source_projection_revision)::BIGINT
     ),
     sqlc.arg(cancelled_at),
     sqlc.arg(cancelled_at)

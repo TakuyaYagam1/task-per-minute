@@ -50,6 +50,18 @@ func mapAuditPage(page audit.AuditPage) inbound.AdminAuditPage {
 			IsCurrent: event.IsCurrent, IsSuperseded: event.IsSuperseded,
 		}
 	}
+	if page.Cancellation != nil {
+		cancellation := page.Cancellation
+		mapped.Cancellation = &inbound.AdminCancellationAuditEvent{
+			CommandID: cancellation.CommandID, TournamentID: cancellation.TournamentID,
+			RosterID: cancellation.RosterID, ActorID: cancellation.ActorID,
+			AuditEventID: cancellation.AuditEventID, SourceRevision: cancellation.SourceRevision,
+			ResultingRevision:          cancellation.ResultingRevision,
+			SourceProjectionRevisionID: cancellation.SourceProjectionRevisionID,
+			SourceProjectionRevision:   cancellation.SourceProjectionRevision,
+			Reason:                     cancellation.Reason, OccurredAt: cancellation.OccurredAt,
+		}
+	}
 	if page.NextCursor != nil {
 		mapped.NextCursor = &inbound.AdminAuditCursor{
 			OccurredAt: page.NextCursor.OccurredAt, AuditEventID: page.NextCursor.AuditEventID,

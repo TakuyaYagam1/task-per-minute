@@ -448,9 +448,19 @@ type AdminAuditEvent struct {
 	IsCurrent, IsSuperseded                                       bool
 }
 
+type AdminCancellationAuditEvent struct {
+	CommandID, TournamentID, RosterID, ActorID, AuditEventID uuid.UUID
+	SourceRevision, ResultingRevision                        int64
+	SourceProjectionRevisionID                               uuid.UUID
+	SourceProjectionRevision                                 int64
+	Reason                                                   string
+	OccurredAt                                               time.Time
+}
+
 type AdminAuditPage struct {
-	Events     []AdminAuditEvent
-	NextCursor *AdminAuditCursor
+	Events       []AdminAuditEvent
+	Cancellation *AdminCancellationAuditEvent
+	NextCursor   *AdminAuditCursor
 }
 
 type AdminIncidentQuery struct {

@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/internal/db"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/sqlc"
@@ -74,6 +75,40 @@ type bracketPayloadMatch struct {
 	State               string    `json:"state"`
 	FirstWins           int       `json:"first_wins"`
 	SecondWins          int       `json:"second_wins"`
+}
+
+// UnmarshalJSON accepts both the public lower-snake-case bracket document and
+// the correction materialization document, whose fields are emitted from the
+// application-owned canonical Go type. Both shapes carry the same validated
+// participant and score data.
+func (match *bracketPayloadMatch) UnmarshalJSON(data []byte) error {
+	type publicBracketPayloadMatch bracketPayloadMatch
+	var public publicBracketPayloadMatch
+	if err := json.Unmarshal(data, &public); err != nil {
+		return err
+	}
+	var canonical struct {
+		Position            int       `json:"Position"`
+		FirstParticipantID  uuid.UUID `json:"FirstParticipantID"`
+		SecondParticipantID uuid.UUID `json:"SecondParticipantID"`
+		State               string    `json:"State"`
+		FirstWins           int       `json:"FirstWins"`
+		SecondWins          int       `json:"SecondWins"`
+	}
+	if err := json.Unmarshal(data, &canonical); err != nil {
+		return err
+	}
+	if public.FirstParticipantID != uuid.Nil || public.SecondParticipantID != uuid.Nil || canonical.FirstParticipantID == uuid.Nil {
+		*match = bracketPayloadMatch(public)
+		return nil
+	}
+	match.Position = canonical.Position
+	match.FirstParticipantID = canonical.FirstParticipantID
+	match.SecondParticipantID = canonical.SecondParticipantID
+	match.State = canonical.State
+	match.FirstWins = canonical.FirstWins
+	match.SecondWins = canonical.SecondWins
+	return nil
 }
 
 func NewTournamentSnapshotPostgres(tx *db.TxManager) *TournamentSnapshotPostgres {
@@ -212,9 +247,14 @@ func (r *TournamentSnapshotPostgres) loadPublicSnapshot(
 		StartedAt:    utcNullableTime(summary.StartedAt),
 		FinishedAt:   utcNullableTime(summary.FinishedAt),
 	}
-
 	payloads, err := querier.GetTournamentReadProjectionPayloads(ctx, tournamentID)
 	if err != nil {
+		if cancelledPublicProjectionIsAbsent(summary.State, err) {
+			// A cancelled tournament may have no optional live projection payload.
+			// Preserve the terminal public response, but keep every available
+			// scoreboard, bracket, Swiss, and result projection.
+			return nil
+		}
 		return tournamentSnapshotLookupError("PublicSnapshot - projections", err)
 	}
 	participants, err := querier.ListTournamentReadParticipants(ctx, tournamentID)
@@ -227,24 +267,31 @@ func (r *TournamentSnapshotPostgres) loadPublicSnapshot(
 	names := tournamentParticipantNames(participants)
 	view.Scoreboard, err = tournamentScoreboard(payloads.StandingsPayload, payloads.TopFourPayload, participants)
 	if err != nil {
-		return err
+		return fmt.Errorf("TournamentSnapshotPostgres - PublicSnapshot - scoreboard: %w", err)
 	}
 	view.Bracket, err = tournamentBracket(payloads.BracketPayload, names)
 	if err != nil {
-		return err
+		return fmt.Errorf("TournamentSnapshotPostgres - PublicSnapshot - bracket: %w", err)
 	}
 	view.SwissRounds, err = publicTournamentReadSwissRounds(ctx, querier, tournamentID)
 	if err != nil {
-		return err
+		return fmt.Errorf("TournamentSnapshotPostgres - PublicSnapshot - swiss rounds: %w", err)
 	}
 	if view.LiveSeries, err = publicTournamentReadSeries(ctx, querier, tournamentID); err != nil {
-		return err
+		return fmt.Errorf("TournamentSnapshotPostgres - PublicSnapshot - series: %w", err)
 	}
 	if view.OfficialResults, err = publicTournamentReadResults(ctx, querier, tournamentID); err != nil {
-		return err
+		return fmt.Errorf("TournamentSnapshotPostgres - PublicSnapshot - results: %w", err)
 	}
 	view.Draft, err = publicTournamentReadDraft(ctx, querier, tournamentID, cursor.ObservedAt)
-	return err
+	if err != nil {
+		return fmt.Errorf("TournamentSnapshotPostgres - PublicSnapshot - draft: %w", err)
+	}
+	return nil
+}
+
+func cancelledPublicProjectionIsAbsent(state string, err error) bool {
+	return domain.TournamentState(state) == domain.TournamentStateCancelled && errors.Is(err, pgx.ErrNoRows)
 }
 
 func publicSnapshotCursorConflict(
