@@ -5,12 +5,77 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/stretchr/testify/require"
 
+	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/sqlc"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	pausedomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/pause"
 	seriesdomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/series"
 	gamepause "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/pause"
 )
+
+func TestRejectActiveNormalWavePauseIgnoresChildPauses(t *testing.T) {
+	t.Parallel()
+
+	parentID := uuid.New()
+	require.NoError(t, rejectActiveNormalWavePause([]sqlc.Pause{{
+		ScopeKind: "game_attempt", State: string(gamepause.PauseStateActive),
+		ParentPauseID: uuid.NullUUID{UUID: parentID, Valid: true}, Depth: 1,
+	}}))
+	require.ErrorIs(t, rejectActiveNormalWavePause([]sqlc.Pause{{
+		ScopeKind: "wave", State: string(gamepause.PauseStateActive), Depth: 0,
+	}}), domain.ErrConflict)
+	require.NotErrorIs(t, rejectActiveNormalWavePause(nil), domain.ErrConflict)
+}
+
+func TestRepeatNormalWavePauseConflictsBeforeAdoptingChildPauses(t *testing.T) {
+	t.Parallel()
+
+	wavePauseID := uuid.New()
+	seriesPauseID := uuid.New()
+	require.ErrorIs(t, rejectActiveNormalWavePause([]sqlc.Pause{
+		{ID: wavePauseID, ScopeKind: "wave", State: string(gamepause.PauseStateActive), Depth: 0},
+		{ID: uuid.New(), ScopeKind: "game_attempt", ScopeID: uuid.New(), State: string(gamepause.PauseStateActive),
+			ParentPauseID: uuid.NullUUID{UUID: seriesPauseID, Valid: true}, Depth: 1},
+	}), domain.ErrConflict)
+}
+
+func TestRecoveryGameClockPreservesSubMillisecondFrozenDuration(t *testing.T) {
+	t.Parallel()
+
+	frozenAt := time.Date(2026, time.September, 23, 12, 0, 0, 123456000, time.UTC)
+	remaining := 40*time.Second + 466*time.Microsecond
+
+	clock, err := recoveryGameClock(sqlc.PauseClock{
+		PauseID: uuid.New(), GameAttemptID: uuid.New(),
+		OriginalDeadline:  tstz(frozenAt.Add(remaining)),
+		FrozenAt:          tstz(frozenAt),
+		FrozenRemainingMs: remaining.Milliseconds(),
+		Revision:          1,
+	})
+	require.NoError(t, err)
+	require.Equal(t, remaining, clock.Remaining)
+}
+
+func TestTournamentAdminNormalPauseFrozenPreservesSubMillisecondFrozenDuration(t *testing.T) {
+	t.Parallel()
+
+	gameID := uuid.New()
+	frozenAt := time.Date(2026, time.September, 23, 12, 0, 0, 123456000, time.UTC)
+	remaining := 40*time.Second + 466*time.Microsecond
+	expected := gamepause.PauseFrozenDeadline{
+		Kind: gamepause.PauseDeadlineGame, OwnerID: gameID,
+		OriginalDeadline: frozenAt.Add(remaining), FrozenAt: frozenAt,
+		Remaining: remaining, Revision: 3,
+	}
+
+	actual, err := tournamentAdminNormalPauseFrozen([]sqlc.PauseClock{{
+		GameAttemptID: gameID, OriginalDeadline: tstz(expected.OriginalDeadline), FrozenAt: tstz(frozenAt),
+		FrozenRemainingMs: remaining.Milliseconds(), Revision: expected.Revision,
+	}}, nil, []gamepause.PauseFrozenDeadline{expected})
+	require.NoError(t, err)
+	require.Equal(t, []gamepause.PauseFrozenDeadline{expected}, actual)
+}
 
 func TestTournamentAdminNormalConnectedResumeLeavesOnlyDisconnectedGamePaused(t *testing.T) {
 	t.Parallel()
@@ -45,7 +110,8 @@ func TestTournamentAdminNormalConnectedResumeLeavesOnlyDisconnectedGamePaused(t 
 		DecidedAt: now,
 	}
 
-	result := tournamentAdminNormalConnectedResume(paused, presence)
+	result, err := tournamentAdminNormalConnectedResume(paused, presence)
+	require.NoError(t, err)
 	if result.Graph.Series[0].Execution.Series.State != domain.SeriesStateTechnicalPause ||
 		result.Graph.Games[0].Game.State != domain.GameStatePaused ||
 		result.Graph.FrozenDeadlines[0].ResumedDeadline != nil {
@@ -100,4 +166,73 @@ func TestTournamentAdminNormalPausePresenceProjectionRetainsSuspendedSource(t *t
 	if len(projected.Pause.SuspendedReconnect) != 1 || projected.Pause.SuspendedReconnect[0].ID != sourceID {
 		t.Fatalf("projected suspended evidence = %+v", projected.Pause.SuspendedReconnect)
 	}
+}
+
+func TestTournamentAdminNormalConnectedResumeRestoresIndependentSourceBesideWaitingSeries(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, time.September, 24, 12, 0, 0, 0, time.UTC)
+	seriesID, waitingSeriesID, gameID, waitingGameID := uuid.New(), uuid.New(), uuid.New(), uuid.New()
+	participants := [4]uuid.UUID{uuid.New(), uuid.New(), uuid.New(), uuid.New()}
+	remaining := time.Minute + 466*time.Microsecond
+	source := &gamepause.PauseGameSourcePause{
+		PauseID: uuid.New(), GameID: gameID, SeriesID: seriesID, ScopeKind: "game_attempt", ScopeID: gameID,
+		Reason: gamepause.PauseReasonDisconnect, State: gamepause.PauseStateActive,
+		CurrentRevisionID: uuid.New(), Revision: 3, DecisionNumber: 1, StartedAt: now.Add(-time.Minute),
+		Clock: gamepause.PauseFrozenDeadline{
+			Kind: gamepause.PauseDeadlineGame, OwnerID: gameID, Revision: 1,
+			OriginalDeadline: now.Add(466 * time.Microsecond), FrozenAt: now.Add(-time.Minute), Remaining: remaining,
+		},
+		Presence: []gamepause.PausePresenceSnapshot{{ParticipantID: participants[0], State: pausedomain.PresenceStateDisconnected}},
+	}
+	game := domain.Game{ID: gameID, State: domain.GameStatePaused}
+	resumeState := domain.SeriesStateActive
+	paused := gamepause.NormalPauseRecord{Graph: gamepause.PauseGraph{
+		Series: []gamepause.PauseSeries{
+			{Revision: 8, CurrentGameID: &gameID, Execution: seriesdomain.Execution{Series: domain.Series{
+				ID: seriesID, State: domain.SeriesStateActive, FirstParticipantID: participants[0], SecondParticipantID: participants[1],
+				Slots: []domain.GameSlot{{Attempts: []domain.Game{game}}},
+			}}},
+			{Revision: 9, CurrentGameID: &waitingGameID, Execution: seriesdomain.Execution{ResumeState: &resumeState, Series: domain.Series{
+				ID: waitingSeriesID, State: domain.SeriesStateTechnicalPause, FirstParticipantID: participants[2], SecondParticipantID: participants[3],
+			}}},
+		},
+		Games: []gamepause.PauseGame{
+			{Game: game, SeriesID: seriesID, Revision: 7, SourcePause: source},
+			{Game: domain.Game{ID: waitingGameID, State: domain.GameStatePaused}, SeriesID: waitingSeriesID, Revision: 5},
+		},
+	}}
+	presence := gamepause.PauseResumePresenceRecord{
+		Command: gamepause.PauseResumePresenceCommand{
+			Resume: gamepause.PauseResumeCommand{CommandID: uuid.New()},
+			Presence: []pausedomain.PausePresence{
+				{ParticipantID: participants[0], State: pausedomain.PresenceStateConnected},
+				{ParticipantID: participants[1], State: pausedomain.PresenceStateConnected},
+				{ParticipantID: participants[2], State: pausedomain.PresenceStateDisconnected},
+				{ParticipantID: participants[3], State: pausedomain.PresenceStateConnected},
+			},
+		}, DecidedAt: now,
+	}
+	result, err := tournamentAdminNormalConnectedResume(paused, presence)
+	require.NoError(t, err)
+	got := result.Graph.Games[0]
+	require.Equal(t, domain.GameStateActive, got.Game.State)
+	require.Equal(t, now.Add(remaining), *got.Deadline)
+	require.Equal(t, int64(8), got.Revision)
+	require.Equal(t, source.PauseID, got.SourcePause.PauseID)
+	require.Equal(t, gamepause.PauseStateResumed, got.SourcePause.State)
+	require.Equal(t, int64(4), got.SourcePause.Revision)
+	require.Equal(t, int64(2), got.SourcePause.Clock.Revision)
+	require.Equal(t, int64(2), got.SourcePause.DecisionNumber)
+	require.Equal(t, source.Clock.Remaining, got.SourcePause.Clock.Remaining)
+	require.Equal(t, source.Presence, got.SourcePause.Presence)
+	require.Equal(t, now.Add(remaining), *got.SourcePause.Clock.ResumedDeadline)
+	require.Equal(t, int64(8), result.Graph.Series[0].Revision, "independent Series stays unchanged")
+	require.Equal(t, domain.GameStateActive, result.Graph.Series[0].Execution.Series.Slots[0].Attempts[0].State)
+	require.Equal(t, domain.GameStatePaused, result.Graph.Games[1].Game.State)
+	require.Equal(t, domain.SeriesStateTechnicalPause, result.Graph.Series[1].Execution.Series.State)
+	require.Equal(t, gamepause.PauseStateActive, source.State, "source receipt must not be mutated")
+	require.Nil(t, source.Clock.ResumedAt)
+	require.Equal(t, domain.GameStatePaused, paused.Graph.Series[0].Execution.Series.Slots[0].Attempts[0].State)
+	got.SourcePause.Presence[0].PresenceEpoch++
+	require.Zero(t, source.Presence[0].PresenceEpoch, "source snapshots need an independent clone")
 }

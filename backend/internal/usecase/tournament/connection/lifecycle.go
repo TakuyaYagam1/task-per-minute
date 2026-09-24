@@ -200,7 +200,15 @@ func (coordinator *Coordinator) connectLocked(
 	if err := validateOpenResult(result, resolved, command); err != nil {
 		return err
 	}
-	if !result.Opened || result.ActiveLeaseCount != 1 {
+	if !result.Opened {
+		return nil
+	}
+	// A fresh socket may race the close of the previous socket.  When the
+	// graph already exposes an open reconnect interval, this new lease is the
+	// participant's return even if the stale lease is still counted briefly.
+	// Other actions remain last-lease-only so multi-tab presence semantics do
+	// not change.
+	if result.ActiveLeaseCount != 1 && result.Action.Kind != ActionGameReconnect {
 		return nil
 	}
 	return coordinator.applyAction(ctx, operationConnect, resolved, result.Lease, result.Action)

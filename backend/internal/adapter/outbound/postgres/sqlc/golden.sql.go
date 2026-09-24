@@ -1200,14 +1200,28 @@ type CreateGoldenPositionCommitParams struct {
 	RosterID                 uuid.UUID
 	MembershipID             uuid.UUID
 	ParticipantID            uuid.UUID
-	ProvisionalSubmissionID  uuid.UUID
+	ProvisionalSubmissionID  uuid.NullUUID
 	PreviousPositionCommitID uuid.NullUUID
 	Position                 int16
 	CommittedAt              pgtype.Timestamptz
 	CreatedAt                pgtype.Timestamptz
 }
 
-func (q *Queries) CreateGoldenPositionCommit(ctx context.Context, arg CreateGoldenPositionCommitParams) (GoldenPositionCommit, error) {
+type CreateGoldenPositionCommitRow struct {
+	ID                       uuid.UUID
+	AttemptID                uuid.UUID
+	TournamentID             uuid.UUID
+	RosterID                 uuid.UUID
+	MembershipID             uuid.UUID
+	ParticipantID            uuid.UUID
+	ProvisionalSubmissionID  uuid.NullUUID
+	PreviousPositionCommitID uuid.NullUUID
+	Position                 int16
+	CommittedAt              pgtype.Timestamptz
+	CreatedAt                pgtype.Timestamptz
+}
+
+func (q *Queries) CreateGoldenPositionCommit(ctx context.Context, arg CreateGoldenPositionCommitParams) (CreateGoldenPositionCommitRow, error) {
 	row := q.db.QueryRow(ctx, createGoldenPositionCommit,
 		arg.ID,
 		arg.AttemptID,
@@ -1221,7 +1235,7 @@ func (q *Queries) CreateGoldenPositionCommit(ctx context.Context, arg CreateGold
 		arg.CommittedAt,
 		arg.CreatedAt,
 	)
-	var i GoldenPositionCommit
+	var i CreateGoldenPositionCommitRow
 	err := row.Scan(
 		&i.ID,
 		&i.AttemptID,
@@ -3602,6 +3616,102 @@ func (q *Queries) CreateGoldenStateTransition(ctx context.Context, arg CreateGol
 	return state_revision_id, err
 }
 
+const createGoldenTerminalPositionCommit = `-- name: CreateGoldenTerminalPositionCommit :one
+INSERT INTO golden_position_commits (
+    id, attempt_id, tournament_id, roster_id, membership_id, participant_id,
+    terminal_evidence_id, position, committed_at, created_at
+)
+VALUES (
+    $1, $2, $3, $4,
+    $5, $6, $7,
+    $8, $9, $10
+)
+RETURNING id
+`
+
+type CreateGoldenTerminalPositionCommitParams struct {
+	ID                 uuid.UUID
+	AttemptID          uuid.UUID
+	TournamentID       uuid.UUID
+	RosterID           uuid.UUID
+	MembershipID       uuid.UUID
+	ParticipantID      uuid.UUID
+	TerminalEvidenceID uuid.NullUUID
+	Position           int16
+	CommittedAt        pgtype.Timestamptz
+	CreatedAt          pgtype.Timestamptz
+}
+
+func (q *Queries) CreateGoldenTerminalPositionCommit(ctx context.Context, arg CreateGoldenTerminalPositionCommitParams) (uuid.UUID, error) {
+	row := q.db.QueryRow(ctx, createGoldenTerminalPositionCommit,
+		arg.ID,
+		arg.AttemptID,
+		arg.TournamentID,
+		arg.RosterID,
+		arg.MembershipID,
+		arg.ParticipantID,
+		arg.TerminalEvidenceID,
+		arg.Position,
+		arg.CommittedAt,
+		arg.CreatedAt,
+	)
+	var id uuid.UUID
+	err := row.Scan(&id)
+	return id, err
+}
+
+const createGoldenTerminalPositionEvidence = `-- name: CreateGoldenTerminalPositionEvidence :one
+INSERT INTO golden_terminal_position_evidence (
+    id, tournament_id, roster_id, group_revision_id, attempt_id,
+    membership_id, participant_id, runtime_revision, deadline,
+    position, payload_digest, recorded_at, created_at
+)
+VALUES (
+    $1, $2, $3,
+    $4, $5, $6,
+    $7, $8, $9,
+    $10, $11, $12, $13
+)
+RETURNING id
+`
+
+type CreateGoldenTerminalPositionEvidenceParams struct {
+	ID              uuid.UUID
+	TournamentID    uuid.UUID
+	RosterID        uuid.UUID
+	GroupRevisionID uuid.UUID
+	AttemptID       uuid.UUID
+	MembershipID    uuid.UUID
+	ParticipantID   uuid.UUID
+	RuntimeRevision int64
+	Deadline        pgtype.Timestamptz
+	Position        int16
+	PayloadDigest   []byte
+	RecordedAt      pgtype.Timestamptz
+	CreatedAt       pgtype.Timestamptz
+}
+
+func (q *Queries) CreateGoldenTerminalPositionEvidence(ctx context.Context, arg CreateGoldenTerminalPositionEvidenceParams) (uuid.UUID, error) {
+	row := q.db.QueryRow(ctx, createGoldenTerminalPositionEvidence,
+		arg.ID,
+		arg.TournamentID,
+		arg.RosterID,
+		arg.GroupRevisionID,
+		arg.AttemptID,
+		arg.MembershipID,
+		arg.ParticipantID,
+		arg.RuntimeRevision,
+		arg.Deadline,
+		arg.Position,
+		arg.PayloadDigest,
+		arg.RecordedAt,
+		arg.CreatedAt,
+	)
+	var id uuid.UUID
+	err := row.Scan(&id)
+	return id, err
+}
+
 const establishGoldenParticipation = `-- name: EstablishGoldenParticipation :one
 UPDATE golden_memberships
 SET participation_established_at = $1
@@ -3987,6 +4097,80 @@ func (q *Queries) GetGoldenSubmissionByIdempotencyKey(ctx context.Context, idemp
 	return i, err
 }
 
+const getGoldenTerminalPositionEvidence = `-- name: GetGoldenTerminalPositionEvidence :one
+SELECT evidence.id,
+    evidence.tournament_id,
+    evidence.roster_id,
+    evidence.group_revision_id,
+    evidence.attempt_id,
+    evidence.membership_id,
+    evidence.participant_id,
+    evidence.runtime_revision,
+    evidence.deadline,
+    evidence.position,
+    evidence.payload_digest,
+    evidence.recorded_at,
+    evidence.created_at,
+    position_commit.id AS position_commit_id
+FROM golden_terminal_position_evidence AS evidence
+LEFT JOIN golden_position_commits AS position_commit
+    ON position_commit.terminal_evidence_id = evidence.id
+    AND position_commit.attempt_id = evidence.attempt_id
+    AND position_commit.membership_id = evidence.membership_id
+    AND position_commit.participant_id = evidence.participant_id
+    AND position_commit.tournament_id = evidence.tournament_id
+    AND position_commit.roster_id = evidence.roster_id
+    AND position_commit.position = evidence.position
+WHERE evidence.tournament_id = $1
+    AND evidence.roster_id = $2
+    AND evidence.group_revision_id = $3
+`
+
+type GetGoldenTerminalPositionEvidenceParams struct {
+	TournamentID    uuid.UUID
+	RosterID        uuid.UUID
+	GroupRevisionID uuid.UUID
+}
+
+type GetGoldenTerminalPositionEvidenceRow struct {
+	ID               uuid.UUID
+	TournamentID     uuid.UUID
+	RosterID         uuid.UUID
+	GroupRevisionID  uuid.UUID
+	AttemptID        uuid.UUID
+	MembershipID     uuid.UUID
+	ParticipantID    uuid.UUID
+	RuntimeRevision  int64
+	Deadline         pgtype.Timestamptz
+	Position         int16
+	PayloadDigest    []byte
+	RecordedAt       pgtype.Timestamptz
+	CreatedAt        pgtype.Timestamptz
+	PositionCommitID uuid.NullUUID
+}
+
+func (q *Queries) GetGoldenTerminalPositionEvidence(ctx context.Context, arg GetGoldenTerminalPositionEvidenceParams) (GetGoldenTerminalPositionEvidenceRow, error) {
+	row := q.db.QueryRow(ctx, getGoldenTerminalPositionEvidence, arg.TournamentID, arg.RosterID, arg.GroupRevisionID)
+	var i GetGoldenTerminalPositionEvidenceRow
+	err := row.Scan(
+		&i.ID,
+		&i.TournamentID,
+		&i.RosterID,
+		&i.GroupRevisionID,
+		&i.AttemptID,
+		&i.MembershipID,
+		&i.ParticipantID,
+		&i.RuntimeRevision,
+		&i.Deadline,
+		&i.Position,
+		&i.PayloadDigest,
+		&i.RecordedAt,
+		&i.CreatedAt,
+		&i.PositionCommitID,
+	)
+	return i, err
+}
+
 const getLatestGoldenRecoveryRevision = `-- name: GetLatestGoldenRecoveryRevision :one
 SELECT id,
     attempt_id,
@@ -4217,15 +4401,29 @@ type ListGoldenPositionCommitsParams struct {
 	RosterID     uuid.UUID
 }
 
-func (q *Queries) ListGoldenPositionCommits(ctx context.Context, arg ListGoldenPositionCommitsParams) ([]GoldenPositionCommit, error) {
+type ListGoldenPositionCommitsRow struct {
+	ID                       uuid.UUID
+	AttemptID                uuid.UUID
+	TournamentID             uuid.UUID
+	RosterID                 uuid.UUID
+	MembershipID             uuid.UUID
+	ParticipantID            uuid.UUID
+	ProvisionalSubmissionID  uuid.NullUUID
+	PreviousPositionCommitID uuid.NullUUID
+	Position                 int16
+	CommittedAt              pgtype.Timestamptz
+	CreatedAt                pgtype.Timestamptz
+}
+
+func (q *Queries) ListGoldenPositionCommits(ctx context.Context, arg ListGoldenPositionCommitsParams) ([]ListGoldenPositionCommitsRow, error) {
 	rows, err := q.db.Query(ctx, listGoldenPositionCommits, arg.AttemptID, arg.TournamentID, arg.RosterID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []GoldenPositionCommit{}
+	items := []ListGoldenPositionCommitsRow{}
 	for rows.Next() {
-		var i GoldenPositionCommit
+		var i ListGoldenPositionCommitsRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.AttemptID,
@@ -4508,7 +4706,10 @@ LEFT JOIN golden_provisional_submissions AS submission
     AND submission.membership_id = membership.id
     AND submission.status = 'accepted'
 LEFT JOIN golden_position_commits AS position_commit
-    ON position_commit.provisional_submission_id = submission.id
+    ON position_commit.membership_id = membership.id
+    AND position_commit.attempt_id = membership.attempt_id
+    AND position_commit.tournament_id = membership.tournament_id
+    AND position_commit.roster_id = membership.roster_id
 LEFT JOIN golden_attempt_submission_revisions AS revision
     ON revision.provisional_submission_id = submission.id
 WHERE membership.attempt_id = $1
@@ -5057,7 +5258,10 @@ LEFT JOIN golden_provisional_submissions AS submission
     AND submission.membership_id = membership.id
     AND submission.status = 'accepted'
 LEFT JOIN golden_position_commits AS position_commit
-    ON position_commit.provisional_submission_id = submission.id
+    ON position_commit.membership_id = membership.id
+    AND position_commit.attempt_id = membership.attempt_id
+    AND position_commit.tournament_id = membership.tournament_id
+    AND position_commit.roster_id = membership.roster_id
 WHERE runtime.tournament_id = $1
     AND NOT EXISTS (
         SELECT 1

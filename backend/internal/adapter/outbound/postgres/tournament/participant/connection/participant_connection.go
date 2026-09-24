@@ -2,6 +2,7 @@ package connection
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 
@@ -796,19 +797,48 @@ func participantConnectionOperatorPauseAction(
 		// operation has no presence mutation to apply.
 		return connection.ResolvedAction{Kind: connection.ActionNone}, binding, nil
 	}
+	graphRevision, err := participantConnectionPauseGraphRevision(row)
+	if err != nil {
+		return connection.ResolvedAction{Kind: connection.ActionNone}, participantConnectionBinding{}, err
+	}
 	return connection.ResolvedAction{
 		Kind: connection.ActionPausedPresence,
 		PausedPresence: &pauseusecase.PausedPresenceCommand{
 			Scope:                    state.Authority.Scope,
 			PauseID:                  row.PauseID,
 			ParticipantID:            state.Root.ParticipantID,
-			ExpectedGraphRevision:    1,
+			ExpectedGraphRevision:    graphRevision,
 			ExpectedPauseRevision:    row.PauseRevision,
 			ExpectedPresenceEpoch:    row.PresenceEpoch,
 			ExpectedPresenceRevision: row.PresenceRevision,
 			NextState:                target,
 		},
 	}, binding, nil
+}
+
+func participantConnectionPauseGraphRevision(row sqlc.LockParticipantConnectionOperatorPauseRow) (int64, error) {
+	var document struct {
+		Version int                             `json:"version"`
+		Pause   *pauseusecase.NormalPauseRecord `json:"normal_pause"`
+	}
+	if err := json.Unmarshal(row.PauseDocument, &document); err != nil || document.Version != 1 || document.Pause == nil {
+		return 0, fmt.Errorf("missing or invalid normal pause receipt: %w", domain.ErrInternal)
+	}
+	pause := document.Pause
+	if !participantConnectionPauseReceiptMatches(*pause, row) {
+		return 0, fmt.Errorf("normal pause receipt identity or graph revision mismatch: %w", domain.ErrInternal)
+	}
+	return pause.Graph.Revision, nil
+}
+
+func participantConnectionPauseReceiptMatches(pause pauseusecase.NormalPauseRecord, row sqlc.LockParticipantConnectionOperatorPauseRow) bool {
+	scopeMatches := func(scope pausedomain.GraphScope) bool {
+		return scope.TournamentID == row.TournamentID && scope.RosterID == row.RosterID && scope.WaveID == row.WaveID
+	}
+	return pause.PauseID == row.PauseID && pause.ScopeKind == pausedomain.ScopeWave && pause.ScopeID == row.WaveID &&
+		pause.Reason == pauseusecase.PauseReasonOperator && pause.State == pauseusecase.PauseStateActive &&
+		pause.Revision == row.PauseRevision && scopeMatches(pause.Scope) && scopeMatches(pause.Graph.Scope) &&
+		pause.Graph.ActivePauseID == row.PauseID && pause.Graph.Revision >= 1
 }
 
 func participantConnectionActiveGameAction(

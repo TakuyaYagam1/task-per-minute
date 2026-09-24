@@ -60,7 +60,7 @@ func (repository *GoldenRuntimePostgres) Recover(ctx context.Context, tournament
 				}
 				continue
 			}
-			if err := repository.applyGoldenRuntimeRecoveryBoundary(txCtx, q, attempt, boundary, now); err != nil {
+			if err := repository.applyGoldenRuntimeRecoveryBoundary(txCtx, q, attempt, boundary, head.Revision, now); err != nil {
 				return err
 			}
 			if err := ensureGoldenRuntimeRecoveryStable(txCtx, q, attempt, now); err != nil {
@@ -151,7 +151,7 @@ func (repository *GoldenRuntimePostgres) goldenRuntimeRecoveryBoundary(
 		if err != nil {
 			return "", goldenRuntimeReadError("load Golden deadline survivors", err)
 		}
-		if len(unresolved) == 0 {
+		if len(unresolved) <= 1 {
 			return "completion", nil
 		}
 		assignment, err := q.GetGoldenRuntimeAssignment(ctx, sqlc.GetGoldenRuntimeAssignmentParams{
@@ -185,13 +185,14 @@ func (repository *GoldenRuntimePostgres) applyGoldenRuntimeRecoveryBoundary(
 	q *sqlc.Queries,
 	attempt sqlc.ListGoldenRuntimeRecoveryAttemptsRow,
 	boundary string,
+	runtimeRevision int64,
 	now time.Time,
 ) error {
 	switch boundary {
 	case "ready_timeout", "no_show":
 		return repository.expireGoldenRuntimeReadyWindow(ctx, q, attempt, now)
 	case "technical_pause", "completion", "reserve_creation":
-		return repository.closeGoldenRuntimeDeadline(ctx, q, attempt, now)
+		return repository.closeGoldenRuntimeDeadline(ctx, q, attempt, runtimeRevision, now)
 	default:
 		return domain.ErrConflict
 	}
@@ -285,6 +286,7 @@ func (repository *GoldenRuntimePostgres) closeGoldenRuntimeDeadline(
 	ctx context.Context,
 	q *sqlc.Queries,
 	attempt sqlc.ListGoldenRuntimeRecoveryAttemptsRow,
+	runtimeRevision int64,
 	now time.Time,
 ) error {
 	members, err := q.ListGoldenRuntimeAttemptMembers(ctx, sqlc.ListGoldenRuntimeAttemptMembersParams{
@@ -313,6 +315,9 @@ func (repository *GoldenRuntimePostgres) closeGoldenRuntimeDeadline(
 			ExpectedState: "active",
 		})
 		return goldenRuntimeWriteError("pause common Golden failure", err)
+	}
+	if err := repository.commitGoldenRuntimeTerminalPosition(ctx, q, attempt, members, runtimeRevision, now); err != nil {
+		return err
 	}
 	return repository.continueOrFinalizeGoldenRuntime(ctx, q, attempt, now)
 }
@@ -594,6 +599,7 @@ type goldenRuntimeTerminalAttemptEvidence struct {
 	SubmissionRevisionID uuid.UUID
 	SubmissionRevision   int64
 	Commits              []sqlc.ListGoldenRuntimeGroupEvidenceRow
+	Terminal             *goldenRuntimeTerminalCommit
 }
 
 func loadGoldenRuntimeTerminalEvidence(
@@ -641,6 +647,9 @@ func loadGoldenRuntimeTerminalEvidence(
 			return nil, nil, domain.ErrConflict
 		}
 	}
+	if err := loadGoldenRuntimeTerminalCommit(ctx, q, tournamentID, groupRevisionID, attempts, byAttempt); err != nil {
+		return nil, nil, err
+	}
 	return attempts, evidence, nil
 }
 
@@ -652,10 +661,14 @@ func persistGoldenRuntimeTerminalAttempt(
 	evidence goldenRuntimeTerminalAttemptEvidence,
 	now time.Time,
 ) error {
-	if len(evidence.Commits) > domain.TournamentMaxParticipants {
+	commitCount := len(evidence.Commits)
+	if evidence.Terminal != nil {
+		commitCount++
+	}
+	if commitCount > domain.TournamentMaxParticipants {
 		return domain.ErrConflict
 	}
-	orderCount := int16(len(evidence.Commits)) //nolint:gosec // Domain bounds cap Golden groups at 16 members.
+	orderCount := int16(commitCount)
 	if _, err := q.CreateGoldenPositionLedgerAttempt(ctx, sqlc.CreateGoldenPositionLedgerAttemptParams{
 		LedgerRevisionID: ledgerRevisionID, AttemptID: attempt.AttemptID,
 		SubmissionRevisionID: evidence.SubmissionRevisionID, TournamentID: attempt.TournamentID,
@@ -676,6 +689,9 @@ func persistGoldenRuntimeTerminalAttempt(
 		}); err != nil {
 			return goldenRuntimeWriteError("bind cumulative Golden position", err)
 		}
+	}
+	if evidence.Terminal != nil {
+		return persistGoldenRuntimeTerminalCommit(ctx, q, ledgerRevisionID, attempt, *evidence.Terminal, now)
 	}
 	return nil
 }
@@ -714,6 +730,19 @@ func (repository *GoldenRuntimePostgres) appendGoldenRuntimeNoShowPositions(
 			}
 		}
 	}
+	if len(rows) == 0 {
+		return domain.ErrConflict
+	}
+	terminal, err := readGoldenRuntimeTerminalPosition(ctx, q, tournamentID, rows[0].RosterID, groupRevisionID)
+	if err != nil {
+		return err
+	}
+	if terminal != nil {
+		committed[terminal.ParticipantID] = struct{}{}
+		if terminal.Position > maxPosition {
+			maxPosition = terminal.Position
+		}
+	}
 	if maxPosition == 0 {
 		maxPosition = minSourcePosition - 1
 	}
@@ -738,7 +767,7 @@ func (repository *GoldenRuntimePostgres) appendGoldenRuntimeNoShowPositions(
 		if _, err = q.CreateGoldenPositionCommit(ctx, sqlc.CreateGoldenPositionCommitParams{
 			ID: uuid.New(), AttemptID: row.AttemptID, TournamentID: tournamentID, RosterID: row.RosterID,
 			MembershipID: row.MembershipID, ParticipantID: row.ParticipantID,
-			ProvisionalSubmissionID: submissionID, Position: maxPosition, CommittedAt: tstz(now), CreatedAt: tstz(now),
+			ProvisionalSubmissionID: uuid.NullUUID{UUID: submissionID, Valid: true}, Position: maxPosition, CommittedAt: tstz(now), CreatedAt: tstz(now),
 		}); err != nil {
 			return goldenRuntimeWriteError("commit Golden no-show fallback", err)
 		}

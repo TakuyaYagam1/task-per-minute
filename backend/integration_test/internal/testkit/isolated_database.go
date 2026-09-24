@@ -5,6 +5,8 @@ package testkit
 import (
 	"context"
 	"database/sql"
+	"errors"
+	"fmt"
 	"net/url"
 	"strings"
 	"sync"
@@ -16,6 +18,20 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jackc/pgx/v5/stdlib"
 	"github.com/stretchr/testify/require"
+)
+
+const (
+	// PostgreSQL serializes database catalog changes at cluster scope. Every
+	// harness process uses this advisory lock before physical database DDL.
+	isolatedDatabaseDDLAdvisoryLockKey     int64 = 0x54504d44444c
+	isolatedDatabaseDDLLockTimeout               = 5 * time.Minute
+	isolatedDatabaseDDLOperationTimeout          = 5 * time.Minute
+	isolatedDatabaseDatabaseSetupTimeout         = 2 * time.Minute
+	isolatedDatabaseDDLUnlockTimeout             = 5 * time.Second
+	isolatedDatabaseConnectionCloseTimeout       = 5 * time.Second
+	// DROP DATABASE waits for PostgreSQL's cluster checkpointer. Keep cleanup
+	// bounded, but allow the same operation window as the other physical DDL.
+	isolatedDatabaseCleanupOperationTimeout = isolatedDatabaseDDLOperationTimeout
 )
 
 var parallelDatabaseMigrationMu sync.Mutex
@@ -96,29 +112,34 @@ func createIsolatedDatabase(
 	adminConfig := adminPool.Config().ConnConfig.Copy()
 	adminConfig.Database = "postgres"
 	adminConnection, err := pgx.ConnectConfig(ctx, adminConfig)
-	require.NoError(tb, err)
-	_, err = adminConnection.Exec(ctx, "CREATE DATABASE "+identifier+" TEMPLATE "+templateIdentifier)
 	if err != nil {
-		_ = adminConnection.Close(context.WithoutCancel(ctx))
+		require.NoError(tb, err)
+		return nil, nil
 	}
-	require.NoError(tb, err)
+	err = withDatabaseDDL(ctx, adminConnection, func(operationCtx context.Context) error {
+		_, execErr := adminConnection.Exec(operationCtx, "CREATE DATABASE "+identifier+" TEMPLATE "+templateIdentifier)
+		return execErr
+	})
+	if err != nil {
+		_ = closeDatabaseDDLConnection(adminConnection)
+		require.NoError(tb, err)
+		return nil, nil
+	}
 
 	var (
 		pool     *pgxpool.Pool
 		database *sql.DB
 	)
 	tb.Cleanup(func() {
-		if pool != nil {
-			pool.Close()
-		}
 		if database != nil {
 			_ = database.Close()
 		}
+		if pool != nil {
+			pool.Close()
+		}
 
-		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
-		defer cancel()
-		_, dropErr := adminConnection.Exec(cleanupCtx, "DROP DATABASE "+identifier+" WITH (FORCE)")
-		_ = adminConnection.Close(cleanupCtx)
+		defer func() { _ = closeDatabaseDDLConnection(adminConnection) }()
+		dropErr := dropIsolatedDatabase(ctx, adminConnection, databaseName, identifier)
 		require.NoError(tb, dropErr)
 	})
 
@@ -128,10 +149,109 @@ func createIsolatedDatabase(
 	database = stdlib.OpenDB(*config.ConnConfig)
 	database.SetMaxOpenConns(1)
 	database.SetMaxIdleConns(1)
-	require.NoError(tb, database.PingContext(ctx))
+	setupCtx, setupCancel := context.WithTimeout(context.Background(), isolatedDatabaseDatabaseSetupTimeout)
+	defer setupCancel()
+	require.NoError(tb, database.PingContext(setupCtx))
 
-	pool, err = pgxpool.NewWithConfig(ctx, config)
+	pool, err = pgxpool.NewWithConfig(setupCtx, config)
 	require.NoError(tb, err)
-	require.NoError(tb, pool.Ping(ctx))
+	require.NoError(tb, pool.Ping(setupCtx))
 	return pool, database
+}
+
+func withDatabaseDDL(
+	ctx context.Context,
+	connection *pgx.Conn,
+	operation func(context.Context) error,
+) error {
+	return withDatabaseDDLTimeouts(
+		ctx,
+		connection,
+		isolatedDatabaseDDLLockTimeout,
+		isolatedDatabaseDDLOperationTimeout,
+		operation,
+	)
+}
+
+func withDatabaseCleanupDDL(
+	parent context.Context,
+	connection *pgx.Conn,
+	operation func(context.Context) error,
+) error {
+	return withDatabaseDDLTimeouts(
+		context.WithoutCancel(parent),
+		connection,
+		isolatedDatabaseDDLLockTimeout,
+		isolatedDatabaseCleanupOperationTimeout,
+		operation,
+	)
+}
+
+func withDatabaseDDLTimeouts(
+	ctx context.Context,
+	connection *pgx.Conn,
+	lockTimeout time.Duration,
+	operationTimeout time.Duration,
+	operation func(context.Context) error,
+) (retErr error) {
+	lockCtx, lockCancel := context.WithTimeout(ctx, lockTimeout)
+	if err := acquireDatabaseAdvisoryLock(lockCtx, connection, isolatedDatabaseDDLAdvisoryLockKey); err != nil {
+		lockCancel()
+		return fmt.Errorf("acquire isolated database DDL lock: %w", err)
+	}
+	lockCancel()
+	defer func() {
+		retErr = errors.Join(retErr, releaseDatabaseAdvisoryLock(connection, isolatedDatabaseDDLAdvisoryLockKey))
+	}()
+
+	operationCtx, operationCancel := context.WithTimeout(ctx, operationTimeout)
+	defer operationCancel()
+	if err := operation(operationCtx); err != nil {
+		return fmt.Errorf("isolated database DDL operation: %w", err)
+	}
+	return nil
+}
+
+func dropIsolatedDatabase(ctx context.Context, connection *pgx.Conn, databaseName, identifier string) error {
+	return withDatabaseCleanupDDL(ctx, connection, func(operationCtx context.Context) error {
+		if _, err := connection.Exec(operationCtx, `
+			SELECT pg_terminate_backend(pid)
+			FROM pg_stat_activity
+			WHERE datname = $1 AND pid <> pg_backend_pid()`, databaseName); err != nil {
+			return fmt.Errorf("terminate isolated database sessions: %w", err)
+		}
+		if _, err := connection.Exec(operationCtx, "DROP DATABASE "+identifier+" WITH (FORCE)"); err != nil {
+			return fmt.Errorf("drop isolated database: %w", err)
+		}
+		return nil
+	})
+}
+
+func acquireDatabaseAdvisoryLock(ctx context.Context, connection *pgx.Conn, key int64) error {
+	if _, err := connection.Exec(ctx, "SELECT pg_advisory_lock($1)", key); err != nil {
+		return errors.Join(err, closeDatabaseDDLConnection(connection))
+	}
+	return nil
+}
+
+func releaseDatabaseAdvisoryLock(connection *pgx.Conn, key int64) error {
+	unlockCtx, cancel := context.WithTimeout(context.Background(), isolatedDatabaseDDLUnlockTimeout)
+	defer cancel()
+	var unlocked bool
+	if err := connection.QueryRow(unlockCtx, "SELECT pg_advisory_unlock($1)", key).Scan(&unlocked); err != nil {
+		return errors.Join(fmt.Errorf("release database advisory lock: %w", err), closeDatabaseDDLConnection(connection))
+	}
+	if !unlocked {
+		return errors.Join(errors.New("release database advisory lock: lock was not held"), closeDatabaseDDLConnection(connection))
+	}
+	return nil
+}
+
+func closeDatabaseDDLConnection(connection *pgx.Conn) error {
+	if connection == nil {
+		return nil
+	}
+	closeCtx, cancel := context.WithTimeout(context.Background(), isolatedDatabaseConnectionCloseTimeout)
+	defer cancel()
+	return connection.Close(closeCtx)
 }

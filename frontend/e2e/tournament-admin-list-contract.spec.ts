@@ -185,8 +185,12 @@ test("показывает состояния загрузки списка ту
   });
 
   await loginAndOpenTournamentList(page);
-  await expect(page.getByText("Загружаем публикацию")).toBeVisible();
-  await expect(page.getByText("Загружаем турниры")).toBeVisible();
+  await expect(
+    page.getByRole("region", { name: "Каталог контента" }).getByText("Загружаем публикацию"),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("region", { name: "Турниры" }).getByText("Загружаем турниры"),
+  ).toBeVisible();
 
   releaseContent?.();
   releaseList?.();
@@ -230,7 +234,7 @@ test("показывает ошибку списка и доступен пов�
   );
   const failedRequestCount = listRequests;
   expect(failedRequestCount).toBeGreaterThanOrEqual(1);
-  await page.getByRole("button", { name: "Обновить список" }).click();
+  await page.getByRole("region", { name: "Турниры" }).getByRole("button", { name: "Обновить список" }).click();
   await expect(page.getByText("Турниров пока нет")).toBeVisible();
   expect(listRequests).toBe(failedRequestCount + 1);
 });
@@ -373,7 +377,9 @@ test("создает турнир с актуальной ревизией и о
   await loginAndOpenTournamentList(page);
   await page.getByLabel("Название турнира").fill("Весенний турнир");
   await page.getByLabel("Плановый размер состава").selectOption("8");
-  await expect(page.getByText(`Ревизия ${contentRevision}`)).toBeVisible();
+  await expect(
+    page.getByRole("region", { name: "Каталог контента" }).getByText(`Ревизия ${contentRevision}`, { exact: true }),
+  ).toBeVisible();
   const createButton = page.getByRole("button", { name: "Создать демо-турнир" });
   await expect(createButton).toBeEnabled();
   await Promise.all([
@@ -487,5 +493,7 @@ test("список не создает горизонтальный overflow в 
     expect(dimensions.bodyWidth).toBeLessThanOrEqual(dimensions.viewportWidth);
     expect(dimensions.documentWidth).toBeLessThanOrEqual(dimensions.viewportWidth);
   }
-  await expect(page.getByText("Мобильный турнир")).toBeVisible();
+  await expect(
+    page.getByRole("table", { name: "Операторские турниры" }).getByText("Мобильный турнир", { exact: true }),
+  ).toBeVisible();
 });

@@ -371,13 +371,21 @@ func tournamentAdminSnapshotPauseGame(
 	belongsToNormalPause := paused && (pauseIndex.descendsFrom(gamePause.ID, root.ID) ||
 		tournamentAdminSnapshotParallelGamePause(gamePause, root, pauseIndex))
 	if game.State == domain.GameStatePaused {
-		if !paused || execution.ResumeState == nil || *execution.ResumeState != domain.SeriesStateActive ||
-			gamePause.PausedFromState != string(domain.GameStateActive) ||
-			(!belongsToNormalPause && gamePause.Reason != string(gameusecase.PauseReasonDisconnect)) {
+		if !paused || gamePause.PausedFromState != string(domain.GameStateActive) {
 			return gameusecase.PauseGame{}, domain.ErrInternal
 		}
-		resumeState := domain.GameStateActive
-		value.ResumeState = &resumeState
+		if execution.Series.State == domain.SeriesStateActive && execution.ResumeState == nil {
+			if !tournamentAdminSnapshotIndependentSourcePause(gamePause, game, seriesID, root) {
+				return gameusecase.PauseGame{}, domain.ErrInternal
+			}
+		} else {
+			if execution.ResumeState == nil || *execution.ResumeState != domain.SeriesStateActive ||
+				(!belongsToNormalPause && gamePause.Reason != string(gameusecase.PauseReasonDisconnect)) {
+				return gameusecase.PauseGame{}, domain.ErrInternal
+			}
+			resumeState := domain.GameStateActive
+			value.ResumeState = &resumeState
+		}
 	} else {
 		if belongsToNormalPause {
 			return gameusecase.PauseGame{}, domain.ErrInternal
@@ -391,6 +399,43 @@ func tournamentAdminSnapshotPauseGame(
 		return gameusecase.PauseGame{}, domain.ErrInternal
 	}
 	return value, nil
+}
+
+func tournamentAdminSnapshotIndependentSourcePause(
+	gamePause sqlc.Pause,
+	game domain.Game,
+	seriesID uuid.UUID,
+	root sqlc.Pause,
+) bool {
+	return tournamentAdminSnapshotIndependentSourcePauseIdentityMatches(gamePause, game, seriesID, root) &&
+		tournamentAdminSnapshotIndependentSourcePauseStateMatches(gamePause) &&
+		tournamentAdminSnapshotIndependentSourcePauseTimelineMatches(gamePause, root)
+}
+
+func tournamentAdminSnapshotIndependentSourcePauseIdentityMatches(
+	gamePause sqlc.Pause,
+	game domain.Game,
+	seriesID uuid.UUID,
+	root sqlc.Pause,
+) bool {
+	return gamePause.ID != root.ID && gamePause.ScopeKind == "game_attempt" && gamePause.ScopeID == game.ID &&
+		gamePause.GameAttemptID.Valid && gamePause.GameAttemptID.UUID == game.ID &&
+		gamePause.SeriesID.Valid && gamePause.SeriesID.UUID == seriesID &&
+		gamePause.TournamentID == root.TournamentID && gamePause.RosterID == root.RosterID
+}
+
+func tournamentAdminSnapshotIndependentSourcePauseStateMatches(gamePause sqlc.Pause) bool {
+	return !gamePause.ParentPauseID.Valid && gamePause.Depth == 0 &&
+		gamePause.State == string(gameusecase.PauseStateActive) &&
+		gamePause.Reason == string(gameusecase.PauseReasonDisconnect) &&
+		gamePause.PausedFromState == string(domain.GameStateActive) &&
+		!gamePause.ResolvedAt.Valid && gamePause.CurrentRevisionID != uuid.Nil && gamePause.Revision >= 1
+}
+
+func tournamentAdminSnapshotIndependentSourcePauseTimelineMatches(gamePause, root sqlc.Pause) bool {
+	startedAt, started := tournamentAdminSnapshotRequiredTime(gamePause.StartedAt)
+	rootStartedAt, rootStarted := tournamentAdminSnapshotRequiredTime(root.StartedAt)
+	return started && rootStarted && !startedAt.After(rootStartedAt)
 }
 
 func tournamentAdminSnapshotParallelSeriesPause(seriesPause, root sqlc.Pause) bool {

@@ -24,6 +24,10 @@ func PauseResumeExpectationFrom(authority PauseResumeAuthority) PauseResumeExpec
 	return resumeusecase.PauseResumeExpectationFrom(authority)
 }
 
+func ValidatePauseResumeRecord(record PauseResumeRecord) error {
+	return resumeusecase.ValidatePauseResumeRecord(record)
+}
+
 func validatePauseResumeCommand(command PauseResumeCommand) error {
 	return resumeusecase.ValidatePauseResumeCommand(command)
 }

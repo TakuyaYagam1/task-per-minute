@@ -265,6 +265,7 @@ const setupRosterRoutes = async (
           projection_revision: projectionRevision,
         },
         pause_graph: null,
+        recovery_controls: [],
         roster: initialRoster,
         series: [],
         tournament: tournament(initialRoster.participants.length),

@@ -52,6 +52,26 @@ func TestGoldenParticipantRuntimeViewDeniesUnknownPlayer(t *testing.T) {
 	require.ErrorIs(t, err, domain.ErrTournamentNotFound)
 }
 
+func TestGoldenRuntimeViewsKeepTerminalPositionWithoutSubmission(t *testing.T) {
+	t.Parallel()
+	row := goldenRuntimeViewRowForTest(uuid.New())
+	position := int16(4)
+	row.State = "completed"
+	row.Position = &position
+	participant, err := goldenParticipantRuntimeView(row.PlayerID, []sqlc.ListGoldenRuntimeViewRow{row})
+	require.NoError(t, err)
+	require.False(t, participant.Submitted)
+	require.NotNil(t, participant.Position)
+	require.Equal(t, 4, *participant.Position)
+	operator, err := goldenOperatorRuntimeView(row.TournamentID, []sqlc.ListGoldenRuntimeViewRow{row}, time.Now().UTC())
+	require.NoError(t, err)
+	require.Len(t, operator.Groups, 1)
+	require.Len(t, operator.Groups[0].Members, 1)
+	require.False(t, operator.Groups[0].Members[0].Submitted)
+	require.NotNil(t, operator.Groups[0].Members[0].Position)
+	require.Equal(t, 4, *operator.Groups[0].Members[0].Position)
+}
+
 func goldenRuntimeViewRowForTest(playerID uuid.UUID) sqlc.ListGoldenRuntimeViewRow {
 	taskURL := "http://task.example.test:8080/challenge"
 	return sqlc.ListGoldenRuntimeViewRow{

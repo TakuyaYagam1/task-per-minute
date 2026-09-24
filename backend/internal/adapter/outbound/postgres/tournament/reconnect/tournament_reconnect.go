@@ -14,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/internal/db"
+	terminalrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/recovery/terminal"
 	resultrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/result"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/sqlc"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
@@ -457,12 +458,7 @@ func (r *TournamentReconnectPostgres) loadTournamentReconnectAuthority(
 		return reconnectusecase.ReconnectAuthority{}, domain.ErrConflict
 	}
 	projectionRevision := projection.RevisionNumber
-	if latest != nil && latest.ReconnectAuthority.Game.ID == game.ID && latest.ReconnectAuthority.Series.ID == series.ID {
-		if latest.ReconnectAuthority.GameRevision != gameRevision ||
-			latest.ReconnectAuthority.SeriesRevision != seriesRow.Revision ||
-			latest.ReconnectAuthority.CurrentProjectionRevision != projectionRevision {
-			return reconnectusecase.ReconnectAuthority{}, domain.ErrConflict
-		}
+	if reconnectLatestReceiptMatchesCurrentGraph(latest, scope, game.ID, series.ID, gameRevision, seriesRow.Revision) {
 		if latest.ReconnectAuthority.Current != nil {
 			if latest.ReconnectAuthority.Scope != scope || !game.State.IsTerminal() ||
 				!latest.ReconnectAuthority.Game.State.IsTerminal() {
@@ -472,7 +468,7 @@ func (r *TournamentReconnectPostgres) loadTournamentReconnectAuthority(
 		}
 	}
 	currentRevision := int64(1)
-	if latest != nil && latest.ReconnectAuthority.Game.ID == game.ID && latest.ReconnectAuthority.Series.ID == series.ID {
+	if reconnectLatestReceiptMatchesCurrentGraph(latest, scope, game.ID, series.ID, gameRevision, seriesRow.Revision) {
 		currentRevision = latest.ReconnectAuthority.Revision
 		if currentRevision < 1 {
 			return reconnectusecase.ReconnectAuthority{}, domain.ErrInternal
@@ -539,6 +535,12 @@ func (r *TournamentReconnectPostgres) loadTournamentReconnectAuthority(
 		counters, err = recoveryCounters(counterRows)
 		if err != nil {
 			return reconnectusecase.ReconnectAuthority{}, err
+		}
+		if len(counters) < 2 {
+			counters, err = restoreMissingReconnectCounters(counters, intervals, latest, pauseID, currentRevision)
+			if err != nil {
+				return reconnectusecase.ReconnectAuthority{}, err
+			}
 		}
 	} else {
 		pauseID = reconnectSyntheticPauseID(game.ID, currentRevision)
@@ -671,14 +673,14 @@ func (r *TournamentReconnectPostgres) reconnectCurrentDeadline(
 		TournamentID: scope.TournamentID, RosterID: scope.RosterID, WaveID: scope.WaveID, GameAttemptID: nullableUUIDValue(game.ID),
 	})
 	if err == nil {
-		if !resumed.PauseClock.ResumedDeadline.Valid {
+		clock, clockErr := recoveryGameClock(resumed.PauseClock)
+		if clockErr != nil {
+			return time.Time{}, fmt.Errorf("map current reconnect clock: %w", clockErr)
+		}
+		if clock.ResumedDeadline == nil {
 			return time.Time{}, domain.ErrInternal
 		}
-		deadline, timeErr := requiredRecoveryTime(resumed.PauseClock.ResumedDeadline)
-		if timeErr != nil {
-			return time.Time{}, timeErr
-		}
-		return deadline, nil
+		return *clock.ResumedDeadline, nil
 	}
 	if !errors.Is(err, pgx.ErrNoRows) {
 		return time.Time{}, fmt.Errorf("load current reconnect deadline: %w", err)
@@ -703,12 +705,28 @@ func (r *TournamentReconnectPostgres) reconnectCurrentDeadline(
 	return deadline, nil
 }
 
+func reconnectLatestReceiptMatchesCurrentGraph(
+	latest *reconnectusecase.ReconnectRecord,
+	scope pausedomain.GraphScope,
+	gameID, seriesID uuid.UUID,
+	gameRevision, seriesRevision int64,
+) bool {
+	if latest == nil {
+		return false
+	}
+	authority := latest.ReconnectAuthority
+	return authority.Scope == scope && authority.PauseID != uuid.Nil &&
+		authority.Game.ID == gameID && authority.Series.ID == seriesID &&
+		authority.GameClock.PauseID == authority.PauseID && authority.GameClock.GameID == gameID &&
+		authority.GameRevision == gameRevision && authority.SeriesRevision == seriesRevision
+}
+
 // rehydrateTournamentReconnectActiveState restores the state that is no
 // longer represented by the active game row after a reconnect pause resumes.
 // Receipts retain the complete reconnect history, while the pause clock keeps
 // the authoritative frozen and resumed timing. A new synthetic pause identity
-// keeps the next disconnect append-only and prevents it from mutating the old
-// resumed pause or its counters.
+// keeps the next disconnect append-only without mutating the old resumed
+// pause or its counters.
 func rehydrateTournamentReconnectActiveState(
 	receipt reconnectusecase.ReconnectAuthority,
 	row sqlc.PauseClock,
@@ -807,6 +825,27 @@ func remapTournamentReconnectCounters(
 		return nil, domain.ErrConflict
 	}
 	return counters, nil
+}
+
+// A carried counter has no row in a new pause until that participant opens
+// a root there. The latest receipt retains its budget and CAS revision.
+func restoreMissingReconnectCounters(
+	persisted []pausedomain.PauseReconnectCounter,
+	intervals []pausedomain.PauseReconnectInterval,
+	latest *reconnectusecase.ReconnectRecord,
+	pauseID uuid.UUID,
+	revision int64,
+) ([]pausedomain.PauseReconnectCounter, error) {
+	return terminalrepo.RestoreReconnectCounters(persisted, intervals, latest, pauseID, revision)
+}
+
+func reconnectHasRoot(intervals []pausedomain.PauseReconnectInterval, pauseID, participantID uuid.UUID) bool {
+	for _, interval := range intervals {
+		if interval.PauseID == pauseID && interval.ParticipantID == participantID && interval.ContinuationNumber == 0 {
+			return true
+		}
+	}
+	return false
 }
 
 //nolint:gocyclo // Game selection rejects ambiguous multi-series authority in one closed decision tree.
@@ -1515,15 +1554,11 @@ func createTournamentReconnectPause(
 		}
 	}
 	for _, counter := range current.Counters {
-		if counter.Validate() != nil || counter.Limit > math.MaxInt16 || counter.Used > math.MaxInt16 {
-			return sqlc.Pause{}, domain.ErrValidation
+		if counter.Used > 0 && !reconnectHasRoot(next.Reconnect, next.PauseID, counter.ParticipantID) {
+			continue
 		}
-		createdParticipant, counterErr := q.CreateTournamentAdminNormalPauseCounter(ctx, sqlc.CreateTournamentAdminNormalPauseCounterParams{
-			PauseID: counter.PauseID, RosterID: counter.RosterID, ParticipantID: counter.ParticipantID,
-			SlotLimit: int16(counter.Limit), SlotsUsed: int16(counter.Used), Revision: counter.Revision, CreatedAt: tstz(counterCreatedAt), //nolint:gosec // Domain validation bounds reconnect slots to the fixed tournament limit.
-		})
-		if counterErr != nil || createdParticipant != counter.ParticipantID {
-			return sqlc.Pause{}, normalPauseCAS("create reconnect counter", counterErr)
+		if err := createTournamentReconnectCounter(ctx, q, counter, counterCreatedAt); err != nil {
+			return sqlc.Pause{}, err
 		}
 	}
 	return sqlc.Pause{
@@ -1533,6 +1568,25 @@ func createTournamentReconnectPause(
 		Reason: "disconnect", PausedFromState: string(current.Game.State), State: string(pauseusecase.PauseStateActive),
 		StartedAt: tstz(startedAt), CreatedAt: tstz(startedAt), UpdatedAt: tstz(startedAt),
 	}, nil
+}
+
+func createTournamentReconnectCounter(
+	ctx context.Context,
+	q *sqlc.Queries,
+	counter pausedomain.PauseReconnectCounter,
+	createdAt time.Time,
+) error {
+	if counter.Validate() != nil || counter.Limit > math.MaxInt16 || counter.Used > math.MaxInt16 {
+		return domain.ErrValidation
+	}
+	createdParticipant, err := q.CreateTournamentAdminNormalPauseCounter(ctx, sqlc.CreateTournamentAdminNormalPauseCounterParams{
+		PauseID: counter.PauseID, RosterID: counter.RosterID, ParticipantID: counter.ParticipantID,
+		SlotLimit: int16(counter.Limit), SlotsUsed: int16(counter.Used), Revision: counter.Revision, CreatedAt: tstz(createdAt), //nolint:gosec // Domain validation bounds reconnect slots to the fixed tournament limit.
+	})
+	if err != nil || createdParticipant != counter.ParticipantID {
+		return normalPauseCAS("create reconnect counter", err)
+	}
+	return nil
 }
 
 func persistReconnectPresenceCAS(
@@ -1615,6 +1669,21 @@ func persistReconnectIntervalsCAS(
 			}
 			if value.Number > math.MaxInt16 || value.ContinuationNumber > math.MaxInt32 {
 				return domain.ErrValidation
+			}
+			if current.Game.State == domain.GameStatePaused && value.ContinuationNumber == 0 {
+				counter, ok := reconnectCounterByParticipant(current.Counters, value.ParticipantID)
+				if !ok || counter.PauseID != pauseID || value.Number != counter.Used+1 {
+					return domain.ErrConflict
+				}
+				if counter.Used > 0 && !reconnectHasRoot(current.Reconnect, pauseID, value.ParticipantID) {
+					createdAt, ok := reconnectCounterPredecessorTime(value.OpenedAt)
+					if !ok {
+						return domain.ErrValidation
+					}
+					if err := createTournamentReconnectCounter(ctx, q, counter, createdAt); err != nil {
+						return err
+					}
+				}
 			}
 			created, err := q.CreateTournamentAdminNormalPauseReconnectInterval(ctx, sqlc.CreateTournamentAdminNormalPauseReconnectIntervalParams{
 				ID: value.ID, PauseID: value.PauseID, RosterID: value.RosterID, SeriesID: value.SeriesID,

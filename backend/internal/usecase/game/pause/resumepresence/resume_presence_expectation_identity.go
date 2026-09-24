@@ -9,7 +9,7 @@ import (
 )
 
 func pauseResumePresenceExpectationEqual(first, second PauseResumePresenceExpectation) bool {
-	return pauseResumeExpectationEqual(first.Resume, second.Resume) && pauseResumeDecisionExpectationEqual(first.Series, second.Series) &&
+	return first.SourceAdoption == second.SourceAdoption && pauseResumeExpectationEqual(first.Resume, second.Resume) && pauseResumeDecisionExpectationEqual(first.Series, second.Series) &&
 		pauseResumeDecisionExpectationEqual(first.Game, second.Game) && pauseResumePresenceSetEqual(first.Presence, second.Presence) &&
 		pauseResumeReconnectSetEqual(first.Reconnect, second.Reconnect) && pauseResumeCounterSetEqual(first.Counters, second.Counters) &&
 		pauseResumeFrozenBaselineEqual(first.FrozenDeadlines, second.FrozenDeadlines)
@@ -17,6 +17,7 @@ func pauseResumePresenceExpectationEqual(first, second PauseResumePresenceExpect
 
 func clonePauseResumePresenceExpectation(value PauseResumePresenceExpectation) PauseResumePresenceExpectation {
 	return PauseResumePresenceExpectation{
+		SourceAdoption:  value.SourceAdoption,
 		Resume:          clonePauseResumeExpectationPreservingSlices(value.Resume),
 		Series:          clonePauseResumeDecisionExpectation(value.Series),
 		Game:            clonePauseResumeDecisionExpectation(value.Game),
@@ -31,6 +32,7 @@ func clonePauseResumeExpectationPreservingSlices(value PauseResumeExpectation) P
 	clone := value
 	clone.Games = clonePauseSlice(value.Games)
 	clone.Series = clonePauseSlice(value.Series)
+	clone.SourcePauses = clonePauseSlice(value.SourcePauses)
 	clone.Presence = clonePauseSlice(value.Presence)
 	clone.Reconnect = clonePauseSlice(value.Reconnect)
 	clone.Counters = clonePauseSlice(value.Counters)

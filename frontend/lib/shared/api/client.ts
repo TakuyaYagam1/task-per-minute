@@ -480,12 +480,12 @@ export const adminCredentialedFetch: typeof fetch = async (input, init) => {
 };
 
 export const publicClient = createClient<paths>({
-  baseUrl: CONFIG.apiUrl,
+  baseUrl: CONFIG.apiUrl || requestBaseURL(),
   fetch: credentialedFetch,
 });
 
 export const adminClient = createClient<paths>({
-  baseUrl: CONFIG.adminApiUrl,
+  baseUrl: CONFIG.adminApiUrl || requestBaseURL(),
   fetch: adminCredentialedFetch,
 });
 

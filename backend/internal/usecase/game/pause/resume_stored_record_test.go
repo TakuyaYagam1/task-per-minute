@@ -119,6 +119,26 @@ func testPauseResumeStoredRecords(t *testing.T, resumedAt time.Time) {
 		}
 	})
 
+	t.Run("rejects an adopted Game deadline that diverges from its source clock", func(t *testing.T) {
+		t.Parallel()
+
+		authority, command := sourcePauseResumeFixture(t, resumedAt)
+		leaderRepository := newPauseResumeRepositoryHarness(t, authority)
+		leader := gameusecase.NewPauseResumeUseCase(newPauseTransactionManager(t), leaderRepository, newPauseClock(t, resumedAt))
+		stored, changed, err := leader.Resume(t.Context(), command)
+		if err != nil || !changed {
+			t.Fatalf("prepare stored source resume: error = %v, changed = %v", err, changed)
+		}
+		wrongDeadline := stored.Graph.Games[0].Deadline.Add(time.Nanosecond)
+		stored.Graph.Games[0].Deadline = &wrongDeadline
+		repository := newPauseResumeRepositoryHarness(t, authority)
+		repository.storeCommand(*stored)
+		useCase := gameusecase.NewPauseResumeUseCase(newPauseTransactionManager(t), repository, newPauseClock(t, resumedAt.Add(time.Second)))
+		if _, changed, err := useCase.Resume(t.Context(), command); !errors.Is(err, gameusecase.ErrPauseResumeCommandReuse) || changed || repository.writeCount() != 0 {
+			t.Fatalf("Resume() error = %v, changed = %v, writes = %d", err, changed, repository.writeCount())
+		}
+	})
+
 	t.Run("rejects changed lineage for a no-op Draft resume", func(t *testing.T) {
 		t.Parallel()
 

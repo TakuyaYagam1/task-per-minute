@@ -88,6 +88,10 @@ func frozenRevisionMapEqual(first, second []PauseFrozenDeadlineRevision) bool {
 	return model.FrozenRevisionMapEqual(first, second)
 }
 
+func sourcePauseRevisionMapEqual(first, second []PauseSourcePauseRevision) bool {
+	return model.SourcePauseRevisionMapEqual(first, second)
+}
+
 func validPauseDraftRevisionContract(expected *draftusecase.RevisionExpectation, previousRevisionID uuid.UUID) bool {
 	return model.ValidPauseDraftRevisionContract(expected, previousRevisionID)
 }
@@ -110,6 +114,10 @@ func validCounterRevisions(values []PauseReconnectCounterRevision) bool {
 
 func validFrozenDeadlineRevisions(values []PauseFrozenDeadlineRevision) bool {
 	return model.ValidFrozenDeadlineRevisions(values)
+}
+
+func validSourcePauseRevisions(values []PauseSourcePauseRevision) bool {
+	return model.ValidSourcePauseRevisions(values)
 }
 
 func absentDraftRevisionMatches(current *draftusecase.Execution, expected *draftusecase.RevisionExpectation, resultRevisionID uuid.UUID) bool {
@@ -190,4 +198,8 @@ func PauseGameByID(games []PauseGame, id uuid.UUID) *PauseGame {
 
 func PauseGraphRevisionsFrom(graph PauseGraph) model.PauseGraphRevisions {
 	return model.PauseGraphRevisionsFrom(graph)
+}
+
+func pauseSourceResumeRevisionID(commandID, pauseID uuid.UUID) uuid.UUID {
+	return model.PauseSourceResumeRevisionID(commandID, pauseID)
 }

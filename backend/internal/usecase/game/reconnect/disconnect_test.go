@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain/pause"
 	reconnectusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/reconnect"
@@ -492,4 +494,30 @@ func TestDisconnectCycleLimit(t *testing.T) {
 			})
 		}
 	})
+}
+
+func TestDisconnectAllowsPausedAuthorityWithSuspendedReconnectRoots(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, time.September, 1, 14, 0, 0, 0, time.UTC)
+	authority := task045Authority(now, false, false)
+	authority.Game.State = domain.GameStatePaused
+	authority.Series.Slots[0].Attempts[0] = authority.Game
+	authority.GameClock.FrozenAt = now.Add(-5 * time.Second)
+	authority.GameClock.Remaining = 40 * time.Second
+	authority.GameClock.OriginalDeadline = authority.GameClock.FrozenAt.Add(authority.GameClock.Remaining)
+	authority.GameClock.Revision = 2
+	authority.GameRevision++
+	authority.Counters[0].Used = 1
+	authority.Counters[0].Revision = 2
+
+	command := reconnectusecase.DisconnectCommand{
+		Scope: authority.Scope, CommandID: task045ID(190), ParticipantID: authority.Series.FirstParticipantID,
+		IntervalID: task045ID(191), Deadline: now.Add(30 * time.Second), Settlement: task045SettlementIDs(192),
+	}
+	repository := newTask045RepositoryHarness(t, authority)
+	record, changed, err := reconnectusecase.NewDisconnectUseCase(repository, newReconnectClock(t, now)).Disconnect(t.Context(), command)
+	require.NoError(t, err)
+	require.True(t, changed)
+	require.NotNil(t, record)
+	require.Equal(t, 2, task045Counter(t, record.ReconnectAuthority, command.ParticipantID).Used)
 }

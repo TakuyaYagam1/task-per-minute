@@ -38,7 +38,7 @@ func pauseResumePresenceResumeCommandEqual(first, second PauseResumeCommand) boo
 }
 
 func pauseResumePresenceDecisionCommandEqual(first, second PauseResumePresenceCommand) bool {
-	return first.SeriesDecisionID == second.SeriesDecisionID && first.GameDecisionID == second.GameDecisionID &&
+	return first.SourceAdoption == second.SourceAdoption && first.SeriesDecisionID == second.SeriesDecisionID && first.GameDecisionID == second.GameDecisionID &&
 		pauseResumeDecisionExpectationEqual(first.SeriesExpected, second.SeriesExpected) &&
 		pauseResumeDecisionExpectationEqual(first.GameExpected, second.GameExpected)
 }

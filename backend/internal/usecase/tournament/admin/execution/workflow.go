@@ -520,13 +520,20 @@ func (w *ExecutionWorkflow) resumeNormalPauseWithPresence(
 	}
 	seriesPauseID := executionID(resume.PauseID, "series:"+seriesID.String())
 	gamePauseID := executionID(resume.PauseID, "game:"+gameID.String())
+	for _, game := range seed.Pause.Graph.Games {
+		if game.Game.ID == gameID && game.SourcePause != nil {
+			seriesPauseID = uuid.Nil
+			gamePauseID = game.SourcePause.PauseID
+		}
+	}
 	authority, err := w.normalPause.LoadPauseResumePresenceAuthority(ctx, resume.Scope, resume.PauseID, seriesPauseID, gamePauseID)
 	if err != nil {
 		return false, err
 	}
 	resume.Expected = pauseusecase.PauseResumeExpectationFrom(authority.Resume)
 	command := pauseusecase.PauseResumePresenceCommand{
-		Resume: resume, SeriesDecisionID: executionID(resume.CommandID, "resume-decision:"+seriesID.String()),
+		SourceAdoption: authority.SourceAdoption,
+		Resume:         resume, SeriesDecisionID: executionID(resume.CommandID, "resume-decision:"+seriesID.String()),
 		GameDecisionID:  executionID(resume.CommandID, "resume-game-decision:"+gameID.String()),
 		SeriesExpected:  pauseusecase.PauseResumeDecisionExpectationFrom(authority.SeriesDecision),
 		GameExpected:    pauseusecase.PauseResumeDecisionExpectationFrom(authority.GameDecision),
@@ -534,6 +541,9 @@ func (w *ExecutionWorkflow) resumeNormalPauseWithPresence(
 		Reconnect:       append([]pausedomain.PauseReconnectInterval(nil), authority.Resume.Reconnect...),
 		Counters:        append([]pausedomain.PauseReconnectCounter(nil), authority.Resume.Counters...),
 		FrozenDeadlines: append([]pauseusecase.PauseFrozenDeadline(nil), authority.Resume.FrozenDeadlines...),
+	}
+	if authority.SourceAdoption {
+		command.SeriesDecisionID = uuid.Nil
 	}
 	series := normalPauseSeriesByID(authority.Resume.Pause.Graph.Series, seriesID)
 	if series == nil || authority.GameDecision.GameClock == nil {

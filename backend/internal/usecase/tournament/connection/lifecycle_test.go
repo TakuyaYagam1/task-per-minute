@@ -294,6 +294,23 @@ func TestCoordinatorReconnectsBeforeResolvedDeadlineWithDeterministicIDs(t *test
 	require.Len(t, h.reconnect.commands(), 1)
 }
 
+func TestCoordinatorReconnectsWhenStaleSocketLeaseStillCounts(t *testing.T) {
+	h := newLifecycleHarness(t)
+	h.repo.openResult = OpenConnectionResult{
+		Lease: h.lease, Opened: true, ActiveLeaseCount: 2,
+		Action: ResolvedAction{
+			Kind:     ActionGameReconnect,
+			Deadline: h.clock.value.Add(time.Minute),
+			Reconnect: &gamereconnect.ReconnectCommand{
+				Scope: h.resolved.Scope, ParticipantID: h.resolved.ParticipantID, IntervalID: uuid.New(),
+			},
+		},
+	}
+
+	require.NoError(t, h.coordinator(t).Connect(context.Background(), h.command))
+	require.Len(t, h.reconnect.commands(), 1)
+}
+
 func TestCoordinatorAdvancesCompletedReconnectInOuterTransaction(t *testing.T) {
 	h := newLifecycleHarness(t)
 	seriesID := uuid.New()

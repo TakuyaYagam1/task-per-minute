@@ -190,8 +190,18 @@ func (repository *RecoveryTerminalPostgres) loadTerminalSnapshot(
 	ctx context.Context,
 	deadline recoveryusecase.PendingDeadline,
 ) (recoveryTerminalSnapshot, error) {
-	if err := lockTournamentResultScope(ctx, repository.tx.Querier(ctx), deadline.TournamentID, deadline.RosterID); err != nil {
+	querier := repository.tx.Querier(ctx)
+	if err := lockTournamentResultScope(ctx, querier, deadline.TournamentID, deadline.RosterID); err != nil {
 		return recoveryTerminalSnapshot{}, err
+	}
+	tournament, err := querier.GetTournament(ctx, deadline.TournamentID)
+	if err != nil {
+		return recoveryTerminalSnapshot{}, err
+	}
+	// The locked terminal parent makes queued child deadlines stale even when
+	// cancellation leaves their local execution state unchanged.
+	if tournament.State == string(domain.TournamentStateCancelled) || tournament.State == string(domain.TournamentStateCompleted) {
+		return recoveryTerminalSnapshot{}, pgx.ErrNoRows
 	}
 	switch deadline.Kind {
 	case recoveryusecase.DeadlineKindGame:
@@ -309,14 +319,6 @@ func (repository *RecoveryTerminalPostgres) loadReconnectTimeout(
 	if repository.authority == nil {
 		return recoveryTerminalSnapshot{}, domain.ErrValidation
 	}
-	now := repository.clock.Now().Round(0).UTC()
-	lease, err := repository.authority.LoadAuthority(ctx, deadline.TournamentID)
-	if err != nil {
-		return recoveryTerminalSnapshot{}, fmt.Errorf("load execution authority: %w", err)
-	}
-	if lease == nil || !lease.Proves(lease.Identity(), now) {
-		return recoveryTerminalSnapshot{}, domain.ErrConflict
-	}
 	querier := repository.tx.Querier(ctx)
 	row, err := querier.LockRecoveryReconnectTimeout(ctx, sqlc.LockRecoveryReconnectTimeoutParams{
 		WaveID: deadline.WaveID, ReconnectIntervalID: deadline.ID, ParticipantID: deadline.ParticipantID,
@@ -325,6 +327,16 @@ func (repository *RecoveryTerminalPostgres) loadReconnectTimeout(
 	})
 	if err != nil {
 		return recoveryTerminalSnapshot{}, err
+	}
+	// Only a still-current reconnect candidate requires live execution authority.
+	// A settled interval must stay a no-op after its former lease expires.
+	now := repository.clock.Now().Round(0).UTC()
+	lease, err := repository.authority.LoadAuthority(ctx, deadline.TournamentID)
+	if err != nil {
+		return recoveryTerminalSnapshot{}, fmt.Errorf("load execution authority: %w", err)
+	}
+	if lease == nil || !lease.Proves(lease.Identity(), now) {
+		return recoveryTerminalSnapshot{}, domain.ErrConflict
 	}
 	seriesSnapshot, series, ordinal, revisionIDs, projectionRevision, err := repository.loadRecoverySeries(
 		ctx,
@@ -352,6 +364,9 @@ func (repository *RecoveryTerminalPostgres) loadReconnectTimeout(
 		CurrentOrdinal: ordinal, CurrentProjectionRevision: projectionRevision,
 		CurrentGameResultRevisionIDs: revisionIDs, Game: game, Series: series,
 		GameClock: graph.clock, Presence: graph.presence, Reconnect: graph.intervals, Counters: graph.counters,
+	}
+	if err := repository.restoreReconnectCounters(ctx, &authorityValue); err != nil {
+		return recoveryTerminalSnapshot{}, err
 	}
 	terminalAuthority := recoveryusecase.DeadlineTerminalAuthority{Deadline: deadline, ReconnectTimeout: &authorityValue}
 	if terminalAuthority.Validate() != nil {

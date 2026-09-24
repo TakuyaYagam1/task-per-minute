@@ -128,7 +128,7 @@ export const usePublicTournamentRealtime = ({
       recoveryGenerationRef.current = generation;
       setStatus("recovering");
       retry();
-      socketRef.current?.close(1002, "public realtime recovery required");
+      socketRef.current?.close(1000, "public realtime recovery required");
     };
 
     const connect = (): void => {
@@ -168,7 +168,7 @@ export const usePublicTournamentRealtime = ({
           if (isPublicRealtimeRejection(value)) {
             terminalGenerationRef.current = generation;
             setStatus("rejected");
-            socket.close(1008, "public realtime rejected");
+            socket.close(1000, "public realtime rejected");
             return;
           }
           if (isPublicRealtimeTerminal(value, tournamentId)) {

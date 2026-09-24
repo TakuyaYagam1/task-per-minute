@@ -26,6 +26,7 @@ type PauseChildRevision = model.PauseChildRevision
 type PausePresenceRevision = model.PausePresenceRevision
 type PauseReconnectCounterRevision = model.PauseReconnectCounterRevision
 type PauseFrozenDeadlineRevision = model.PauseFrozenDeadlineRevision
+type PauseSourcePauseRevision = model.PauseSourcePauseRevision
 type PauseWave = model.PauseWave
 type PauseSeries = model.PauseSeries
 type PauseGame = model.PauseGame
@@ -56,6 +57,7 @@ type PauseResumeExpectation struct {
 	WaveRevision            int64
 	Series                  []PauseChildRevision
 	Games                   []PauseChildRevision
+	SourcePauses            []PauseSourcePauseRevision
 	Draft                   *draftusecase.RevisionExpectation
 	DraftPreviousRevisionID uuid.UUID
 	Presence                []PausePresenceRevision

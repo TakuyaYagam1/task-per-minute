@@ -87,6 +87,7 @@ type PauseGraphRevisions struct {
 	WaveRevision            int64
 	Series                  []PauseChildRevision
 	Games                   []PauseChildRevision
+	SourcePauses            []PauseSourcePauseRevision
 	Draft                   *draftusecase.RevisionExpectation
 	DraftPreviousRevisionID uuid.UUID
 	Presence                []PausePresenceRevision
@@ -94,6 +95,16 @@ type PauseGraphRevisions struct {
 	Counters                []PauseReconnectCounterRevision
 	FrozenDeadlines         []PauseFrozenDeadlineRevision
 	TerminalActionRevision  int64
+}
+
+type PauseSourcePauseRevision struct {
+	GameID            uuid.UUID
+	PauseID           uuid.UUID
+	CurrentRevisionID uuid.UUID
+	Revision          int64
+	DecisionNumber    int64
+	ClockRevision     int64
+	Remaining         time.Duration
 }
 
 type PauseWave struct {
@@ -113,6 +124,36 @@ type PauseGame struct {
 	Revision    int64
 	Deadline    *time.Time
 	ResumeState *domain.GameState
+	SourcePause *PauseGameSourcePause
+}
+
+// PauseGameSourcePause is immutable evidence for a Game pause that predates a
+// normal Wave pause. Its reconnect rows and clock remain owned by PauseID.
+type PauseGameSourcePause struct {
+	PauseID           uuid.UUID
+	ScopeKind         string
+	ScopeID           uuid.UUID
+	SeriesID          uuid.UUID
+	GameID            uuid.UUID
+	Reason            PauseReason
+	ParentPauseID     *uuid.UUID
+	Depth             int
+	State             PauseState
+	CurrentRevisionID uuid.UUID
+	Revision          int64
+	StartedAt         time.Time
+	ResolvedAt        *time.Time
+	DecisionNumber    int64
+	Clock             PauseFrozenDeadline
+	Presence          []PausePresenceSnapshot
+}
+
+type PausePresenceSnapshot struct {
+	ParticipantID uuid.UUID
+	State         pausedomain.PresenceState
+	PresenceEpoch int64
+	Revision      int64
+	CapturedAt    time.Time
 }
 
 type PauseFrozenDeadline struct {

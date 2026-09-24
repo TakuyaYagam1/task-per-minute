@@ -74,10 +74,70 @@ func resolvedGraphMatchesExpectation(
 	}
 	current := PauseGraphRevisionsFrom(graph)
 	return resolvedMutableChildrenMatch(graph, expected, resumedAt, draftResultRevisionID, commandID, actorID) &&
+		resolvedSourcePausesMatch(graph, current.SourcePauses, expected.SourcePauses, resumedAt, commandID) &&
 		presenceRevisionMapEqual(current.Presence, expected.Presence) &&
 		revisionMapEqual(current.Reconnect, expected.Reconnect) && counterRevisionMapEqual(current.Counters, expected.Counters) &&
 		frozenRevisionsAdvanced(current.FrozenDeadlines, expected.FrozenDeadlines) &&
 		current.TerminalActionRevision == expected.TerminalActionRevision
+}
+
+func resolvedSourcePausesMatch(
+	graph PauseGraph,
+	current, expected []PauseSourcePauseRevision,
+	resumedAt time.Time,
+	commandID uuid.UUID,
+) bool {
+	if len(current) != len(expected) {
+		return false
+	}
+	currentByGame := make(map[uuid.UUID]PauseSourcePauseRevision, len(current))
+	for _, revision := range current {
+		currentByGame[revision.GameID] = revision
+	}
+	for _, source := range expected {
+		game := pauseGameByID(graph.Games, source.GameID)
+		if !resolvedSourceGameMatches(game, source, resumedAt, commandID) {
+			return false
+		}
+		currentRevision, exists := currentByGame[source.GameID]
+		if !exists || !resolvedSourceRevisionMatches(*game, currentRevision, source) {
+			return false
+		}
+	}
+	return true
+}
+
+func resolvedSourceGameMatches(game *PauseGame, source PauseSourcePauseRevision, resumedAt time.Time, commandID uuid.UUID) bool {
+	if game == nil || game.SourcePause == nil || game.Game.State != domain.GameStateActive || game.Deadline == nil ||
+		source.Revision == math.MaxInt64 || source.DecisionNumber == math.MaxInt64 || source.ClockRevision == math.MaxInt64 {
+		return false
+	}
+	deadline, ok := pausedomain.AddTime(resumedAt, source.Remaining)
+	return ok && resolvedSourceIdentityMatches(*game, source, commandID) && resolvedSourceClockMatches(*game, resumedAt, deadline)
+}
+
+func resolvedSourceIdentityMatches(game PauseGame, source PauseSourcePauseRevision, commandID uuid.UUID) bool {
+	resolved := game.SourcePause
+	return resolved.PauseID == source.PauseID && resolved.GameID == source.GameID &&
+		resolved.CurrentRevisionID == pauseSourceResumeRevisionID(commandID, source.PauseID) &&
+		resolved.Revision == source.Revision+1 && resolved.DecisionNumber == source.DecisionNumber+1 &&
+		resolved.Clock.Revision == source.ClockRevision+1 && resolved.Clock.Remaining == source.Remaining &&
+		resolved.State == PauseStateResumed
+}
+
+func resolvedSourceClockMatches(game PauseGame, resumedAt, deadline time.Time) bool {
+	resolved := game.SourcePause
+	return resolved.ResolvedAt != nil && resolved.ResolvedAt.Equal(resumedAt) &&
+		resolved.Clock.ResumedAt != nil && resolved.Clock.ResumedAt.Equal(resumedAt) &&
+		resolved.Clock.ResumedDeadline != nil && resolved.Clock.ResumedDeadline.Equal(deadline) && game.Deadline.Equal(deadline)
+}
+
+func resolvedSourceRevisionMatches(game PauseGame, current, source PauseSourcePauseRevision) bool {
+	resolved := game.SourcePause
+	return current.GameID == source.GameID && current.PauseID == source.PauseID &&
+		current.CurrentRevisionID == resolved.CurrentRevisionID && current.Revision == resolved.Revision &&
+		current.DecisionNumber == resolved.DecisionNumber && current.ClockRevision == resolved.Clock.Revision &&
+		current.Remaining == source.Remaining
 }
 
 func resolvedRootMatchesExpectation(graph PauseGraph, expected PauseResumeExpectation, resumedAt time.Time) bool {
@@ -96,7 +156,7 @@ func resolvedMutableChildrenMatch(
 	commandID uuid.UUID,
 	actorID uuid.UUID,
 ) bool {
-	return resolvedSeriesRevisionsMatch(graph.Series, expected.Series) &&
+	return resolvedSeriesRevisionsMatch(graph.Series, graph.Games, expected.Series) &&
 		resolvedGameRevisionsMatch(graph.Games, expected.Games) &&
 		resolvedDraftRevisionMatches(graph.Draft, expected.Draft, expected.DraftPreviousRevisionID,
 			draftResultRevisionID, commandID, actorID, resumedAt)
@@ -116,12 +176,20 @@ func resolvedWaveRevisionMatches(current PauseWave, expected int64) bool {
 	}
 }
 
-func resolvedSeriesRevisionsMatch(current []PauseSeries, expected []PauseChildRevision) bool {
+func resolvedSeriesRevisionsMatch(current []PauseSeries, games []PauseGame, expected []PauseChildRevision) bool {
 	if len(current) != len(expected) {
 		return false
 	}
 	for _, series := range current {
 		revision, ok := childRevision(expected, series.Execution.Series.ID)
+		if ok && series.Execution.Series.State == domain.SeriesStateActive && series.Execution.ResumeState == nil &&
+			series.CurrentGameID != nil && series.Revision == revision {
+			game := pauseGameByID(games, *series.CurrentGameID)
+			if game != nil && game.SeriesID == series.Execution.Series.ID && game.SourcePause != nil &&
+				game.SourcePause.State == PauseStateResumed {
+				continue
+			}
+		}
 		if !ok || !resolvedSeriesRevisionMatches(series, revision) {
 			return false
 		}
@@ -252,6 +320,7 @@ func PauseResumeExpectationFrom(authority PauseResumeAuthority) PauseResumeExpec
 		TerminalActionRevision: authority.TerminalActionRevision,
 		Series:                 make([]PauseChildRevision, len(authority.Pause.Graph.Series)),
 		Games:                  make([]PauseChildRevision, len(authority.Pause.Graph.Games)),
+		SourcePauses:           PauseGraphRevisionsFrom(authority.Pause.Graph).SourcePauses,
 		Presence:               make([]PausePresenceRevision, len(authority.Presence)),
 		Reconnect:              make([]PauseChildRevision, len(authority.Reconnect)),
 		Counters:               make([]PauseReconnectCounterRevision, len(authority.Counters)),
@@ -308,6 +377,7 @@ func validPauseResumeRootExpectation(value PauseResumeExpectation) bool {
 
 func validPauseResumeChildExpectation(value PauseResumeExpectation) bool {
 	return validUniqueChildRevisions(value.Series) && validUniqueChildRevisions(value.Games) &&
+		validSourcePauseRevisions(value.SourcePauses) &&
 		validUniqueChildRevisions(value.Reconnect) && validCounterRevisions(value.Counters) &&
 		validFrozenDeadlineRevisions(value.FrozenDeadlines)
 }
@@ -326,6 +396,7 @@ func pauseResumeRootExpectationEqual(first, second PauseResumeExpectation) bool 
 
 func pauseResumeChildExpectationEqual(first, second PauseResumeExpectation) bool {
 	return revisionMapEqual(first.Series, second.Series) && revisionMapEqual(first.Games, second.Games) &&
+		sourcePauseRevisionMapEqual(first.SourcePauses, second.SourcePauses) &&
 		revisionMapEqual(first.Reconnect, second.Reconnect) && presenceRevisionMapEqual(first.Presence, second.Presence) &&
 		counterRevisionMapEqual(first.Counters, second.Counters) && frozenRevisionMapEqual(first.FrozenDeadlines, second.FrozenDeadlines)
 }
@@ -334,6 +405,7 @@ func clonePauseResumeExpectation(value PauseResumeExpectation) PauseResumeExpect
 	clone := value
 	clone.Games = append([]PauseChildRevision(nil), value.Games...)
 	clone.Series = append([]PauseChildRevision(nil), value.Series...)
+	clone.SourcePauses = append([]PauseSourcePauseRevision(nil), value.SourcePauses...)
 	clone.Presence = append([]PausePresenceRevision(nil), value.Presence...)
 	clone.Reconnect = append([]PauseChildRevision(nil), value.Reconnect...)
 	clone.Counters = append([]PauseReconnectCounterRevision(nil), value.Counters...)

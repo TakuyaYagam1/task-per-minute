@@ -120,9 +120,13 @@ func recoveryGameClock(row sqlc.PauseClock) (pausedomain.PauseResumeGameClock, e
 	if err != nil {
 		return pausedomain.PauseResumeGameClock{}, err
 	}
+	exactRemaining, err := recoveredFrozenDuration(originalDeadline, frozenAt, row.FrozenRemainingMs)
+	if err != nil {
+		return pausedomain.PauseResumeGameClock{}, err
+	}
 	clock := pausedomain.PauseResumeGameClock{
 		PauseID: row.PauseID, GameID: row.GameAttemptID, OriginalDeadline: originalDeadline,
-		FrozenAt: frozenAt, Remaining: time.Duration(row.FrozenRemainingMs) * time.Millisecond,
+		FrozenAt: frozenAt, Remaining: exactRemaining,
 		ResumedAt: optionalRecoveryTime(row.ResumedAt), ResumedDeadline: optionalRecoveryTime(row.ResumedDeadline),
 		Revision: row.Revision,
 	}
@@ -130,6 +134,18 @@ func recoveryGameClock(row sqlc.PauseClock) (pausedomain.PauseResumeGameClock, e
 		return pausedomain.PauseResumeGameClock{}, fmt.Errorf("%w: Game clock: %w", errNormalPauseSnapshot, err)
 	}
 	return clock, nil
+}
+
+func recoveredFrozenDuration(originalDeadline, frozenAt time.Time, frozenRemainingMs int64) (time.Duration, error) {
+	if frozenRemainingMs < 1 || frozenRemainingMs > math.MaxInt64/int64(time.Millisecond) {
+		return 0, fmt.Errorf("%w: invalid frozen duration", errNormalPauseSnapshot)
+	}
+	persistedRemaining := time.Duration(frozenRemainingMs) * time.Millisecond
+	exactRemaining := originalDeadline.Sub(frozenAt)
+	if exactRemaining <= 0 || exactRemaining < persistedRemaining || exactRemaining-persistedRemaining >= time.Millisecond {
+		return 0, fmt.Errorf("%w: frozen duration differs from persisted milliseconds", errNormalPauseSnapshot)
+	}
+	return exactRemaining, nil
 }
 
 func requiredRecoveryTime(value pgtype.Timestamptz) (time.Time, error) {

@@ -44,7 +44,10 @@ func TestTaskExposureMigrationPreservesExistingEvidence(t *testing.T) {
 	const migration17 int64 = 17
 	const migration18 int64 = 18
 
-	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	// DDL coordination can wait for other root shards before this test gets its
+	// database. Keep the test operation bounded, but do not let that wait expire
+	// the context used by the migration and evidence assertions.
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
 
 	pool, database := testkit.CreateIsolatedDatabase(ctx, t, sharedPool, "task_exposure_upgrade")

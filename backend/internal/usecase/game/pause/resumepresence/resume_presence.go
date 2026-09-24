@@ -71,12 +71,14 @@ type PauseResumeDecisionRecord struct {
 }
 
 type PauseResumePresenceAuthority struct {
+	SourceAdoption bool
 	Resume         PauseResumeAuthority
 	SeriesDecision PauseResumeDecisionAuthority
 	GameDecision   PauseResumeDecisionAuthority
 }
 
 type PauseResumePresenceExpectation struct {
+	SourceAdoption  bool
 	Resume          PauseResumeExpectation
 	Series          PauseResumeDecisionExpectation
 	Game            PauseResumeDecisionExpectation
@@ -93,6 +95,7 @@ type PauseResumeIntervalInput struct {
 }
 
 type PauseResumePresenceCommand struct {
+	SourceAdoption   bool
 	Resume           PauseResumeCommand
 	SeriesDecisionID uuid.UUID
 	GameDecisionID   uuid.UUID
@@ -226,7 +229,8 @@ func (u *PauseResumePresenceUseCase) resumeLocked(ctx context.Context, command P
 
 func pauseResumePresenceAuthorityMatchesCommand(authority PauseResumePresenceAuthority, command PauseResumePresenceCommand) bool {
 	expected := PauseResumePresenceExpectation{
-		Resume: clonePauseResumeExpectation(command.Resume.Expected), Series: clonePauseResumeDecisionExpectation(command.SeriesExpected),
+		SourceAdoption: command.SourceAdoption,
+		Resume:         clonePauseResumeExpectation(command.Resume.Expected), Series: clonePauseResumeDecisionExpectation(command.SeriesExpected),
 		Game: clonePauseResumeDecisionExpectation(command.GameExpected), Presence: clonePausePresenceSlice(command.Presence),
 		Reconnect: clonePauseReconnectSlice(command.Reconnect), Counters: clonePauseSlice(command.Counters),
 		FrozenDeadlines: clonePauseFrozenDeadlineSlice(command.FrozenDeadlines),
@@ -287,6 +291,7 @@ func PauseResumeDecisionExpectationFrom(authority PauseResumeDecisionAuthority) 
 
 func PauseResumePresenceExpectationFrom(authority PauseResumePresenceAuthority) PauseResumePresenceExpectation {
 	return PauseResumePresenceExpectation{
+		SourceAdoption:  authority.SourceAdoption,
 		Resume:          PauseResumeExpectationFrom(authority.Resume),
 		Series:          PauseResumeDecisionExpectationFrom(authority.SeriesDecision),
 		Game:            PauseResumeDecisionExpectationFrom(authority.GameDecision),

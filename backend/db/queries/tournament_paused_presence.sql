@@ -91,7 +91,22 @@ WHERE pause.tournament_id = sqlc.arg(tournament_id)
     AND pause.parent_pause_id IS NULL
     AND pause.reason = 'operator'
     AND pause.state = 'active'
-    AND series.state = 'technical_pause'
+    AND (series.state = 'technical_pause' OR (
+        series.state = 'active'
+        AND EXISTS (
+            SELECT 1 FROM pauses AS source_pause
+            WHERE source_pause.tournament_id = series.tournament_id
+                AND source_pause.roster_id = series.roster_id
+                AND source_pause.series_id = series.id
+                AND source_pause.game_attempt_id = attempt.id
+                AND source_pause.scope_kind = 'game_attempt'
+                AND source_pause.scope_id = attempt.id
+                AND source_pause.parent_pause_id IS NULL
+                AND source_pause.depth = 0
+                AND source_pause.reason = 'disconnect'
+                AND source_pause.state = 'active'
+        )
+    ))
     AND attempt.state = 'paused'
 ORDER BY presence.series_id, presence.participant_id, presence.id
 FOR UPDATE OF pause, membership, series, attempt, assignment, snapshot, receipt, presence;

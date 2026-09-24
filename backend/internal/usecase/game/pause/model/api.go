@@ -230,6 +230,16 @@ func ValidFrozenDeadlineRevisions(values []PauseFrozenDeadlineRevision) bool {
 	return validFrozenDeadlineRevisions(values)
 }
 
+// ValidSourcePauseRevisions validates adopted source pause revision evidence.
+func ValidSourcePauseRevisions(values []PauseSourcePauseRevision) bool {
+	return validSourcePauseRevisions(values)
+}
+
+// SourcePauseRevisionMapEqual compares source pause revisions by source identity.
+func SourcePauseRevisionMapEqual(first, second []PauseSourcePauseRevision) bool {
+	return sourcePauseRevisionMapEqual(first, second)
+}
+
 // CloneSlice clones a slice while preserving nil versus empty semantics.
 func CloneSlice[T any](value []T) []T {
 	return clonePauseSlice(value)

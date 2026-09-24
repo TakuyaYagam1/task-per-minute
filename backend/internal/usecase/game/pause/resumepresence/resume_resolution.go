@@ -51,8 +51,10 @@ func buildPauseResumePresenceRecord(authority PauseResumePresenceAuthority, comm
 		if err != nil {
 			return PauseResumePresenceRecord{}, err
 		}
-		seriesDecision := newPauseResumeDecisionRecord(command.SeriesDecisionID, authority.SeriesDecision, PauseResumeActionResume, nil, nil, decidedAt)
-		record.SeriesDecision = &seriesDecision
+		if !command.SourceAdoption {
+			seriesDecision := newPauseResumeDecisionRecord(command.SeriesDecisionID, authority.SeriesDecision, PauseResumeActionResume, nil, nil, decidedAt)
+			record.SeriesDecision = &seriesDecision
+		}
 		record.GameClock = clock
 		record.GamePauseState = PauseStateResumed
 		record.SeriesPauseState = PauseStateResumed
@@ -67,7 +69,7 @@ func buildPauseResumePresenceRecord(authority PauseResumePresenceAuthority, comm
 }
 
 func classifyPauseResumePresence(authority PauseResumePresenceAuthority, command PauseResumePresenceCommand, decidedAt time.Time) (pauseResumePresenceBuild, error) {
-	series := pauseSeriesByID(authority.Resume.Pause.Graph.Series, authority.SeriesDecision.SeriesID)
+	series := pauseSeriesByID(authority.Resume.Pause.Graph.Series, authority.GameDecision.SeriesID)
 	if series == nil {
 		return pauseResumePresenceBuild{}, ErrPauseResumePresenceIncomplete
 	}

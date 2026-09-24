@@ -1298,7 +1298,7 @@ func runGoldenThroughREST(
 	}
 	playersByParticipant := productionPlayersByParticipant(t, roster, playersByID)
 	for _, group := range operator.Groups {
-		require.Greater(t, len(group.Members), 1, "Golden recovery needs unresolved reserve members")
+		require.Greater(t, len(group.Members), 1, "Golden recovery needs at least two primary members")
 	}
 
 	for _, group := range operator.Groups {
@@ -1326,7 +1326,7 @@ func runGoldenThroughREST(
 
 	activeGroups := make([]api.GoldenOperatorGroup, 0, len(beforeStart.Groups))
 	for _, group := range beforeStart.Groups {
-		started := startGoldenAttemptThroughREST(t, fixture, adminToken, tournamentID, group)
+		started := startGoldenGroupWithCurrentRevision(t, fixture, adminToken, tournamentID, group.GroupId)
 		active := goldenOperatorGroupByID(t, started, group.GroupId)
 		require.Equal(t, api.GoldenRuntimeState("active"), active.State)
 		require.NotNil(t, active.StartedAt)
@@ -1352,13 +1352,27 @@ func runGoldenThroughREST(
 		solvers[solver.ParticipantId] = struct{}{}
 	}
 	partial := goldenOperatorThroughREST(t, fixture, adminToken, tournamentID)
+	unresolvedByGroup := make(map[uuid.UUID][]uuid.UUID, len(activeGroups))
+	solvedPositions := make(map[uuid.UUID]int64, len(activeGroups))
 	for _, group := range activeGroups {
 		current := goldenOperatorGroupByID(t, partial, group.GroupId)
 		for _, member := range current.Members {
 			_, solved := solvers[member.ParticipantId]
 			require.Equal(t, solved, member.Submitted)
+			if solved {
+				require.NotNil(t, member.Position)
+				solvedPositions[group.GroupId] = int64(*member.Position)
+			} else {
+				require.Nil(t, member.Position)
+				unresolvedByGroup[group.GroupId] = append(unresolvedByGroup[group.GroupId], member.ParticipantId)
+			}
 		}
+		require.Len(t, unresolvedByGroup[group.GroupId], len(group.Members)-1)
 	}
+	var submissionsBefore int
+	require.NoError(t, sharedPool.QueryRow(ctx,
+		`SELECT COUNT(*) FROM golden_provisional_submissions WHERE tournament_id = $1`, tournamentID,
+	).Scan(&submissionsBefore))
 
 	latestDeadline := *activeGroups[0].Deadline
 	for _, group := range activeGroups[1:] {
@@ -1372,23 +1386,57 @@ func runGoldenThroughREST(
 	recovered := goldenOperatorThroughREST(t, fixture, adminToken, tournamentID)
 	reserveGroups := make([]api.GoldenOperatorGroup, 0, len(activeGroups))
 	for _, group := range activeGroups {
-		reserve := goldenOperatorGroupByID(t, recovered, group.GroupId)
-		require.Equal(t, api.GoldenRuntimeState("prepared"), reserve.State)
-		require.NotEqual(t, group.AttemptId, reserve.AttemptId)
-		require.Len(t, reserve.Members, len(group.Members)-1)
-		for _, member := range reserve.Members {
-			_, solved := solvers[member.ParticipantId]
-			require.False(t, solved, "solved participant must not enter reserve continuation")
+		current := goldenOperatorGroupByID(t, recovered, group.GroupId)
+		unresolved := unresolvedByGroup[group.GroupId]
+		if len(unresolved) == 1 {
+			require.Equal(t, api.GoldenRuntimeState("completed"), current.State)
+			require.Equal(t, group.AttemptId, current.AttemptId)
+			require.Len(t, current.Members, len(group.Members))
+			for _, member := range current.Members {
+				_, solved := solvers[member.ParticipantId]
+				require.Equal(t, solved, member.Submitted)
+				require.NotNil(t, member.Position)
+				position := solvedPositions[group.GroupId]
+				if !solved {
+					require.Equal(t, unresolved[0], member.ParticipantId)
+					position++
+					participant := goldenParticipantThroughREST(t, fixture, tournamentID, playersByParticipant[member.ParticipantId])
+					require.Equal(t, api.GoldenRuntimeState("completed"), participant.State)
+					require.Equal(t, group.AttemptId, participant.AttemptId)
+					require.False(t, participant.Submitted, "deadline placement is not an accepted answer")
+					require.NotNil(t, participant.Position)
+					require.EqualValues(t, position, *participant.Position)
+				}
+				require.EqualValues(t, position, *member.Position)
+			}
+		} else {
+			require.GreaterOrEqual(t, len(unresolved), 2)
+			require.Equal(t, api.GoldenRuntimeState("prepared"), current.State)
+			require.NotEqual(t, group.AttemptId, current.AttemptId)
+			require.Len(t, current.Members, len(unresolved))
+			reserveMembers := make([]uuid.UUID, 0, len(current.Members))
+			for _, member := range current.Members {
+				_, solved := solvers[member.ParticipantId]
+				require.False(t, solved, "solved participant must not enter reserve continuation")
+				reserveMembers = append(reserveMembers, member.ParticipantId)
+			}
+			require.ElementsMatch(t, unresolved, reserveMembers)
+			reserveGroups = append(reserveGroups, current)
 		}
-		reserveGroups = append(reserveGroups, reserve)
 	}
+	var submissionsAfter, noShows int
+	require.NoError(t, sharedPool.QueryRow(ctx, `SELECT
+		(SELECT COUNT(*) FROM golden_provisional_submissions WHERE tournament_id = $1),
+		(SELECT COUNT(*) FROM golden_memberships WHERE tournament_id = $1 AND no_show_at IS NOT NULL)`,
+		tournamentID,
+	).Scan(&submissionsAfter, &noShows))
+	require.Equal(t, submissionsBefore, submissionsAfter, "deadline recovery must not invent an answer")
+	require.Zero(t, noShows, "all primary members established participation")
 	// Replaying recovery through the same runtime composition must leave the
-	// reserve continuation identity and member set unchanged.
+	// terminal result or reserve continuation identity and member set unchanged.
 	require.NoError(t, runtime.golden.Recover(ctx, tournamentID))
 	replayed := goldenOperatorThroughREST(t, fixture, adminToken, tournamentID)
-	for _, reserve := range reserveGroups {
-		require.Equal(t, reserve, goldenOperatorGroupByID(t, replayed, reserve.GroupId))
-	}
+	require.Equal(t, recovered.Groups, replayed.Groups)
 
 	for _, reserve := range reserveGroups {
 		for _, member := range reserve.Members {
@@ -1404,7 +1452,7 @@ func runGoldenThroughREST(
 	for _, reserve := range reserveGroups {
 		current := goldenOperatorGroupByID(t, reserveReady, reserve.GroupId)
 		require.Equal(t, api.GoldenRuntimeState("ready"), current.State)
-		started := startGoldenAttemptThroughREST(t, fixture, adminToken, tournamentID, current)
+		started := startGoldenGroupWithCurrentRevision(t, fixture, adminToken, tournamentID, reserve.GroupId)
 		active := goldenOperatorGroupByID(t, started, reserve.GroupId)
 		require.Equal(t, api.GoldenRuntimeState("active"), active.State)
 		activeReserves = append(activeReserves, active)
@@ -1431,7 +1479,11 @@ func runGoldenThroughREST(
 	for _, group := range activeGroups {
 		final := goldenOperatorGroupByID(t, finished, group.GroupId)
 		require.Equal(t, api.GoldenRuntimeState("completed"), final.State)
-		require.NotEqual(t, group.AttemptId, final.AttemptId)
+		if len(unresolvedByGroup[group.GroupId]) == 1 {
+			require.Equal(t, group.AttemptId, final.AttemptId)
+		} else {
+			require.NotEqual(t, group.AttemptId, final.AttemptId)
+		}
 	}
 	// Recovery advances a frozen application clock through the full Golden
 	// deadline without sleeping. Later stages resume the production wall clock.
@@ -1549,6 +1601,20 @@ func setGoldenParticipantReadyThroughREST(
 	require.Equal(t, http.StatusOK, resp.Code, resp.Body.String())
 	fixture.validateResponse(t, req, resp)
 	return decodeJSON[api.GoldenParticipantResponse](t, resp)
+}
+
+func startGoldenGroupWithCurrentRevision(
+	t *testing.T,
+	fixture *restFixture,
+	adminToken string,
+	tournamentID uuid.UUID,
+	groupID uuid.UUID,
+) api.GoldenOperatorResponse {
+	t.Helper()
+	// Starting any group advances the shared Golden runtime revision.
+	operator := goldenOperatorThroughREST(t, fixture, adminToken, tournamentID)
+	group := goldenOperatorGroupByID(t, operator, groupID)
+	return startGoldenAttemptThroughREST(t, fixture, adminToken, tournamentID, group)
 }
 
 func startGoldenAttemptThroughREST(

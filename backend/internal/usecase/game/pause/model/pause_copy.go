@@ -44,6 +44,7 @@ func clonePauseGraph(value PauseGraph) PauseGraph {
 		clone.Games[index].Game = pausedomain.CloneGame(value.Games[index].Game)
 		clone.Games[index].Deadline = pauseCloneTimePointer(value.Games[index].Deadline)
 		clone.Games[index].ResumeState = cloneGameStatePointer(value.Games[index].ResumeState)
+		clone.Games[index].SourcePause = clonePauseGameSourcePause(value.Games[index].SourcePause)
 	}
 	if value.Draft != nil {
 		draft := draftusecase.CloneExecution(*value.Draft)
@@ -55,6 +56,18 @@ func clonePauseGraph(value PauseGraph) PauseGraph {
 	clone.FrozenDeadlines = clonePauseFrozenDeadlineSlice(value.FrozenDeadlines)
 	clone.PausedAt = pauseCloneTimePointer(value.PausedAt)
 	return clone
+}
+
+func clonePauseGameSourcePause(value *PauseGameSourcePause) *PauseGameSourcePause {
+	if value == nil {
+		return nil
+	}
+	clone := *value
+	clone.ParentPauseID = pauseCloneUUIDPointer(value.ParentPauseID)
+	clone.ResolvedAt = pauseCloneTimePointer(value.ResolvedAt)
+	clone.Clock = clonePauseFrozenDeadlineSlice([]PauseFrozenDeadline{value.Clock})[0]
+	clone.Presence = clonePauseSlice(value.Presence)
+	return &clone
 }
 
 func clonePausePresenceSlice(values []pausedomain.PausePresence) []pausedomain.PausePresence {
@@ -78,8 +91,8 @@ func clonePauseReconnectSlice(values []pausedomain.PauseReconnectInterval) []pau
 func clonePauseFrozenDeadlineSlice(values []PauseFrozenDeadline) []PauseFrozenDeadline {
 	clone := clonePauseSlice(values)
 	for index := range clone {
-		clone[index].ResumedAt = pauseCloneTimePointer(values[index].ResumedAt)
-		clone[index].ResumedDeadline = pauseCloneTimePointer(values[index].ResumedDeadline)
+		clone[index].ResumedAt = pauseCloneTimePointer(clone[index].ResumedAt)
+		clone[index].ResumedDeadline = pauseCloneTimePointer(clone[index].ResumedDeadline)
 	}
 	return clone
 }
@@ -97,6 +110,7 @@ func clonePauseGraphRevisions(value PauseGraphRevisions) PauseGraphRevisions {
 	clone := value
 	clone.Series = clonePauseSlice(value.Series)
 	clone.Games = clonePauseSlice(value.Games)
+	clone.SourcePauses = clonePauseSlice(value.SourcePauses)
 	clone.Presence = clonePauseSlice(value.Presence)
 	clone.Reconnect = clonePauseSlice(value.Reconnect)
 	clone.Counters = clonePauseSlice(value.Counters)

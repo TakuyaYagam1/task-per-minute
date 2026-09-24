@@ -217,16 +217,49 @@ func recoveryGameClock(row sqlc.PauseClock) (pause.PauseResumeGameClock, error) 
 	if err != nil {
 		return pause.PauseResumeGameClock{}, err
 	}
+	persistedRemaining := time.Duration(row.FrozenRemainingMs) * time.Millisecond
+	exactRemaining := originalDeadline.Sub(frozenAt)
+	if exactRemaining <= 0 || exactRemaining < persistedRemaining || exactRemaining-persistedRemaining >= time.Millisecond {
+		return pause.PauseResumeGameClock{}, fmt.Errorf("%w: frozen duration differs from persisted milliseconds", errRecoveryTerminalSnapshot)
+	}
+	resumedAt := optionalRecoveryTime(row.ResumedAt)
+	resumedDeadline, err := recoveryResumedDeadline(row, resumedAt, exactRemaining, persistedRemaining)
+	if err != nil {
+		return pause.PauseResumeGameClock{}, fmt.Errorf("%w: resumed deadline: %w", errRecoveryTerminalSnapshot, err)
+	}
 	clock := pause.PauseResumeGameClock{
 		PauseID: row.PauseID, GameID: row.GameAttemptID, OriginalDeadline: originalDeadline,
-		FrozenAt: frozenAt, Remaining: time.Duration(row.FrozenRemainingMs) * time.Millisecond,
-		ResumedAt: optionalRecoveryTime(row.ResumedAt), ResumedDeadline: optionalRecoveryTime(row.ResumedDeadline),
+		FrozenAt: frozenAt, Remaining: exactRemaining,
+		ResumedAt: resumedAt, ResumedDeadline: resumedDeadline,
 		Revision: row.Revision,
 	}
-	if err := clock.Validate(true); err != nil {
+	if err := clock.Validate(resumedAt == nil); err != nil {
 		return pause.PauseResumeGameClock{}, fmt.Errorf("%w: Game clock: %w", errRecoveryTerminalSnapshot, err)
 	}
 	return clock, nil
+}
+
+func recoveryResumedDeadline(
+	row sqlc.PauseClock,
+	resumedAt *time.Time,
+	exactRemaining, persistedRemaining time.Duration,
+) (*time.Time, error) {
+	if resumedAt == nil {
+		return optionalRecoveryTime(row.ResumedDeadline), nil
+	}
+	persistedDeadline, err := requiredRecoveryTime(row.ResumedDeadline)
+	if err != nil {
+		return nil, err
+	}
+	canonicalDeadline, ok := pause.AddTime(*resumedAt, persistedRemaining)
+	if !ok || !canonicalDeadline.Equal(persistedDeadline) {
+		return nil, domain.ErrConflict
+	}
+	exactDeadline, ok := pause.AddTime(*resumedAt, exactRemaining)
+	if !ok {
+		return nil, domain.ErrConflict
+	}
+	return &exactDeadline, nil
 }
 
 func requiredRecoveryTime(value pgtype.Timestamptz) (time.Time, error) {

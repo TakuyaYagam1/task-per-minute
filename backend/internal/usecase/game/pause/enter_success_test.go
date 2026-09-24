@@ -159,3 +159,56 @@ func testNormalPauseGraphEntrySuccess(t *testing.T, pausedAt time.Time) {
 		}
 	})
 }
+
+func TestNormalPauseEntryKeepsSeriesActiveForAdoptedDisconnectGame(t *testing.T) {
+	t.Parallel()
+
+	pausedAt := time.Date(2026, time.September, 24, 12, 0, 0, 0, time.UTC)
+	authority, command := normalPauseFixture(pausedAt)
+	series := &authority.Graph.Series[0]
+	game := &authority.Graph.Games[0]
+	startedAt := pausedAt.Add(-time.Minute)
+	deadline := pausedAt.Add(time.Minute + 466*time.Microsecond)
+	game.Game.State = domain.GameStatePaused
+	game.Deadline = nil
+	game.SourcePause = &gameusecase.PauseGameSourcePause{
+		PauseID: uuid.New(), ScopeKind: "game_attempt", ScopeID: game.Game.ID,
+		SeriesID: series.Execution.Series.ID, GameID: game.Game.ID,
+		Reason: gameusecase.PauseReasonDisconnect, State: gameusecase.PauseStateActive,
+		CurrentRevisionID: uuid.New(), Revision: 1, StartedAt: startedAt, DecisionNumber: 2,
+		Clock: gameusecase.PauseFrozenDeadline{
+			Kind: gameusecase.PauseDeadlineGame, OwnerID: game.Game.ID,
+			OriginalDeadline: deadline, FrozenAt: startedAt, Remaining: deadline.Sub(startedAt), Revision: 1,
+		},
+		Presence: []gameusecase.PausePresenceSnapshot{
+			{ParticipantID: series.Execution.Series.FirstParticipantID, State: pausedomain.PresenceStateDisconnected,
+				PresenceEpoch: 1, Revision: 1, CapturedAt: startedAt},
+			{ParticipantID: series.Execution.Series.SecondParticipantID, State: pausedomain.PresenceStateConnected,
+				PresenceEpoch: 1, Revision: 1, CapturedAt: startedAt},
+		},
+	}
+	series.Execution.Series.Slots[0].Attempts[0] = game.Game
+	authority.Graph.Counters = append(authority.Graph.Counters,
+		pausedomain.PauseReconnectCounter{PauseID: game.SourcePause.PauseID, RosterID: command.Scope.RosterID,
+			ParticipantID: series.Execution.Series.FirstParticipantID, Limit: 3, Revision: 1},
+		pausedomain.PauseReconnectCounter{PauseID: game.SourcePause.PauseID, RosterID: command.Scope.RosterID,
+			ParticipantID: series.Execution.Series.SecondParticipantID, Limit: 3, Revision: 1},
+	)
+	refreshNormalPauseRevisions(&authority, &command)
+
+	repository := newNormalPauseRepositoryHarness(t, authority)
+	record, changed, err := gameusecase.NewNormalPauseGraphUseCase(
+		newPauseTransactionManager(t), repository, newPauseClock(t, pausedAt),
+	).Enter(t.Context(), command)
+	if err != nil || !changed {
+		t.Fatalf("Enter() error = %v, changed = %v", err, changed)
+	}
+	if got := record.Graph.Series[0]; got.Execution.Series.State != domain.SeriesStateActive ||
+		got.Execution.ResumeState != nil || got.Revision != series.Revision {
+		t.Fatalf("adopted source Series changed during operator pause: %+v", got)
+	}
+	if got := record.Graph.Games[0]; got.Game.State != domain.GameStatePaused || got.ResumeState != nil ||
+		got.Deadline != nil || !reflect.DeepEqual(got.SourcePause, game.SourcePause) || len(record.Graph.FrozenDeadlines) != 0 {
+		t.Fatalf("adopted source Game changed during operator pause: %+v", got)
+	}
+}

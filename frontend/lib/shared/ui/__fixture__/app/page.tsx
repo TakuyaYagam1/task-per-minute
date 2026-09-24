@@ -34,18 +34,24 @@ const participantColumns = [
 ];
 
 export default function SharedUiFixture() {
+  const [hydrated, setHydrated] = useState(false);
   const [theme, setTheme] = useState<Theme>("dark");
   const [buttonLoading, setButtonLoading] = useState(false);
   const [tableMode, setTableMode] = useState<TableMode>("ready");
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [dialogEvents, setDialogEvents] = useState<string[]>([]);
   const dialogTriggerRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    setHydrated(true);
+  }, []);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
   }, [theme]);
 
   return (
-    <main className="fixture-shell motion-page">
+    <main className="fixture-shell motion-page" data-hydrated={hydrated}>
       <h1>Общие компоненты интерфейса</h1>
       <p className="fixture-lede">
         Изолированный экран с синтетическими данными для проверки доступности и состояний.
@@ -149,13 +155,19 @@ export default function SharedUiFixture() {
         <Button ref={dialogTriggerRef} onClick={() => setDialogOpen(true)}>
           Открыть диалог
         </Button>
+        <output aria-label="События диалога">{dialogEvents.join(",") || "Нет"}</output>
         <Dialog
           className="fixture-dialog"
           open={dialogOpen}
           title="Подтвердить действие"
           description="Фокус остается внутри окна, пока оно открыто."
           closeLabel="Закрыть диалог"
-          onOpenChange={setDialogOpen}
+          onOpenChange={(nextOpen) => {
+            setDialogEvents((events) => [...events, `open:${nextOpen}`]);
+            setDialogOpen(nextOpen);
+          }}
+          onClose={() => setDialogEvents((events) => [...events, "close"])}
+          onCancel={() => setDialogEvents((events) => [...events, "cancel"])}
           returnFocusRef={dialogTriggerRef}
           footer={
             <Button variant="secondary" onClick={() => setDialogOpen(false)}>

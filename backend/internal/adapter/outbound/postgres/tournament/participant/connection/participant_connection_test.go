@@ -2,6 +2,7 @@ package connection
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -13,6 +14,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	authoritydomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/authority"
 	pausedomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/pause"
+	gamepause "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/pause"
 	gamereconnect "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/reconnect"
 	connection "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/connection"
 )
@@ -290,12 +292,67 @@ func TestParticipantConnectionOperatorPauseSameStateKeepsBindingForClose(t *test
 	require.NotEqual(t, uuid.Nil, binding.AssignmentID)
 
 	leaseRow := participantConnectionLeaseRow(binding)
+	row.PauseDocument = participantConnectionPauseDocument(t, row, 7)
 	closeAction, closeBinding, err := participantConnectionOperatorPauseAction(row, state, connectionOperationDisconnect)
 	require.NoError(t, err)
 	require.Equal(t, connection.ActionPausedPresence, closeAction.Kind)
+	require.Equal(t, int64(7), closeAction.PausedPresence.ExpectedGraphRevision)
 	matches, err := participantConnectionActionBindingMatchesLease(leaseRow, closeAction.Kind, closeBinding)
 	require.NoError(t, err)
 	require.True(t, matches)
+}
+
+func TestParticipantConnectionOperatorPauseRejectsInvalidReceiptRevision(t *testing.T) {
+	t.Parallel()
+	state := participantConnectionState{
+		Root: sqlc.LockParticipantConnectionIdentityRow{TournamentID: uuid.New(), RosterID: uuid.New(), ParticipantID: uuid.New()},
+		Wave: sqlc.LockParticipantConnectionWaveRow{WaveID: uuid.New()},
+	}
+	row := sqlc.LockParticipantConnectionOperatorPauseRow{
+		PauseID: uuid.New(), TournamentID: state.Root.TournamentID, RosterID: state.Root.RosterID, WaveID: state.Wave.WaveID,
+		PauseRevision: 1, AssignmentID: uuid.New(), GameAttemptID: uuid.New(), SeriesID: uuid.New(), PresenceID: uuid.New(),
+		ParticipantID: state.Root.ParticipantID, PresenceState: "disconnected", PresenceEpoch: 2, PresenceRevision: 3,
+	}
+	row.PresenceSeriesID = row.SeriesID
+	for _, revision := range []any{nil, 0, -1, "2", 1.5, json.Number("9223372036854775808")} {
+		row.PauseDocument = participantConnectionPauseDocument(t, row, revision)
+		_, _, err := participantConnectionOperatorPauseAction(row, state, connectionOperationConnect)
+		require.ErrorIs(t, err, domain.ErrInternal, "invalid revision %v must not become a presence command", revision)
+	}
+	row.PauseDocument = nil
+	_, _, err := participantConnectionOperatorPauseAction(row, state, connectionOperationConnect)
+	require.ErrorIs(t, err, domain.ErrInternal, "missing receipt must fail closed")
+	for _, field := range []string{"pause", "tournament", "roster", "wave"} {
+		wrong := row
+		switch field {
+		case "pause":
+			wrong.PauseID = uuid.New()
+		case "tournament":
+			wrong.TournamentID = uuid.New()
+		case "roster":
+			wrong.RosterID = uuid.New()
+		case "wave":
+			wrong.WaveID = uuid.New()
+		}
+		row.PauseDocument = participantConnectionPauseDocument(t, wrong, 7)
+		_, _, err := participantConnectionOperatorPauseAction(row, state, connectionOperationConnect)
+		require.ErrorIs(t, err, domain.ErrInternal, "mismatched %s receipt", field)
+	}
+}
+
+func participantConnectionPauseDocument(t *testing.T, row sqlc.LockParticipantConnectionOperatorPauseRow, revision any) []byte {
+	t.Helper()
+	scope := pausedomain.GraphScope{TournamentID: row.TournamentID, RosterID: row.RosterID, WaveID: row.WaveID}
+	document, err := json.Marshal(map[string]any{
+		"version": 1, "view": map[string]any{},
+		"normal_pause": map[string]any{
+			"PauseID": row.PauseID, "Scope": scope, "ScopeKind": "wave", "ScopeID": row.WaveID,
+			"Reason": gamepause.PauseReasonOperator, "State": gamepause.PauseStateActive, "Revision": row.PauseRevision,
+			"Graph": map[string]any{"Scope": scope, "ActivePauseID": row.PauseID, "Revision": revision},
+		},
+	})
+	require.NoError(t, err)
+	return document
 }
 
 func TestParticipantConnectionLeaseBindingAllowsPreStartAndRejectsPartial(t *testing.T) {

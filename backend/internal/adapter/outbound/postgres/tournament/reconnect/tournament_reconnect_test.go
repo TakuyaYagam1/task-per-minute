@@ -165,6 +165,29 @@ func TestReconnectSyntheticPauseIDIsStablePerAuthorityRevision(t *testing.T) {
 	require.NotEqual(t, first, reconnectSyntheticPauseID(uuid.New(), 7))
 }
 
+func TestReconnectLatestReceiptAllowsUnrelatedProjectionAdvance(t *testing.T) {
+	t.Parallel()
+	scope := tournamentReconnectTestScope()
+	pauseID, gameID, seriesID := uuid.New(), uuid.New(), uuid.New()
+	record := &gamereconnect.ReconnectRecord{ReconnectAuthority: gamereconnect.ReconnectAuthority{
+		Scope: scope, PauseID: pauseID, GameRevision: 5, SeriesRevision: 7,
+		CurrentProjectionRevision: 11,
+		Game:                      domain.Game{ID: gameID}, Series: domain.Series{ID: seriesID},
+		GameClock: pausedomain.PauseResumeGameClock{PauseID: pauseID, GameID: gameID},
+	}}
+
+	// A different Series may advance the global projection to 12 while this
+	// receipt still matches the current game's graph and pause identity.
+	require.True(t, reconnectLatestReceiptMatchesCurrentGraph(record, scope, gameID, seriesID, 5, 7))
+
+	changedGame := *record
+	changedGame.ReconnectAuthority.GameRevision++
+	require.False(t, reconnectLatestReceiptMatchesCurrentGraph(&changedGame, scope, gameID, seriesID, 5, 7))
+	changedPause := *record
+	changedPause.ReconnectAuthority.PauseID = uuid.New()
+	require.False(t, reconnectLatestReceiptMatchesCurrentGraph(&changedPause, scope, gameID, seriesID, 5, 7))
+}
+
 func TestRehydrateTournamentReconnectActiveStateRestoresResumedClockAndBudget(t *testing.T) {
 	t.Parallel()
 
@@ -222,6 +245,33 @@ func TestRehydrateTournamentReconnectActiveStateRestoresResumedClockAndBudget(t 
 	require.True(t, secondOK)
 	require.Equal(t, 0, secondCounter.Used)
 	require.Equal(t, int64(1), secondCounter.Revision)
+}
+
+func TestRestoreMissingReconnectCountersRequiresMatchingReceiptAndNoRoot(t *testing.T) {
+	t.Parallel()
+
+	pauseID, rosterID := uuid.New(), uuid.New()
+	firstID, secondID := uuid.New(), uuid.New()
+	saved := []pausedomain.PauseReconnectCounter{
+		{PauseID: pauseID, RosterID: rosterID, ParticipantID: firstID, Limit: domain.ReconnectCycleLimit, Used: 1, Revision: 2},
+		{PauseID: pauseID, RosterID: rosterID, ParticipantID: secondID, Limit: domain.ReconnectCycleLimit, Used: 1, Revision: 2},
+	}
+	receipt := &gamereconnect.ReconnectRecord{ReconnectAuthority: gamereconnect.ReconnectAuthority{
+		PauseID: pauseID, Revision: 3, Game: domain.Game{State: domain.GameStatePaused}, Counters: saved,
+	}}
+	root := pausedomain.PauseReconnectInterval{PauseID: pauseID, ParticipantID: secondID}
+
+	got, err := restoreMissingReconnectCounters(saved[1:], []pausedomain.PauseReconnectInterval{root}, receipt, pauseID, 3)
+	require.NoError(t, err)
+	require.ElementsMatch(t, saved, got)
+
+	_, err = restoreMissingReconnectCounters(saved[1:], []pausedomain.PauseReconnectInterval{root}, receipt, pauseID, 4)
+	require.ErrorIs(t, err, domain.ErrConflict)
+
+	_, err = restoreMissingReconnectCounters(saved[1:], []pausedomain.PauseReconnectInterval{
+		root, {PauseID: pauseID, ParticipantID: firstID},
+	}, receipt, pauseID, 3)
+	require.ErrorIs(t, err, domain.ErrConflict)
 }
 
 func TestRehydrateTournamentReconnectActiveStateRejectsClockMismatch(t *testing.T) {
@@ -291,7 +341,8 @@ func TestRecoveryGameClockRestoresSubMillisecondFrozenDuration(t *testing.T) {
 	row := sqlc.PauseClock{
 		PauseID: pauseID, GameAttemptID: gameID,
 		OriginalDeadline: tstz(frozenAt.Add(remaining)), FrozenAt: tstz(frozenAt),
-		FrozenRemainingMs: remaining.Milliseconds(), Revision: 3,
+		FrozenRemainingMs: remaining.Milliseconds(), ResumedAt: tstz(frozenAt.Add(5 * time.Second)),
+		ResumedDeadline: tstz(frozenAt.Add(5*time.Second + time.Duration(remaining.Milliseconds())*time.Millisecond)), Revision: 3,
 	}
 
 	clock, err := recoveryGameClock(row)
@@ -299,6 +350,8 @@ func TestRecoveryGameClockRestoresSubMillisecondFrozenDuration(t *testing.T) {
 	require.Equal(t, pauseID, clock.PauseID)
 	require.Equal(t, gameID, clock.GameID)
 	require.Equal(t, remaining, clock.Remaining)
+	require.NotNil(t, clock.ResumedDeadline)
+	require.Equal(t, frozenAt.Add(5*time.Second+remaining), *clock.ResumedDeadline)
 }
 
 func TestReconnectCounterPredecessorTimeLeavesPostgreSQLTimestampCASGap(t *testing.T) {

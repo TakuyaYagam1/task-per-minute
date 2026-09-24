@@ -133,7 +133,7 @@ test-int-fast: ## Integration tests without race instrumentation, sharing one Po
 	bash scripts/test-integration.sh --suite-fast
 
 .PHONY: test-int
-test-int: ## Integration tests with race detector, 5 packages and 5 tests per package in parallel
+test-int: ## Integration tests with sequential root shards and in-process parallelism 5
 	bash scripts/test-integration.sh --suite-race
 
 .PHONY: test-int-compile

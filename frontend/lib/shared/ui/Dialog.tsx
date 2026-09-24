@@ -280,7 +280,11 @@ export const Dialog = forwardRef<HTMLDialogElement, DialogProps>(
       }
     };
 
-    const handleClose = () => {
+    const handleClose = (event: SyntheticEvent<HTMLDialogElement>) => {
+      // A queued close event can arrive after showModal opens the dialog again.
+      if (event.currentTarget.open) {
+        return;
+      }
       isModalRef.current = false;
       if (!closeRequestRef.current && openRef.current) {
         onOpenChange?.(false);

@@ -148,7 +148,7 @@ func (repository *GoldenRuntimePostgres) Submit(
 		if _, err = q.CreateGoldenPositionCommit(txCtx, sqlc.CreateGoldenPositionCommitParams{
 			ID: commitID, AttemptID: participant.AttemptID, TournamentID: command.TournamentID,
 			RosterID: participant.RosterID, MembershipID: participant.MembershipID,
-			ParticipantID: participant.ParticipantID, ProvisionalSubmissionID: submissionID,
+			ParticipantID: participant.ParticipantID, ProvisionalSubmissionID: uuid.NullUUID{UUID: submissionID, Valid: true},
 			Position: position, CommittedAt: tstz(now), CreatedAt: tstz(now),
 		}); err != nil {
 			return goldenRuntimeWriteError("create position commit", err)

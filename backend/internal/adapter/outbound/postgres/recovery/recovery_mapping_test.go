@@ -15,7 +15,7 @@ import (
 func TestMapRecoveryDeadlinePreservesEachDomainShape(t *testing.T) {
 	t.Parallel()
 
-	dueAt := time.Date(2026, 9, 6, 10, 0, 0, 0, time.UTC)
+	dueAt := time.Date(2026, 9, 6, 10, 0, 0, int(466*time.Microsecond), time.UTC)
 	common := recoveryDeadlineRow{
 		id: recoveryRowID(10), tournamentID: recoveryRowID(1), rosterID: recoveryRowID(2),
 		waveID: recoveryRowID(3), expectedRevision: 4,

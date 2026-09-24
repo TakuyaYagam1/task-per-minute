@@ -432,6 +432,60 @@ RETURNING id,
     committed_at,
     created_at;
 
+-- name: CreateGoldenTerminalPositionEvidence :one
+INSERT INTO golden_terminal_position_evidence (
+    id, tournament_id, roster_id, group_revision_id, attempt_id,
+    membership_id, participant_id, runtime_revision, deadline,
+    position, payload_digest, recorded_at, created_at
+)
+VALUES (
+    sqlc.arg(id), sqlc.arg(tournament_id), sqlc.arg(roster_id),
+    sqlc.arg(group_revision_id), sqlc.arg(attempt_id), sqlc.arg(membership_id),
+    sqlc.arg(participant_id), sqlc.arg(runtime_revision), sqlc.arg(deadline),
+    sqlc.arg(position), sqlc.arg(payload_digest), sqlc.arg(recorded_at), sqlc.arg(created_at)
+)
+RETURNING id;
+
+-- name: GetGoldenTerminalPositionEvidence :one
+SELECT evidence.id,
+    evidence.tournament_id,
+    evidence.roster_id,
+    evidence.group_revision_id,
+    evidence.attempt_id,
+    evidence.membership_id,
+    evidence.participant_id,
+    evidence.runtime_revision,
+    evidence.deadline,
+    evidence.position,
+    evidence.payload_digest,
+    evidence.recorded_at,
+    evidence.created_at,
+    position_commit.id AS position_commit_id
+FROM golden_terminal_position_evidence AS evidence
+LEFT JOIN golden_position_commits AS position_commit
+    ON position_commit.terminal_evidence_id = evidence.id
+    AND position_commit.attempt_id = evidence.attempt_id
+    AND position_commit.membership_id = evidence.membership_id
+    AND position_commit.participant_id = evidence.participant_id
+    AND position_commit.tournament_id = evidence.tournament_id
+    AND position_commit.roster_id = evidence.roster_id
+    AND position_commit.position = evidence.position
+WHERE evidence.tournament_id = sqlc.arg(tournament_id)
+    AND evidence.roster_id = sqlc.arg(roster_id)
+    AND evidence.group_revision_id = sqlc.arg(group_revision_id);
+
+-- name: CreateGoldenTerminalPositionCommit :one
+INSERT INTO golden_position_commits (
+    id, attempt_id, tournament_id, roster_id, membership_id, participant_id,
+    terminal_evidence_id, position, committed_at, created_at
+)
+VALUES (
+    sqlc.arg(id), sqlc.arg(attempt_id), sqlc.arg(tournament_id), sqlc.arg(roster_id),
+    sqlc.arg(membership_id), sqlc.arg(participant_id), sqlc.arg(terminal_evidence_id),
+    sqlc.arg(position), sqlc.arg(committed_at), sqlc.arg(created_at)
+)
+RETURNING id;
+
 -- name: CreateGoldenRecoveryRevision :one
 INSERT INTO golden_recovery_revisions (
     id,
@@ -2200,7 +2254,10 @@ LEFT JOIN golden_provisional_submissions AS submission
     AND submission.membership_id = membership.id
     AND submission.status = 'accepted'
 LEFT JOIN golden_position_commits AS position_commit
-    ON position_commit.provisional_submission_id = submission.id
+    ON position_commit.membership_id = membership.id
+    AND position_commit.attempt_id = membership.attempt_id
+    AND position_commit.tournament_id = membership.tournament_id
+    AND position_commit.roster_id = membership.roster_id
 WHERE runtime.tournament_id = sqlc.arg(tournament_id)
     AND NOT EXISTS (
         SELECT 1
@@ -2296,7 +2353,10 @@ LEFT JOIN golden_provisional_submissions AS submission
     AND submission.membership_id = membership.id
     AND submission.status = 'accepted'
 LEFT JOIN golden_position_commits AS position_commit
-    ON position_commit.provisional_submission_id = submission.id
+    ON position_commit.membership_id = membership.id
+    AND position_commit.attempt_id = membership.attempt_id
+    AND position_commit.tournament_id = membership.tournament_id
+    AND position_commit.roster_id = membership.roster_id
 LEFT JOIN golden_attempt_submission_revisions AS revision
     ON revision.provisional_submission_id = submission.id
 WHERE membership.attempt_id = sqlc.arg(attempt_id)

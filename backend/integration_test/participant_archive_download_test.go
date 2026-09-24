@@ -151,9 +151,9 @@ func TestParticipantArchiveDownloadGoldenAssignment(t *testing.T) {
 		GoldenMutationScope:        inbound.GoldenMutationScope{ActorID: uuid.New()},
 	})
 	require.NoError(t, err)
-	require.NotEmpty(t, operator.Groups)
+	require.Len(t, operator.Groups, 1)
 	group := operator.Groups[0]
-	require.Greater(t, len(group.Members), 1, "Golden archive continuation needs an unresolved reserve member")
+	require.Len(t, group.Members, 3, "one solve must leave two participants for archive reserve coverage")
 
 	players := goldenRuntimePlayers(ctx, t, group)
 	ownerPlayerID := players[group.Members[0].ParticipantID]
@@ -217,6 +217,7 @@ func TestParticipantArchiveDownloadGoldenAssignment(t *testing.T) {
 		TournamentID: fixture.tournamentID, OperatorID: uuid.New(),
 	})
 	require.NoError(t, err)
+	require.Len(t, reserveOperator.Groups, 1)
 	var reserve *inbound.GoldenOperatorGroupView
 	for index := range reserveOperator.Groups {
 		candidate := &reserveOperator.Groups[index]
@@ -227,8 +228,14 @@ func TestParticipantArchiveDownloadGoldenAssignment(t *testing.T) {
 	}
 	require.NotNil(t, reserve)
 	require.Equal(t, "prepared", reserve.State)
+	require.Equal(t, group.GroupRevisionID, reserve.GroupRevisionID)
 	require.NotEqual(t, group.AttemptID, reserve.AttemptID)
-	require.Len(t, reserve.Members, len(group.Members)-1)
+	require.Len(t, reserve.Members, 2)
+	require.ElementsMatch(t,
+		[]uuid.UUID{group.Members[1].ParticipantID, group.Members[2].ParticipantID},
+		[]uuid.UUID{reserve.Members[0].ParticipantID, reserve.Members[1].ParticipantID},
+	)
+	t.Log("golden-archive primary_members=3 reserve_members=2 state=prepared same_group=true")
 
 	reservePlayers := make(map[uuid.UUID]tournamentFlowPlayer, len(reserve.Members))
 	for _, member := range reserve.Members {
@@ -344,7 +351,7 @@ func prepareParticipantArchiveGoldenFinalSwiss(
 	fixture := createTournamentAdminSwissProofFixtureForAggregate(
 		ctx, t, tournamentID, rosterID, playerIDs, normalPoolID, normalPoolRevision, createdAt,
 	)
-	return finishNativeGoldenFinalSwiss(ctx, t, fixture)
+	return finishGoldenThreeMemberSwiss(ctx, t, fixture)
 }
 
 func participantArchiveHandler(

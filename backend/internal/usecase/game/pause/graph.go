@@ -1,8 +1,14 @@
 package pause
 
 import (
+	"github.com/google/uuid"
+
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/pause/model"
 )
+
+func PauseSourceResumeRevisionID(commandID, pauseID uuid.UUID) uuid.UUID {
+	return model.PauseSourceResumeRevisionID(commandID, pauseID)
+}
 
 var (
 	ErrInvalidNormalPauseGraph    = model.ErrInvalidNormalPauseGraph
@@ -43,10 +49,13 @@ type PauseChildRevision = model.PauseChildRevision
 type PausePresenceRevision = model.PausePresenceRevision
 type PauseReconnectCounterRevision = model.PauseReconnectCounterRevision
 type PauseFrozenDeadlineRevision = model.PauseFrozenDeadlineRevision
+type PauseSourcePauseRevision = model.PauseSourcePauseRevision
 type PauseGraphRevisions = model.PauseGraphRevisions
 type PauseWave = model.PauseWave
 type PauseSeries = model.PauseSeries
 type PauseGame = model.PauseGame
+type PauseGameSourcePause = model.PauseGameSourcePause
+type PausePresenceSnapshot = model.PausePresenceSnapshot
 type PauseFrozenDeadline = model.PauseFrozenDeadline
 type TournamentRecord = model.TournamentRecord
 type PauseGraph = model.PauseGraph

@@ -17,6 +17,7 @@ import (
 	pausedomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/pause"
 	draftusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/draft"
 	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/pause"
+	pausemodel "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/pause/model"
 )
 
 //nolint:gocyclo // One transaction keeps the full pause graph atomic and fail-closed.
@@ -217,7 +218,8 @@ func (r *TournamentAdminNormalPausePostgres) CommitPauseResume(
 	expected gameusecase.PauseResumeExpectation,
 	record gameusecase.PauseResumeRecord,
 ) (*gameusecase.PauseResumeRecord, bool, error) {
-	if !validNormalPauseRepository(ctx, r) || !reflect.DeepEqual(expected, record.Expected) {
+	if !validNormalPauseRepository(ctx, r) || !reflect.DeepEqual(expected, record.Expected) ||
+		gameusecase.ValidatePauseResumeRecord(record) != nil {
 		return nil, false, domain.ErrValidation
 	}
 	document, err := r.tx.Querier(ctx).GetTournamentAdminNormalPauseReceipt(ctx, sqlc.GetTournamentAdminNormalPauseReceiptParams{
@@ -286,6 +288,27 @@ func resumeTournamentAdminNormalChildren(
 	for _, value := range paused.Graph.Presence {
 		prePresence[value.ParticipantID] = value
 	}
+	for _, game := range record.Graph.Games {
+		if game.SourcePause == nil || game.Game.State != domain.GameStateActive {
+			continue
+		}
+		before, ok := normalPauseGame(paused.Graph.Games, game.Game.ID)
+		series, seriesOK := normalPauseSeries(paused.Graph.Series, game.SeriesID)
+		if !ok || !seriesOK || before.SourcePause == nil || series.Execution.Series.State != domain.SeriesStateActive ||
+			series.CurrentGameID == nil || *series.CurrentGameID != game.Game.ID {
+			return gameusecase.ErrPauseResumeIncomplete
+		}
+		first := livePresence[series.Execution.Series.FirstParticipantID]
+		second := livePresence[series.Execution.Series.SecondParticipantID]
+		if err := resumeTournamentAdminSourcePause(ctx, querier, record, before, game, first, second); err != nil {
+			return err
+		}
+		if _, err := querier.ResumeTournamentAdminNormalGameCAS(ctx, sqlc.ResumeTournamentAdminNormalGameCASParams{
+			ResumedAt: tstz(record.ResumedAt), ID: game.Game.ID, ExpectedRevision: before.Revision,
+		}); err != nil {
+			return normalPauseCAS("resume adopted Game", err)
+		}
+	}
 	for _, series := range paused.Graph.Series {
 		if series.Execution.Series.State != domain.SeriesStateTechnicalPause || series.Execution.ResumeState == nil {
 			continue
@@ -337,8 +360,14 @@ func resumeTournamentAdminNormalChildren(
 			if !ok || frozen.ResumedDeadline == nil {
 				return domain.ErrInternal
 			}
+			// pause_clocks stores whole milliseconds; the record retains the exact
+			// frozen duration and resumed deadline for runtime decisions.
+			persistedDeadline, ok := pausedomain.AddTime(record.ResumedAt, frozen.Remaining.Truncate(time.Millisecond))
+			if !ok {
+				return domain.ErrValidation
+			}
 			if _, err := querier.ResumeTournamentAdminNormalPauseClockCAS(ctx, sqlc.ResumeTournamentAdminNormalPauseClockCASParams{
-				ResumedAt: tstz(record.ResumedAt), ResumedDeadline: tstz(*frozen.ResumedDeadline),
+				ResumedAt: tstz(record.ResumedAt), ResumedDeadline: tstz(persistedDeadline),
 				PauseID: gamePauseID, ExpectedRevision: frozen.Revision - 1,
 			}); err != nil {
 				return normalPauseCAS("resume Game clock", err)
@@ -369,6 +398,105 @@ func resumeTournamentAdminNormalChildren(
 	return nil
 }
 
+func resumeTournamentAdminSourcePause(
+	ctx context.Context,
+	querier *sqlc.Queries,
+	record gameusecase.PauseResumeRecord,
+	before, after gameusecase.PauseGame,
+	first, second pausedomain.PausePresence,
+) error {
+	if !validTournamentAdminSourceResume(record, before, after) ||
+		first.State != pausedomain.PresenceStateConnected || second.State != pausedomain.PresenceStateConnected {
+		return gameusecase.ErrPauseResumeIncomplete
+	}
+	previous := before.SourcePause
+	resolved := after.SourcePause
+	firstPre, firstFound := sourcePauseSnapshot(previous.Presence, first.ParticipantID)
+	secondPre, secondFound := sourcePauseSnapshot(previous.Presence, second.ParticipantID)
+	if !firstFound || !secondFound {
+		return gameusecase.ErrPauseResumeIncomplete
+	}
+	decisionID := tournamentAdminNormalPauseID(record.CommandID, "resume-source-decision", before.Game.ID)
+	created, err := querier.CreateTournamentAdminNormalResumeDecision(ctx, sqlc.CreateTournamentAdminNormalResumeDecisionParams{
+		ID: decisionID, PauseID: previous.PauseID, DecisionNumber: resolved.DecisionNumber,
+		Action:             string(gameusecase.PauseResumeActionResume),
+		FirstParticipantID: first.ParticipantID, SecondParticipantID: second.ParticipantID,
+		FirstPrePauseState: string(firstPre.State), SecondPrePauseState: string(secondPre.State),
+		FirstLiveState: string(first.State), SecondLiveState: string(second.State),
+		FirstPresenceEpoch: first.PresenceEpoch, SecondPresenceEpoch: second.PresenceEpoch,
+		FirstPresenceRevision: first.Revision, SecondPresenceRevision: second.Revision,
+		DecidedAt: tstz(record.ResumedAt),
+	})
+	if err != nil || created != decisionID {
+		return normalPauseCAS("create adopted Game resume decision", err)
+	}
+	persistedDeadline, ok := pausedomain.AddTime(record.ResumedAt, resolved.Clock.Remaining.Truncate(time.Millisecond))
+	if !ok {
+		return domain.ErrValidation
+	}
+	updatedClock, err := querier.ResumeTournamentAdminNormalPauseClockCAS(ctx, sqlc.ResumeTournamentAdminNormalPauseClockCASParams{
+		ResumedAt: tstz(record.ResumedAt), ResumedDeadline: tstz(persistedDeadline),
+		PauseID: previous.PauseID, ExpectedRevision: previous.Clock.Revision,
+	})
+	if err != nil || updatedClock != previous.PauseID {
+		return normalPauseCAS("resume adopted Game clock", err)
+	}
+	return resumeTournamentAdminPauseRow(ctx, querier, previous.PauseID, previous.CurrentRevisionID,
+		resolved.CurrentRevisionID, previous.Revision, record.ResumedAt)
+}
+
+func validTournamentAdminSourceResume(record gameusecase.PauseResumeRecord, before, after gameusecase.PauseGame) bool {
+	previous := before.SourcePause
+	resolved := after.SourcePause
+	if previous == nil || resolved == nil {
+		return false
+	}
+	expected, ok := sourcePauseRevision(record.Expected.SourcePauses, before.Game.ID)
+	deadline, deadlineOK := pausedomain.AddTime(record.ResumedAt, expected.Remaining)
+	return ok && deadlineOK && sourcePauseExpectedRevisionMatches(*previous, expected) &&
+		sourcePauseResumeRevisionMatches(*previous, *resolved, record.CommandID) &&
+		sourcePauseResumeClockMatches(after, record.ResumedAt, deadline)
+}
+
+func sourcePauseExpectedRevisionMatches(source gameusecase.PauseGameSourcePause, expected gameusecase.PauseSourcePauseRevision) bool {
+	return source.PauseID == expected.PauseID && source.GameID == expected.GameID &&
+		source.CurrentRevisionID == expected.CurrentRevisionID && source.Revision == expected.Revision &&
+		source.DecisionNumber == expected.DecisionNumber && source.Clock.Revision == expected.ClockRevision && source.Clock.Remaining == expected.Remaining
+}
+
+func sourcePauseResumeRevisionMatches(previous, resolved gameusecase.PauseGameSourcePause, commandID uuid.UUID) bool {
+	return resolved.PauseID == previous.PauseID &&
+		resolved.CurrentRevisionID == gameusecase.PauseSourceResumeRevisionID(commandID, previous.PauseID) &&
+		resolved.Revision == previous.Revision+1 && resolved.DecisionNumber == previous.DecisionNumber+1 &&
+		resolved.Clock.Revision == previous.Clock.Revision+1 && resolved.State == gameusecase.PauseStateResumed
+}
+
+func sourcePauseResumeClockMatches(game gameusecase.PauseGame, resumedAt, deadline time.Time) bool {
+	resolved := game.SourcePause
+	return resolved.ResolvedAt != nil && resolved.ResolvedAt.Equal(resumedAt) &&
+		resolved.Clock.ResumedAt != nil && resolved.Clock.ResumedAt.Equal(resumedAt) &&
+		resolved.Clock.ResumedDeadline != nil && resolved.Clock.ResumedDeadline.Equal(deadline) &&
+		game.Deadline != nil && game.Deadline.Equal(deadline)
+}
+
+func sourcePauseRevision(values []gameusecase.PauseSourcePauseRevision, gameID uuid.UUID) (gameusecase.PauseSourcePauseRevision, bool) {
+	for _, value := range values {
+		if value.GameID == gameID {
+			return value, true
+		}
+	}
+	return gameusecase.PauseSourcePauseRevision{}, false
+}
+
+func sourcePauseSnapshot(values []gameusecase.PausePresenceSnapshot, participantID uuid.UUID) (gameusecase.PausePresenceSnapshot, bool) {
+	for _, value := range values {
+		if value.ParticipantID == participantID {
+			return value, true
+		}
+	}
+	return gameusecase.PausePresenceSnapshot{}, false
+}
+
 func normalPauseSeries(values []gameusecase.PauseSeries, id uuid.UUID) (gameusecase.PauseSeries, bool) {
 	for _, value := range values {
 		if value.Execution.Series.ID == id {
@@ -376,6 +504,15 @@ func normalPauseSeries(values []gameusecase.PauseSeries, id uuid.UUID) (gameusec
 		}
 	}
 	return gameusecase.PauseSeries{}, false
+}
+
+func normalPauseGame(values []gameusecase.PauseGame, id uuid.UUID) (gameusecase.PauseGame, bool) {
+	for _, value := range values {
+		if value.Game.ID == id {
+			return value, true
+		}
+	}
+	return gameusecase.PauseGame{}, false
 }
 
 func resumeTournamentAdminPauseRow(
@@ -482,7 +619,8 @@ func (r *TournamentAdminNormalPausePostgres) CommitPauseResumePresence(
 ) (*gameusecase.PauseResumePresenceRecord, bool, error) {
 	command := record.Command
 	commandExpected := gameusecase.PauseResumePresenceExpectation{
-		Resume: command.Resume.Expected, Series: command.SeriesExpected, Game: command.GameExpected,
+		SourceAdoption: command.SourceAdoption,
+		Resume:         command.Resume.Expected, Series: command.SeriesExpected, Game: command.GameExpected,
 		Presence: command.Presence, Reconnect: command.Reconnect, Counters: command.Counters,
 		FrozenDeadlines: command.FrozenDeadlines,
 	}
@@ -518,6 +656,19 @@ func (r *TournamentAdminNormalPausePostgres) CommitPauseResumePresence(
 	if !ok {
 		return nil, false, domain.ErrInternal
 	}
+	if command.SourceAdoption {
+		game, found := normalPauseGame(paused.Graph.Games, command.GameExpected.GameID)
+		if !found || game.SourcePause == nil || game.SourcePause.PauseID != record.GameDecision.PauseID {
+			return nil, false, gameusecase.ErrPauseResumePresenceIncomplete
+		}
+		firstSnapshot, firstFound := sourcePauseSnapshot(game.SourcePause.Presence, firstLive.ParticipantID)
+		secondSnapshot, secondFound := sourcePauseSnapshot(game.SourcePause.Presence, secondLive.ParticipantID)
+		if !firstFound || !secondFound {
+			return nil, false, gameusecase.ErrPauseResumePresenceIncomplete
+		}
+		firstPre.State = firstSnapshot.State
+		secondPre.State = secondSnapshot.State
+	}
 	created, err := querier.CreateTournamentAdminNormalResumeDecision(ctx, sqlc.CreateTournamentAdminNormalResumeDecisionParams{
 		ID: record.GameDecision.ID, PauseID: record.GameDecision.PauseID,
 		DecisionNumber: record.GameDecision.DecisionNumber, Action: string(record.GameDecision.Action),
@@ -540,7 +691,10 @@ func (r *TournamentAdminNormalPausePostgres) CommitPauseResumePresence(
 	}); err != nil {
 		return nil, false, normalPauseCAS("resume Tournament with disconnected Game", err)
 	}
-	connected := tournamentAdminNormalConnectedResume(*paused, record)
+	connected, err := tournamentAdminNormalConnectedResume(*paused, record)
+	if err != nil {
+		return nil, false, err
+	}
 	if tournamentAdminNormalPauseHasActiveGames(connected.Graph.Games) {
 		if err := r.RebindNormalPauseWave(ctx, command.Resume.Scope.TournamentID, command.Resume.Scope.WaveID,
 			command.Resume.CommandID, command.Resume.Scope.Authority, record.DecidedAt); err != nil {
@@ -570,11 +724,8 @@ func (r *TournamentAdminNormalPausePostgres) CommitPauseResumePresence(
 func tournamentAdminNormalConnectedResume(
 	paused gameusecase.NormalPauseRecord,
 	presence gameusecase.PauseResumePresenceRecord,
-) gameusecase.PauseResumeRecord {
-	graph := paused.Graph
-	graph.Series = append([]gameusecase.PauseSeries(nil), paused.Graph.Series...)
-	graph.Games = append([]gameusecase.PauseGame(nil), paused.Graph.Games...)
-	graph.FrozenDeadlines = append([]gameusecase.PauseFrozenDeadline(nil), paused.Graph.FrozenDeadlines...)
+) (gameusecase.PauseResumeRecord, error) {
+	graph := pausemodel.ClonePauseGraph(paused.Graph)
 	graph.Presence = append([]pausedomain.PausePresence(nil), presence.Command.Presence...)
 	live := make(map[uuid.UUID]pausedomain.PresenceState, len(graph.Presence))
 	for _, value := range graph.Presence {
@@ -584,8 +735,16 @@ func tournamentAdminNormalConnectedResume(
 	for index := range graph.Series {
 		series := &graph.Series[index]
 		if live[series.Execution.Series.FirstParticipantID] != pausedomain.PresenceStateConnected ||
-			live[series.Execution.Series.SecondParticipantID] != pausedomain.PresenceStateConnected ||
-			series.Execution.ResumeState == nil {
+			live[series.Execution.Series.SecondParticipantID] != pausedomain.PresenceStateConnected {
+			continue
+		}
+		if series.Execution.Series.State == domain.SeriesStateActive && series.Execution.ResumeState == nil {
+			if err := restoreTournamentAdminConnectedSourceSeries(graph.Games, series, presence.Command.Resume.CommandID, presence.DecidedAt); err != nil {
+				return gameusecase.PauseResumeRecord{}, err
+			}
+			continue
+		}
+		if series.Execution.ResumeState == nil {
 			continue
 		}
 		series.Execution.Series.State = *series.Execution.ResumeState
@@ -618,7 +777,59 @@ func tournamentAdminNormalConnectedResume(
 		Scope: presence.Command.Resume.Scope, PauseID: presence.Command.Resume.PauseID,
 		CommandID: presence.Command.Resume.CommandID, ActorID: presence.Command.Resume.ActorID,
 		Expected: presence.Command.Resume.Expected, Graph: graph, ResumedAt: presence.DecidedAt,
+	}, nil
+}
+
+func restoreTournamentAdminConnectedSourceSeries(games []gameusecase.PauseGame, series *gameusecase.PauseSeries, commandID uuid.UUID, resumedAt time.Time) error {
+	for gameIndex := range games {
+		game := &games[gameIndex]
+		if game.SeriesID != series.Execution.Series.ID || game.SourcePause == nil {
+			continue
+		}
+		if series.CurrentGameID == nil || *series.CurrentGameID != game.Game.ID {
+			return gameusecase.ErrPauseResumeIncomplete
+		}
+		if err := restoreTournamentAdminConnectedSource(game, commandID, resumedAt); err != nil {
+			return err
+		}
+		for slotIndex := range series.Execution.Series.Slots {
+			for attemptIndex := range series.Execution.Series.Slots[slotIndex].Attempts {
+				attempt := &series.Execution.Series.Slots[slotIndex].Attempts[attemptIndex]
+				if attempt.ID == game.Game.ID {
+					*attempt = game.Game
+				}
+			}
+		}
 	}
+	return nil
+}
+
+func restoreTournamentAdminConnectedSource(game *gameusecase.PauseGame, commandID uuid.UUID, resumedAt time.Time) error {
+	source := game.SourcePause
+	if source == nil || source.State != gameusecase.PauseStateActive || source.Reason != gameusecase.PauseReasonDisconnect ||
+		source.ParentPauseID != nil || source.Depth != 0 || game.Game.State != domain.GameStatePaused || game.ResumeState != nil {
+		return gameusecase.ErrPauseResumeIncomplete
+	}
+	if game.Revision == math.MaxInt64 || source.Revision == math.MaxInt64 ||
+		source.DecisionNumber == math.MaxInt64 || source.Clock.Revision == math.MaxInt64 {
+		return gameusecase.ErrPauseResumeOverflow
+	}
+	deadline, ok := pausedomain.AddTime(resumedAt, source.Clock.Remaining)
+	if !ok {
+		return gameusecase.ErrPauseResumeOverflow
+	}
+	source.State = gameusecase.PauseStateResumed
+	source.CurrentRevisionID = gameusecase.PauseSourceResumeRevisionID(commandID, source.PauseID)
+	source.Revision++
+	source.DecisionNumber++
+	source.ResolvedAt = &resumedAt
+	source.Clock.ResumedAt = &resumedAt
+	source.Clock.ResumedDeadline = &deadline
+	source.Clock.Revision++
+	game.Game.State = domain.GameStateActive
+	game.Deadline = &deadline
+	game.Revision++
+	return nil
 }
 
 //nolint:gocyclo // Reconnect continuation and fresh-cycle persistence have separate CAS evidence.

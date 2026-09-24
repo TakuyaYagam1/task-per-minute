@@ -124,6 +124,9 @@ func normalizePauseResumeExpectation(value *gameusecase.PauseResumeExpectation) 
 	if len(value.Games) == 0 {
 		value.Games = nil
 	}
+	if len(value.SourcePauses) == 0 {
+		value.SourcePauses = nil
+	}
 	if len(value.Presence) == 0 {
 		value.Presence = nil
 	}
@@ -176,6 +179,56 @@ func pauseResumeFixture(t *testing.T, now time.Time) (gameusecase.PauseResumeAut
 	}
 	resumeCommand := gameusecase.PauseResumeCommand{
 		Scope: pauseRecord.Scope, PauseID: pauseRecord.PauseID, CommandID: uuid.New(), ActorID: uuid.New(),
+		Expected: gameusecase.PauseResumeExpectationFrom(resumeAuthority),
+	}
+	return resumeAuthority, resumeCommand
+}
+
+func sourcePauseResumeFixture(t *testing.T, resumedAt time.Time) (gameusecase.PauseResumeAuthority, gameusecase.PauseResumeCommand) {
+	t.Helper()
+
+	pausedAt := resumedAt.Add(-2 * time.Minute)
+	authority, pauseCommand := normalPauseFixture(pausedAt)
+	game := &authority.Graph.Games[0]
+	game.Game.State = domain.GameStatePaused
+	game.Deadline = nil
+	series := &authority.Graph.Series[0].Execution.Series
+	series.Slots[0].Attempts[0].State = domain.GameStatePaused
+	sourceStartedAt := pausedAt.Add(-time.Minute)
+	remaining := 53*time.Second + 417*time.Microsecond
+	sourcePauseID := uuid.New()
+	game.SourcePause = &gameusecase.PauseGameSourcePause{
+		PauseID: sourcePauseID, ScopeKind: "game_attempt", ScopeID: game.Game.ID, SeriesID: game.SeriesID,
+		GameID: game.Game.ID, Reason: gameusecase.PauseReasonDisconnect, State: gameusecase.PauseStateActive,
+		CurrentRevisionID: uuid.New(), Revision: 1, StartedAt: sourceStartedAt, DecisionNumber: 0,
+		Clock: gameusecase.PauseFrozenDeadline{
+			Kind: gameusecase.PauseDeadlineGame, OwnerID: game.Game.ID,
+			OriginalDeadline: sourceStartedAt.Add(remaining), FrozenAt: sourceStartedAt,
+			Remaining: remaining, Revision: 1,
+		},
+		Presence: []gameusecase.PausePresenceSnapshot{
+			{ParticipantID: authority.Graph.Presence[0].ParticipantID, State: pausedomain.PresenceStateDisconnected,
+				PresenceEpoch: authority.Graph.Presence[0].PresenceEpoch, Revision: authority.Graph.Presence[0].Revision, CapturedAt: sourceStartedAt},
+			{ParticipantID: authority.Graph.Presence[1].ParticipantID, State: pausedomain.PresenceStateConnected,
+				PresenceEpoch: authority.Graph.Presence[1].PresenceEpoch, Revision: authority.Graph.Presence[1].Revision, CapturedAt: sourceStartedAt},
+		},
+	}
+	for _, presence := range authority.Graph.Presence {
+		authority.Graph.Counters = append(authority.Graph.Counters, pausedomain.PauseReconnectCounter{
+			PauseID: sourcePauseID, RosterID: authority.Scope.RosterID, ParticipantID: presence.ParticipantID,
+			Limit: 3, Used: 0, Revision: 1,
+		})
+	}
+	refreshNormalPauseRevisions(&authority, &pauseCommand)
+	pauseRepository := newNormalPauseRepositoryHarness(t, authority)
+	pauseUseCase := gameusecase.NewNormalPauseGraphUseCase(newPauseTransactionManager(t), pauseRepository, newPauseClock(t, pausedAt))
+	paused, changed, err := pauseUseCase.Enter(t.Context(), pauseCommand)
+	if err != nil || !changed {
+		t.Fatalf("enter source pause fixture: error = %v, changed = %v", err, changed)
+	}
+	resumeAuthority := pauseResumeAuthorityFromRecord(*paused)
+	resumeCommand := gameusecase.PauseResumeCommand{
+		Scope: paused.Scope, PauseID: paused.PauseID, CommandID: uuid.New(), ActorID: uuid.New(),
 		Expected: gameusecase.PauseResumeExpectationFrom(resumeAuthority),
 	}
 	return resumeAuthority, resumeCommand
@@ -338,6 +391,7 @@ func clonePauseResumeRecord(value gameusecase.PauseResumeRecord) gameusecase.Pau
 func clonePauseResumeExpectation(value gameusecase.PauseResumeExpectation) gameusecase.PauseResumeExpectation {
 	value.Games = append([]gameusecase.PauseChildRevision(nil), value.Games...)
 	value.Series = append([]gameusecase.PauseChildRevision(nil), value.Series...)
+	value.SourcePauses = append([]gameusecase.PauseSourcePauseRevision(nil), value.SourcePauses...)
 	value.Presence = append([]gameusecase.PausePresenceRevision(nil), value.Presence...)
 	value.Reconnect = append([]gameusecase.PauseChildRevision(nil), value.Reconnect...)
 	value.Counters = append([]gameusecase.PauseReconnectCounterRevision(nil), value.Counters...)

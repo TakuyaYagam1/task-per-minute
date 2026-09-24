@@ -15,13 +15,14 @@ import (
 var ErrInvalidGoldenPositionEvidence = errors.New("invalid Golden position evidence")
 
 type GoldenPositionCommitEvidence struct {
-	Position       int
-	ParticipantID  uuid.UUID
-	AttemptID      uuid.UUID
-	AttemptNo      int
-	SubmissionID   uint64
-	EvidenceDigest [sha256.Size]byte
-	CommitID       uuid.UUID
+	Position           int
+	ParticipantID      uuid.UUID
+	AttemptID          uuid.UUID
+	AttemptNo          int
+	SubmissionID       uint64
+	TerminalEvidenceID uuid.UUID
+	EvidenceDigest     [sha256.Size]byte
+	CommitID           uuid.UUID
 }
 
 type GoldenPositionAttemptEvidence struct {
@@ -195,17 +196,21 @@ func validateGoldenPositionCommitments(state goldenPositionEvidenceState) error 
 	}
 	participants := make(map[uuid.UUID]struct{}, len(state.positions))
 	positionIndex := 0
+	terminalSeen := false
 	for _, attempt := range state.attempts {
 		for range attempt.OrderCount {
 			if positionIndex >= len(state.positions) {
 				return invalidGoldenPositionEvidence("attempt evidence exceeds committed positions")
 			}
 			position := state.positions[positionIndex]
-			if position.Position != state.positionFrom+positionIndex ||
-				position.ParticipantID == uuid.Nil || position.AttemptID != attempt.AttemptID ||
-				position.AttemptNo != attempt.AttemptNo || position.SubmissionID == 0 ||
-				position.EvidenceDigest == [sha256.Size]byte{} || position.CommitID == uuid.Nil {
+			if !validGoldenCommittedPosition(position, attempt, state.positionFrom+positionIndex) {
 				return invalidGoldenPositionEvidence("invalid committed position")
+			}
+			if position.TerminalEvidenceID != uuid.Nil {
+				if terminalSeen {
+					return invalidGoldenPositionEvidence("multiple terminal positions")
+				}
+				terminalSeen = true
 			}
 			if _, duplicate := participants[position.ParticipantID]; duplicate {
 				return invalidGoldenPositionEvidence("duplicate committed participant")
@@ -218,6 +223,13 @@ func validateGoldenPositionCommitments(state goldenPositionEvidenceState) error 
 		return invalidGoldenPositionEvidence("committed position lacks attempt evidence")
 	}
 	return nil
+}
+
+func validGoldenCommittedPosition(position GoldenPositionCommitEvidence, attempt GoldenPositionAttemptEvidence, expectedPosition int) bool {
+	return position.Position == expectedPosition && position.ParticipantID != uuid.Nil &&
+		position.AttemptID == attempt.AttemptID && position.AttemptNo == attempt.AttemptNo &&
+		(position.SubmissionID != 0) != (position.TerminalEvidenceID != uuid.Nil) &&
+		position.EvidenceDigest != [sha256.Size]byte{} && position.CommitID != uuid.Nil
 }
 
 func invalidGoldenPositionEvidence(message string) error {

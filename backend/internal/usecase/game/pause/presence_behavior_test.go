@@ -311,3 +311,59 @@ func TestPausedPresenceUpdates(t *testing.T) {
 		}
 	})
 }
+
+func TestPausedPresenceChangesUsePostgresTimestampPrecision(t *testing.T) {
+	t.Parallel()
+
+	base := time.Date(2026, time.August, 31, 12, 0, 0, 0, time.UTC)
+	authority, disconnect := pausedPresenceFixture(t, base)
+	before := clonePausedPresenceAuthority(authority)
+	repository := newPausedPresenceRepositoryHarness(t, authority)
+	disconnectedAt := base.Add(time.Second + 123*time.Nanosecond).In(time.FixedZone("operator", 3*60*60))
+	disconnectUseCase := gameusecase.NewPausedPresenceUseCase(
+		newPauseTransactionManager(t), repository, newPauseClock(t, disconnectedAt),
+	)
+	disconnected, changed, err := disconnectUseCase.Change(t.Context(), disconnect)
+	if err != nil || !changed {
+		t.Fatalf("disconnect error = %v, changed = %v", err, changed)
+	}
+	wantDisconnectedAt := disconnectedAt.Round(0).UTC().Truncate(time.Microsecond)
+	if !disconnected.ChangedAt.Equal(wantDisconnectedAt) || !disconnected.Authority.Presence.UpdatedAt.Equal(wantDisconnectedAt) ||
+		disconnected.Authority.Presence.DisconnectedAt == nil || !disconnected.Authority.Presence.DisconnectedAt.Equal(wantDisconnectedAt) {
+		t.Fatalf("disconnect timestamps = changed %s, updated %s, disconnected %v; want %s",
+			disconnected.ChangedAt, disconnected.Authority.Presence.UpdatedAt,
+			disconnected.Authority.Presence.DisconnectedAt, wantDisconnectedAt)
+	}
+	if disconnected.ChangedAt.Location() != time.UTC || disconnected.ChangedAt.Nanosecond()%1000 != 0 {
+		t.Fatalf("disconnect ChangedAt = %s, want UTC microsecond precision", disconnected.ChangedAt)
+	}
+
+	connect := disconnect
+	connect.CommandID = uuid.New()
+	connect.NextState = pausedomain.PresenceStateConnected
+	connect.ExpectedGraphRevision = disconnected.Authority.Pause.Graph.Revision
+	connect.ExpectedPauseRevision = disconnected.Authority.Pause.Revision
+	connect.ExpectedPresenceEpoch = disconnected.Authority.Presence.PresenceEpoch
+	connect.ExpectedPresenceRevision = disconnected.Authority.Presence.Revision
+	connectedAt := disconnectedAt.Add(time.Second + 789*time.Nanosecond)
+	connectUseCase := gameusecase.NewPausedPresenceUseCase(
+		newPauseTransactionManager(t), repository, newPauseClock(t, connectedAt),
+	)
+	connected, changed, err := connectUseCase.Change(t.Context(), connect)
+	if err != nil || !changed {
+		t.Fatalf("connect error = %v, changed = %v", err, changed)
+	}
+	wantConnectedAt := connectedAt.Round(0).UTC().Truncate(time.Microsecond)
+	if !connected.ChangedAt.Equal(wantConnectedAt) || !connected.Authority.Presence.UpdatedAt.Equal(wantConnectedAt) ||
+		!connected.Authority.Presence.ConnectedAt.Equal(wantConnectedAt) || connected.Authority.Presence.DisconnectedAt != nil {
+		t.Fatalf("connect timestamps = changed %s, updated %s, connected %s, disconnected %v; want %s",
+			connected.ChangedAt, connected.Authority.Presence.UpdatedAt, connected.Authority.Presence.ConnectedAt,
+			connected.Authority.Presence.DisconnectedAt, wantConnectedAt)
+	}
+	if connected.ChangedAt.Location() != time.UTC || connected.ChangedAt.Nanosecond()%1000 != 0 {
+		t.Fatalf("connect ChangedAt = %s, want UTC microsecond precision", connected.ChangedAt)
+	}
+	if !pausedPresenceImmutableEqual(before, connected.Authority) {
+		t.Fatal("Presence transitions altered reconnect, counters, clocks, pause, or terminal evidence")
+	}
+}

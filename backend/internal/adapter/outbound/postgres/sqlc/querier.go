@@ -165,7 +165,7 @@ type Querier interface {
 	CreateGoldenExactPlanSnapshotReservation(ctx context.Context, arg CreateGoldenExactPlanSnapshotReservationParams) (uuid.UUID, error)
 	CreateGoldenGroupRevision(ctx context.Context, arg CreateGoldenGroupRevisionParams) (uuid.UUID, error)
 	CreateGoldenMembership(ctx context.Context, arg CreateGoldenMembershipParams) (GoldenMembership, error)
-	CreateGoldenPositionCommit(ctx context.Context, arg CreateGoldenPositionCommitParams) (GoldenPositionCommit, error)
+	CreateGoldenPositionCommit(ctx context.Context, arg CreateGoldenPositionCommitParams) (CreateGoldenPositionCommitRow, error)
 	CreateGoldenPositionLedgerAttempt(ctx context.Context, arg CreateGoldenPositionLedgerAttemptParams) (uuid.UUID, error)
 	CreateGoldenPositionLedgerCommitBinding(ctx context.Context, arg CreateGoldenPositionLedgerCommitBindingParams) (uuid.UUID, error)
 	CreateGoldenPositionLedgerRevision(ctx context.Context, arg CreateGoldenPositionLedgerRevisionParams) (uuid.UUID, error)
@@ -201,6 +201,8 @@ type Querier interface {
 	CreateGoldenStateReadyWindowParticipant(ctx context.Context, arg CreateGoldenStateReadyWindowParticipantParams) (uuid.UUID, error)
 	CreateGoldenStateRevision(ctx context.Context, arg CreateGoldenStateRevisionParams) (uuid.UUID, error)
 	CreateGoldenStateTransition(ctx context.Context, arg CreateGoldenStateTransitionParams) (uuid.UUID, error)
+	CreateGoldenTerminalPositionCommit(ctx context.Context, arg CreateGoldenTerminalPositionCommitParams) (uuid.UUID, error)
+	CreateGoldenTerminalPositionEvidence(ctx context.Context, arg CreateGoldenTerminalPositionEvidenceParams) (uuid.UUID, error)
 	CreateInitialDraftRevision(ctx context.Context, arg CreateInitialDraftRevisionParams) (DraftRevision, error)
 	// The initial score head is created with the planned Series and is the sole
 	// allowed planned-state score authority. Binding the Series pointer here
@@ -444,6 +446,7 @@ type Querier interface {
 	GetGoldenRuntimeAssignment(ctx context.Context, arg GetGoldenRuntimeAssignmentParams) (GetGoldenRuntimeAssignmentRow, error)
 	GetGoldenRuntimeCommand(ctx context.Context, commandID uuid.UUID) (GoldenRuntimeCommand, error)
 	GetGoldenSubmissionByIdempotencyKey(ctx context.Context, idempotencyKey uuid.UUID) (GoldenProvisionalSubmission, error)
+	GetGoldenTerminalPositionEvidence(ctx context.Context, arg GetGoldenTerminalPositionEvidenceParams) (GetGoldenTerminalPositionEvidenceRow, error)
 	GetLatestGoldenRecoveryRevision(ctx context.Context, arg GetLatestGoldenRecoveryRevisionParams) (GoldenRecoveryRevision, error)
 	GetLatestProjectionCutoff(ctx context.Context, arg GetLatestProjectionCutoffParams) (ProjectionCutoff, error)
 	// Read by the catalog discovery adapter inside a repeatable-read snapshot. The
@@ -603,7 +606,7 @@ type Querier interface {
 	ListGameAttempts(ctx context.Context, slotID uuid.UUID) ([]ListGameAttemptsRow, error)
 	ListGoldenAttempts(ctx context.Context, arg ListGoldenAttemptsParams) ([]GoldenAttempt, error)
 	ListGoldenMemberships(ctx context.Context, arg ListGoldenMembershipsParams) ([]GoldenMembership, error)
-	ListGoldenPositionCommits(ctx context.Context, arg ListGoldenPositionCommitsParams) ([]GoldenPositionCommit, error)
+	ListGoldenPositionCommits(ctx context.Context, arg ListGoldenPositionCommitsParams) ([]ListGoldenPositionCommitsRow, error)
 	ListGoldenProvisionalSubmissions(ctx context.Context, arg ListGoldenProvisionalSubmissionsParams) ([]GoldenProvisionalSubmission, error)
 	ListGoldenReadyDisconnects(ctx context.Context, arg ListGoldenReadyDisconnectsParams) ([]GoldenReadyDisconnect, error)
 	ListGoldenRecoveryRevisions(ctx context.Context, arg ListGoldenRecoveryRevisionsParams) ([]GoldenRecoveryRevision, error)

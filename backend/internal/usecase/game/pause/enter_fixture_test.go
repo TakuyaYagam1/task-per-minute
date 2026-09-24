@@ -255,6 +255,7 @@ func cloneNormalPauseRecord(value gameusecase.NormalPauseRecord) gameusecase.Nor
 func clonePauseGraphRevisions(value gameusecase.PauseGraphRevisions) gameusecase.PauseGraphRevisions {
 	value.Series = cloneTestSlice(value.Series)
 	value.Games = cloneTestSlice(value.Games)
+	value.SourcePauses = cloneTestSlice(value.SourcePauses)
 	value.Presence = cloneTestSlice(value.Presence)
 	value.Reconnect = cloneTestSlice(value.Reconnect)
 	value.Counters = cloneTestSlice(value.Counters)

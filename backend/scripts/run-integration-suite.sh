@@ -10,18 +10,30 @@ fast | race) ;;
 	;;
 esac
 
-readonly shard_count="${TPM_TEST_ROOT_SHARDS:-5}"
+# Root processes share one PostgreSQL cluster. Keep cross-process physical DDL
+# serialized by default while preserving in-process t.Parallel capacity.
+readonly shard_count="${TPM_TEST_ROOT_SHARDS:-2}"
 if [[ ! "$shard_count" =~ ^[1-9][0-9]*$ ]]; then
 	echo "TPM_TEST_ROOT_SHARDS must be a positive integer" >&2
 	exit 2
 fi
+readonly root_parallel="${TPM_TEST_ROOT_PARALLEL:-5}"
+if [[ ! "$root_parallel" =~ ^[1-9][0-9]*$ ]]; then
+	echo "TPM_TEST_ROOT_PARALLEL must be a positive integer" >&2
+	exit 2
+fi
+readonly subpackage_parallel="${TPM_TEST_SUBPACKAGE_PARALLEL:-1}"
+if [[ ! "$subpackage_parallel" =~ ^[1-9][0-9]*$ ]]; then
+	echo "TPM_TEST_SUBPACKAGE_PARALLEL must be a positive integer" >&2
+	exit 2
+fi
 
 readonly scratch_dir="$(mktemp -d)"
-root_pids=()
+root_pid=""
 cleanup() {
-	if [[ "${#root_pids[@]}" -gt 0 ]]; then
-		kill "${root_pids[@]}" >/dev/null 2>&1 || true
-		wait "${root_pids[@]}" >/dev/null 2>&1 || true
+	if [[ -n "$root_pid" ]]; then
+		kill "$root_pid" >/dev/null 2>&1 || true
+		wait "$root_pid" >/dev/null 2>&1 || true
 	fi
 	find "$scratch_dir" -type f -delete 2>/dev/null || true
 	rmdir "$scratch_dir" 2>/dev/null || true
@@ -30,7 +42,7 @@ trap cleanup EXIT
 trap 'exit 130' INT TERM HUP
 
 root_build_args=(-tags=integration)
-subpackage_args=(-count=1 -p=5 -parallel=5 -timeout=20m -tags=integration)
+subpackage_args=(-count=1 "-p=${subpackage_parallel}" "-parallel=${subpackage_parallel}" -timeout=20m -tags=integration)
 if [[ "$mode" == "race" ]]; then
 	root_build_args=(-race "${root_build_args[@]}")
 	subpackage_args=(-race "${subpackage_args[@]}")
@@ -61,28 +73,25 @@ while IFS= read -r test_name; do
 done <"$scratch_dir/root-tests.txt"
 
 echo "root integration tests: $index tests across $shard_count isolated shards"
+root_status=0
 for ((shard = 0; shard < shard_count; shard++)); do
 	test_pattern="^($(paste -sd '|' "$scratch_dir/shard-${shard}.txt"))$"
 	"$root_binary" \
 		-test.count=1 \
-		-test.parallel=5 \
+		"-test.parallel=${root_parallel}" \
 		-test.timeout=20m \
 		-test.run="$test_pattern" \
 		>"$scratch_dir/shard-${shard}.log" 2>&1 &
-	root_pids+=("$!")
-done
-
-root_status=0
-for ((shard = 0; shard < shard_count; shard++)); do
-	if wait "${root_pids[$shard]}"; then
+	root_pid="$!"
+	if wait "$root_pid"; then
 		echo "root integration shard $((shard + 1))/$shard_count: PASS"
 	else
 		echo "root integration shard $((shard + 1))/$shard_count: FAIL" >&2
 		cat "$scratch_dir/shard-${shard}.log" >&2
 		root_status=1
 	fi
+	root_pid=""
 done
-root_pids=()
 
 root_package="$(go list -tags=integration ./integration_test)"
 mapfile -t subpackages < <(

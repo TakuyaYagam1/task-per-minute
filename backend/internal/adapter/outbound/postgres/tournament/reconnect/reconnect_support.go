@@ -49,10 +49,6 @@ func requiredRecoveryTime(value pgtype.Timestamptz) (time.Time, error) {
 	return terminalrepo.RequiredRecoveryTime(value)
 }
 
-func optionalRecoveryTime(value pgtype.Timestamptz) *time.Time {
-	return terminalrepo.OptionalRecoveryTime(value)
-}
-
 func optionalRecoveryUUID(value uuid.NullUUID) *uuid.UUID {
 	return terminalrepo.OptionalRecoveryUUID(value)
 }
@@ -74,31 +70,7 @@ func recoveryCurrentOrdinal(scoreHead sqlc.SeriesScoreHead) (int, error) {
 }
 
 func recoveryGameClock(row sqlc.PauseClock) (pausedomain.PauseResumeGameClock, error) {
-	if row.FrozenRemainingMs < 1 || row.FrozenRemainingMs > math.MaxInt64/int64(time.Millisecond) {
-		return pausedomain.PauseResumeGameClock{}, fmt.Errorf("invalid recovery terminal snapshot: invalid frozen duration")
-	}
-	originalDeadline, err := requiredRecoveryTime(row.OriginalDeadline)
-	if err != nil {
-		return pausedomain.PauseResumeGameClock{}, err
-	}
-	frozenAt, err := requiredRecoveryTime(row.FrozenAt)
-	if err != nil {
-		return pausedomain.PauseResumeGameClock{}, err
-	}
-	remaining, err := reconnectFrozenDuration(originalDeadline, frozenAt, row.FrozenRemainingMs)
-	if err != nil {
-		return pausedomain.PauseResumeGameClock{}, fmt.Errorf("invalid recovery terminal snapshot: Game clock: %w", err)
-	}
-	clock := pausedomain.PauseResumeGameClock{
-		PauseID: row.PauseID, GameID: row.GameAttemptID, OriginalDeadline: originalDeadline,
-		FrozenAt: frozenAt, Remaining: remaining,
-		ResumedAt: optionalRecoveryTime(row.ResumedAt), ResumedDeadline: optionalRecoveryTime(row.ResumedDeadline),
-		Revision: row.Revision,
-	}
-	if err := clock.Validate(true); err != nil {
-		return pausedomain.PauseResumeGameClock{}, fmt.Errorf("invalid recovery terminal snapshot: Game clock: %w", err)
-	}
-	return clock, nil
+	return terminalrepo.RecoveryGameClock(row)
 }
 
 // reconnectFrozenDuration restores the duration that was authoritative before

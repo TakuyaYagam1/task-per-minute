@@ -8,6 +8,7 @@ import (
 	"github.com/google/uuid"
 
 	pausedomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/pause"
+	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/pause/model"
 )
 
 func validatePauseResumePresenceRecord(record PauseResumePresenceRecord) error {
@@ -51,7 +52,7 @@ func validatePauseResumeParticipantOrder(record PauseResumePresenceRecord) error
 	if record.First.ParticipantID == uuid.Nil || record.Second.ParticipantID == uuid.Nil || record.First.ParticipantID == record.Second.ParticipantID {
 		return pauseResumePresenceError("invalid participant resolution order")
 	}
-	series := pauseSeriesByID(record.Graph.Series, record.Command.SeriesExpected.SeriesID)
+	series := pauseSeriesByID(record.Graph.Series, record.Command.GameExpected.SeriesID)
 	if series == nil || record.First.ParticipantID != series.Execution.Series.FirstParticipantID ||
 		record.Second.ParticipantID != series.Execution.Series.SecondParticipantID {
 		return pauseResumePresenceError("participant resolution order does not match Series")
@@ -80,6 +81,9 @@ func validatePauseResumeCompleteRecord(record PauseResumePresenceRecord) error {
 }
 
 func pauseResumeSeriesDecisionMatches(record PauseResumePresenceRecord) bool {
+	if record.Command.SourceAdoption {
+		return record.SeriesDecision == nil
+	}
 	decision := record.SeriesDecision
 	return decision != nil && decision.ID == record.Command.SeriesDecisionID &&
 		decision.PauseID == record.Command.SeriesExpected.PauseID &&
@@ -277,6 +281,7 @@ func validatePauseResumeWaitGraph(record PauseResumePresenceRecord) bool {
 	if record.Graph.Tournament.Revision != expected.TournamentRevision ||
 		record.Graph.Tournament.PausedFromState == nil || *record.Graph.Tournament.PausedFromState != expected.TournamentState ||
 		current.WaveRevision != expected.WaveRevision || !revisionMapEqual(current.Series, expected.Series) ||
+		!model.SourcePauseRevisionMapEqual(current.SourcePauses, expected.SourcePauses) ||
 		!revisionMapEqual(current.Games, expected.Games) || !reflect.DeepEqual(current.Draft, expected.Draft) ||
 		current.DraftPreviousRevisionID != expected.DraftPreviousRevisionID ||
 		!pauseResumePresenceSetEqual(record.Graph.Presence, record.Command.Presence) ||

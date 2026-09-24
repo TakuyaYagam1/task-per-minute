@@ -179,6 +179,7 @@ func validatePauseSeriesDescendants(graph PauseGraph) (pauseGraphIndex, error) {
 
 func validatePauseGameDescendants(graph PauseGraph, index pauseGraphIndex) error {
 	seenGames := make(map[uuid.UUID]struct{}, len(graph.Games))
+	seenSourcePauses := make(map[uuid.UUID]struct{}, len(graph.Games))
 	for _, game := range graph.Games {
 		seriesID, expected := index.currentGames[game.Game.ID]
 		if !expected || seriesID != game.SeriesID || game.Revision < 1 || game.Game.Validate() != nil || game.Game.ID == uuid.Nil {
@@ -190,8 +191,14 @@ func validatePauseGameDescendants(graph PauseGraph, index pauseGraphIndex) error
 		seenGames[game.Game.ID] = struct{}{}
 		series := index.seriesByID[seriesID]
 		embedded, found := embeddedSeriesGame(series.Execution.Series, game.Game.ID)
-		if !found || !reflect.DeepEqual(embedded, game.Game) || !validSeriesGameState(series, game) {
+		if !found || !reflect.DeepEqual(embedded, game.Game) || !validPauseGameSourcePause(graph, series, game) || !validSeriesGameState(series, game) {
 			return ErrNormalPauseGraphIncomplete
+		}
+		if game.SourcePause != nil {
+			if _, duplicate := seenSourcePauses[game.SourcePause.PauseID]; duplicate {
+				return normalPauseError("duplicate adopted source pause")
+			}
+			seenSourcePauses[game.SourcePause.PauseID] = struct{}{}
 		}
 		index.gamesByID[game.Game.ID] = game
 	}
@@ -199,6 +206,89 @@ func validatePauseGameDescendants(graph PauseGraph, index pauseGraphIndex) error
 		return ErrNormalPauseGraphIncomplete
 	}
 	return nil
+}
+
+func validPauseGameSourcePause(graph PauseGraph, series PauseSeries, game PauseGame) bool {
+	source := game.SourcePause
+	if source == nil {
+		return true
+	}
+	participants := [2]uuid.UUID{series.Execution.Series.FirstParticipantID, series.Execution.Series.SecondParticipantID}
+	return validSourcePauseIdentity(*source, graph.ActivePauseID, series.Execution.Series.ID, game.Game.ID) &&
+		game.ResumeState == nil && validSourcePauseGameClock(game) &&
+		validSourcePausePresence(*source, participants) && validSourcePauseCounters(graph, source.PauseID, participants)
+}
+
+func validSourcePauseIdentity(source PauseGameSourcePause, normalPauseID, seriesID, gameID uuid.UUID) bool {
+	return source.PauseID != uuid.Nil && source.PauseID != normalPauseID && source.ScopeKind == "game_attempt" &&
+		source.ScopeID == gameID && source.SeriesID == seriesID && source.GameID == gameID &&
+		source.Reason == PauseReasonDisconnect && source.ParentPauseID == nil && source.Depth == 0 &&
+		source.CurrentRevisionID != uuid.Nil && source.Revision >= 1 && !source.StartedAt.IsZero() && source.DecisionNumber >= 0
+}
+
+func validSourcePauseGameClock(game PauseGame) bool {
+	source := game.SourcePause
+	clock := source.Clock
+	if clock.Kind != PauseDeadlineGame || clock.OwnerID != game.Game.ID || clock.Revision < 1 || !clock.FrozenAt.Equal(source.StartedAt) {
+		return false
+	}
+	switch source.State {
+	case PauseStateActive:
+		return source.ResolvedAt == nil && game.Game.State == domain.GameStatePaused && game.Deadline == nil && validateFrozenDeadline(clock, true) == nil
+	case PauseStateResumed:
+		return validResumedSourcePauseGameClock(game)
+	case PauseStateCancelled:
+		return false
+	default:
+		return false
+	}
+}
+
+func validResumedSourcePauseGameClock(game PauseGame) bool {
+	source := game.SourcePause
+	clock := source.Clock
+	return source.ResolvedAt != nil && pauseValidServerTime(*source.ResolvedAt) && source.Revision >= 2 && source.DecisionNumber >= 1 &&
+		game.Game.State == domain.GameStateActive && game.Deadline != nil && validateFrozenDeadline(clock, false) == nil &&
+		source.ResolvedAt.Equal(*clock.ResumedAt) && game.Deadline.Equal(*clock.ResumedDeadline)
+}
+
+func validSourcePausePresence(source PauseGameSourcePause, participants [2]uuid.UUID) bool {
+	if len(source.Presence) != 2 {
+		return false
+	}
+	seenPresence := make(map[uuid.UUID]struct{}, 2)
+	for _, snapshot := range source.Presence {
+		if snapshot.ParticipantID == uuid.Nil || (snapshot.State != pausedomain.PresenceStateConnected && snapshot.State != pausedomain.PresenceStateDisconnected) ||
+			snapshot.PresenceEpoch < 1 || snapshot.Revision < 1 || !pauseValidServerTime(snapshot.CapturedAt) || !snapshot.CapturedAt.Equal(source.StartedAt) {
+			return false
+		}
+		if snapshot.ParticipantID != participants[0] && snapshot.ParticipantID != participants[1] {
+			return false
+		}
+		if _, duplicate := seenPresence[snapshot.ParticipantID]; duplicate {
+			return false
+		}
+		seenPresence[snapshot.ParticipantID] = struct{}{}
+	}
+	return len(seenPresence) == 2
+}
+
+func validSourcePauseCounters(graph PauseGraph, pauseID uuid.UUID, participants [2]uuid.UUID) bool {
+	seenCounters := make(map[uuid.UUID]struct{}, 2)
+	for _, counter := range graph.Counters {
+		if counter.PauseID != pauseID {
+			continue
+		}
+		if !validPauseReconnectCounter(counter) || counter.RosterID != graph.Scope.RosterID ||
+			(counter.ParticipantID != participants[0] && counter.ParticipantID != participants[1]) {
+			return false
+		}
+		if _, duplicate := seenCounters[counter.ParticipantID]; duplicate {
+			return false
+		}
+		seenCounters[counter.ParticipantID] = struct{}{}
+	}
+	return len(seenCounters) == 2
 }
 
 func embeddedSeriesGame(series domain.Series, gameID uuid.UUID) (domain.Game, bool) {
@@ -221,12 +311,10 @@ func embeddedSeriesGame(series domain.Series, gameID uuid.UUID) (domain.Game, bo
 func validSeriesGameState(series PauseSeries, game PauseGame) bool {
 	switch series.Execution.Series.State {
 	case domain.SeriesStateActive:
-		return game.Game.State == domain.GameStateActive && game.ResumeState == nil
+		return game.Game.State == domain.GameStateActive && game.ResumeState == nil ||
+			game.Game.State == domain.GameStatePaused && game.ResumeState == nil && game.SourcePause != nil
 	case domain.SeriesStateTechnicalPause:
-		if series.Execution.ResumeState == nil || *series.Execution.ResumeState != domain.SeriesStateActive {
-			return game.Game.State != domain.GameStateActive && game.Game.State != domain.GameStatePaused
-		}
-		return game.Game.State == domain.GameStatePaused && game.ResumeState != nil && *game.ResumeState == domain.GameStateActive
+		return validTechnicalPauseSeriesGameState(series, game)
 	case domain.SeriesStatePlanned, domain.SeriesStateLocked, domain.SeriesStateDraft,
 		domain.SeriesStateReady, domain.SeriesStateReplayRequired, domain.SeriesStateCompleted,
 		domain.SeriesStateCancelled:
@@ -234,6 +322,14 @@ func validSeriesGameState(series PauseSeries, game PauseGame) bool {
 	default:
 		return false
 	}
+}
+
+func validTechnicalPauseSeriesGameState(series PauseSeries, game PauseGame) bool {
+	if series.Execution.ResumeState == nil || *series.Execution.ResumeState != domain.SeriesStateActive {
+		return game.Game.State != domain.GameStateActive && game.Game.State != domain.GameStatePaused
+	}
+	return game.Game.State == domain.GameStatePaused &&
+		(game.ResumeState != nil && *game.ResumeState == domain.GameStateActive || game.ResumeState == nil && game.SourcePause != nil)
 }
 
 func validatePauseDraftDescendant(graph PauseGraph, index pauseGraphIndex) error {

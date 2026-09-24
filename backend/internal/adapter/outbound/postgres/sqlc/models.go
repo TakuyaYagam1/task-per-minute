@@ -856,11 +856,12 @@ type GoldenPositionCommit struct {
 	RosterID                 uuid.UUID
 	MembershipID             uuid.UUID
 	ParticipantID            uuid.UUID
-	ProvisionalSubmissionID  uuid.UUID
+	ProvisionalSubmissionID  uuid.NullUUID
 	PreviousPositionCommitID uuid.NullUUID
 	Position                 int16
 	CommittedAt              pgtype.Timestamptz
 	CreatedAt                pgtype.Timestamptz
+	TerminalEvidenceID       uuid.NullUUID
 }
 
 type GoldenPositionLedgerAttempt struct {
@@ -1295,6 +1296,22 @@ type GoldenStateTransition struct {
 	PreviousStateRevisionID uuid.NullUUID
 	OccurredAt              pgtype.Timestamptz
 	CreatedAt               pgtype.Timestamptz
+}
+
+type GoldenTerminalPositionEvidence struct {
+	ID              uuid.UUID
+	TournamentID    uuid.UUID
+	RosterID        uuid.UUID
+	GroupRevisionID uuid.UUID
+	AttemptID       uuid.UUID
+	MembershipID    uuid.UUID
+	ParticipantID   uuid.UUID
+	RuntimeRevision int64
+	Deadline        pgtype.Timestamptz
+	Position        int16
+	PayloadDigest   []byte
+	RecordedAt      pgtype.Timestamptz
+	CreatedAt       pgtype.Timestamptz
 }
 
 type NormalNoShowCommit struct {

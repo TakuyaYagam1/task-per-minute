@@ -419,6 +419,7 @@ SELECT pause.id AS pause_id,
     pause.roster_id,
     pause.scope_id AS wave_id,
     pause.revision AS pause_revision,
+    command.result_document AS pause_document,
     assignment.id AS assignment_id,
     assignment.attempt_id AS game_attempt_id,
     assignment.series_id,
@@ -429,6 +430,12 @@ SELECT pause.id AS pause_id,
     presence.presence_epoch,
     presence.revision AS presence_revision
 FROM pauses AS pause
+LEFT JOIN wave_control_commands AS command
+    ON command.tournament_id = pause.tournament_id
+    AND command.roster_id = pause.roster_id
+    AND command.wave_id = pause.wave_id
+    AND command.action = 'pause'
+    AND command.executed_at = pause.started_at
 JOIN wave_series AS membership
     ON membership.wave_id = pause.wave_id
     AND membership.tournament_id = pause.tournament_id
@@ -468,7 +475,22 @@ WHERE pause.tournament_id = sqlc.arg(tournament_id)
     AND pause.scope_kind = 'wave'
     AND pause.reason = 'operator'
     AND pause.state = 'active'
-    AND series.state = 'technical_pause'
+    AND (series.state = 'technical_pause' OR (
+        series.state = 'active'
+        AND EXISTS (
+            SELECT 1 FROM pauses AS source_pause
+            WHERE source_pause.tournament_id = series.tournament_id
+                AND source_pause.roster_id = series.roster_id
+                AND source_pause.series_id = series.id
+                AND source_pause.game_attempt_id = attempt.id
+                AND source_pause.scope_kind = 'game_attempt'
+                AND source_pause.scope_id = attempt.id
+                AND source_pause.parent_pause_id IS NULL
+                AND source_pause.depth = 0
+                AND source_pause.reason = 'disconnect'
+                AND source_pause.state = 'active'
+        )
+    ))
     AND attempt.state = 'paused'
 ORDER BY pause.id, assignment.series_id, assignment.attempt_id, presence.id
 FOR UPDATE OF pause, membership, series, attempt, assignment, snapshot, receipt, presence;

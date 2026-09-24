@@ -132,6 +132,7 @@ const stopFixture = async (): Promise<void> => {
 const openFixture = async (page: Page): Promise<void> => {
   await page.goto(fixtureURL, { waitUntil: 'domcontentloaded' });
   await expect(page.getByRole('heading', { name: 'Общие компоненты интерфейса' })).toBeVisible();
+  await expect(page.locator('main')).toHaveAttribute('data-hydrated', 'true');
 };
 
 test.describe('shared UI primitives', () => {
@@ -229,6 +230,46 @@ test.describe('shared UI primitives', () => {
     expect(pageWidths.body).toBeLessThanOrEqual(pageWidths.viewport);
   });
 
+  test('waits for hydration before exposing the interactive fixture', async ({ page }) => {
+    let releaseBootstrap = () => {};
+    const bootstrapReleased = new Promise<void>((resolveRelease) => {
+      releaseBootstrap = resolveRelease;
+    });
+    let bootstrapRequested = false;
+    await page.route('**/_next/static/chunks/main-app.js*', async (route) => {
+      bootstrapRequested = true;
+      await bootstrapReleased;
+      await route.continue();
+    });
+
+    let fixtureReady = false;
+    const opening = openFixture(page).then(() => {
+      fixtureReady = true;
+    });
+    try {
+      await expect.poll(() => bootstrapRequested).toBe(true);
+      await page.waitForLoadState('domcontentloaded');
+      await expect(page.getByRole('heading', { name: 'Общие компоненты интерфейса' })).toBeVisible();
+
+      const summary = page.getByRole('tab', { name: 'Сводка' });
+      const ranking = page.getByRole('tab', { name: 'Рейтинг' });
+      await summary.focus();
+      await summary.press('ArrowRight');
+      await expect(ranking).toHaveAttribute('aria-selected', 'false');
+      expect(fixtureReady, 'SSR content must not signal interactive fixture readiness').toBe(false);
+
+      releaseBootstrap();
+      await opening;
+      await summary.focus();
+      await summary.press('ArrowRight');
+      await expect(ranking).toHaveAttribute('aria-selected', 'true');
+      await expect(ranking).toBeFocused();
+    } finally {
+      releaseBootstrap();
+      await Promise.allSettled([opening]);
+    }
+  });
+
   test('moves through enabled tabs with ArrowLeft, ArrowRight, Home and End', async ({ page }) => {
     await openFixture(page);
 
@@ -287,5 +328,76 @@ test.describe('shared UI primitives', () => {
     await page.keyboard.press('Escape');
     await expect(dialog).not.toBeVisible();
     await expect(trigger).toBeFocused();
+  });
+
+  test('ignores stale native close after reopening Dialog', async ({ page }) => {
+    await openFixture(page);
+
+    const trigger = page.getByRole('button', { name: 'Открыть диалог' });
+    const dialog = page.getByRole('dialog', { name: 'Подтвердить действие' });
+    const confirm = dialog.getByRole('button', { name: 'Подтвердить', exact: true });
+    const events = page.getByLabel('События диалога');
+
+    await trigger.click();
+    await expect(dialog).toBeVisible();
+    // Keep native close/showModal behavior, but deliver this close event after reopening.
+    const pendingClose = await dialog.evaluateHandle((element) => {
+      const pending = { event: null as Event | null };
+      element.addEventListener('close', (event) => {
+        event.stopImmediatePropagation();
+        pending.event = event;
+      }, { capture: true, once: true });
+      return pending;
+    });
+
+    try {
+      await dialog.getByRole('button', { name: 'Отмена', exact: true }).click();
+      await expect(dialog).toBeHidden();
+      await expect(trigger).toBeFocused();
+      await expect.poll(() => pendingClose.evaluate((pending) => pending.event !== null)).toBe(true);
+
+      await trigger.click();
+      await expect(dialog).toBeVisible();
+      await confirm.focus();
+      await expect(confirm).toBeFocused();
+      await pendingClose.evaluate((pending) => {
+        const event = pending.event;
+        if (event === null || !(event.target instanceof HTMLDialogElement)) {
+          throw new Error('Expected the deferred native dialog close event');
+        }
+        event.target.dispatchEvent(event);
+      });
+
+      await expect(dialog).toBeVisible();
+      await expect.poll(() => dialog.evaluate((element) => element.matches(':modal'))).toBe(true);
+      await expect(confirm).toBeFocused();
+      await expect(events).toHaveText('Нет');
+
+      await dialog.evaluate((element) => {
+        if (!(element instanceof HTMLDialogElement)) {
+          throw new Error('Expected a native dialog');
+        }
+        element.close();
+      });
+      await expect(dialog).toBeHidden();
+      await expect(trigger).toBeFocused();
+      await expect(events).toHaveText('open:false,close');
+
+      await trigger.click();
+      await expect(dialog).toBeVisible();
+      await page.keyboard.press('Escape');
+      await expect(dialog).toBeHidden();
+      await expect(trigger).toBeFocused();
+      await expect(events).toHaveText('open:false,close,cancel,open:false,close');
+
+      await trigger.click();
+      await expect(dialog).toBeVisible();
+      await dialog.getByRole('button', { name: 'Закрыть диалог' }).click();
+      await expect(dialog).toBeHidden();
+      await expect(trigger).toBeFocused();
+      await expect(events).toHaveText('open:false,close,cancel,open:false,close,open:false,close');
+    } finally {
+      await pendingClose.dispose();
+    }
   });
 });

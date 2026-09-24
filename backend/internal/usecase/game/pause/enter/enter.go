@@ -299,6 +299,9 @@ func pauseSeriesAndGames(graph *PauseGraph, pausedAt time.Time) error {
 	}
 	for index := range graph.Series {
 		series := &graph.Series[index]
+		if hasAdoptedSourceCurrentGame(graph, series, gameIndexes) {
+			continue
+		}
 		origin := series.Execution.Series.State
 		mutated, err := pauseSeriesRecord(series)
 		if err != nil {
@@ -312,6 +315,27 @@ func pauseSeriesAndGames(graph *PauseGraph, pausedAt time.Time) error {
 		}
 	}
 	return nil
+}
+
+func hasAdoptedSourceCurrentGame(graph *PauseGraph, series *PauseSeries, gameIndexes map[uuid.UUID]int) bool {
+	if graph == nil || series == nil || series.Execution.Series.State != domain.SeriesStateActive || series.CurrentGameID == nil {
+		return false
+	}
+	gameIndex, exists := gameIndexes[*series.CurrentGameID]
+	if !exists {
+		return false
+	}
+	game := graph.Games[gameIndex]
+	return game.SeriesID == series.Execution.Series.ID && game.Game.ID == *series.CurrentGameID &&
+		isAdoptedSourceGame(game)
+}
+
+func isAdoptedSourceGame(game PauseGame) bool {
+	source := game.SourcePause
+	return game.Game.State == domain.GameStatePaused && game.ResumeState == nil && game.Deadline == nil && source != nil &&
+		source.PauseID != uuid.Nil && source.GameID == game.Game.ID && source.SeriesID == game.SeriesID &&
+		source.State == PauseStateActive && source.Reason == PauseReasonDisconnect &&
+		source.ParentPauseID == nil && source.Depth == 0
 }
 
 func pauseSeriesRecord(series *PauseSeries) (bool, error) {

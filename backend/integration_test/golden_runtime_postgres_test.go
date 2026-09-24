@@ -165,7 +165,7 @@ func TestGoldenRuntimeSurvivesRestartAndProducesPlayoffEvidence(t *testing.T) {
 
 func TestGoldenRuntimeDeadlineReserveAndConnectionStateMachine(t *testing.T) {
 	ctx := context.Background()
-	fixture := prepareNativeGoldenFinalSwiss(ctx, t)
+	fixture := prepareGoldenThreeMemberSwiss(t)
 	sourceProjectionID, sourceProjectionRevision := currentPublishedProjection(
 		ctx, t, fixture.tournamentID, fixture.rosterID,
 	)
@@ -206,8 +206,9 @@ func TestGoldenRuntimeDeadlineReserveAndConnectionStateMachine(t *testing.T) {
 		GoldenMutationScope:        usecase.GoldenMutationScope{ActorID: uuid.New()},
 	})
 	require.NoError(t, err)
-	require.NotEmpty(t, operator.Groups)
+	require.Len(t, operator.Groups, 1)
 	primary := operator.Groups[0]
+	require.Len(t, primary.Members, 3, "one solve must leave two participants for the reserve branch")
 	players := goldenRuntimePlayers(ctx, t, primary)
 	for _, member := range primary.Members {
 		_, err = application.SetReady(ctx, goldenRuntimeReadyCommand(ctx, t, application, fixture.tournamentID, players[member.ParticipantID], uuid.New()))
@@ -251,7 +252,7 @@ func TestGoldenRuntimeDeadlineReserveAndConnectionStateMachine(t *testing.T) {
 	reserve := goldenRuntimeGroupView(t, view, primary.GroupRevisionID)
 	require.Equal(t, "prepared", reserve.State)
 	require.NotEqual(t, primary.AttemptID, reserve.AttemptID)
-	require.Len(t, reserve.Members, len(primary.Members)-1)
+	require.Len(t, reserve.Members, 2)
 	var reservePosition int16
 	require.NoError(t, sharedPool.QueryRow(ctx, `
 		SELECT edge_position FROM golden_runtime_assignments WHERE attempt_id = $1`,

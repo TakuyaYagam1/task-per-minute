@@ -257,7 +257,7 @@ func createGoldenSource(
 		RosterID:                 input.RosterID,
 		MembershipID:             membershipIDs[0],
 		ParticipantID:            participantIDs[0],
-		ProvisionalSubmissionID:  submission.ID,
+		ProvisionalSubmissionID:  uuid.NullUUID{UUID: submission.ID, Valid: true},
 		PreviousPositionCommitID: uuid.NullUUID{},
 		Position:                 1,
 		CommittedAt:              timestamptz(createdAt.Add(7 * time.Second)),

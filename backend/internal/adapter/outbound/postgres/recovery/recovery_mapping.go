@@ -1,6 +1,8 @@
 package recovery
 
 import (
+	"time"
+
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 
@@ -46,8 +48,9 @@ func recoveryDeadlineFromGetRow(row sqlc.GetPendingRecoveryDeadlineRow) (recover
 }
 
 func mapRecoveryDeadline(row recoveryDeadlineRow) (recoveryusecase.PendingDeadline, error) {
-	if !row.dueAt.Valid {
-		return recoveryusecase.PendingDeadline{}, domain.ErrInternal
+	dueAt, err := recoveryDeadlineTime(row.dueAt)
+	if err != nil {
+		return recoveryusecase.PendingDeadline{}, err
 	}
 	deadline := recoveryusecase.PendingDeadline{
 		Kind: recoveryusecase.DeadlineKind(row.kind), ID: row.id,
@@ -56,12 +59,23 @@ func mapRecoveryDeadline(row recoveryDeadlineRow) (recoveryusecase.PendingDeadli
 		GameID: row.gameID, PauseID: row.pauseID,
 		ReadyWindowRevisionID: row.readyWindowRevisionID,
 		ParticipantID:         row.participantID, ExpectedRevision: row.expectedRevision,
-		DueAt: row.dueAt.Time.Round(0).UTC(),
+		DueAt: dueAt,
 	}
 	if deadline.Validate() != nil {
 		return recoveryusecase.PendingDeadline{}, domain.ErrInternal
 	}
 	return deadline, nil
+}
+
+func recoveryDeadlineTime(value pgtype.Timestamptz) (time.Time, error) {
+	if !value.Valid {
+		return time.Time{}, domain.ErrInternal
+	}
+	dueAt := value.Time.Round(0).UTC()
+	if !domain.IsValidServerTime(dueAt) {
+		return time.Time{}, domain.ErrInternal
+	}
+	return dueAt, nil
 }
 
 func recoveryCursorKind(kind recoveryusecase.DeadlineKind) int16 {

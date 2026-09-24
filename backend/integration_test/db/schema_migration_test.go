@@ -19,7 +19,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/bootstrap"
 )
 
-const schemaHeadVersion int64 = 27
+const schemaHeadVersion int64 = 29
 
 func TestSchemaMigration(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
@@ -232,11 +232,11 @@ func TestSchemaMigration(t *testing.T) {
 					AND column_name IN ('owner_kind', 'owner_id')
 			))::INT`,
 	).Scan(&removedLegacy))
-	require.Equal(t, 200, applicationTables)
-	require.Equal(t, 201, applicationFunctions)
-	require.Equal(t, 295, triggers)
+	require.Equal(t, 201, applicationTables)
+	require.Equal(t, 205, applicationFunctions)
+	require.Equal(t, 299, triggers)
 	require.Equal(t, 102, explicitIndexes)
-	require.Equal(t, 631, foreignKeys)
+	require.Equal(t, 634, foreignKeys)
 	require.Zero(t, legacyIdentifiers,
 		"domain baseline must not expose legacy-prefixed schema identifiers")
 	require.Zero(t, removedLegacy,
@@ -275,6 +275,8 @@ func TestSchemaMigration(t *testing.T) {
 		"outbox_wave_control_sources_target_event_fk",
 		"reconnect_intervals_segment_key",
 		"reconnect_intervals_lineage_check",
+		"participants_roster_participant_player_key",
+		"golden_plan_snapshot_participant_reservation_identity_fk",
 	}
 	requiredIndexes := []string{
 		"tournaments_single_active_idx",
@@ -327,6 +329,7 @@ func TestSchemaMigration(t *testing.T) {
 			AND to_regclass('public.reconnect_intervals_root_presence_epoch_key') IS NOT NULL
 			AND to_regclass('public.reconnect_intervals_continued_from_key') IS NOT NULL
 			AND to_regprocedure('public.normal_wave_reconnect_lock()') IS NOT NULL
+			AND to_regprocedure('public.golden_snapshot_participant_reservation_live_guard()') IS NOT NULL
 			AND (
 				SELECT COUNT(*) = 3
 				FROM information_schema.columns

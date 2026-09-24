@@ -468,8 +468,9 @@ test("FE-041 keeps official result server-only and covers fullscreen, themes, an
   });
   const broadcast = page.getByTestId("tournament-broadcast");
   await expect(broadcast.getByTestId("broadcast-official-result")).toHaveCount(0);
+  await expect(broadcast.getByTestId("broadcast-game-countdown")).toHaveText("5:00");
 
-  await page.clock.fastForward(301_000);
+  await page.clock.runFor(301_000);
   await expect(broadcast.getByTestId("broadcast-game-countdown")).toContainText("Ожидает подтверждения");
   await expect(broadcast.getByTestId("broadcast-official-result")).toHaveCount(0);
 

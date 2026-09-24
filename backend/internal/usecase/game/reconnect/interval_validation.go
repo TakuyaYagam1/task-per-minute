@@ -47,10 +47,11 @@ func validateReconnectRootSuffixes(
 	counters map[uuid.UUID]pause.PauseReconnectCounter,
 	rootNumbers map[uuid.UUID]map[int]struct{},
 ) error {
+	hiddenRoots := reconnectClockCarriesHiddenRoots(authority)
 	for participantID, counter := range counters {
 		numbers := rootNumbers[participantID]
 		if len(numbers) == 0 {
-			if counter.Used == 0 || reconnectClockCarriesHiddenRoots(authority) {
+			if counter.Used == 0 || hiddenRoots {
 				continue
 			}
 			return reconnectError("reconnect roots do not match stable counter")
@@ -69,8 +70,11 @@ func validateReconnectRootSuffixes(
 }
 
 func reconnectClockCarriesHiddenRoots(authority ReconnectAuthority) bool {
-	return authority.Game.State == domain.GameStateActive &&
-		authority.GameClock.ResumedAt != nil && authority.GameClock.ResumedDeadline != nil
+	if authority.Game.State == domain.GameStateActive {
+		return authority.GameClock.ResumedAt != nil && authority.GameClock.ResumedDeadline != nil
+	}
+	return (authority.Game.State == domain.GameStatePaused || authority.Game.State.IsTerminal()) &&
+		!authority.GameClock.FrozenAt.IsZero()
 }
 
 func validateReconnectInterval(authority ReconnectAuthority, interval pause.PauseReconnectInterval, stableGames map[uuid.UUID]struct{}, counters map[uuid.UUID]pause.PauseReconnectCounter, validation *reconnectIntervalValidation) error {

@@ -5572,7 +5572,9 @@ SELECT ledger.revision_id AS ledger_revision_id,
     binding.participant_id,
     binding.position,
     binding.evidence_digest,
-    provisional_submission.server_sequence AS submission_id
+    provisional_submission.server_sequence AS submission_id,
+    terminal_evidence.id AS terminal_evidence_id,
+    terminal_evidence.payload_digest AS terminal_payload_digest
 FROM golden_position_ledger_revisions AS ledger
 LEFT JOIN golden_position_ledger_attempts AS attempt
     ON attempt.ledger_revision_id = ledger.revision_id
@@ -5608,6 +5610,15 @@ LEFT JOIN golden_provisional_submissions AS provisional_submission
     AND provisional_submission.attempt_id = position_commit.attempt_id
     AND provisional_submission.tournament_id = position_commit.tournament_id
     AND provisional_submission.roster_id = position_commit.roster_id
+LEFT JOIN golden_terminal_position_evidence AS terminal_evidence
+    ON terminal_evidence.id = position_commit.terminal_evidence_id
+    AND terminal_evidence.attempt_id = position_commit.attempt_id
+    AND terminal_evidence.membership_id = position_commit.membership_id
+    AND terminal_evidence.participant_id = binding.participant_id
+    AND terminal_evidence.tournament_id = ledger.tournament_id
+    AND terminal_evidence.roster_id = ledger.roster_id
+    AND terminal_evidence.group_revision_id = ledger.group_revision_id
+    AND terminal_evidence.position = binding.position
 WHERE ledger.tournament_id = $1
     AND ledger.roster_id = $2
 ORDER BY ledger.group_revision_id, ledger.revision_number, attempt.attempt_number, binding.position
@@ -5620,26 +5631,28 @@ type LockTournamentProgressionGoldenPositionLedgerParams struct {
 }
 
 type LockTournamentProgressionGoldenPositionLedgerRow struct {
-	LedgerRevisionID     uuid.UUID
-	GroupRevisionID      uuid.UUID
-	RevisionNumber       int64
-	PreviousRevisionID   uuid.NullUUID
-	PayloadDigest        []byte
-	FinalizedAt          pgtype.Timestamptz
-	AttemptID            uuid.NullUUID
-	SubmissionRevisionID uuid.NullUUID
-	SubmissionRevision   *int64
-	AttemptNumber        *int32
-	OrderCount           *int16
-	WaveID               uuid.UUID
-	AssignmentID         uuid.UUID
-	SnapshotID           uuid.UUID
-	TaskID               uuid.UUID
-	PositionCommitID     uuid.NullUUID
-	ParticipantID        uuid.NullUUID
-	Position             *int16
-	EvidenceDigest       []byte
-	SubmissionID         *int64
+	LedgerRevisionID      uuid.UUID
+	GroupRevisionID       uuid.UUID
+	RevisionNumber        int64
+	PreviousRevisionID    uuid.NullUUID
+	PayloadDigest         []byte
+	FinalizedAt           pgtype.Timestamptz
+	AttemptID             uuid.NullUUID
+	SubmissionRevisionID  uuid.NullUUID
+	SubmissionRevision    *int64
+	AttemptNumber         *int32
+	OrderCount            *int16
+	WaveID                uuid.UUID
+	AssignmentID          uuid.UUID
+	SnapshotID            uuid.UUID
+	TaskID                uuid.UUID
+	PositionCommitID      uuid.NullUUID
+	ParticipantID         uuid.NullUUID
+	Position              *int16
+	EvidenceDigest        []byte
+	SubmissionID          *int64
+	TerminalEvidenceID    uuid.NullUUID
+	TerminalPayloadDigest []byte
 }
 
 func (q *Queries) LockTournamentProgressionGoldenPositionLedger(ctx context.Context, arg LockTournamentProgressionGoldenPositionLedgerParams) ([]LockTournamentProgressionGoldenPositionLedgerRow, error) {
@@ -5672,6 +5685,8 @@ func (q *Queries) LockTournamentProgressionGoldenPositionLedger(ctx context.Cont
 			&i.Position,
 			&i.EvidenceDigest,
 			&i.SubmissionID,
+			&i.TerminalEvidenceID,
+			&i.TerminalPayloadDigest,
 		); err != nil {
 			return nil, err
 		}

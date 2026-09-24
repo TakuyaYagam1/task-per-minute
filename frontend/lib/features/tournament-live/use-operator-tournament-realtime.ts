@@ -157,7 +157,7 @@ export const useOperatorTournamentRealtime = ({
           if (isOperatorRealtimeRejection(value)) {
             terminalGenerationRef.current = generation;
             setStatus("rejected");
-            socket.close(1008, "operator realtime rejected");
+            socket.close(1000, "operator realtime rejected");
             return;
           }
           if (!receivedInitialFrame) {
@@ -183,7 +183,7 @@ export const useOperatorTournamentRealtime = ({
           }
         } catch {
           setStatus("error");
-          socket.close(1002, "invalid operator realtime frame");
+          socket.close(1000, "invalid operator realtime frame");
         }
       };
 

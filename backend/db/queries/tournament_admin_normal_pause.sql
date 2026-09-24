@@ -87,10 +87,12 @@ JOIN LATERAL (
 JOIN assignments AS assignment ON assignment.attempt_id = attempt.id AND assignment.state = 'active'
 JOIN task_snapshots AS snapshot ON snapshot.id = assignment.snapshot_id
 LEFT JOIN LATERAL (
-    SELECT clock.resumed_deadline
+    SELECT clock.resumed_at + (clock.original_deadline - clock.frozen_at) AS resumed_deadline
     FROM pause_clocks AS clock
     JOIN pauses AS pause ON pause.id = clock.pause_id AND pause.state = 'resumed'
-    WHERE clock.game_attempt_id = attempt.id AND clock.resumed_deadline IS NOT NULL
+    WHERE clock.game_attempt_id = attempt.id
+        AND clock.resumed_at IS NOT NULL
+        AND clock.resumed_deadline IS NOT NULL
     ORDER BY clock.resumed_at DESC, clock.pause_id DESC
     LIMIT 1
 ) AS latest_resume ON TRUE
@@ -449,7 +451,22 @@ WITH current_authority AS (
         AND wave.tournament_id = sqlc.arg(tournament_id)
         AND wave.state = 'paused'
         AND tournament.state IN ('swiss', 'playoffs')
-        AND series.state = 'technical_pause'
+        AND (series.state = 'technical_pause' OR (
+            series.state = 'active'
+            AND EXISTS (
+                SELECT 1 FROM pauses AS source_pause
+                WHERE source_pause.tournament_id = series.tournament_id
+                    AND source_pause.roster_id = series.roster_id
+                    AND source_pause.series_id = series.id
+                    AND source_pause.game_attempt_id = attempt.id
+                    AND source_pause.scope_kind = 'game_attempt'
+                    AND source_pause.scope_id = attempt.id
+                    AND source_pause.parent_pause_id IS NULL
+                    AND source_pause.depth = 0
+                    AND source_pause.reason = 'disconnect'
+                    AND source_pause.state = 'active'
+            )
+        ))
         AND attempt.state = 'paused'
     FOR UPDATE OF attempt, epoch
 ), inserted AS (

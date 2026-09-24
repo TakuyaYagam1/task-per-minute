@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises';
 
 import {
   expect,
-  test,
+  test as base,
   type APIRequestContext,
   type APIResponse,
   type BrowserContext,
@@ -346,6 +346,31 @@ type FullStackTournamentInput = {
 
 type AdminCSRFSession = Pick<AdminSession, 'access_csrf_token'>;
 
+type OwnedFixture = {
+  taskIDs: Set<string>;
+  tournamentIDs: Set<string>;
+  contexts: BrowserContext[];
+};
+
+const test = base.extend<{ ownedFixture: OwnedFixture }>({
+  ownedFixture: [async ({ request }, use, testInfo) => {
+    const fixture: OwnedFixture = {
+      taskIDs: new Set(),
+      tournamentIDs: new Set(),
+      contexts: [],
+    };
+    try {
+      await use(fixture);
+    } finally {
+      await cleanupOwnedTournamentFixture(
+        request,
+        fixture,
+        testInfo.status !== testInfo.expectedStatus,
+      );
+    }
+  }, { timeout: 120_000 }],
+});
+
 const uniqueName = (prefix: string) =>
   `${prefix}-${Date.now().toString(36)}-${Math.random().toString(16).slice(2, 8)}`;
 
@@ -353,11 +378,22 @@ const ensureFullStackEnabled = async (request: APIRequestContext): Promise<void>
   test.skip(process.env.E2E_FULL_STACK !== '1', 'set E2E_FULL_STACK=1 to run local compose e2e');
   test.skip(!adminPassword, 'E2E_ADMIN_PASSWORD is required for local compose e2e');
 
-  const backendHealth = await request.get(`${backendURL}/health`, { timeout: 10_000 });
-  expect(backendHealth.ok(), `backend /health failed at ${backendURL}`).toBeTruthy();
+  const waitForHealthy = async (url: string, label: string): Promise<void> => {
+    await expect.poll(
+      async () => {
+        try {
+          const response = await request.get(url, { timeout: 10_000 });
+          return response.ok();
+        } catch {
+          return false;
+        }
+      },
+      { message: `${label} failed at ${url}`, timeout: 15_000, intervals: [100, 250, 500, 1_000] },
+    ).toBe(true);
+  };
 
-  const frontendHealth = await request.get(`${frontendURL}/`, { timeout: 10_000 });
-  expect(frontendHealth.ok(), `frontend / failed at ${frontendURL}`).toBeTruthy();
+  await waitForHealthy(`${backendURL}/health`, 'backend health');
+  await waitForHealthy(`${frontendURL}/`, 'frontend health');
 };
 
 const adminLogin = async (request: APIRequestContext): Promise<AdminSession> => {
@@ -380,26 +416,6 @@ const adminLogin = async (request: APIRequestContext): Promise<AdminSession> => 
     access_csrf_token: accessCSRFToken,
     refresh_csrf_token: refreshCSRFToken,
   };
-};
-
-const cleanupTaskByTitle = async (
-  request: APIRequestContext,
-  session: AdminSession,
-  title: string,
-): Promise<void> => {
-  const listResponse = await request.get(`${backendURL}/api/v1/admin/tasks`);
-  if (!listResponse.ok()) {
-    return;
-  }
-
-  const tasks = (await listResponse.json()) as AdminTask[];
-  for (const task of tasks.filter((candidate) => candidate.title === title)) {
-    await request.delete(`${backendURL}/api/v1/admin/tasks/${task.id}`, {
-      headers: {
-        'X-CSRF-Token': session.access_csrf_token,
-      },
-    });
-  }
 };
 
 const loginThroughAdminUI = async (page: Page): Promise<void> => {
@@ -429,6 +445,7 @@ const fillAdminTaskForm = async (page: Page, input: FullStackTaskInput): Promise
 };
 
 const createTaskViaApi = async (
+  fixture: OwnedFixture,
   request: APIRequestContext,
   session: AdminCSRFSession,
   input: FullStackTaskInput,
@@ -439,8 +456,11 @@ const createTaskViaApi = async (
     },
     data: input,
   });
-  expect(response.ok(), `task create failed with ${response.status()}`).toBeTruthy();
-  return (await response.json()) as AdminTask;
+  expect(response.status(), `task create failed with ${response.status()}`).toBe(201);
+  const task = (await response.json()) as AdminTask;
+  expect(task.id, 'task create did not return an id').toMatch(/^[0-9a-f-]{36}$/i);
+  fixture.taskIDs.add(task.id);
+  return task;
 };
 
 const getTournamentContentRevision = async (
@@ -477,6 +497,7 @@ const getTournamentContentSelection = async (
 };
 
 const createTournamentViaApi = async (
+  fixture: OwnedFixture,
   request: APIRequestContext,
   session: AdminCSRFSession,
   input: FullStackTournamentInput,
@@ -495,6 +516,7 @@ const createTournamentViaApi = async (
   expect(tournament.id, 'tournament create did not return an id').toMatch(
     /^[0-9a-f-]{36}$/i,
   );
+  fixture.tournamentIDs.add(tournament.id);
   expect(tournament.name).toBe(input.name);
   expect(tournament.public_id).toBe(input.public_id);
   expect(tournament.state).toBe('draft');
@@ -568,21 +590,250 @@ const getOperatorProjectionRevisionViaApi = async (
   return projectionRevision;
 };
 
+const cancelOwnedTournamentFixtureViaApi = async (
+  request: APIRequestContext,
+  tournamentID: string,
+): Promise<void> => {
+  const snapshotResponse = await request.get(
+    `${backendURL}/api/v1/admin/tournaments/${tournamentID}/snapshot`,
+    { headers: { Origin: frontendURL }, timeout: 15_000 },
+  ).catch(() => {
+    throw new Error('owned tournament cleanup snapshot request failed');
+  });
+  if (snapshotResponse.status() !== 200) {
+    throw new Error(`owned tournament cleanup snapshot failed with status ${snapshotResponse.status()}`);
+  }
+
+  const snapshot = (await snapshotResponse.json().catch(() => {
+    throw new Error('owned tournament cleanup snapshot returned invalid JSON');
+  })) as {
+    next_cursor?: { projection_revision?: unknown };
+    tournament?: { id?: unknown; state?: unknown };
+  };
+  if (snapshot.tournament?.id !== tournamentID) {
+    throw new Error('owned tournament cleanup snapshot returned a different tournament');
+  }
+  if (snapshot.tournament.state === 'cancelled' || snapshot.tournament.state === 'completed') {
+    return;
+  }
+
+  const projectionRevision = snapshot.next_cursor?.projection_revision;
+  if (
+    typeof projectionRevision !== 'number' ||
+    !Number.isSafeInteger(projectionRevision) ||
+    projectionRevision < 1
+  ) {
+    throw new Error('owned tournament cleanup snapshot returned an invalid projection revision');
+  }
+  const csrfToken = (await request.storageState()).cookies.find(
+    (cookie) => cookie.name === 'tpm_admin_access_csrf',
+  )?.value;
+  if (!csrfToken) {
+    throw new Error('owned tournament cleanup could not find the current admin CSRF cookie');
+  }
+
+  const cancellationResponse = await request.post(
+    `${backendURL}/api/v1/admin/tournaments/${tournamentID}/actions`,
+    {
+      headers: {
+        'X-CSRF-Token': csrfToken,
+        'Idempotency-Key': randomUUID(),
+        Origin: frontendURL,
+      },
+      data: {
+        action: 'cancel',
+        confirmed: true,
+        expected_projection_revision: projectionRevision,
+        reason: 'Full-stack E2E fixture cleanup',
+      },
+      timeout: 15_000,
+    },
+  ).catch(() => {
+    throw new Error('owned tournament cleanup cancellation request failed');
+  });
+  if (cancellationResponse.status() !== 200) {
+    throw new Error(`owned tournament cleanup cancellation failed with status ${cancellationResponse.status()}`);
+  }
+
+  const cancelledTournament = (await cancellationResponse.json().catch(() => {
+    throw new Error('owned tournament cleanup cancellation returned invalid JSON');
+  })) as {
+    id?: unknown;
+    state?: unknown;
+  };
+  if (cancelledTournament.id !== tournamentID || cancelledTournament.state !== 'cancelled') {
+    throw new Error('owned tournament cleanup did not cancel the owned tournament');
+  }
+};
+
+const disableOwnedTaskFixtureViaApi = async (
+  request: APIRequestContext,
+  taskID: string,
+): Promise<void> => {
+  const csrfToken = (await request.storageState()).cookies.find(
+    (cookie) => cookie.name === 'tpm_admin_access_csrf',
+  )?.value;
+  if (!csrfToken) {
+    throw new Error('owned task cleanup could not find the current admin CSRF cookie');
+  }
+  const response = await request.put(`${backendURL}/api/v1/admin/tasks/${taskID}`, {
+    headers: { 'X-CSRF-Token': csrfToken, Origin: frontendURL },
+    // Partial update preserves the task data and its historical source asset.
+    data: { enabled: false },
+    timeout: 15_000,
+  }).catch(() => {
+    throw new Error(`owned task ${taskID} cleanup update request failed`);
+  });
+  if (response.status() !== 200) {
+    throw new Error(`owned task ${taskID} cleanup update failed with status ${response.status()}`);
+  }
+  const task = (await response.json().catch(() => {
+    throw new Error(`owned task ${taskID} cleanup update returned invalid JSON`);
+  })) as { id?: unknown; enabled?: unknown };
+  if (task.id !== taskID || task.enabled !== false) {
+    throw new Error(`owned task ${taskID} cleanup did not disable the owned task`);
+  }
+};
+
+const cleanupOwnedTournamentFixture = async (
+  request: APIRequestContext,
+  fixture: OwnedFixture,
+  testFailed: boolean,
+): Promise<void> => {
+  const failures: string[] = [];
+  if (fixture.tournamentIDs.size > 0 || fixture.taskIDs.size > 0) {
+    let authenticated = false;
+    try {
+      await adminLogin(request);
+      authenticated = true;
+    } catch {
+      failures.push('owned fixture cleanup admin login failed');
+    }
+    if (authenticated) {
+      for (const tournamentID of fixture.tournamentIDs) {
+        try {
+          await cancelOwnedTournamentFixtureViaApi(request, tournamentID);
+        } catch (error) {
+          failures.push(error instanceof Error ? error.message : 'owned tournament cleanup failed');
+        }
+      }
+      // Do not change the catalog while an owned tournament may still be active.
+      if (failures.length === 0) {
+        for (const taskID of fixture.taskIDs) {
+          try {
+            await disableOwnedTaskFixtureViaApi(request, taskID);
+          } catch (error) {
+            failures.push(error instanceof Error ? error.message : 'owned task cleanup failed');
+          }
+        }
+      }
+    }
+  }
+
+  const contextClosures = await Promise.allSettled(fixture.contexts.map((context) => context.close()));
+  const failedClosures = contextClosures.filter((result) => result.status === 'rejected').length;
+  if (failedClosures > 0) {
+    failures.push(`${failedClosures} fixture context(s) failed to close`);
+  }
+
+  if (failures.length === 0) {
+    return;
+  }
+
+  const message = `Full-stack fixture cleanup failed: ${failures.join('; ')}`;
+  if (testFailed) {
+    test.info().annotations.push({ type: 'fixture-cleanup', description: message });
+    return;
+  }
+  throw new Error(message);
+};
+
 const readParticipantSnapshotViaApi = async (
   context: BrowserContext,
   tournamentID: string,
+  timeoutMs?: number,
 ): Promise<FullStackParticipantSnapshot> => {
   const response = await context.request.get(
     `${backendURL}/api/v1/tournaments/${tournamentID}/participant/snapshot`,
-    { headers: { Origin: frontendURL } },
+    { headers: { Origin: frontendURL }, timeout: timeoutMs },
   );
-  expect(
-    response.status(),
-    `participant snapshot failed with ${response.status()}: ${await response.text()}`,
-  ).toBe(200);
+  expect(response.status(), `participant snapshot failed with ${response.status()}`).toBe(200);
   const snapshot = (await response.json()) as FullStackParticipantSnapshot;
   expect(snapshot.projection_revision).toEqual(expect.any(Number));
   return snapshot;
+};
+
+const assertParticipantSnapshotPollSchema = (
+  snapshot: FullStackParticipantSnapshot,
+  participantID: string,
+): void => {
+  if (
+    !Number.isSafeInteger(snapshot.projection_revision) ||
+    snapshot.projection_revision < 1
+  ) {
+    throw new Error(
+      `participant ${participantID} snapshot returned an invalid projection_revision`,
+    );
+  }
+  if (snapshot.series !== undefined && snapshot.series !== null) {
+    if (typeof snapshot.series.id !== 'string' || snapshot.series.id.length === 0) {
+      throw new Error(`participant ${participantID} snapshot returned an invalid series id`);
+    }
+    if (!Array.isArray(snapshot.series.slots)) {
+      throw new Error(`participant ${participantID} snapshot returned invalid series slots`);
+    }
+  }
+  if (snapshot.assignment !== undefined && snapshot.assignment !== null) {
+    if (
+      typeof snapshot.assignment.context?.series_id !== 'string' ||
+      snapshot.assignment.context.series_id.length === 0
+    ) {
+      throw new Error(
+        `participant ${participantID} snapshot returned an invalid assignment series id`,
+      );
+    }
+  }
+};
+
+const readParticipantSnapshotUntilSeries = async (
+  context: BrowserContext,
+  tournamentID: string,
+  participantID: string,
+  expectedProjectionRevision: number,
+  expectedSeriesID: string,
+): Promise<FullStackParticipantSnapshot> => {
+  const timeoutMs = 30_000;
+  const pollIntervalMs = 250;
+  const deadline = Date.now() + timeoutMs;
+  let lastSnapshot: FullStackParticipantSnapshot | null = null;
+
+  while (Date.now() < deadline) {
+    const remainingMs = Math.max(1, deadline - Date.now());
+    const snapshot = await readParticipantSnapshotViaApi(
+      context,
+      tournamentID,
+      remainingMs,
+    );
+    assertParticipantSnapshotPollSchema(snapshot, participantID);
+    lastSnapshot = snapshot;
+
+    if (
+      snapshot.projection_revision >= expectedProjectionRevision &&
+      snapshot.series?.id === expectedSeriesID
+    ) {
+      return snapshot;
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, Math.min(pollIntervalMs, remainingMs)));
+  }
+
+  throw new Error(
+    `participant ${participantID} snapshot did not expose series ${expectedSeriesID} ` +
+      `with projection_revision >= ${expectedProjectionRevision} within ${timeoutMs}ms ` +
+      `(last projection_revision=${lastSnapshot?.projection_revision ?? 'unknown'}, ` +
+      `series=${lastSnapshot?.series?.id ?? 'none'}, ` +
+      `assignment_series=${lastSnapshot?.assignment?.context.series_id ?? 'none'})`,
+  );
 };
 
 const readPublicSnapshotViaApi = async (
@@ -593,9 +844,8 @@ const readPublicSnapshotViaApi = async (
     `${backendURL}/api/v1/tournaments/${tournamentID}/snapshot`,
     { headers: { Origin: frontendURL } },
   );
-  const responseBody = await response.text();
-  expect(response.status(), `public snapshot failed with ${response.status()}: ${responseBody}`).toBe(200);
-  const snapshot = JSON.parse(responseBody) as FullStackPublicSnapshot;
+  expect(response.status(), `public snapshot failed with ${response.status()}`).toBe(200);
+  const snapshot = (await response.json()) as FullStackPublicSnapshot;
   expect(snapshot.tournament.tournament_id).toBe(tournamentID);
   return snapshot;
 };
@@ -662,6 +912,12 @@ const assertPublicProjectionRedacted = (payload: unknown): void => {
   }
 };
 
+const transientRetryDelayMs = (attempt: number): number => Math.min(500 * 2 ** attempt, 4_000);
+
+const waitForTransientRetry = async (attempt: number): Promise<void> => {
+  await new Promise((resolve) => setTimeout(resolve, transientRetryDelayMs(attempt)));
+};
+
 const applyOpenRegistrationViaApi = async (
   request: APIRequestContext,
   tournamentID: string,
@@ -690,7 +946,7 @@ const applyStartSwissViaApi = async (
   let projectionRevision = await getOperatorProjectionRevisionViaApi(request, tournamentID);
   let response: APIResponse | null = null;
 
-  for (let attempt = 0; attempt < 3; attempt += 1) {
+  for (let attempt = 0; attempt < 60; attempt += 1) {
     response = await request.post(`${backendURL}/api/v1/admin/tournaments/${tournamentID}/actions`, {
       headers: {
         'X-CSRF-Token': csrfToken,
@@ -703,19 +959,33 @@ const applyStartSwissViaApi = async (
         confirmed: true,
       },
     });
-    if (response.status() !== 409) {
+    const status = response.status();
+    if (status !== 409 && status !== 429) {
       return response;
     }
 
-    const conflict = (await response.json()) as { current_revision?: unknown };
-    if (
-      typeof conflict.current_revision !== 'number' ||
-      !Number.isSafeInteger(conflict.current_revision) ||
-      conflict.current_revision < 1
-    ) {
-      return response;
+    if (status === 409) {
+      const conflict = (await response.json()) as { current_revision?: unknown };
+      if (
+        typeof conflict.current_revision === 'number' &&
+        Number.isSafeInteger(conflict.current_revision) &&
+        conflict.current_revision >= 1
+      ) {
+        projectionRevision = conflict.current_revision;
+      } else {
+        projectionRevision = await getOperatorProjectionRevisionViaApi(request, tournamentID);
+      }
+    } else {
+      if (attempt < 59) {
+        await waitForTransientRetry(attempt);
+        projectionRevision = await getOperatorProjectionRevisionViaApi(request, tournamentID);
+      }
+      continue;
     }
-    projectionRevision = conflict.current_revision;
+
+    if (attempt < 59) {
+      await waitForTransientRetry(attempt);
+    }
   }
 
   if (!response) {
@@ -922,7 +1192,20 @@ const uploadSourceViaApi = async (
 const joinAsPlayer = async (page: Page, username: string): Promise<void> => {
   await page.goto('/');
   await page.getByPlaceholder('Введите никнейм...').fill(username);
+  const joinResponsePromise = page.waitForResponse(
+    (response) =>
+      new URL(response.url()).pathname === '/api/v1/players/join' &&
+      response.request().method() === 'POST',
+    { timeout: 15_000 },
+  );
   await page.getByRole('button', { name: /ПОДКЛЮЧИТЬСЯ/ }).click();
+  const joinResponse = await joinResponsePromise;
+  const retryAfter = await joinResponse.headerValue('retry-after');
+  const retryAfterSeconds = /^\d+$/.test(retryAfter ?? '') ? retryAfter : 'absent or non-numeric';
+  expect(
+    joinResponse.status(),
+    `player join failed with ${joinResponse.status()}; Retry-After seconds: ${retryAfterSeconds}`,
+  ).toBe(200);
   await expect(page.getByText('Игрок готов')).toBeVisible({ timeout: 15_000 });
 };
 
@@ -1050,7 +1333,7 @@ test.describe('local compose full stack e2e', () => {
     expect(staleMeResponse.status(), 'old player session cookie must be invalid after logout').toBe(401);
   });
 
-  test('admin UI creates and deletes a task through the real backend', async ({ page, request }) => {
+  test('admin UI creates and deletes a task through the real backend', async ({ page, request, ownedFixture }) => {
     test.setTimeout(90_000);
 
     const title = uniqueName('fullstack-admin');
@@ -1064,40 +1347,47 @@ test.describe('local compose full stack e2e', () => {
       hints: ['first hint', 'second hint', 'third hint'],
       task_url: 'https://example.com/full-stack-admin',
     };
-    let cleanupSession: AdminSession | null = null;
+    await loginThroughAdminUI(page);
+    await adminLogin(request);
+    await page.getByRole('button', { name: 'Турниры' }).click();
+    await expect(page.getByPlaceholder('Введите название...')).toBeVisible();
+    await fillAdminTaskForm(page, taskInput);
+    const createResponsePromise = page.waitForResponse(
+      (response) => new URL(response.url()).pathname === '/api/v1/admin/tasks' &&
+        response.request().method() === 'POST',
+    );
+    await page.getByRole('button', { name: /Создать задачу/ }).click();
+    const createResponse = await createResponsePromise;
+    expect(createResponse.status()).toBe(201);
+    const createdTask = (await createResponse.json()) as AdminTask;
+    expect(createdTask.id).toMatch(/^[0-9a-f-]{36}$/i);
+    ownedFixture.taskIDs.add(createdTask.id);
+    await expect(page.getByText(title)).toBeVisible({ timeout: 15_000 });
 
-    try {
-      await loginThroughAdminUI(page);
-      cleanupSession = await adminLogin(request);
-      await page.getByRole('button', { name: 'Турниры' }).click();
-      await expect(page.getByPlaceholder('Введите название...')).toBeVisible();
-      await fillAdminTaskForm(page, taskInput);
-      await page.getByRole('button', { name: /Создать задачу/ }).click();
-      await expect(page.getByText(title)).toBeVisible({ timeout: 15_000 });
+    const listResponse = await request.get(`${backendURL}/api/v1/admin/tasks`);
+    expect(listResponse.ok(), `admin task list failed with ${listResponse.status()}`).toBeTruthy();
+    const tasks = (await listResponse.json()) as AdminTask[];
+    expect(tasks.some((task) => task.title === title)).toBe(true);
 
-      const listResponse = await request.get(`${backendURL}/api/v1/admin/tasks`);
-      expect(listResponse.ok(), `admin task list failed with ${listResponse.status()}`).toBeTruthy();
-      const tasks = (await listResponse.json()) as AdminTask[];
-      expect(tasks.some((task) => task.title === title)).toBe(true);
+    page.once('dialog', async (dialog) => dialog.accept());
+    const deleteResponsePromise = page.waitForResponse(
+      (response) => new URL(response.url()).pathname === `/api/v1/admin/tasks/${createdTask.id}` &&
+        response.request().method() === 'DELETE',
+    );
+    await page
+      .locator('[class*="taskItem"]')
+      .filter({ hasText: title })
+      .locator('[title="Удалить задачу"]')
+      .click();
+    expect((await deleteResponsePromise).status()).toBe(204);
+    ownedFixture.taskIDs.delete(createdTask.id);
+    await expect(page.getByText(title)).toBeHidden({ timeout: 15_000 });
 
-      page.once('dialog', async (dialog) => dialog.accept());
-      await page
-        .locator('[class*="taskItem"]')
-        .filter({ hasText: title })
-        .locator('[title="Удалить задачу"]')
-        .click();
-      await expect(page.getByText(title)).toBeHidden({ timeout: 15_000 });
-
-      await page.goto('/leaderboard');
-      await expect(page.getByRole('heading', { name: 'Leaderboard' })).toBeVisible();
-    } finally {
-      if (cleanupSession) {
-        await cleanupTaskByTitle(request, cleanupSession, title);
-      }
-    }
+    await page.goto('/leaderboard');
+    await expect(page.getByRole('heading', { name: 'Leaderboard' })).toBeVisible();
   });
 
-  test('admin UI creates a tournament from the current content revision', async ({ page }) => {
+  test('admin UI creates a tournament from the current content revision', async ({ page, ownedFixture }) => {
     test.setTimeout(90_000);
 
     const tournamentName = uniqueName('fullstack-admin-tournament');
@@ -1110,7 +1400,7 @@ test.describe('local compose full stack e2e', () => {
     expect(adminAccessCSRFToken, 'admin login did not issue an access CSRF cookie').toBeTruthy();
     const normalTaskName = uniqueName('admin-tournament-normal');
     const goldenTaskName = uniqueName('admin-tournament-golden');
-    await createTaskViaApi(adminRequest, { access_csrf_token: adminAccessCSRFToken }, {
+    await createTaskViaApi(ownedFixture, adminRequest, { access_csrf_token: adminAccessCSRFToken }, {
       title: normalTaskName,
       description: 'Healthy normal task for the admin tournament flow.',
       kind: 'normal',
@@ -1121,7 +1411,7 @@ test.describe('local compose full stack e2e', () => {
       hints: ['normal hint one', 'normal hint two', 'normal hint three'],
       task_url: 'https://example.com/admin-tournament-normal',
     });
-    await createTaskViaApi(adminRequest, { access_csrf_token: adminAccessCSRFToken }, {
+    await createTaskViaApi(ownedFixture, adminRequest, { access_csrf_token: adminAccessCSRFToken }, {
       title: goldenTaskName,
       description: 'Healthy golden task for the admin tournament flow.',
       kind: 'golden',
@@ -1157,6 +1447,8 @@ test.describe('local compose full stack e2e', () => {
     expect(response.status()).toBe(201);
 
     const tournament = (await response.json()) as AdminTournament;
+    expect(tournament.id).toMatch(/^[0-9a-f-]{36}$/i);
+    ownedFixture.tournamentIDs.add(tournament.id);
     expect(tournament.content_revision).toBe(contentRevision);
     expect(tournament.name).toBe(tournamentName);
     expect(tournament.state).toBe('draft');
@@ -1177,7 +1469,7 @@ test.describe('local compose full stack e2e', () => {
     expect(list.items.some((item) => item.id === tournament.id && item.name === tournamentName)).toBe(true);
   });
 
-  test('FE-028 admin UI creates, uploads, downloads, and updates a task through the relocated catalog', async ({ page, request }) => {
+  test('FE-028 admin UI creates, uploads, downloads, and updates a task through the relocated catalog', async ({ page, request, ownedFixture }) => {
     test.setTimeout(120_000);
 
     const title = uniqueName('fullstack-fe028');
@@ -1194,130 +1486,118 @@ test.describe('local compose full stack e2e', () => {
       hints: ['fe028 hint one', 'fe028 hint two', 'fe028 hint three'],
       task_url: null,
     };
-    let cleanupSession: AdminSession | null = null;
+    await loginThroughAdminUI(page);
+    const adminSession = await adminLogin(request);
+    await createTaskViaApi(ownedFixture, request, adminSession, {
+      title: supportTitle,
+      description: 'Normal pool companion for the FE-028 publication check.',
+      kind: 'normal',
+      category: 'web',
+      difficulty: 'easy',
+      time_limit: 120,
+      flag: `flag{${supportTitle.replaceAll('-', '_')}}`,
+      hints: ['normal hint one', 'normal hint two', 'normal hint three'],
+      task_url: 'https://example.com/fe028-normal',
+    });
+    await page.getByRole('button', { name: 'Турниры' }).click();
+    await expect(page.getByPlaceholder('Введите название...')).toBeVisible({ timeout: 15_000 });
 
-    try {
-      await loginThroughAdminUI(page);
-      cleanupSession = await adminLogin(request);
-      await createTaskViaApi(request, cleanupSession, {
-        title: supportTitle,
-        description: 'Normal pool companion for the FE-028 publication check.',
-        kind: 'normal',
-        category: 'web',
-        difficulty: 'easy',
-        time_limit: 120,
-        flag: `flag{${supportTitle.replaceAll('-', '_')}}`,
-        hints: ['normal hint one', 'normal hint two', 'normal hint three'],
-        task_url: 'https://example.com/fe028-normal',
-      });
-      await page.getByRole('button', { name: 'Турниры' }).click();
-      await expect(page.getByPlaceholder('Введите название...')).toBeVisible({ timeout: 15_000 });
+    await fillAdminTaskForm(page, taskInput);
+    await page.locator('input[type="file"]').setInputFiles({
+      name: 'fe028-source.zip',
+      mimeType: 'application/zip',
+      buffer: Buffer.from([0x50, 0x4b, 0x03, 0x04, 0x66, 0x65, 0x30, 0x32, 0x38]),
+    });
 
-      await fillAdminTaskForm(page, taskInput);
-      await page.locator('input[type="file"]').setInputFiles({
-        name: 'fe028-source.zip',
-        mimeType: 'application/zip',
-        buffer: Buffer.from([0x50, 0x4b, 0x03, 0x04, 0x66, 0x65, 0x30, 0x32, 0x38]),
-      });
+    const createResponsePromise = page.waitForResponse(
+      (response) =>
+        new URL(response.url()).pathname === '/api/v1/admin/tasks' &&
+        response.request().method() === 'POST',
+    );
+    const uploadResponsePromise = page.waitForResponse(
+      (response) =>
+        new URL(response.url()).pathname.endsWith('/source') &&
+        response.request().method() === 'POST',
+    );
+    await page.getByRole('button', { name: /Создать задачу/ }).click();
 
-      const createResponsePromise = page.waitForResponse(
-        (response) =>
-          new URL(response.url()).pathname === '/api/v1/admin/tasks' &&
-          response.request().method() === 'POST',
-      );
-      const uploadResponsePromise = page.waitForResponse(
-        (response) =>
-          new URL(response.url()).pathname.endsWith('/source') &&
-          response.request().method() === 'POST',
-      );
-      await page.getByRole('button', { name: /Создать задачу/ }).click();
+    const createResponse = await createResponsePromise;
+    expect(createResponse.status()).toBe(201);
+    const createdTask = (await createResponse.json()) as AdminTask;
+    expect(createdTask.id).toMatch(/^[0-9a-f-]{36}$/i);
+    ownedFixture.taskIDs.add(createdTask.id);
+    expect(createdTask.title).toBe(title);
+    expect(createdTask.kind).toBe('golden');
+    expect(createdTask.version).toBe(1);
 
-      const createResponse = await createResponsePromise;
-      expect(createResponse.status()).toBe(201);
-      const createdTask = (await createResponse.json()) as AdminTask;
-      expect(createdTask.id).toMatch(/^[0-9a-f-]{36}$/i);
-      expect(createdTask.title).toBe(title);
-      expect(createdTask.kind).toBe('golden');
-      expect(createdTask.version).toBe(1);
+    const uploadResponse = await uploadResponsePromise;
+    expect(uploadResponse.status()).toBe(200);
+    const upload = (await uploadResponse.json()) as UploadSourceResponse;
+    expect(upload.source_file_url).toMatch(/^https?:\/\//);
+    await expect(page.getByText('Исходники загружены в SeaweedFS')).toBeVisible({ timeout: 15_000 });
+    const downloadLink = page.getByRole('link', { name: /Скачать.*ZIP/ });
+    await expect(downloadLink).toHaveAttribute('href', upload.source_file_url);
 
-      const uploadResponse = await uploadResponsePromise;
-      expect(uploadResponse.status()).toBe(200);
-      const upload = (await uploadResponse.json()) as UploadSourceResponse;
-      expect(upload.source_file_url).toMatch(/^https?:\/\//);
-      await expect(page.getByText('Исходники загружены в SeaweedFS')).toBeVisible({ timeout: 15_000 });
-      const downloadLink = page.getByRole('link', { name: /Скачать.*ZIP/ });
-      await expect(downloadLink).toHaveAttribute('href', upload.source_file_url);
+    const download = await page.context().request.get(upload.source_file_url, { timeout: 15_000 });
+    expect(download.ok(), `source download failed with ${download.status()}`).toBeTruthy();
+    expect((await download.body()).subarray(0, 2).toString()).toBe('PK');
 
-      const download = await page.context().request.get(upload.source_file_url, { timeout: 15_000 });
-      expect(download.ok(), `source download failed with ${download.status()}`).toBeTruthy();
-      expect((await download.body()).subarray(0, 2).toString()).toBe('PK');
-
-      await expect(page.getByText(title, { exact: true })).toBeVisible();
-      cleanupSession = await adminLogin(request);
-      const afterUploadTasksResponse = await request.get(`${backendURL}/api/v1/admin/tasks`);
-      expect(
-        afterUploadTasksResponse.ok(),
-        `admin task list after upload failed with ${afterUploadTasksResponse.status()}`,
-      ).toBeTruthy();
-      const afterUploadTask = ((await afterUploadTasksResponse.json()) as AdminTask[])
-        .find((task) => task.id === createdTask.id);
-      expect(afterUploadTask).toBeDefined();
-      if (!afterUploadTask) {
-        throw new Error('created task disappeared after source upload');
-      }
-      expect(afterUploadTask.kind).toBe('golden');
-      expect(afterUploadTask.version).toBeGreaterThan(createdTask.version);
-      await expect(page.getByText(`Версия: ${afterUploadTask.version}`, { exact: true })).toBeVisible();
-      const afterUploadContent = await getTournamentContentSelection(request);
-
-      await page.getByRole('button', { name: `Редактировать задачу ${title}` }).click();
-      await expect(page.getByLabel('Пул задания')).toHaveValue('golden');
-      await page.getByPlaceholder('Введите название...').fill(updatedTitle);
-      const updateResponsePromise = page.waitForResponse(
-        (response) =>
-          new URL(response.url()).pathname === `/api/v1/admin/tasks/${createdTask.id}` &&
-          response.request().method() === 'PUT',
-      );
-      await page.getByRole('button', { name: /Сохранить задачу/ }).click();
-      const updateResponse = await updateResponsePromise;
-      expect(updateResponse.status()).toBe(200);
-      await expect(page.getByText('Задача успешно обновлена!')).toBeVisible();
-      await expect(page.getByText(updatedTitle, { exact: true })).toBeVisible();
-
-      const refreshedTasks = await request.get(`${backendURL}/api/v1/admin/tasks`);
-      expect(refreshedTasks.ok(), `admin task list failed with ${refreshedTasks.status()}`).toBeTruthy();
-      const taskList = (await refreshedTasks.json()) as AdminTask[];
-      const updatedTask = taskList.find((task) => task.id === createdTask.id);
-      expect(updatedTask?.title).toBe(updatedTitle);
-      expect(updatedTask?.kind).toBe('golden');
-      expect(updatedTask?.version).toBeGreaterThan(afterUploadTask.version);
-      if (!updatedTask) {
-        throw new Error('updated task disappeared from admin catalog');
-      }
-      await expect(page.getByText(`Версия: ${updatedTask.version}`, { exact: true })).toBeVisible();
-
-      const afterUpdateContent = await getTournamentContentSelection(request);
-      expect(afterUpdateContent.content_revision).toBeGreaterThan(afterUploadContent.content_revision);
-      expect(afterUpdateContent.publication_id).not.toBe(afterUploadContent.publication_id);
-      expect(afterUpdateContent.normal_pool_revision_id).not.toBe(afterUploadContent.normal_pool_revision_id);
-      expect(afterUpdateContent.golden_pool_revision_id).not.toBe(afterUploadContent.golden_pool_revision_id);
-    } finally {
-      if (!cleanupSession) {
-        try {
-          cleanupSession = await adminLogin(request);
-        } catch {
-          cleanupSession = null;
-        }
-      }
-      if (cleanupSession) {
-        await cleanupTaskByTitle(request, cleanupSession, supportTitle);
-        await cleanupTaskByTitle(request, cleanupSession, title);
-        await cleanupTaskByTitle(request, cleanupSession, updatedTitle);
-      }
+    await expect(page.getByText(title, { exact: true })).toBeVisible();
+    await adminLogin(request);
+    const afterUploadTasksResponse = await request.get(`${backendURL}/api/v1/admin/tasks`);
+    expect(
+      afterUploadTasksResponse.ok(),
+      `admin task list after upload failed with ${afterUploadTasksResponse.status()}`,
+    ).toBeTruthy();
+    const afterUploadTask = ((await afterUploadTasksResponse.json()) as AdminTask[])
+      .find((task) => task.id === createdTask.id);
+    expect(afterUploadTask).toBeDefined();
+    if (!afterUploadTask) {
+      throw new Error('created task disappeared after source upload');
     }
+    expect(afterUploadTask.kind).toBe('golden');
+    expect(afterUploadTask.version).toBeGreaterThan(createdTask.version);
+    const createdTaskCard = page.getByRole('heading', { name: title, exact: true })
+      .locator('xpath=ancestor::article[1]');
+    await expect(createdTaskCard.getByText(`Версия: ${afterUploadTask.version}`, { exact: true })).toBeVisible();
+    const afterUploadContent = await getTournamentContentSelection(request);
+
+    await page.getByRole('button', { name: `Редактировать задачу ${title}` }).click();
+    await expect(page.getByLabel('Пул задания')).toHaveValue('golden');
+    await page.getByPlaceholder('Введите название...').fill(updatedTitle);
+    const updateResponsePromise = page.waitForResponse(
+      (response) =>
+        new URL(response.url()).pathname === `/api/v1/admin/tasks/${createdTask.id}` &&
+        response.request().method() === 'PUT',
+    );
+    await page.getByRole('button', { name: /Сохранить задачу/ }).click();
+    const updateResponse = await updateResponsePromise;
+    expect(updateResponse.status()).toBe(200);
+    await expect(page.getByText('Задача успешно обновлена!')).toBeVisible();
+    await expect(page.getByText(updatedTitle, { exact: true })).toBeVisible();
+
+    const refreshedTasks = await request.get(`${backendURL}/api/v1/admin/tasks`);
+    expect(refreshedTasks.ok(), `admin task list failed with ${refreshedTasks.status()}`).toBeTruthy();
+    const taskList = (await refreshedTasks.json()) as AdminTask[];
+    const updatedTask = taskList.find((task) => task.id === createdTask.id);
+    expect(updatedTask?.title).toBe(updatedTitle);
+    expect(updatedTask?.kind).toBe('golden');
+    expect(updatedTask?.version).toBeGreaterThan(afterUploadTask.version);
+    if (!updatedTask) {
+      throw new Error('updated task disappeared from admin catalog');
+    }
+    const updatedTaskCard = page.getByRole('heading', { name: updatedTitle, exact: true })
+      .locator('xpath=ancestor::article[1]');
+    await expect(updatedTaskCard.getByText(`Версия: ${updatedTask.version}`, { exact: true })).toBeVisible();
+
+    const afterUpdateContent = await getTournamentContentSelection(request);
+    expect(afterUpdateContent.content_revision).toBeGreaterThan(afterUploadContent.content_revision);
+    expect(afterUpdateContent.publication_id).not.toBe(afterUploadContent.publication_id);
+    expect(afterUpdateContent.normal_pool_revision_id).not.toBe(afterUploadContent.normal_pool_revision_id);
+    expect(afterUpdateContent.golden_pool_revision_id).not.toBe(afterUploadContent.golden_pool_revision_id);
   });
 
-  test('FE-017, FE-023, and FE-027 through FE-033 compose roster, Wave, reconnect, and operator control', async ({ page, browser }) => {
+  test('FE-017, FE-023, and FE-027 through FE-033 compose roster, Wave, reconnect, and operator control', async ({ page, browser, ownedFixture }) => {
     test.setTimeout(480_000);
     page.setDefaultTimeout(15_000);
 
@@ -1359,7 +1639,7 @@ test.describe('local compose full stack e2e', () => {
           const normalTaskName = uniqueName(`roster-${group.category}-${index + 1}`);
           const normalTaskFlag = `flag{${normalTaskName.replaceAll('-', '_')}}`;
           normalFlagsByTitle.set(normalTaskName, normalTaskFlag);
-          await createTaskViaApi(adminRequest, { access_csrf_token: adminAccessCSRFToken }, {
+          await createTaskViaApi(ownedFixture, adminRequest, { access_csrf_token: adminAccessCSRFToken }, {
             title: normalTaskName,
             description: 'Healthy normal task for the roster flow.',
             kind: 'normal',
@@ -1374,7 +1654,7 @@ test.describe('local compose full stack e2e', () => {
       }
       for (let index = 0; index < 6; index += 1) {
         const goldenTaskName = uniqueName(`roster-golden-${index + 1}`);
-        await createTaskViaApi(adminRequest, { access_csrf_token: adminAccessCSRFToken }, {
+        await createTaskViaApi(ownedFixture, adminRequest, { access_csrf_token: adminAccessCSRFToken }, {
           title: goldenTaskName,
           description: 'Healthy golden task for the roster flow.',
           kind: 'golden',
@@ -1389,6 +1669,7 @@ test.describe('local compose full stack e2e', () => {
 
       const contentRevision = await getTournamentContentRevision(adminRequest);
       const tournament = await createTournamentViaApi(
+        ownedFixture,
         adminRequest,
         { access_csrf_token: adminAccessCSRFToken },
         {
@@ -1655,7 +1936,12 @@ test.describe('local compose full stack e2e', () => {
       const browserPreflight = await browserPreflightResponse;
       expect(browserPreflight.status()).toBe(200);
       const browserPreflightReport = (await browserPreflight.json()) as FullStackPreflightReport;
-      expect(browserPreflightReport.passed).toBe(true);
+      expect(
+        browserPreflightReport.passed,
+        `browser roster preflight failed: ${JSON.stringify(
+          browserPreflightReport.checks?.filter((check) => !check.passed) ?? [],
+        )}`,
+      ).toBe(true);
       await expect(rosterRegion.getByText('Проверка пройдена', { exact: true })).toBeVisible();
       await expect(
         rosterRegion.getByRole('button', { name: 'Заблокировать состав' }),
@@ -1767,6 +2053,7 @@ test.describe('local compose full stack e2e', () => {
       expect(rosterAfterLockedReplacement.execution_started).toBe(false);
 
       const secondTournament = await createTournamentViaApi(
+        ownedFixture,
         adminRequest,
         { access_csrf_token: adminAccessCSRFToken },
         {
@@ -1850,7 +2137,7 @@ test.describe('local compose full stack e2e', () => {
         adminAccessCSRFToken,
       );
       const startSwissFailure =
-        startSwissResponse.status() === 200 ? '' : await startSwissResponse.text();
+        startSwissResponse.status() === 200 ? '' : startSwissResponse.statusText();
       expect(
         startSwissResponse.status(),
         `start Swiss action must succeed${startSwissFailure ? `: ${startSwissFailure}` : ''}`,
@@ -1977,7 +2264,7 @@ test.describe('local compose full stack e2e', () => {
       const openedWaveHTTP = await openWaveResponse;
       expect(
         openedWaveHTTP.status(),
-        `open Wave failed with ${openedWaveHTTP.status()}: ${await openedWaveHTTP.text()}`,
+        `open Wave failed with ${openedWaveHTTP.status()} ${openedWaveHTTP.statusText()}`,
       ).toBe(200);
 
       const firstWaveSeriesID = plannedWave.members.find((member) => member.series_id)?.series_id;
@@ -2059,7 +2346,7 @@ test.describe('local compose full stack e2e', () => {
           const participantReadyHTTP = await participantReadyResponse;
           expect(
             participantReadyHTTP.status(),
-            `participant UI readiness failed with ${participantReadyHTTP.status()}: ${await participantReadyHTTP.text()}`,
+            `participant UI readiness failed with ${participantReadyHTTP.status()} ${participantReadyHTTP.statusText()}`,
           ).toBe(200);
           await expect(
             participantPage.getByText('Готовность подтверждена сервером.', { exact: true }),
@@ -2082,7 +2369,7 @@ test.describe('local compose full stack e2e', () => {
         );
         expect(
           readyResponse.status(),
-          `participant readiness failed with ${readyResponse.status()}: ${await readyResponse.text()}`,
+          `participant readiness failed with ${readyResponse.status()} ${readyResponse.statusText()}`,
         ).toBe(200);
       }
 
@@ -2107,7 +2394,7 @@ test.describe('local compose full stack e2e', () => {
       const startedWaveHTTP = await startWaveResponse;
       expect(
         startedWaveHTTP.status(),
-        `start Wave failed with ${startedWaveHTTP.status()}: ${await startedWaveHTTP.text()}`,
+        `start Wave failed with ${startedWaveHTTP.status()} ${startedWaveHTTP.statusText()}`,
       ).toBe(200);
       await expect(waveRegion.getByTestId('operator-match')).toHaveCount(2);
       await expect(waveRegion.getByTestId('operator-match').getByText('Идет', { exact: true }))
@@ -2304,7 +2591,7 @@ test.describe('local compose full stack e2e', () => {
       ).toBeTruthy();
       expect(
         pauseResponse.status(),
-        `pause after reload failed with ${pauseResponse.status()}: ${await pauseResponse.text()}`,
+        `pause after reload failed with ${pauseResponse.status()} ${pauseResponse.statusText()}`,
       ).toBe(200);
       await expect(page.getByRole('region', { name: 'Управление турниром' }))
         .toContainText('Техническая пауза');
@@ -2343,7 +2630,7 @@ test.describe('local compose full stack e2e', () => {
       ).toBeTruthy();
       expect(
         resumeResponse.status(),
-        `resume after reload failed with ${resumeResponse.status()}: ${await resumeResponse.text()}`,
+        `resume after reload failed with ${resumeResponse.status()} ${resumeResponse.statusText()}`,
       ).toBe(200);
       await expect(page.getByRole('region', { name: 'Управление турниром' }))
         .toContainText('Швейцарка');
@@ -2370,7 +2657,7 @@ test.describe('local compose full stack e2e', () => {
       const submissionResponse = await submissionResponsePromise;
       expect(
         submissionResponse.status(),
-        `participant correct submission failed with ${submissionResponse.status()}: ${await submissionResponse.text()}`,
+        `participant correct submission failed with ${submissionResponse.status()} ${submissionResponse.statusText()}`,
       ).toBe(200);
       const reloadTerminalParticipant = async (participantPage: Page): Promise<void> => {
         const lobbyResponsePromise = participantPage.waitForResponse(
@@ -2389,12 +2676,12 @@ test.describe('local compose full stack e2e', () => {
         const lobbyResponse = await lobbyResponsePromise;
         expect(
           lobbyResponse.status(),
-          `terminal participant lobby failed with ${lobbyResponse.status()}: ${await lobbyResponse.text()}`,
+          `terminal participant lobby failed with ${lobbyResponse.status()} ${lobbyResponse.statusText()}`,
         ).toBe(200);
         const snapshotResponse = await snapshotResponsePromise;
         expect(
           snapshotResponse.status(),
-          `terminal participant snapshot failed with ${snapshotResponse.status()}: ${await snapshotResponse.text()}`,
+          `terminal participant snapshot failed with ${snapshotResponse.status()} ${snapshotResponse.statusText()}`,
         ).toBe(200);
       };
       await Promise.all([
@@ -2429,13 +2716,11 @@ test.describe('local compose full stack e2e', () => {
       );
       expect(staleStartResponse.status(), 'stale Wave start must be rejected').toBe(409);
     } finally {
-      for (const context of playerContexts) {
-        await context.close();
-      }
+      ownedFixture.contexts.push(...playerContexts);
     }
   });
 
-  test('FE-036, FE-037, and FE-050 real backend correction audit cancellation and privacy', async ({ page, browser }) => {
+  test('FE-036, FE-037, and FE-050 real backend correction audit cancellation and privacy', async ({ page, browser, ownedFixture }) => {
     test.setTimeout(600_000);
     page.setDefaultTimeout(15_000);
 
@@ -2492,7 +2777,7 @@ test.describe('local compose full stack e2e', () => {
           const title = uniqueName(`correction-${group.category}-${index + 1}`);
           const flag = `flag{${title.replaceAll('-', '_')}}`;
           normalFlagsByTitle.set(title, flag);
-          await createTaskViaApi(adminRequest, { access_csrf_token: adminAccessCSRFToken }, {
+          await createTaskViaApi(ownedFixture, adminRequest, { access_csrf_token: adminAccessCSRFToken }, {
             title,
             description: 'Normal task for the FE-036 correction flow.',
             kind: 'normal',
@@ -2507,7 +2792,7 @@ test.describe('local compose full stack e2e', () => {
       }
       for (let index = 0; index < 6; index += 1) {
         const title = uniqueName(`correction-golden-${index + 1}`);
-        await createTaskViaApi(adminRequest, { access_csrf_token: adminAccessCSRFToken }, {
+        await createTaskViaApi(ownedFixture, adminRequest, { access_csrf_token: adminAccessCSRFToken }, {
           title,
           description: 'Golden task for the FE-036 correction flow.',
           kind: 'golden',
@@ -2522,6 +2807,7 @@ test.describe('local compose full stack e2e', () => {
 
       const contentRevision = await getTournamentContentRevision(adminRequest);
       const tournament = await createTournamentViaApi(
+        ownedFixture,
         adminRequest,
         { access_csrf_token: adminAccessCSRFToken },
         {
@@ -2615,7 +2901,7 @@ test.describe('local compose full stack e2e', () => {
         tournament.id,
         adminAccessCSRFToken,
       );
-      expect(startSwiss.status(), `start Swiss failed with ${startSwiss.status()}: ${await startSwiss.text()}`).toBe(200);
+      expect(startSwiss.status(), `start Swiss failed with ${startSwiss.status()} ${startSwiss.statusText()}`).toBe(200);
 
       const contextForParticipant = (participantID: string): BrowserContext => {
         const rosterParticipant = checkedInParticipants.find((participant) => participant.id === participantID);
@@ -2635,26 +2921,55 @@ test.describe('local compose full stack e2e', () => {
         waveID: string,
         action: 'open_ready_window' | 'start' | 'complete',
       ): Promise<FullStackWave> => {
-        const response = await adminRequest.post(
-          `${backendURL}/api/v1/admin/tournaments/${tournament.id}/waves/${waveID}/actions`,
-          {
-            headers: {
-              'X-CSRF-Token': adminAccessCSRFToken,
-              'Idempotency-Key': randomUUID(),
-              Origin: frontendURL,
+        let expectedRevision = await getOperatorProjectionRevisionViaApi(adminRequest, tournament.id);
+        let response: APIResponse | null = null;
+        for (let attempt = 0; attempt < 60; attempt += 1) {
+          response = await adminRequest.post(
+            `${backendURL}/api/v1/admin/tournaments/${tournament.id}/waves/${waveID}/actions`,
+            {
+              headers: {
+                'X-CSRF-Token': adminAccessCSRFToken,
+                'Idempotency-Key': randomUUID(),
+                Origin: frontendURL,
+              },
+              data: {
+                action,
+                confirmed: true,
+                expected_projection_revision: expectedRevision,
+              },
             },
-            data: {
-              action,
-              confirmed: true,
-              expected_projection_revision: await getOperatorProjectionRevisionViaApi(
-                adminRequest,
-                tournament.id,
-              ),
-            },
-          },
-        );
-        expect(response.status(), `${action} Wave failed with ${response.status()}: ${await response.text()}`).toBe(200);
-        return (await response.json()) as FullStackWave;
+          );
+          if (response.status() === 200) {
+            return (await response.json()) as FullStackWave;
+          }
+
+          const status = response.status();
+          expect([409, 429], `${action} Wave returned unexpected status ${status}`).toContain(status);
+          if (status === 409) {
+            const conflict = (await response.json()) as { current_revision?: unknown };
+            if (
+              typeof conflict.current_revision === 'number' &&
+              Number.isSafeInteger(conflict.current_revision) &&
+              conflict.current_revision >= 1
+            ) {
+              expectedRevision = conflict.current_revision;
+            } else {
+              expectedRevision = await getOperatorProjectionRevisionViaApi(adminRequest, tournament.id);
+            }
+          } else {
+            if (attempt < 59) {
+              await waitForTransientRetry(attempt);
+              expectedRevision = await getOperatorProjectionRevisionViaApi(adminRequest, tournament.id);
+            }
+            continue;
+          }
+
+          if (attempt < 59) {
+            await waitForTransientRetry(attempt);
+          }
+        }
+
+        throw new Error(`${action} Wave did not converge after retries: ${response?.status() ?? 'no response'}`);
       };
 
       const settleWave = async (
@@ -2699,7 +3014,7 @@ test.describe('local compose full stack e2e', () => {
                 },
               },
             );
-            expect(submission.status(), `submission failed with ${submission.status()}: ${await submission.text()}`).toBe(200);
+            expect(submission.status(), `submission failed with ${submission.status()} ${submission.statusText()}`).toBe(200);
             seriesResult = {
               gameID: participant.assignment.context.game_id,
               seriesID,
@@ -2750,7 +3065,7 @@ test.describe('local compose full stack e2e', () => {
             },
           },
         );
-        expect(pairing.status(), `Swiss round ${roundNumber} pairing failed with ${pairing.status()}: ${await pairing.text()}`).toBe(200);
+        expect(pairing.status(), `Swiss round ${roundNumber} pairing failed with ${pairing.status()} ${pairing.statusText()}`).toBe(200);
 
         const snapshotResponse = await adminRequest.get(
           `${backendURL}/api/v1/admin/tournaments/${tournament.id}/snapshot`,
@@ -2785,7 +3100,7 @@ test.describe('local compose full stack e2e', () => {
               },
             },
           );
-          expect(readiness.status(), `round ${roundNumber} readiness failed with ${readiness.status()}: ${await readiness.text()}`).toBe(200);
+          expect(readiness.status(), `round ${roundNumber} readiness failed with ${readiness.status()} ${readiness.statusText()}`).toBe(200);
         }
         await waveAction(wave.id, 'start');
         return wave;
@@ -2812,7 +3127,7 @@ test.describe('local compose full stack e2e', () => {
         tournament.id,
         adminAccessCSRFToken,
       );
-      expect(startPlayoffs.status(), `start playoffs failed with ${startPlayoffs.status()}: ${await startPlayoffs.text()}`).toBe(200);
+      expect(startPlayoffs.status(), `start playoffs failed with ${startPlayoffs.status()} ${startPlayoffs.statusText()}`).toBe(200);
 
       const operatorSnapshotResponse = await adminRequest.get(
         `${backendURL}/api/v1/admin/tournaments/${tournament.id}/snapshot`,
@@ -2857,8 +3172,8 @@ test.describe('local compose full stack e2e', () => {
       await page.getByRole('button', { name: 'Подтвердить коррекцию' }).click();
       const preflightHTTP = await preflightResponse;
       const commitHTTP = await commitResponse;
-      expect(preflightHTTP.status(), `correction preflight failed with ${preflightHTTP.status()}: ${await preflightHTTP.text()}`).toBe(200);
-      expect(commitHTTP.status(), `correction commit failed with ${commitHTTP.status()}: ${await commitHTTP.text()}`).toBe(200);
+      expect(preflightHTTP.status(), `correction preflight failed with ${preflightHTTP.status()} ${preflightHTTP.statusText()}`).toBe(200);
+      expect(commitHTTP.status(), `correction commit failed with ${commitHTTP.status()} ${commitHTTP.statusText()}`).toBe(200);
       const preflightKey = preflightHTTP.request().headers()['idempotency-key'];
       const commitKey = commitHTTP.request().headers()['idempotency-key'];
       expect(preflightKey).toBeTruthy();
@@ -2943,6 +3258,17 @@ test.describe('local compose full stack e2e', () => {
 
       let dependentCutoffCode: 'cutoff_wave_started' | 'cutoff_golden_direct_allocated';
       let startedDependentSnapshot: CorrectionSnapshot;
+      const dependentWaves = correctedOperatorSnapshot.waves.filter((wave) =>
+        wave.state === 'planned' && wave.members.some((member) => targetParticipantIDs.has(member.participant_id)),
+      );
+      expect(
+        dependentWaves.length,
+        'correction did not materialize planned dependent playoff Waves for target participants',
+      ).toBeGreaterThan(0);
+      if (dependentWaves.length === 0) {
+        throw new Error('correction did not materialize a planned dependent playoff Wave for target participants');
+      }
+      const dependentWaveIDs = dependentWaves.map((wave) => wave.id);
       if (correctedOperatorSnapshot.tournament.state === 'golden') {
         type CorrectionGoldenGroup = {
           attempt_id: string;
@@ -2973,7 +3299,7 @@ test.describe('local compose full stack e2e', () => {
             },
           },
         );
-        expect(openGoldenResponse.status(), `open dependent Golden failed with ${openGoldenResponse.status()}: ${await openGoldenResponse.text()}`).toBe(200);
+        expect(openGoldenResponse.status(), `open dependent Golden failed with ${openGoldenResponse.status()} ${openGoldenResponse.statusText()}`).toBe(200);
         let goldenState = (await openGoldenResponse.json()) as CorrectionGoldenOperatorState;
         expect(goldenState.groups.length, `Golden open returned no runtime groups for ${tournament.id}`).toBeGreaterThan(0);
         const dependentGoldenGroup = goldenState.groups.find((group) =>
@@ -3018,7 +3344,7 @@ test.describe('local compose full stack e2e', () => {
                 },
               },
             );
-            expect(readiness.status(), `dependent Golden readiness failed with ${readiness.status()}: ${await readiness.text()}`).toBe(200);
+            expect(readiness.status(), `dependent Golden readiness failed with ${readiness.status()} ${readiness.statusText()}`).toBe(200);
           }
         }
         const readyGoldenResponse = await adminRequest.get(
@@ -3049,42 +3375,37 @@ test.describe('local compose full stack e2e', () => {
               },
             },
           );
-          expect(startGoldenResponse.status(), `start dependent Golden failed with ${startGoldenResponse.status()}: ${await startGoldenResponse.text()}`).toBe(200);
+          expect(startGoldenResponse.status(), `start dependent Golden failed with ${startGoldenResponse.status()} ${startGoldenResponse.statusText()}`).toBe(200);
         }
         dependentCutoffCode = 'cutoff_golden_direct_allocated';
       } else {
-        const dependentWave = correctedOperatorSnapshot.waves.find((wave) =>
-          wave.state === 'planned' && wave.members.some((member) => targetParticipantIDs.has(member.participant_id)),
-        ) ?? correctedOperatorSnapshot.waves.find((wave) => wave.state === 'planned');
-        expect(dependentWave, 'correction did not materialize a dependent playoff Wave').toBeDefined();
-        if (!dependentWave) {
-          throw new Error('correction did not materialize a dependent playoff Wave');
-        }
-        await waveAction(dependentWave.id, 'open_ready_window');
-        for (const member of dependentWave.members) {
-          const context = contextForParticipant(member.participant_id);
-          const participant = await readParticipantSnapshotViaApi(context, tournament.id);
-          const csrfToken = (await context.cookies()).find(
-            (cookie) => cookie.name === 'tpm_player_csrf',
-          )?.value;
-          expect(csrfToken, `dependent Wave participant ${member.participant_id} did not retain CSRF`).toBeTruthy();
-          const readiness = await context.request.post(
-            `${backendURL}/api/v1/tournaments/${tournament.id}/participant/waves/${dependentWave.id}/ready`,
-            {
-              headers: {
-                'X-CSRF-Token': csrfToken ?? '',
-                'Idempotency-Key': randomUUID(),
-                Origin: frontendURL,
+        for (const dependentWave of dependentWaves) {
+          await waveAction(dependentWave.id, 'open_ready_window');
+          for (const member of dependentWave.members) {
+            const context = contextForParticipant(member.participant_id);
+            const participant = await readParticipantSnapshotViaApi(context, tournament.id);
+            const csrfToken = (await context.cookies()).find(
+              (cookie) => cookie.name === 'tpm_player_csrf',
+            )?.value;
+            expect(csrfToken, `dependent Wave participant ${member.participant_id} did not retain CSRF`).toBeTruthy();
+            const readiness = await context.request.post(
+              `${backendURL}/api/v1/tournaments/${tournament.id}/participant/waves/${dependentWave.id}/ready`,
+              {
+                headers: {
+                  'X-CSRF-Token': csrfToken ?? '',
+                  'Idempotency-Key': randomUUID(),
+                  Origin: frontendURL,
+                },
+                data: {
+                  expected_projection_revision: participant.projection_revision,
+                  ready: true,
+                },
               },
-              data: {
-                expected_projection_revision: participant.projection_revision,
-                ready: true,
-              },
-            },
-          );
-          expect(readiness.status(), `dependent Wave readiness failed with ${readiness.status()}: ${await readiness.text()}`).toBe(200);
+            );
+            expect(readiness.status(), `dependent Wave readiness failed with ${readiness.status()} ${readiness.statusText()}`).toBe(200);
+          }
+          await waveAction(dependentWave.id, 'start');
         }
-        await waveAction(dependentWave.id, 'start');
         dependentCutoffCode = 'cutoff_wave_started';
       }
 
@@ -3131,28 +3452,72 @@ test.describe('local compose full stack e2e', () => {
       expect(afterDependentCorrectionResponse.status()).toBe(200);
       expect(await afterDependentCorrectionResponse.json()).toEqual(startedDependentSnapshot);
 
-      const expectedParticipantSeries = new Map<string, string>();
-      for (const wave of startedDependentSnapshot.waves) {
-        if (wave.state === 'completed') {
-          continue;
+      const expectedDependentWaves = dependentWaveIDs.map((dependentWaveID) => {
+        const expectedDependentWave = startedDependentSnapshot.waves.find(
+          (wave) => wave.id === dependentWaveID,
+        );
+        expect(
+          expectedDependentWave,
+          `started snapshot is missing chosen dependent playoff Wave ${dependentWaveID}`,
+        ).toBeDefined();
+        if (!expectedDependentWave) {
+          throw new Error(`started snapshot is missing chosen dependent playoff Wave ${dependentWaveID}`);
         }
-        for (const member of wave.members) {
-          if (
-            targetParticipantIDs.has(member.participant_id) &&
-            typeof member.series_id === 'string' &&
-            member.series_id !== correctionTarget.seriesID
-          ) {
-            expectedParticipantSeries.set(member.participant_id, member.series_id);
+        return expectedDependentWave;
+      });
+      const expectedParticipantSeries = new Map<string, string>();
+      const targetParticipantWaveIDs = new Map<string, string>();
+      for (const expectedDependentWave of expectedDependentWaves) {
+        for (const member of expectedDependentWave.members) {
+          if (!targetParticipantIDs.has(member.participant_id)) {
+            continue;
           }
+          const previousWaveID = targetParticipantWaveIDs.get(member.participant_id);
+          if (previousWaveID) {
+            throw new Error(
+              `target participant ${member.participant_id} appears in dependent playoff Waves ${previousWaveID} and ${expectedDependentWave.id}`,
+            );
+          }
+          targetParticipantWaveIDs.set(member.participant_id, expectedDependentWave.id);
+          if (typeof member.series_id !== 'string') {
+            throw new Error(
+              `chosen dependent playoff Wave ${expectedDependentWave.id} returned a non-string series for target participant ${member.participant_id}`,
+            );
+          }
+          if (member.series_id === correctionTarget.seriesID) {
+            throw new Error(
+              `chosen dependent playoff Wave ${expectedDependentWave.id} returned the old series ${correctionTarget.seriesID} for target participant ${member.participant_id}`,
+            );
+          }
+          expectedParticipantSeries.set(member.participant_id, member.series_id);
         }
       }
       for (const participantID of targetParticipantIDsInOrder) {
+        if (!targetParticipantWaveIDs.has(participantID)) {
+          throw new Error(
+            `chosen dependent playoff Waves ${dependentWaveIDs.join(', ')} are missing target participant ${participantID}`,
+          );
+        }
         expect(expectedParticipantSeries.get(participantID), `missing dependent series for participant ${participantID}`).toEqual(expect.any(String));
       }
 
       const correctedParticipantSnapshots = await Promise.all(
-        targetParticipantIDsInOrder.map((participantID) =>
-          readParticipantSnapshotViaApi(contextForParticipant(participantID), tournament.id)),
+        targetParticipantIDsInOrder.map((participantID) => {
+          const expectedSeriesID = expectedParticipantSeries.get(participantID);
+          expect(expectedSeriesID, `missing dependent series for participant ${participantID}`).toEqual(
+            expect.any(String),
+          );
+          if (!expectedSeriesID) {
+            throw new Error(`missing dependent series for participant ${participantID}`);
+          }
+          return readParticipantSnapshotUntilSeries(
+            contextForParticipant(participantID),
+            tournament.id,
+            participantID,
+            startedDependentSnapshot.next_cursor.projection_revision,
+            expectedSeriesID,
+          );
+        }),
       );
       for (const [index, participantSnapshot] of correctedParticipantSnapshots.entries()) {
         const participantID = targetParticipantIDsInOrder[index];
@@ -3161,8 +3526,19 @@ test.describe('local compose full stack e2e', () => {
         expect(participantSnapshot.series).not.toBeNull();
         expect(participantSnapshot.series?.id)
           .toBe(expectedParticipantSeries.get(participantID));
-        expect(participantSnapshot.assignment?.context.series_id)
-          .toBe(participantSnapshot.series?.id);
+        if (dependentCutoffCode === 'cutoff_wave_started') {
+          expect(
+            participantSnapshot.assignment,
+            `participant ${participantID} did not receive an assignment for started normal Wave`,
+          ).not.toBeNull();
+          expect(participantSnapshot.assignment?.context.series_id)
+            .toBe(participantSnapshot.series?.id);
+        } else {
+          expect(
+            participantSnapshot.assignment,
+            `participant ${participantID} must not receive an assignment while the dependent playoff Wave is planned in the Golden branch`,
+          ).toBeNull();
+        }
         expect(participantSnapshot.series?.slots.length).toBeGreaterThan(0);
       }
 
@@ -3246,7 +3622,7 @@ test.describe('local compose full stack e2e', () => {
       const auditResponse = await auditResponsePromise;
       expect(
         auditResponse.status(),
-        `audit list failed with ${auditResponse.status()}: ${await auditResponse.text()}`,
+        `audit list failed with ${auditResponse.status()} ${auditResponse.statusText()}`,
       ).toBe(200);
       const auditRegion = page.getByRole('region', { name: 'Аудит и incident bundle' });
       await expect(auditRegion.getByRole('list', { name: 'События аудита' })).toBeVisible();
@@ -3278,10 +3654,23 @@ test.describe('local compose full stack e2e', () => {
           },
         },
       );
-      expect(
-        cancellationResponse.status(),
-        `tournament cancellation failed with ${cancellationResponse.status()}: ${await cancellationResponse.text()}`,
-      ).toBe(200);
+      const cancellationStatus = cancellationResponse.status();
+      let cancellationFailure = `tournament cancellation failed with status=${cancellationStatus} statusText=${cancellationResponse.statusText()}`;
+      if (cancellationStatus !== 200) {
+        let cancellationBody = '<unavailable>';
+        try {
+          cancellationBody =
+            (await cancellationResponse.text())
+              .replace(/[\u0000-\u001f\u007f]/g, ' ')
+              .replace(/\s+/g, ' ')
+              .trim()
+              .slice(0, 512) || '<empty>';
+        } catch {
+          // Keep the bounded diagnostic if the failed response body is unavailable.
+        }
+        cancellationFailure += ` body=${JSON.stringify(cancellationBody)}`;
+      }
+      expect(cancellationStatus, cancellationFailure).toBe(200);
       const cancelledTournament = (await cancellationResponse.json()) as { revision: number; state: string };
       expect(cancelledTournament.state).toBe('cancelled');
       expect(cancelledTournament.revision).toBeGreaterThan(0);
@@ -3395,7 +3784,7 @@ test.describe('local compose full stack e2e', () => {
       const incidentResponse = await incidentResponsePromise;
       expect(
         incidentResponse.status(),
-        `incident export failed with ${incidentResponse.status()}: ${await incidentResponse.text()}`,
+        `incident export failed with ${incidentResponse.status()} ${incidentResponse.statusText()}`,
       ).toBe(200);
       const incidentDownload = await incidentDownloadPromise;
       const incidentPath = await incidentDownload.path();
@@ -3438,18 +3827,17 @@ test.describe('local compose full stack e2e', () => {
         );
         expect([401, 403]).toContain(anonymousIncident.status());
       } finally {
-        await anonymousContext.close();
+        ownedFixture.contexts.push(anonymousContext);
       }
     } finally {
-      await spectatorPage?.close();
-      await publicContext?.close();
-      for (const context of playerContexts) {
-        await context.close();
+      ownedFixture.contexts.push(...playerContexts);
+      if (publicContext) {
+        ownedFixture.contexts.push(publicContext);
       }
     }
   });
 
-  test('FE-049 real backend records no-solve without a draw or stale readiness', async ({ browser, request, page }) => {
+  test('FE-049 real backend records no-solve without a draw or stale readiness', async ({ browser, request, page, ownedFixture }) => {
     test.setTimeout(600_000);
     page.setDefaultTimeout(15_000);
 
@@ -3494,7 +3882,7 @@ test.describe('local compose full stack e2e', () => {
       for (const group of normalTaskGroups) {
         for (let index = 0; index < group.count; index += 1) {
           const title = uniqueName(`fe049-${group.category}-${index + 1}`);
-          await createTaskViaApi(request, adminSession, {
+          await createTaskViaApi(ownedFixture, request, adminSession, {
             title,
             description: 'Normal task for the FE-049 no-solve replay flow.',
             kind: 'normal',
@@ -3509,7 +3897,7 @@ test.describe('local compose full stack e2e', () => {
       }
       for (let index = 0; index < 6; index += 1) {
         const title = uniqueName(`fe049-golden-${index + 1}`);
-        await createTaskViaApi(request, adminSession, {
+        await createTaskViaApi(ownedFixture, request, adminSession, {
           title,
           description: 'Golden task reserved for the FE-049 tournament preset.',
           kind: 'golden',
@@ -3522,7 +3910,7 @@ test.describe('local compose full stack e2e', () => {
         });
       }
 
-      const tournament = await createTournamentViaApi(request, adminSession, {
+      const tournament = await createTournamentViaApi(ownedFixture, request, adminSession, {
         name: tournamentName,
         content_revision: await getTournamentContentRevision(request),
         planned_roster_size: 4,
@@ -3601,7 +3989,7 @@ test.describe('local compose full stack e2e', () => {
             },
           },
         );
-        expect(response.status(), `${action} failed with ${response.status()}: ${await response.text()}`).toBe(200);
+        expect(response.status(), `${action} failed with ${response.status()}`).toBe(200);
         return (await response.json()) as FullStackWave;
       };
       const pairing = await request.post(`${backendURL}/api/v1/admin/tournaments/${tournament.id}/pairings`, {
@@ -3720,8 +4108,8 @@ test.describe('local compose full stack e2e', () => {
       expect(participantAfterTimeout.series).toEqual(expect.objectContaining({ id: targetSeriesID, state: 'replay_required' }));
 
       const spectatorContext = await browser.newContext({ baseURL: frontendURL });
-      const spectatorPage = await spectatorContext.newPage();
       try {
+        const spectatorPage = await spectatorContext.newPage();
         await participantPage.reload({ waitUntil: 'domcontentloaded' });
         await expect(participantPage.getByTestId('participant-runtime-status')).toBeVisible();
         await expect(participantPage.getByTestId('participant-runtime-status'))
@@ -3738,19 +4126,19 @@ test.describe('local compose full stack e2e', () => {
         const publicSeries = publicSnapshot.live_series.find((series) => series.series_id === targetSeriesID);
         expect(publicSeries?.state).toBe('replay_required');
       } finally {
-        await participantPage.close();
-        await spectatorContext.close();
+        ownedFixture.contexts.push(spectatorContext);
       }
     } finally {
-      for (const context of playerContexts) await context.close();
+      ownedFixture.contexts.push(...playerContexts);
     }
   });
 
-  test('FE-048 real backend resolves boundary Golden no-show before playoff', async ({ browser, request, page }) => {
+  (['solves', 'deadline'] as const).forEach((completion) => test(`FE-048 real backend resolves boundary Golden no-show before playoff (${completion})`, async ({ browser, request, page, ownedFixture }) => {
     test.setTimeout(900_000);
 
     type GoldenGroup = {
       attempt_id: string;
+      deadline: string | null;
       group_id: string;
       group_revision_id: string;
       members: Array<{ participant_id: string; position: number | null; ready: boolean; submitted: boolean }>;
@@ -3758,9 +4146,10 @@ test.describe('local compose full stack e2e', () => {
       position_to: number;
       ready_window_id: string;
       runtime_revision: number;
+      started_at: string | null;
       state: string;
     };
-    type GoldenOperatorState = { groups: GoldenGroup[] };
+    type GoldenOperatorState = { groups: GoldenGroup[]; observed_at: string };
     type GoldenParticipantState = {
       attempt_id: string;
       group_id: string;
@@ -3809,7 +4198,7 @@ test.describe('local compose full stack e2e', () => {
           const title = uniqueName(`fe048-${group.category}-${index + 1}`);
           const flag = `flag{${title.replaceAll('-', '_')}}`;
           normalFlagsByTitle.set(title, flag);
-          await createTaskViaApi(request, adminSession, {
+          await createTaskViaApi(ownedFixture, request, adminSession, {
             title,
             description: 'Normal task for the FE-048 Golden boundary flow.',
             kind: 'normal',
@@ -3826,7 +4215,7 @@ test.describe('local compose full stack e2e', () => {
         const title = uniqueName(`fe048-golden-${index + 1}`);
         const flag = `flag{${title.replaceAll('-', '_')}}`;
         goldenFlagsByTitle.set(title, flag);
-        const createdGoldenTask = await createTaskViaApi(request, adminSession, {
+        const createdGoldenTask = await createTaskViaApi(ownedFixture, request, adminSession, {
           title,
           description: 'Golden task for the FE-048 boundary flow.',
           kind: 'golden',
@@ -3847,6 +4236,7 @@ test.describe('local compose full stack e2e', () => {
       }
 
       const tournament = await createTournamentViaApi(
+        ownedFixture,
         request,
         adminSession,
         {
@@ -3920,8 +4310,9 @@ test.describe('local compose full stack e2e', () => {
       for (let attempt = 0; attempt < 60; attempt += 1) {
         startSwissResponse = await applyStartSwissViaApi(request, tournament.id, adminSession.access_csrf_token);
         if (startSwissResponse.status() === 200) break;
-        expect(startSwissResponse.status()).toBe(409);
-        await new Promise((resolve) => setTimeout(resolve, 500));
+        const status = startSwissResponse.status();
+        expect([409, 429], `start Swiss returned unexpected status ${status}`).toContain(status);
+        await waitForTransientRetry(attempt);
       }
       if (!startSwissResponse) throw new Error('start Swiss did not issue a request');
       expect(startSwissResponse.status(), `start Swiss failed with ${startSwissResponse.status()}`).toBe(200);
@@ -3952,14 +4343,21 @@ test.describe('local compose full stack e2e', () => {
             },
           );
           if (response.status() === 200) return (await response.json()) as FullStackWave;
-          expect(response.status(), `${action} Swiss Wave failed`).toBe(409);
-          const conflict = (await response.json()) as { current_revision?: unknown };
-          if (typeof conflict.current_revision === 'number' && Number.isSafeInteger(conflict.current_revision)) {
-            expectedRevision = conflict.current_revision;
+          const status = response.status();
+          expect([409, 429], `${action} Swiss Wave returned unexpected status ${status}`).toContain(status);
+          if (status === 409) {
+            const conflict = (await response.json()) as { current_revision?: unknown };
+            if (typeof conflict.current_revision === 'number' && Number.isSafeInteger(conflict.current_revision)) {
+              expectedRevision = conflict.current_revision;
+            } else {
+              expectedRevision = await getOperatorProjectionRevisionViaApi(request, tournament.id);
+            }
           } else {
+            await waitForTransientRetry(attempt);
             expectedRevision = await getOperatorProjectionRevisionViaApi(request, tournament.id);
+            continue;
           }
-          await new Promise((resolve) => setTimeout(resolve, 500));
+          await waitForTransientRetry(attempt);
         }
         throw new Error(`${action} Swiss Wave did not converge after retries: ${response?.status() ?? 'no response'}`);
       };
@@ -4130,15 +4528,19 @@ test.describe('local compose full stack e2e', () => {
       ]);
 
       let startGoldenResponse: APIResponse | null = null;
-      for (let attempt = 0; attempt < 60; attempt += 1) {
+      const startGoldenMaxAttempts = 12;
+      for (let attempt = 0; attempt < startGoldenMaxAttempts; attempt += 1) {
         startGoldenResponse = await applyStartGoldenViaApi(
           request,
           tournament.id,
           adminSession.access_csrf_token,
         );
-        if (startGoldenResponse.status() === 200) break;
-        expect(startGoldenResponse.status()).toBe(409);
-        await new Promise((resolve) => setTimeout(resolve, 500));
+        const status = startGoldenResponse.status();
+        if (status === 200) break;
+        expect([409, 429], `start Golden returned unexpected status ${status}`).toContain(status);
+        if (attempt < startGoldenMaxAttempts - 1) {
+          await waitForTransientRetry(attempt);
+        }
       }
       if (!startGoldenResponse) throw new Error('start Golden did not issue a request');
       expect(startGoldenResponse.status(), `start Golden failed with ${startGoldenResponse.status()}`).toBe(200);
@@ -4242,7 +4644,11 @@ test.describe('local compose full stack e2e', () => {
             startedGroup = current.groups.find((candidate) => candidate.group_id === group.group_id);
             break;
           }
-          expect(response.status()).toBe(409);
+          const status = response.status();
+          expect([409, 429], `start Golden attempt returned unexpected status ${status}`).toContain(status);
+          if (status === 429) {
+            await waitForTransientRetry(attempt);
+          }
           const current = (await (await request.get(`${backendURL}/api/v1/admin/tournaments/${tournament.id}/golden`, {
             headers: { Origin: frontendURL },
           })).json()) as GoldenOperatorState;
@@ -4252,7 +4658,7 @@ test.describe('local compose full stack e2e', () => {
           expectedAttemptID = refreshed.attempt_id;
           expectedRuntimeRevision = refreshed.runtime_revision;
           expectedReadyWindowID = refreshed.ready_window_id;
-          await new Promise((resolve) => setTimeout(resolve, 500));
+          if (status === 409) await waitForTransientRetry(attempt);
         }
         expect(startedGroup).toBeDefined();
         if (!startedGroup) throw new Error(`started Golden group ${group.group_id} disappeared`);
@@ -4278,9 +4684,8 @@ test.describe('local compose full stack e2e', () => {
             submitted_flag: flag,
             },
         });
-        const responseBody = await response.text();
-        expect(response.status(), responseBody).toBe(200);
-        return JSON.parse(responseBody) as GoldenParticipantState;
+        expect(response.status(), `Golden submission failed with ${response.status()}`).toBe(200);
+        return (await response.json()) as GoldenParticipantState;
       };
 
       const activeSource = activeGroups[0];
@@ -4319,9 +4724,34 @@ test.describe('local compose full stack e2e', () => {
       }));
       expect(sourceBodies[0]?.equals(sourceBodies[1] ?? Buffer.alloc(0))).toBe(true);
       expect((await readGoldenParticipant(noShowParticipant.participant_id)).task).toBeNull();
-      for (const member of survivors) {
+      const solvingSurvivors = completion === 'solves' ? survivors : survivors.slice(0, 1);
+      for (const member of solvingSurvivors) {
         const result = await submitGolden(member.participant_id);
         expect(result.submitted).toBe(true);
+      }
+      const lastSurvivor = survivors[1];
+      if (!lastSurvivor) throw new Error('Golden source lost its second survivor');
+      let deadlineAt = 0;
+      if (completion === 'deadline') {
+        expect(activeSource.started_at).not.toBeNull();
+        expect(activeSource.deadline).not.toBeNull();
+        if (!activeSource.started_at || !activeSource.deadline) throw new Error('active Golden source has no deadline');
+        deadlineAt = Date.parse(activeSource.deadline);
+        expect(deadlineAt - Date.parse(activeSource.started_at)).toBe(180_000);
+        const beforeDeadlineResponse = await request.get(`${backendURL}/api/v1/admin/tournaments/${tournament.id}/golden`, {
+          headers: { Origin: frontendURL },
+        });
+        expect(beforeDeadlineResponse.status()).toBe(200);
+        const beforeDeadline = (await beforeDeadlineResponse.json()) as GoldenOperatorState;
+        expect(Date.parse(beforeDeadline.observed_at)).toBeLessThan(deadlineAt);
+        const pendingGroup = beforeDeadline.groups.find((group) => group.group_id === activeSource.group_id);
+        expect(pendingGroup?.state).toBe('active');
+        expect(pendingGroup?.attempt_id).toBe(activeSource.attempt_id);
+        const pending = await readGoldenParticipant(lastSurvivor.participant_id);
+        expect(pending.state).toBe('active');
+        expect(pending.attempt_id).toBe(activeSource.attempt_id);
+        expect(pending.submitted).toBe(false);
+        expect(pending.position).toBeNull();
       }
       await expect.poll(async () => {
         const response = await request.get(`${backendURL}/api/v1/admin/tournaments/${tournament.id}/golden`, {
@@ -4330,18 +4760,72 @@ test.describe('local compose full stack e2e', () => {
         if (response.status() !== 200) return false;
         const current = (await response.json()) as GoldenOperatorState;
         const group = current.groups.find((candidate) => candidate.group_id === activeSource.group_id);
+        if (completion === 'deadline' && group) {
+          expect(group.attempt_id).toBe(activeSource.attempt_id);
+          const pending = group.members.find((member) => member.participant_id === lastSurvivor.participant_id);
+          expect(pending?.submitted).toBe(false);
+          if (group.state === 'completed') {
+            expect(Date.parse(current.observed_at)).toBeGreaterThanOrEqual(deadlineAt);
+          } else {
+            expect(group.state).toBe('active');
+            expect(pending?.position).toBeNull();
+          }
+        }
         return group?.state === 'completed';
-      }, { timeout: 20_000, intervals: [1_000, 2_000, 5_000] }).toBe(true);
+      }, { timeout: completion === 'deadline' ? 210_000 : 20_000, intervals: [1_000, 2_000, 5_000] }).toBe(true);
 
       const completedState = (await (await request.get(`${backendURL}/api/v1/admin/tournaments/${tournament.id}/golden`, {
         headers: { Origin: frontendURL },
       })).json()) as GoldenOperatorState;
       const completedSource = completedState.groups.find((group) => group.group_id === activeSource.group_id);
       expect(completedSource?.state).toBe('completed');
+      expect(completedSource?.attempt_id).toBe(activeSource.attempt_id);
       const committedPositions = new Map(completedSource?.members.map((member) => [member.participant_id, member.position]) ?? []);
       expect([...committedPositions.values()].sort((left, right) => (left ?? 0) - (right ?? 0))).toEqual([2, 3, 4]);
       expect(committedPositions.get(noShowParticipant.participant_id)).toBe(4);
       expect(survivors.map((survivor) => committedPositions.get(survivor.participant_id))).toEqual([2, 3]);
+      if (completion === 'deadline') {
+        const terminalMember = completedSource?.members.find((member) => member.participant_id === lastSurvivor.participant_id);
+        expect(terminalMember?.submitted).toBe(false);
+        expect(terminalMember?.position).toBe(3);
+        const terminalParticipant = await readGoldenParticipant(lastSurvivor.participant_id);
+        expect(terminalParticipant.state).toBe('completed');
+        expect(terminalParticipant.attempt_id).toBe(activeSource.attempt_id);
+        expect(terminalParticipant.submitted).toBe(false);
+        expect(terminalParticipant.position).toBe(3);
+
+        const terminalPage = await contextForParticipant(lastSurvivor.participant_id).newPage();
+        try {
+          await terminalPage.goto(`/arena/participant/${tournament.id}`, { waitUntil: 'domcontentloaded' });
+          const participantPanel = terminalPage.getByTestId('participant-golden-panel');
+          await expect(participantPanel).toHaveAttribute('data-attempt-id', activeSource.attempt_id);
+          await expect(participantPanel).toHaveAttribute('data-golden-state', 'completed');
+          await expect(participantPanel.getByTestId('participant-golden-position').locator('strong')).toHaveText('3');
+          await expect(participantPanel.getByText('Решение принято', { exact: true })).toHaveCount(0);
+        } finally {
+          await terminalPage.close();
+        }
+
+        await page.goto('/admin', { waitUntil: 'domcontentloaded' });
+        await page.getByRole('button', { name: 'Турниры', exact: true }).click();
+        const tournamentRow = page.getByRole('row').filter({
+          has: page.getByText(tournament.id, { exact: true }),
+        });
+        await tournamentRow.getByRole('button', { name: 'Редактировать состав', exact: true }).click();
+        const goldenPanel = page.getByTestId('operator-golden-playoff-control-panel');
+        await expect(goldenPanel).toBeVisible();
+        const operatorGroup = goldenPanel.locator(
+          `[data-testid="golden-group"][data-group-id="${activeSource.group_id}"]`,
+        );
+        await expect(operatorGroup).toBeVisible();
+        const terminalRow = operatorGroup.getByTestId('golden-member').filter({
+          has: page.getByText(lastSurvivor.participant_id, { exact: true }),
+        });
+        await expect(terminalRow).toHaveCount(1);
+        await expect(terminalRow.getByText('Позиция 3', { exact: true })).toBeVisible();
+        await expect(terminalRow.getByText('Не отправил', { exact: true })).toBeVisible();
+        await expect(terminalRow.getByText('Отправил', { exact: true })).toHaveCount(0);
+      }
 
       const completedGolden = (await (await request.get(`${backendURL}/api/v1/admin/tournaments/${tournament.id}/golden`, {
         headers: { Origin: frontendURL },
@@ -4377,14 +4861,14 @@ test.describe('local compose full stack e2e', () => {
         await expect(spectatorPage.getByTestId('tournament-broadcast')).toBeVisible();
         await expect(spectatorPage.getByRole('tab', { name: 'Плей-офф' })).toBeVisible();
       } finally {
-        await spectatorContext.close();
+        ownedFixture.contexts.push(spectatorContext);
       }
     } finally {
-      for (const context of playerContexts) await context.close();
+      ownedFixture.contexts.push(...playerContexts);
     }
-  });
+  }));
 
-  test('FE-047 real backend completes a 16-player Swiss and BO3 tournament', async ({ browser, request, page }) => {
+  test('FE-047 real backend completes a 16-player Swiss and BO3 tournament', async ({ browser, request, page, ownedFixture }) => {
     test.setTimeout(900_000);
 
     type FullStackPlayoffSnapshot = FullStackOperatorSnapshot & {
@@ -4426,7 +4910,7 @@ test.describe('local compose full stack e2e', () => {
           const title = uniqueName(`fe040-${group.category}-${index + 1}`);
           const flag = `flag{${title.replaceAll('-', '_')}}`;
           normalFlagsByTitle.set(title, flag);
-          await createTaskViaApi(request, adminSession, {
+          await createTaskViaApi(ownedFixture, request, adminSession, {
             title,
             description: 'Normal task for the real backend spectator flow.',
             kind: 'normal',
@@ -4444,7 +4928,7 @@ test.describe('local compose full stack e2e', () => {
         const title = uniqueName(`fe040-golden-${index + 1}`);
         const flag = `flag{${title.replaceAll('-', '_')}}`;
         goldenFlagsByTitle.set(title, flag);
-        await createTaskViaApi(request, adminSession, {
+        await createTaskViaApi(ownedFixture, request, adminSession, {
           title,
           description: 'Golden task for the real backend spectator flow.',
           kind: 'golden',
@@ -4459,6 +4943,7 @@ test.describe('local compose full stack e2e', () => {
 
       const contentRevision = await getTournamentContentRevision(request);
       const tournament = await createTournamentViaApi(
+        ownedFixture,
         request,
         adminSession,
         {
@@ -5134,7 +5619,7 @@ test.describe('local compose full stack e2e', () => {
         tournament.id,
         adminSession.access_csrf_token,
       );
-      expect(startGolden.status(), `start Golden failed with ${startGolden.status()}: ${await startGolden.text()}`).toBe(200);
+      expect(startGolden.status(), `start Golden failed with ${startGolden.status()} ${startGolden.statusText()}`).toBe(200);
 
       const openGolden = await request.post(
         `${backendURL}/api/v1/admin/tournaments/${tournament.id}/golden/open`,
@@ -5153,7 +5638,7 @@ test.describe('local compose full stack e2e', () => {
           },
         },
       );
-      expect(openGolden.status(), `open Golden failed with ${openGolden.status()}: ${await openGolden.text()}`).toBe(200);
+      expect(openGolden.status(), `open Golden failed with ${openGolden.status()} ${openGolden.statusText()}`).toBe(200);
       const openedGolden = (await openGolden.json()) as GoldenOperatorState;
       expect(openedGolden.groups.length, 'Golden must resolve the Swiss ordering ties').toBeGreaterThan(0);
 
@@ -5193,7 +5678,7 @@ test.describe('local compose full stack e2e', () => {
               },
             },
           );
-          expect(ready.status(), `Golden readiness failed with ${ready.status()}: ${await ready.text()}`).toBe(200);
+          expect(ready.status(), `Golden readiness failed with ${ready.status()} ${ready.statusText()}`).toBe(200);
         }
       }
 
@@ -5224,7 +5709,7 @@ test.describe('local compose full stack e2e', () => {
             },
           },
         );
-        expect(startAttempt.status(), `start Golden attempt failed with ${startAttempt.status()}: ${await startAttempt.text()}`).toBe(200);
+        expect(startAttempt.status(), `start Golden attempt failed with ${startAttempt.status()} ${startAttempt.statusText()}`).toBe(200);
 
         for (const member of group.members) {
           const context = contextForParticipant(member.participant_id);
@@ -5252,7 +5737,7 @@ test.describe('local compose full stack e2e', () => {
               },
             },
           );
-          expect(submission.status(), `Golden submission failed with ${submission.status()}: ${await submission.text()}`).toBe(200);
+          expect(submission.status(), `Golden submission failed with ${submission.status()} ${submission.statusText()}`).toBe(200);
         }
       }
 
@@ -5272,7 +5757,7 @@ test.describe('local compose full stack e2e', () => {
       );
       expect(
         startPlayoffs.status(),
-        `start playoffs failed with ${startPlayoffs.status()}: ${await startPlayoffs.text()}`,
+        `start playoffs failed with ${startPlayoffs.status()} ${startPlayoffs.statusText()}`,
       ).toBe(200);
 
       const readPlayoffSnapshot = async (): Promise<FullStackPlayoffSnapshot> => {
@@ -5468,11 +5953,12 @@ test.describe('local compose full stack e2e', () => {
       if (!draftPublicSnapshot) {
         throw new Error('public recovery did not return a draft snapshot');
       }
-      const publicDraft = draftPublicSnapshot.live_draft;
-      expect(publicDraft, 'public recovery did not expose the active BO3 draft').not.toBeNull();
-      if (!publicDraft) {
+      const initialPublicDraft = draftPublicSnapshot.live_draft;
+      expect(initialPublicDraft, 'public recovery did not expose the active BO3 draft').not.toBeNull();
+      if (!initialPublicDraft) {
         throw new Error('public recovery did not expose the active BO3 draft');
       }
+      let publicDraft: FullStackPublicDraft = initialPublicDraft;
       assertFE041PublicPayloadSafe(publicDraft);
       expect(publicDraft.series_id).toBe(activeFinalDraft.series_id);
       expect(publicDraft.tournament_id).toBe(tournament.id);
@@ -5505,12 +5991,46 @@ test.describe('local compose full stack e2e', () => {
       const draftPanel = draftBroadcast.getByTestId('broadcast-draft');
       await expect(draftPanel).toBeVisible();
       await expect(draftPanel).toContainText('Идет');
+      let synchronizedPublicDraft: FullStackPublicDraft | undefined;
+      await expect.poll(async () => {
+        const candidate = (await readPublicSnapshotViaApi(draftContext, tournament.id)).live_draft;
+        if (
+          candidate === null ||
+          candidate.series_id !== publicDraft.series_id ||
+          candidate.state !== 'active' ||
+          candidate.turn_deadline === null ||
+          !Number.isFinite(Date.parse(candidate.turn_deadline))
+        ) {
+          return false;
+        }
+        const [panelSeriesID, panelDeadline] = await Promise.all([
+          draftPanel.getAttribute('data-series-id'),
+          draftPanel.getAttribute('data-deadline'),
+        ]);
+        if (panelSeriesID !== candidate.series_id || panelDeadline !== candidate.turn_deadline) {
+          return false;
+        }
+        synchronizedPublicDraft = candidate;
+        return true;
+      }, {
+        message: 'broadcast draft did not converge on the latest server deadline',
+        timeout: 15_000,
+        intervals: [100, 250, 500, 1_000],
+      }).toBe(true);
+      if (!synchronizedPublicDraft) {
+        throw new Error('broadcast draft did not expose a synchronized server deadline');
+      }
+      publicDraft = synchronizedPublicDraft;
+      if (!publicDraft.turn_deadline) {
+        throw new Error('broadcast draft did not expose a synchronized server deadline');
+      }
+      const synchronizedTurnDeadline = publicDraft.turn_deadline;
       await expect(draftPanel).toHaveAttribute('data-series-id', publicDraft.series_id);
       await expect(draftPanel).toHaveAttribute(
         'data-deadline',
         /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/,
       );
-      await expect(draftPanel).toHaveAttribute('data-deadline', publicDraft.turn_deadline);
+      await expect(draftPanel).toHaveAttribute('data-deadline', synchronizedTurnDeadline);
       await expect(draftPanel.getByTestId('broadcast-draft-first-actor'))
         .toHaveText(publicDraft.first_actor_display_name);
       await expect(draftPanel.getByTestId('broadcast-draft-current-actor'))
@@ -5526,7 +6046,7 @@ test.describe('local compose full stack e2e', () => {
         .toHaveText(currentActionLabel);
       await expect(draftPanel.getByTestId('broadcast-draft-deadline')).not.toHaveText('Не объявлен');
       await expect(draftPanel.getByTestId('broadcast-draft-deadline').locator('time'))
-        .toHaveAttribute('datetime', publicDraft.turn_deadline);
+        .toHaveAttribute('datetime', synchronizedTurnDeadline);
       for (const action of publicDraft.actions.filter((item) => item.automatic)) {
         await expect(draftPanel.getByTestId(`broadcast-draft-action-${action.turn}`))
           .toHaveAttribute('data-automatic', 'true');
@@ -5762,51 +6282,43 @@ test.describe('local compose full stack e2e', () => {
         .poll(() => terminalPage.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth))
         .toBe(true);
     } finally {
-      await spectatorContext?.close();
-      for (const context of playerContexts) {
-        await context.close();
+      ownedFixture.contexts.push(...playerContexts);
+      if (spectatorContext) {
+        ownedFixture.contexts.push(spectatorContext);
       }
     }
   });
 
-  test('source upload returns a host-reachable presigned URL', async ({ request }) => {
+  test('source upload returns a host-reachable presigned URL', async ({ request, ownedFixture }) => {
     test.setTimeout(90_000);
 
     const session = await adminLogin(request);
     const title = uniqueName('fullstack-source');
     const payload = Buffer.from([0x50, 0x4b, 0x03, 0x04, 0x66, 0x73]);
-    let created: AdminTask | null = null;
+    const created = await createTaskViaApi(ownedFixture, request, session, {
+      title,
+      description: 'Full stack source archive task.',
+      category: 'forensics',
+      difficulty: 'easy',
+      time_limit: 90,
+      flag: `flag{${title.replaceAll('-', '_')}}`,
+      hints: ['first hint', 'second hint', 'third hint'],
+      task_url: null,
+    });
 
-    try {
-      created = await createTaskViaApi(request, session, {
-        title,
-        description: 'Full stack source archive task.',
-        category: 'forensics',
-        difficulty: 'easy',
-        time_limit: 90,
-        flag: `flag{${title.replaceAll('-', '_')}}`,
-        hints: ['first hint', 'second hint', 'third hint'],
-        task_url: null,
-      });
-
-      const upload = await uploadSourceViaApi(request, session, created.id, payload);
-      expect(upload.source_file_url).toContain('X-Amz-Signature');
-      const sourceURL = new URL(upload.source_file_url);
-      if (process.env.SEAWEEDFS_PUBLIC_ENDPOINT) {
-        expect(sourceURL.host).toBe(process.env.SEAWEEDFS_PUBLIC_ENDPOINT);
-      }
-
-      const download = await request.get(upload.source_file_url, { timeout: 10_000 });
-      expect(download.ok(), `source download failed with ${download.status()}`).toBeTruthy();
-      expect((await download.body()).equals(payload)).toBe(true);
-    } finally {
-      if (created) {
-        await cleanupTaskByTitle(request, session, title);
-      }
+    const upload = await uploadSourceViaApi(request, session, created.id, payload);
+    expect(upload.source_file_url).toContain('X-Amz-Signature');
+    const sourceURL = new URL(upload.source_file_url);
+    if (process.env.SEAWEEDFS_PUBLIC_ENDPOINT) {
+      expect(sourceURL.host).toBe(process.env.SEAWEEDFS_PUBLIC_ENDPOINT);
     }
+
+    const download = await request.get(upload.source_file_url, { timeout: 10_000 });
+    expect(download.ok(), `source download failed with ${download.status()}`).toBeTruthy();
+    expect((await download.body()).equals(payload)).toBe(true);
   });
 
-  test('real backend preserves Arena entry context across roles', async ({ page, browser }) => {
+  test('real backend preserves Arena entry context across roles', async ({ page, browser, ownedFixture }) => {
     test.setTimeout(120_000);
 
     const tournamentName = uniqueName('fullstack-arena');
@@ -5821,7 +6333,7 @@ test.describe('local compose full stack e2e', () => {
     const adminRequest = page.context().request;
     const normalTaskName = uniqueName('arena-normal');
     const goldenTaskName = uniqueName('arena-golden');
-    await createTaskViaApi(adminRequest, { access_csrf_token: adminAccessCSRFToken }, {
+    await createTaskViaApi(ownedFixture, adminRequest, { access_csrf_token: adminAccessCSRFToken }, {
       title: normalTaskName,
       description: 'Healthy normal Arena content task.',
       kind: 'normal',
@@ -5832,7 +6344,7 @@ test.describe('local compose full stack e2e', () => {
       hints: ['normal hint one', 'normal hint two', 'normal hint three'],
       task_url: 'https://example.com/arena-normal',
     });
-    await createTaskViaApi(adminRequest, { access_csrf_token: adminAccessCSRFToken }, {
+    await createTaskViaApi(ownedFixture, adminRequest, { access_csrf_token: adminAccessCSRFToken }, {
       title: goldenTaskName,
       description: 'Healthy golden Arena content task.',
       kind: 'golden',
@@ -5845,6 +6357,7 @@ test.describe('local compose full stack e2e', () => {
     });
     const contentRevision = await getTournamentContentRevision(adminRequest);
     const tournament = await createTournamentViaApi(
+      ownedFixture,
       adminRequest,
       { access_csrf_token: adminAccessCSRFToken },
       {
@@ -5962,7 +6475,7 @@ test.describe('local compose full stack e2e', () => {
           [1008, 4001, 4003, 4401, 4403].includes(anonymousRejection.code),
       ).toBe(true);
     } finally {
-      await anonymousContext.close();
+      ownedFixture.contexts.push(anonymousContext);
     }
 
     const playerContext = await browser.newContext({ baseURL: frontendURL });
@@ -5988,7 +6501,7 @@ test.describe('local compose full stack e2e', () => {
         playerPage.getByRole('heading').filter({ hasText: /spectator|operator|наблюдател|оператор/i }),
       ).toHaveCount(0);
     } finally {
-      await playerContext.close();
+      ownedFixture.contexts.push(playerContext);
     }
 
     const logoutButton = page.getByRole('button', { name: /log ?out|выйти/i });

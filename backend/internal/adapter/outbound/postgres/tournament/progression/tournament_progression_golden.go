@@ -63,12 +63,13 @@ type progressionGoldenLedgerAttempt struct {
 }
 
 type progressionGoldenLedgerCommitment struct {
-	commitID       uuid.UUID
-	attemptID      uuid.UUID
-	participantID  uuid.UUID
-	position       int
-	submissionID   uint64
-	evidenceDigest [sha256.Size]byte
+	commitID           uuid.UUID
+	attemptID          uuid.UUID
+	participantID      uuid.UUID
+	position           int
+	submissionID       uint64
+	terminalEvidenceID uuid.UUID
+	evidenceDigest     [sha256.Size]byte
 }
 
 func progressionGoldenSettlements(
@@ -323,7 +324,7 @@ func progressionGoldenLedgerRow(
 		if row.SubmissionRevisionID.Valid || row.SubmissionRevision != nil || row.AttemptNumber != nil ||
 			row.OrderCount != nil || row.WaveID != uuid.Nil || row.AssignmentID != uuid.Nil || row.SnapshotID != uuid.Nil || row.TaskID != uuid.Nil ||
 			row.PositionCommitID.Valid || row.ParticipantID.Valid || row.Position != nil || len(row.EvidenceDigest) != 0 ||
-			row.SubmissionID != nil {
+			row.SubmissionID != nil || row.TerminalEvidenceID.Valid || len(row.TerminalPayloadDigest) != 0 {
 			return progressionGoldenLedgerRevision{}, domain.ErrConflict
 		}
 		return revision, nil
@@ -334,7 +335,8 @@ func progressionGoldenLedgerRow(
 	}
 	revision.attempts[attempt.id] = attempt
 	if attempt.orderCount == 0 {
-		if row.PositionCommitID.Valid || row.ParticipantID.Valid || row.Position != nil || len(row.EvidenceDigest) != 0 || row.SubmissionID != nil {
+		if row.PositionCommitID.Valid || row.ParticipantID.Valid || row.Position != nil || len(row.EvidenceDigest) != 0 ||
+			row.SubmissionID != nil || row.TerminalEvidenceID.Valid || len(row.TerminalPayloadDigest) != 0 {
 			return progressionGoldenLedgerRevision{}, domain.ErrConflict
 		}
 		return revision, nil
@@ -370,14 +372,36 @@ func progressionGoldenLedgerCommitmentFromRow(
 ) (progressionGoldenLedgerCommitment, error) {
 	digest, ok := progressionDigest(row.EvidenceDigest)
 	if !ok || !row.PositionCommitID.Valid || row.PositionCommitID.UUID == uuid.Nil || !row.ParticipantID.Valid ||
-		row.ParticipantID.UUID == uuid.Nil || row.Position == nil || *row.Position < 1 || row.SubmissionID == nil ||
-		*row.SubmissionID < 1 || attemptID == uuid.Nil {
+		row.ParticipantID.UUID == uuid.Nil || row.Position == nil || *row.Position < 1 || attemptID == uuid.Nil {
 		return progressionGoldenLedgerCommitment{}, domain.ErrConflict
 	}
-	return progressionGoldenLedgerCommitment{
+	commitment := progressionGoldenLedgerCommitment{
 		commitID: row.PositionCommitID.UUID, attemptID: attemptID, participantID: row.ParticipantID.UUID,
-		position: int(*row.Position), submissionID: uint64(*row.SubmissionID), evidenceDigest: digest,
-	}, nil
+		position: int(*row.Position), evidenceDigest: digest,
+	}
+	if err := progressionGoldenCommitSource(row, &commitment); err != nil {
+		return progressionGoldenLedgerCommitment{}, err
+	}
+	return commitment, nil
+}
+
+func progressionGoldenCommitSource(row sqlc.LockTournamentProgressionGoldenPositionLedgerRow, commitment *progressionGoldenLedgerCommitment) error {
+	if (row.SubmissionID != nil) == row.TerminalEvidenceID.Valid {
+		return domain.ErrConflict
+	}
+	if row.SubmissionID != nil {
+		if *row.SubmissionID < 1 || len(row.TerminalPayloadDigest) != 0 || row.TerminalEvidenceID.UUID != uuid.Nil {
+			return domain.ErrConflict
+		}
+		commitment.submissionID = uint64(*row.SubmissionID)
+		return nil
+	}
+	digest, ok := progressionDigest(row.TerminalPayloadDigest)
+	if !ok || row.TerminalEvidenceID.UUID == uuid.Nil || digest != commitment.evidenceDigest {
+		return domain.ErrConflict
+	}
+	commitment.terminalEvidenceID = row.TerminalEvidenceID.UUID
+	return nil
 }
 
 func progressionGoldenMergeLedgerRevision(
@@ -486,7 +510,8 @@ func progressionGoldenSettlement(
 		positions = append(positions, playoff.GoldenPositionCommitEvidence{
 			Position: commitment.position, ParticipantID: commitment.participantID, AttemptID: commitment.attemptID,
 			AttemptNo: 0, SubmissionID: commitment.submissionID, EvidenceDigest: commitment.evidenceDigest,
-			CommitID: commitment.commitID,
+			CommitID:           commitment.commitID,
+			TerminalEvidenceID: commitment.terminalEvidenceID,
 		})
 	}
 	slices.SortFunc(positions, func(left, right playoff.GoldenPositionCommitEvidence) int {

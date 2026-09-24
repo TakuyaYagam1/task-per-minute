@@ -4,7 +4,7 @@ import { createServer } from "node:net";
 import { resolve } from "node:path";
 import { type Readable } from "node:stream";
 
-import { expect, test, type Page, type Route } from "@playwright/test";
+import { expect, test, type Page, type Route, type WebSocketRoute } from "@playwright/test";
 
 import {
   ApiError,
@@ -2309,6 +2309,91 @@ test("FE-012 public route uses a snapshot-first stream and recovers sequence gap
   expect(summaryBox.x + summaryBox.width).toBeLessThanOrEqual(390);
   expect(mutationRequests).toEqual([]);
 });
+
+for (const role of ["public", "operator"] as const) {
+  for (const failure of ["invalid frame", "rejection"] as const) {
+    test(`${role} realtime closes a browser socket after ${failure}`, async ({ page }) => {
+      const fixtureSet = createTournamentFixtureSet();
+      const snapshotPath = role === "public" ? arenaPublicSnapshotPath : arenaOperatorSnapshotPath;
+      const realtimePath = snapshotPath.replace(/\/snapshot$/, "/realtime");
+      const realtimeMessage = role === "public" ? publicRealtimeMessage : operatorRealtimeEnvelope;
+      const snapshotRequests: URL[] = [];
+      const sockets: WebSocketRoute[] = [];
+      const closes: Array<{ code: number | undefined; reason: string | undefined }> = [];
+      const pageErrors: string[] = [];
+      page.on("pageerror", (error) => pageErrors.push(error.message));
+
+      await page.clock.install({ time: "2026-09-15T10:00:00Z" });
+      await installArenaAccessRoutes(page, fixtureSet);
+      await page.route(`**${snapshotPath}*`, async (route) => {
+        expect(route.request().method()).toBe("GET");
+        snapshotRequests.push(new URL(route.request().url()));
+        const revision = 8 + snapshotRequests.length;
+        await fulfillJSON(
+          route,
+          role === "public" ? publicRecovery(revision) : operatorSnapshot(revision),
+          { date: new Date("2026-09-15T10:00:00Z").toUTCString() },
+        );
+      });
+      await page.routeWebSocket((url) => url.pathname === realtimePath, (socket) => {
+        sockets.push(socket);
+        socket.onClose(async (code, reason) => {
+          closes.push({ code, reason });
+          // route.close also emits onClose; record only the client's request, not our acknowledgement.
+          socket.onClose(() => {});
+          await socket.close({ code, reason });
+        });
+        socket.send(JSON.stringify(realtimeMessage(
+          14 + sockets.length,
+          9 + sockets.length,
+          sockets.length === 1 ? firstEventId : secondEventId,
+          arenaTournamentId,
+        )));
+      });
+
+      await page.goto(`/arena/${role === "public" ? "spectator" : role}/${arenaTournamentId}`);
+      const state = page.getByTestId(`${role}-realtime-summary`);
+      await expect(state).toHaveAttribute("data-connection", "connected");
+      await expect(state).toHaveAttribute("data-projection-revision", "10");
+      expect(sockets).toHaveLength(1);
+      const originalSocket = sockets[0]!;
+      const snapshotsBeforeFailure = snapshotRequests.length;
+
+      originalSocket.send(failure === "invalid frame" ? "{" : JSON.stringify({
+        type: "tournament.rejected",
+        code: "tournament.forbidden",
+        message: "Realtime access rejected",
+      }));
+      await expect.poll(() => closes.length + pageErrors.length).toBeGreaterThan(0);
+      expect(pageErrors).toEqual([]);
+      const reason = failure === "rejection"
+        ? `${role} realtime rejected`
+        : role === "public" ? "public realtime recovery required" : "invalid operator realtime frame";
+      expect(closes).toEqual([{ code: 1000, reason }]);
+
+      if (failure === "rejection") {
+        await expect(state).toHaveAttribute("data-connection", "rejected");
+      } else {
+        await expect.poll(() => sockets.length).toBe(2);
+        await expect(state).toHaveAttribute("data-connection", "connected");
+        await expect(state).toHaveAttribute("data-projection-revision", "11");
+        expect(new URL(sockets[1]!.url()).searchParams.get("resume_id")).toBe(resumeId);
+      }
+
+      // A frame from the closed generation must not restore access or replace recovered state.
+      originalSocket.send(JSON.stringify(realtimeMessage(99, 99, revisionId, arenaTournamentId)));
+      await page.clock.fastForward(2_000);
+      await expect(state).toHaveAttribute("data-connection", failure === "rejection" ? "rejected" : "connected");
+      await expect(state).toHaveAttribute("data-projection-revision", failure === "rejection" ? "10" : "11");
+      expect(sockets).toHaveLength(failure === "rejection" ? 1 : 2);
+      expect(snapshotRequests).toHaveLength(
+        snapshotsBeforeFailure + (role === "public" && failure === "invalid frame" ? 1 : 0),
+      );
+      expect(closes).toEqual([{ code: 1000, reason }]);
+      expect(pageErrors).toEqual([]);
+    });
+  }
+}
 
 test("FE-012 public realtime rejection is terminal and visible", async ({ page }) => {
   const fixtureSet = createTournamentFixtureSet();

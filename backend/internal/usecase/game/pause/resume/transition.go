@@ -172,7 +172,7 @@ func restorePauseGraph(graph *PauseGraph, command PauseResumeCommand, resumedAt 
 	if err := restoreWave(graph); err != nil {
 		return err
 	}
-	if err := restoreSeriesAndGames(graph); err != nil {
+	if err := restoreSeriesAndGames(graph, command.CommandID, resumedAt); err != nil {
 		return err
 	}
 	return restoreDraft(graph, command, resumedAt)
@@ -204,43 +204,85 @@ func restoreWave(graph *PauseGraph) error {
 	return nil
 }
 
-func restoreSeriesAndGames(graph *PauseGraph) error {
+func restoreSeriesAndGames(graph *PauseGraph, commandID uuid.UUID, resumedAt time.Time) error {
 	seriesByID := make(map[uuid.UUID]*PauseSeries, len(graph.Series))
 	for index := range graph.Series {
 		series := &graph.Series[index]
 		seriesByID[series.Execution.Series.ID] = series
-		if series.Execution.Series.State != domain.SeriesStateTechnicalPause {
-			continue
+		if err := restoreSeriesRecord(series); err != nil {
+			return err
 		}
-		if series.Revision == math.MaxInt64 || series.Execution.ResumeState == nil {
-			return ErrPauseResumeOverflow
-		}
-		next, changed, err := seriesdomain.Transition(series.Execution, seriesdomain.TransitionCommand{NextState: *series.Execution.ResumeState})
-		if err != nil || !changed {
-			return pauseResumeError("resume Series: %v", err)
-		}
-		series.Execution = next
-		series.Revision++
 	}
 	for index := range graph.Games {
 		game := &graph.Games[index]
 		if game.Game.State != domain.GameStatePaused {
 			continue
 		}
-		if game.Revision == math.MaxInt64 {
-			return ErrPauseResumeOverflow
+		if err := restoreGameRecord(game, commandID, resumedAt); err != nil {
+			return err
 		}
-		if game.ResumeState == nil || *game.ResumeState != domain.GameStateActive || game.Deadline == nil {
-			return ErrPauseResumeIncomplete
-		}
-		game.Game.State = *game.ResumeState
-		game.ResumeState = nil
-		game.Revision++
 		series := seriesByID[game.SeriesID]
 		if series == nil || !replaceSeriesGame(&series.Execution.Series, game.Game) {
 			return ErrPauseResumeIncomplete
 		}
 	}
+	return nil
+}
+
+func restoreSeriesRecord(series *PauseSeries) error {
+	if series.Execution.Series.State != domain.SeriesStateTechnicalPause {
+		return nil
+	}
+	if series.Revision == math.MaxInt64 || series.Execution.ResumeState == nil {
+		return ErrPauseResumeOverflow
+	}
+	next, changed, err := seriesdomain.Transition(series.Execution, seriesdomain.TransitionCommand{NextState: *series.Execution.ResumeState})
+	if err != nil || !changed {
+		return pauseResumeError("resume Series: %v", err)
+	}
+	series.Execution = next
+	series.Revision++
+	return nil
+}
+
+func restoreGameRecord(game *PauseGame, commandID uuid.UUID, resumedAt time.Time) error {
+	if game.Revision == math.MaxInt64 {
+		return ErrPauseResumeOverflow
+	}
+	if game.SourcePause != nil {
+		return restoreSourceGameRecord(game, commandID, resumedAt)
+	}
+	if game.ResumeState == nil || *game.ResumeState != domain.GameStateActive || game.Deadline == nil {
+		return ErrPauseResumeIncomplete
+	}
+	game.Game.State = *game.ResumeState
+	game.ResumeState = nil
+	game.Revision++
+	return nil
+}
+
+func restoreSourceGameRecord(game *PauseGame, commandID uuid.UUID, resumedAt time.Time) error {
+	source := game.SourcePause
+	if source.State != PauseStateActive || source.Revision == math.MaxInt64 || source.DecisionNumber == math.MaxInt64 ||
+		source.Clock.Revision == math.MaxInt64 {
+		return ErrPauseResumeOverflow
+	}
+	deadline, ok := pausedomain.AddTime(resumedAt, source.Clock.Remaining)
+	if !ok {
+		return ErrPauseResumeOverflow
+	}
+	resolvedAt := resumedAt
+	source.State = PauseStateResumed
+	source.CurrentRevisionID = pauseSourceResumeRevisionID(commandID, source.PauseID)
+	source.Revision++
+	source.DecisionNumber++
+	source.ResolvedAt = &resolvedAt
+	source.Clock.ResumedAt = pauseCloneTimePointer(&resumedAt)
+	source.Clock.ResumedDeadline = pauseCloneTimePointer(&deadline)
+	source.Clock.Revision++
+	game.Game.State = domain.GameStateActive
+	game.Deadline = pauseCloneTimePointer(&deadline)
+	game.Revision++
 	return nil
 }
 

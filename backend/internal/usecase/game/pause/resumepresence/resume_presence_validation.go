@@ -24,11 +24,17 @@ func validatePauseResumePresenceCommand(command PauseResumePresenceCommand) erro
 	if !validPauseResumeDecisionIDs(command) {
 		return pauseResumePresenceError("invalid decision identity")
 	}
-	if err := validatePauseResumeDecisionExpectation(command.SeriesExpected, PauseResumeDecisionScopeSeries); err != nil {
-		return err
-	}
-	if err := validatePauseResumeDecisionExpectation(command.GameExpected, PauseResumeDecisionScopeGameAttempt); err != nil {
-		return err
+	if command.SourceAdoption {
+		if !validSourceResumeCommand(command) {
+			return pauseResumePresenceError("invalid source adoption evidence")
+		}
+	} else {
+		if err := validatePauseResumeDecisionExpectation(command.SeriesExpected, PauseResumeDecisionScopeSeries); err != nil {
+			return err
+		}
+		if err := validatePauseResumeDecisionExpectation(command.GameExpected, PauseResumeDecisionScopeGameAttempt); err != nil {
+			return err
+		}
 	}
 	if !validPauseResumeCommandTopology(command) {
 		return pauseResumePresenceError("invalid pause topology")
@@ -45,7 +51,7 @@ func validPauseResumeDecisionIDs(command PauseResumePresenceCommand) bool {
 		command.SeriesExpected.PauseID: {}, command.GameExpected.PauseID: {},
 		command.SeriesExpected.CurrentRevisionID: {}, command.GameExpected.CurrentRevisionID: {},
 	}
-	if _, reserved := reservedDecisionIDs[command.SeriesDecisionID]; reserved {
+	if _, reserved := reservedDecisionIDs[command.SeriesDecisionID]; reserved && !command.SourceAdoption {
 		return false
 	}
 	if _, reserved := reservedDecisionIDs[command.GameDecisionID]; reserved || command.GameDecisionID == command.SeriesDecisionID {
@@ -55,6 +61,10 @@ func validPauseResumeDecisionIDs(command PauseResumePresenceCommand) bool {
 }
 
 func validPauseResumeCommandTopology(command PauseResumePresenceCommand) bool {
+	if command.SourceAdoption {
+		return command.GameExpected.ParentPauseID == nil && command.GameExpected.Depth == 0 &&
+			command.GameExpected.PauseID != command.Resume.PauseID
+	}
 	return command.SeriesExpected.ParentPauseID == nil && command.SeriesExpected.Depth == 0 &&
 		command.GameExpected.ParentPauseID != nil && *command.GameExpected.ParentPauseID == command.SeriesExpected.PauseID &&
 		command.GameExpected.Depth == 1 && command.SeriesExpected.SeriesID == command.GameExpected.SeriesID &&
@@ -154,6 +164,9 @@ func validatePauseResumePresenceAuthority(authority PauseResumePresenceAuthority
 	if !validPauseResumeNormalAuthority(normal) {
 		return pauseResumePresenceError("normal pause is not an active Wave pause")
 	}
+	if authority.SourceAdoption {
+		return validateSourceResumeAuthority(authority)
+	}
 	if err := validatePauseResumeDecisionAuthority(authority.SeriesDecision, PauseResumeDecisionScopeSeries); err != nil {
 		return err
 	}
@@ -189,17 +202,39 @@ func validPauseResumeIndependentTopology(
 }
 
 func validatePauseResumePresenceOwnership(authority PauseResumePresenceAuthority) error {
+	retainsSources := false
+	for _, game := range authority.Resume.Pause.Graph.Games {
+		retainsSources = retainsSources || game.SourcePause != nil
+	}
 	for _, counter := range authority.Resume.Counters {
 		if counter.PauseID != authority.GameDecision.PauseID {
+			snapshot := pauseCounterByParticipant(authority.Resume.Pause.Graph.Counters, counter.PauseID, counter.ParticipantID)
+			if retainsSources && snapshot != nil && *snapshot == counter && connectedSiblingParticipant(authority, counter.ParticipantID) {
+				continue
+			}
 			return pauseResumePresenceError("counter belongs to another pause")
 		}
 	}
 	for _, interval := range authority.Resume.Reconnect {
 		if interval.PauseID != authority.GameDecision.PauseID {
+			snapshot := reconnectIntervalByID(authority.Resume.Pause.Graph.Reconnect, interval.ID)
+			if retainsSources && snapshot != nil && pauseResumeReconnectEqual(*snapshot, interval) &&
+				connectedSiblingParticipant(authority, interval.ParticipantID) {
+				continue
+			}
 			return pauseResumePresenceError("Reconnect belongs to another pause")
 		}
 	}
 	return nil
+}
+
+func connectedSiblingParticipant(authority PauseResumePresenceAuthority, participantID uuid.UUID) bool {
+	live := pausePresenceByParticipant(authority.Resume.Presence, participantID)
+	if live == nil || live.State != pausedomain.PresenceStateConnected || live.SeriesID == authority.GameDecision.SeriesID {
+		return false
+	}
+	series := pauseSeriesByID(authority.Resume.Pause.Graph.Series, live.SeriesID)
+	return series != nil && (series.Execution.Series.FirstParticipantID == participantID || series.Execution.Series.SecondParticipantID == participantID)
 }
 
 func pauseResumePresenceHasExhaustedFreshAbsence(authority PauseResumePresenceAuthority) bool {

@@ -62,7 +62,8 @@ func pausedChildRevisionsMatch(
 	pauseID uuid.UUID,
 	suspended []PauseChildRevision,
 ) bool {
-	return pausedSeriesRevisionsMatch(graph.Series, expected.Series) && pausedGameRevisionsMatch(graph.Games, expected.Games) &&
+	return pausedSeriesRevisionsMatch(graph.Series, expected.Series, graph.Games) && pausedGameRevisionsMatch(graph.Games, expected.Games) &&
+		sourcePauseRevisionMapEqual(current.SourcePauses, expected.SourcePauses) &&
 		presenceRevisionMapEqual(current.Presence, expected.Presence) && pausedReconnectRevisionsMatch(graph.Reconnect, expected.Reconnect, suspended, pauseID, pausedAt) &&
 		counterRevisionMapEqual(current.Counters, expected.Counters) && current.TerminalActionRevision == expected.TerminalActionRevision &&
 		pausedDraftRevisionMatches(graph.Draft, expected.Draft, expected.DraftPreviousRevisionID,
@@ -83,32 +84,50 @@ func pausedWaveRevisionMatches(current PauseWave, expected int64) bool {
 	}
 }
 
-func pausedSeriesRevisionsMatch(current []PauseSeries, expected []PauseChildRevision) bool {
+func pausedSeriesRevisionsMatch(current []PauseSeries, expected []PauseChildRevision, games []PauseGame) bool {
 	if len(current) != len(expected) {
 		return false
 	}
 	for _, series := range current {
 		revision, ok := childRevision(expected, series.Execution.Series.ID)
-		if !ok || !pausedSeriesRevisionMatches(series, revision) {
+		if !ok || !pausedSeriesRevisionMatches(series, revision, games) {
 			return false
 		}
 	}
 	return true
 }
 
-func pausedSeriesRevisionMatches(current PauseSeries, expected int64) bool {
+func pausedSeriesRevisionMatches(current PauseSeries, expected int64, games []PauseGame) bool {
 	switch current.Execution.Series.State {
 	case domain.SeriesStateTechnicalPause:
 		return nextRevisionMatches(current.Revision, expected)
+	case domain.SeriesStateActive:
+		return current.Revision == expected && current.Execution.ResumeState == nil &&
+			pauseSeriesHasActiveAdoptedSourceGame(current, games)
 	case domain.SeriesStatePlanned, domain.SeriesStateLocked,
 		domain.SeriesStateCompleted, domain.SeriesStateCancelled:
 		return current.Revision == expected
-	case domain.SeriesStateDraft, domain.SeriesStateReady,
-		domain.SeriesStateActive, domain.SeriesStateReplayRequired:
+	case domain.SeriesStateDraft, domain.SeriesStateReady, domain.SeriesStateReplayRequired:
 		return false
 	default:
 		return false
 	}
+}
+
+func pauseSeriesHasActiveAdoptedSourceGame(series PauseSeries, games []PauseGame) bool {
+	if series.CurrentGameID == nil {
+		return false
+	}
+	for _, game := range games {
+		source := game.SourcePause
+		if game.Game.ID == *series.CurrentGameID && game.SeriesID == series.Execution.Series.ID &&
+			game.Game.State == domain.GameStatePaused && game.ResumeState == nil && game.Deadline == nil && source != nil &&
+			source.GameID == game.Game.ID && source.SeriesID == game.SeriesID && source.Reason == PauseReasonDisconnect &&
+			source.State == PauseStateActive && source.ParentPauseID == nil && source.Depth == 0 {
+			return true
+		}
+	}
+	return false
 }
 
 func pausedGameRevisionsMatch(current []PauseGame, expected []PauseChildRevision) bool {
@@ -127,6 +146,9 @@ func pausedGameRevisionsMatch(current []PauseGame, expected []PauseChildRevision
 func pausedGameRevisionMatches(current PauseGame, expected int64) bool {
 	switch current.Game.State {
 	case domain.GameStatePaused:
+		if current.SourcePause != nil {
+			return current.ResumeState == nil && current.Revision == expected
+		}
 		return nextRevisionMatches(current.Revision, expected)
 	case domain.GameStatePlanned, domain.GameStateReady, domain.GameStateCompleted,
 		domain.GameStateVoid, domain.GameStateCancelled, domain.GameStateSuperseded:

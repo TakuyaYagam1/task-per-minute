@@ -35,8 +35,11 @@ func validateReconnectRecord(record ReconnectRecord) error {
 }
 
 func validateReconnectRecordHeader(record ReconnectRecord) error {
-	if record.ExpectedAuthorityRevision < 1 || !reconnectValidServerTime(record.RecordedAt) || validateReconnectAuthority(record.ReconnectAuthority) != nil {
+	if record.ExpectedAuthorityRevision < 1 || !reconnectValidServerTime(record.RecordedAt) {
 		return reconnectError("invalid record header")
+	}
+	if err := validateReconnectAuthority(record.ReconnectAuthority); err != nil {
+		return reconnectError("invalid record header: %v", err)
 	}
 	if record.ReconnectAuthority.Revision != record.ExpectedAuthorityRevision && record.ReconnectAuthority.Revision != record.ExpectedAuthorityRevision+1 {
 		return reconnectError("invalid record command or revision")

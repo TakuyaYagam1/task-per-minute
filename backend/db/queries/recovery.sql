@@ -31,7 +31,7 @@ pending_deadlines AS (
         '00000000-0000-0000-0000-000000000000'::UUID AS participant_id,
         game_attempt.revision AS expected_revision,
         COALESCE(
-            latest_clock.resumed_deadline,
+            latest_clock.exact_resumed_deadline,
             game_attempt.started_at
                 + INTERVAL '180 seconds'
         )::TIMESTAMPTZ AS due_at
@@ -49,12 +49,13 @@ pending_deadlines AS (
     JOIN task_snapshots AS task_snapshot
         ON task_snapshot.id = assignment.snapshot_id
     LEFT JOIN LATERAL (
-        SELECT pause_clock.resumed_deadline
+        SELECT pause_clock.resumed_at + (pause_clock.original_deadline - pause_clock.frozen_at) AS exact_resumed_deadline
         FROM pause_clocks AS pause_clock
         JOIN pauses AS clock_pause
             ON clock_pause.id = pause_clock.pause_id
             AND clock_pause.state = 'resumed'
         WHERE pause_clock.game_attempt_id = game_attempt.id
+            AND pause_clock.resumed_at IS NOT NULL
             AND pause_clock.resumed_deadline IS NOT NULL
         ORDER BY
             pause_clock.resumed_at DESC,
@@ -176,7 +177,7 @@ pending_deadlines AS (
         '00000000-0000-0000-0000-000000000000'::UUID AS participant_id,
         game_attempt.revision AS expected_revision,
         COALESCE(
-            latest_clock.resumed_deadline,
+            latest_clock.exact_resumed_deadline,
             game_attempt.started_at
                 + INTERVAL '180 seconds'
         )::TIMESTAMPTZ AS due_at
@@ -194,12 +195,13 @@ pending_deadlines AS (
     JOIN task_snapshots AS task_snapshot
         ON task_snapshot.id = assignment.snapshot_id
     LEFT JOIN LATERAL (
-        SELECT pause_clock.resumed_deadline
+        SELECT pause_clock.resumed_at + (pause_clock.original_deadline - pause_clock.frozen_at) AS exact_resumed_deadline
         FROM pause_clocks AS pause_clock
         JOIN pauses AS clock_pause
             ON clock_pause.id = pause_clock.pause_id
             AND clock_pause.state = 'resumed'
         WHERE pause_clock.game_attempt_id = game_attempt.id
+            AND pause_clock.resumed_at IS NOT NULL
             AND pause_clock.resumed_deadline IS NOT NULL
         ORDER BY
             pause_clock.resumed_at DESC,

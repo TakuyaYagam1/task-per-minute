@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"reflect"
+	"slices"
 	"time"
 
 	"github.com/google/uuid"
@@ -235,11 +236,11 @@ func ClonePausedPresenceAuthority(value PausedPresenceAuthority) PausedPresenceA
 	clone.Pause = model.CloneNormalPauseRecord(value.Pause)
 	clone.Presence = value.Presence
 	clone.Presence.DisconnectedAt = model.CloneTimePointer(value.Presence.DisconnectedAt)
-	clone.Reconnect = append([]pausedomain.PauseReconnectInterval(nil), value.Reconnect...)
+	clone.Reconnect = slices.Clone(value.Reconnect)
 	for index := range clone.Reconnect {
 		clone.Reconnect[index].ClosedAt = model.CloneTimePointer(value.Reconnect[index].ClosedAt)
 	}
-	clone.Counters = append([]pausedomain.PauseReconnectCounter(nil), value.Counters...)
+	clone.Counters = slices.Clone(value.Counters)
 	clone.FrozenDeadlines = model.ClonePauseFrozenDeadlineSlice(value.FrozenDeadlines)
 	return clone
 }

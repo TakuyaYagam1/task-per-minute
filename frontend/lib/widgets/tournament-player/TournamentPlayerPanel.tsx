@@ -384,7 +384,10 @@ export const TournamentPlayerPanel = ({
     view.state === "bye" ||
     view.state === "eliminated" ||
     view.state === "completed";
-  const showReadinessAction = view.state !== "bye" && view.state !== "eliminated" && view.state !== "completed";
+  const terminalParticipant = view.state === "eliminated" || view.state === "completed";
+  const showReadinessAction =
+    !terminalParticipant &&
+    view.state !== "bye";
   const showDraft = view.draft !== null && (view.draft.format === "bo1" || view.draft.format === "bo3");
   const submissionHasError =
     submission.status === "empty" ||
@@ -785,7 +788,7 @@ export const TournamentPlayerPanel = ({
           <div className={styles.draftPool} data-testid="participant-draft-pool">
             <h4 className={styles.draftSubtitle}>Категории в пуле</h4>
             <div className={styles.draftCategories}>
-              {draft.allowed && view.draft.currentAction !== null
+              {draft.allowed && !terminalParticipant && view.draft.currentAction !== null
                 ? view.draft.pool.map((category) => {
                     const legal = view.draft?.legalCategories.includes(category) ?? false;
                     const action = view.draft?.currentAction;
@@ -1022,7 +1025,8 @@ export const TournamentPlayerPanel = ({
               )}
             </details>
           )}
-          <div className={styles.gameActions}>
+          {!terminalParticipant && (
+            <div className={styles.gameActions}>
             <form className={styles.submissionForm} onSubmit={submitAnswer}>
               <label className={styles.submissionLabel} htmlFor="participant-answer-input">
                 Ответ
@@ -1121,7 +1125,8 @@ export const TournamentPlayerPanel = ({
                 )}
               </div>
             )}
-          </div>
+            </div>
+          )}
           </>
         )}
       </section>

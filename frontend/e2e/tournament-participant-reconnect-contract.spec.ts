@@ -487,6 +487,68 @@ test("FE-023 participant realtime does not replace an intentionally closed conne
   expect(mutationRequests).toEqual([]);
 });
 
+for (const failure of ["invalid frame", "rejection"] as const) {
+  test(`participant realtime closes a browser socket after ${failure}`, async ({ page }) => {
+    const fixtureSet = createTournamentFixtureSet();
+    const current = snapshotFor(fixtureSet, { runtime: runtimeFor() });
+    const snapshotRequests: URL[] = [];
+    const mutationRequests: string[] = [];
+    const sockets: WebSocketRoute[] = [];
+    const closes: Array<{ code: number | undefined; reason: string | undefined }> = [];
+    const pageErrors: string[] = [];
+    page.on("pageerror", (error) => pageErrors.push(error.message));
+
+    await page.clock.install({ time: serverTimestamp });
+    await page.routeWebSocket((url) => url.pathname === participantRealtimePath, (socket) => {
+      sockets.push(socket);
+      socket.onClose(async (code, reason) => {
+        closes.push({ code, reason });
+        // route.close also emits onClose; record only the client's request, not our acknowledgement.
+        socket.onClose(() => {});
+        await socket.close({ code, reason });
+      });
+      socket.send(participantRealtimeFrame(tournamentFixtureIds.resume, 9, sockets.length));
+    });
+    await openParticipant(page, fixtureSet, () => current, snapshotRequests, mutationRequests, false);
+    const status = page.locator('[role="status"][data-state]');
+    await expect(status).toHaveAttribute("data-state", "live");
+    expect(sockets).toHaveLength(1);
+    const originalSocket = sockets[0]!;
+    const snapshotsBeforeFailure = snapshotRequests.length;
+
+    originalSocket.send(failure === "invalid frame" ? "{" : JSON.stringify({
+      type: "tournament.rejected",
+      code: "tournament.forbidden",
+      message: "Participant access rejected",
+    }));
+    await expect.poll(() => closes.length + pageErrors.length).toBeGreaterThan(0);
+    expect(pageErrors).toEqual([]);
+    const reason = failure === "rejection" ? "participant realtime rejected" : "invalid participant realtime frame";
+    expect(closes).toEqual([{ code: 1000, reason }]);
+    const expectedStatus = failure === "rejection" ? "rejected" : "stale";
+    await expect(status).toHaveAttribute("data-state", expectedStatus);
+
+    originalSocket.send(participantRealtimeFrame(tournamentFixtureIds.resume, 99, 99));
+    await page.clock.fastForward(2_000);
+    await expect(status).toHaveAttribute("data-state", expectedStatus);
+    expect(sockets).toHaveLength(1);
+    expect(snapshotRequests).toHaveLength(snapshotsBeforeFailure);
+    expect(closes).toEqual([{ code: 1000, reason }]);
+    expect(pageErrors).toEqual([]);
+
+    if (failure === "invalid frame") {
+      // Invalid data stops automatic retries; an explicit retry can still recover.
+      await page.getByRole("button", { name: "Повторить синхронизацию" }).click();
+      await expect.poll(() => sockets.length).toBe(2);
+      expect(new URL(sockets[1]!.url()).searchParams.get("resume_id")).toBe(tournamentFixtureIds.resume);
+      await expect(status).toHaveAttribute("data-state", "live");
+      expect(snapshotRequests.length).toBeGreaterThan(snapshotsBeforeFailure);
+    }
+    expect(mutationRequests).toEqual([]);
+    expect(pageErrors).toEqual([]);
+  });
+}
+
 test("FE-023 disconnect freezes both participants and reconnect resumes only from a server snapshot", async ({ page }) => {
   const fixtureSet = createTournamentFixtureSet();
   let current = snapshotFor(fixtureSet, {

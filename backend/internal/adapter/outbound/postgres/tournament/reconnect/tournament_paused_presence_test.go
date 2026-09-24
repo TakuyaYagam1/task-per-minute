@@ -201,6 +201,35 @@ func TestTournamentPausedPresenceTimeComparisonPreservesNullableDisconnect(t *te
 	require.True(t, samePausedPresence(left, right))
 }
 
+func TestTournamentPausedPresenceTimeComparisonKeepsStrictFieldChecks(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, time.September, 13, 12, 0, 0, 123, time.UTC)
+	left := pausedomain.PausePresence{
+		ID: uuid.New(), TournamentID: uuid.New(), RosterID: uuid.New(), SeriesID: uuid.New(),
+		ParticipantID: uuid.New(), State: pausedomain.PresenceStateConnected,
+		PresenceEpoch: 2, Revision: 3, ConnectedAt: now, UpdatedAt: now,
+	}
+
+	postgresTime := left
+	postgresTime.UpdatedAt = now.Truncate(time.Microsecond)
+	require.False(t, samePausedPresence(left, postgresTime), "timestamp precision mismatch must remain visible")
+
+	for name, mutate := range map[string]func(*pausedomain.PausePresence){
+		"presence_id":       func(value *pausedomain.PausePresence) { value.ID = uuid.New() },
+		"participant_id":    func(value *pausedomain.PausePresence) { value.ParticipantID = uuid.New() },
+		"state":             func(value *pausedomain.PausePresence) { value.State = pausedomain.PresenceStateDisconnected },
+		"presence_epoch":    func(value *pausedomain.PausePresence) { value.PresenceEpoch++ },
+		"presence_revision": func(value *pausedomain.PausePresence) { value.Revision++ },
+	} {
+		t.Run(name, func(t *testing.T) {
+			right := left
+			mutate(&right)
+			require.False(t, samePausedPresence(left, right))
+		})
+	}
+}
+
 func pausedPresenceTestScope() pausedomain.GraphScope {
 	tournamentID := uuid.New()
 	return pausedomain.GraphScope{

@@ -14,7 +14,6 @@ import (
 	"sort"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -35,6 +34,7 @@ func startTemplateClone(
 	if err != nil {
 		return nil, nil, fmt.Errorf("parse postgres admin configuration: %w", err)
 	}
+	adminConfig.ConnConfig.Database = "postgres"
 	adminConfig.MaxConns = 10
 	adminPool, err := pgxpool.NewWithConfig(ctx, adminConfig)
 	if err != nil {
@@ -57,6 +57,7 @@ func startTemplateClone(
 
 	databaseName := "tpm_package_" + uuid.NewString()[:16]
 	if err := cloneDatabase(ctx, adminPool, databaseName, templateName); err != nil {
+		dropDatabaseAfterFailure(ctx, adminPool, databaseName)
 		adminPool.Close()
 		return nil, nil, err
 	}
@@ -92,9 +93,7 @@ func startTemplateClone(
 	cleanup := func() {
 		cleanupOnce.Do(func() {
 			pool.Close()
-			cleanupCtx, cancel := context.WithTimeout(cleanupParent, 15*time.Second)
-			defer cancel()
-			_ = dropDatabase(cleanupCtx, adminPool, databaseName)
+			_ = dropDatabase(cleanupParent, adminPool, databaseName)
 			adminPool.Close()
 		})
 	}
@@ -106,18 +105,18 @@ func ensureMigrationTemplate(
 	adminPool *pgxpool.Pool,
 	config PostgresConfig,
 	templateName string,
-) error {
+) (retErr error) {
 	connection, err := adminPool.Acquire(ctx)
 	if err != nil {
 		return fmt.Errorf("acquire postgres template lock connection: %w", err)
 	}
 	defer connection.Release()
 
-	if _, err := connection.Exec(ctx, "SELECT pg_advisory_lock($1)", migrationTemplateLockID); err != nil {
+	if err := acquireDatabaseAdvisoryLock(ctx, connection.Conn(), migrationTemplateLockID); err != nil {
 		return fmt.Errorf("lock postgres migration template: %w", err)
 	}
 	defer func() {
-		_, _ = connection.Exec(context.WithoutCancel(ctx), "SELECT pg_advisory_unlock($1)", migrationTemplateLockID)
+		retErr = errors.Join(retErr, releaseDatabaseAdvisoryLock(connection.Conn(), migrationTemplateLockID))
 	}()
 
 	var exists bool
@@ -132,11 +131,14 @@ func ensureMigrationTemplate(
 	}
 
 	identifier := pgx.Identifier{templateName}.Sanitize()
-	if _, err := connection.Exec(ctx, "CREATE DATABASE "+identifier+" TEMPLATE template0"); err != nil {
+	if err := withDatabaseDDL(ctx, connection.Conn(), func(operationCtx context.Context) error {
+		_, err := connection.Exec(operationCtx, "CREATE DATABASE "+identifier+" TEMPLATE template0")
+		return err
+	}); err != nil {
 		return fmt.Errorf("create postgres migration template: %w", err)
 	}
 	removeIncompleteTemplate := func() {
-		_ = dropDatabase(context.WithoutCancel(ctx), adminPool, templateName)
+		_ = dropDatabase(ctx, adminPool, templateName)
 	}
 
 	templateDSN, err := dsnForDatabase(config.DSN, templateName, "")
@@ -150,9 +152,12 @@ func ensureMigrationTemplate(
 		removeIncompleteTemplate()
 		return fmt.Errorf("migrate postgres template: %w", err)
 	}
-	if _, err := connection.Exec(ctx,
-		"ALTER DATABASE "+identifier+" WITH IS_TEMPLATE true ALLOW_CONNECTIONS false",
-	); err != nil {
+	if err := withDatabaseDDL(ctx, connection.Conn(), func(operationCtx context.Context) error {
+		_, err := connection.Exec(operationCtx,
+			"ALTER DATABASE "+identifier+" WITH IS_TEMPLATE true ALLOW_CONNECTIONS false",
+		)
+		return err
+	}); err != nil {
 		removeIncompleteTemplate()
 		return fmt.Errorf("seal postgres migration template: %w", err)
 	}
@@ -206,28 +211,54 @@ func cloneDatabase(
 	databaseName string,
 	templateName string,
 ) error {
+	connection, err := adminPool.Acquire(ctx)
+	if err != nil {
+		return fmt.Errorf("acquire postgres clone connection: %w", err)
+	}
+	defer connection.Release()
+
 	databaseIdentifier := pgx.Identifier{databaseName}.Sanitize()
 	templateIdentifier := pgx.Identifier{templateName}.Sanitize()
-	if _, err := adminPool.Exec(ctx,
-		"CREATE DATABASE "+databaseIdentifier+" TEMPLATE "+templateIdentifier,
-	); err != nil {
+	if err := withDatabaseDDL(ctx, connection.Conn(), func(operationCtx context.Context) error {
+		_, execErr := connection.Exec(operationCtx,
+			"CREATE DATABASE "+databaseIdentifier+" TEMPLATE "+templateIdentifier,
+		)
+		return execErr
+	}); err != nil {
 		return fmt.Errorf("clone postgres test database: %w", err)
 	}
 	return nil
 }
 
 func dropDatabase(ctx context.Context, adminPool *pgxpool.Pool, databaseName string) error {
-	identifier := pgx.Identifier{databaseName}.Sanitize()
-	if _, err := adminPool.Exec(ctx, "DROP DATABASE "+identifier+" WITH (FORCE)"); err != nil {
-		return fmt.Errorf("drop postgres test database: %w", err)
+	acquireCtx, acquireCancel := context.WithTimeout(
+		context.WithoutCancel(ctx),
+		isolatedDatabaseDDLLockTimeout,
+	)
+	connection, err := adminPool.Acquire(acquireCtx)
+	acquireCancel()
+	if err != nil {
+		return fmt.Errorf("acquire postgres drop connection: %w", err)
 	}
-	return nil
+	defer connection.Release()
+
+	identifier := pgx.Identifier{databaseName}.Sanitize()
+	return withDatabaseCleanupDDL(ctx, connection.Conn(), func(operationCtx context.Context) error {
+		if _, err := connection.Exec(operationCtx, `
+			SELECT pg_terminate_backend(pid)
+			FROM pg_stat_activity
+			WHERE datname = $1 AND pid <> pg_backend_pid()`, databaseName); err != nil {
+			return fmt.Errorf("terminate postgres test database sessions: %w", err)
+		}
+		if _, err := connection.Exec(operationCtx, "DROP DATABASE "+identifier+" WITH (FORCE)"); err != nil {
+			return fmt.Errorf("drop postgres test database: %w", err)
+		}
+		return nil
+	})
 }
 
 func dropDatabaseAfterFailure(ctx context.Context, adminPool *pgxpool.Pool, databaseName string) {
-	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 15*time.Second)
-	defer cancel()
-	_ = dropDatabase(cleanupCtx, adminPool, databaseName)
+	_ = dropDatabase(ctx, adminPool, databaseName)
 }
 
 func dsnForDatabase(dsn string, databaseName string, searchPath string) (string, error) {

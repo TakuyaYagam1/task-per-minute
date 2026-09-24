@@ -64,7 +64,7 @@ func TestTournamentRealtimeDisconnectResume(t *testing.T) {
 	require.NoError(t, err)
 	lifecycle := &participantConnectionRecordingLifecycle{
 		delegate:    coordinator,
-		disconnects: make(chan error, 8),
+		disconnects: make(chan participantConnectionLifecycleResult, 8),
 	}
 
 	snapshotSource, err := inboundws.NewTournamentProductionSnapshotSource(

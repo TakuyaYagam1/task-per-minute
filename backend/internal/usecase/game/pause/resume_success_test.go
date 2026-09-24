@@ -51,6 +51,30 @@ func testPauseResumeSuccess(t *testing.T, resumedAt time.Time) {
 		}
 	})
 
+	t.Run("resumes adopted disconnect clock without losing its source evidence", func(t *testing.T) {
+		t.Parallel()
+
+		authority, command := sourcePauseResumeFixture(t, resumedAt)
+		source := authority.Pause.Graph.Games[0].SourcePause
+		if source == nil {
+			t.Fatal("source pause evidence missing from authority")
+		}
+		repository := newPauseResumeRepositoryHarness(t, authority)
+		useCase := gameusecase.NewPauseResumeUseCase(newPauseTransactionManager(t), repository, newPauseClock(t, resumedAt))
+		record, changed, err := useCase.Resume(t.Context(), command)
+		deadline := resumedAt.Add(source.Clock.Remaining)
+		if err != nil || !changed || record.Graph.Games[0].SourcePause == nil ||
+			record.Graph.Games[0].SourcePause.PauseID != source.PauseID ||
+			record.Graph.Games[0].SourcePause.State != gameusecase.PauseStateResumed ||
+			record.Graph.Games[0].SourcePause.Clock.Revision != source.Clock.Revision+1 ||
+			record.Graph.Games[0].SourcePause.Clock.Remaining != source.Clock.Remaining ||
+			record.Graph.Games[0].Deadline == nil || !record.Graph.Games[0].Deadline.Equal(deadline) ||
+			record.Graph.Games[0].SourcePause.Clock.ResumedDeadline == nil ||
+			!record.Graph.Games[0].SourcePause.Clock.ResumedDeadline.Equal(deadline) {
+			t.Fatalf("Resume() error = %v, changed = %v, graph = %+v", err, changed, record)
+		}
+	})
+
 	t.Run("shifts an open ready-window deadline exactly once", func(t *testing.T) {
 		t.Parallel()
 

@@ -1,6 +1,8 @@
 package resumepresence
 
 import (
+	"reflect"
+
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	seriesdomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/series"
 )
@@ -126,6 +128,7 @@ func pauseResumeGameSliceEqual(first, second []PauseGame) bool {
 
 func pauseResumeGameEqual(first, second PauseGame) bool {
 	return first.SeriesID == second.SeriesID && pauseResumeDomainGameEqual(first.Game, second.Game) &&
+		reflect.DeepEqual(first.SourcePause, second.SourcePause) &&
 		first.Revision == second.Revision && pauseResumeTimePointerEqual(first.Deadline, second.Deadline) &&
 		pauseResumeComparablePointerEqual(first.ResumeState, second.ResumeState)
 }

@@ -273,7 +273,7 @@ export const useParticipantTournamentRealtime = ({
     const closeAsInvalid = (generation: number, socket: WebSocket): void => {
       terminalGenerationRef.current = generation;
       setStatus("error");
-      socket.close(1002, "invalid participant realtime frame");
+      socket.close(NORMAL_CLOSE_CODE, "invalid participant realtime frame");
     };
 
     const acceptFrame = (envelope: ParticipantRealtimeEnvelope): void => {
@@ -325,7 +325,7 @@ export const useParticipantTournamentRealtime = ({
           if (isParticipantRealtimeRejection(value)) {
             terminalGenerationRef.current = generation;
             setStatus("rejected");
-            socket.close(1008, "participant realtime rejected");
+            socket.close(NORMAL_CLOSE_CODE, "participant realtime rejected");
             return;
           }
           if (isParticipantRealtimeTerminal(value, tournamentId)) {

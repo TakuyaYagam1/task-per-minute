@@ -23,7 +23,21 @@ func pauseCloneTimePointer(value *time.Time) *time.Time {
 func pauseTimeCoversGraphHistory(graph PauseGraph, at time.Time) bool {
 	return timeCoversPauseRootHistory(at, graph) && timeCoversReadyWindowHistory(at, graph.Wave.Wave.ReadyWindow) &&
 		timeCoversPresenceSetHistory(at, graph.Presence) && timeCoversReconnectSetHistory(at, graph.Reconnect) &&
-		timeCoversOptionalDraftHistory(at, graph.Draft) && timeCoversFrozenDeadlineHistory(at, graph.FrozenDeadlines)
+		timeCoversOptionalDraftHistory(at, graph.Draft) && timeCoversFrozenDeadlineHistory(at, graph.FrozenDeadlines) &&
+		timeCoversSourcePauseHistory(at, graph.Games)
+}
+
+func timeCoversSourcePauseHistory(at time.Time, games []PauseGame) bool {
+	for _, game := range games {
+		if source := game.SourcePause; source != nil &&
+			(!pausedomain.TimeAtOrBefore(at, source.StartedAt) ||
+				!pausedomain.TimeAtOrBefore(at, source.Clock.FrozenAt) ||
+				!pausedomain.TimePointerAtOrBefore(at, source.ResolvedAt) ||
+				!pausedomain.TimePointerAtOrBefore(at, source.Clock.ResumedAt)) {
+			return false
+		}
+	}
+	return true
 }
 
 func timeCoversPauseRootHistory(at time.Time, graph PauseGraph) bool {
@@ -111,7 +125,7 @@ func addEligibleGameDeadlines(expected map[pauseDeadlineIdentity]time.Time, game
 		if paused && game.Game.State == domain.GameStatePaused && game.ResumeState != nil && *game.ResumeState == domain.GameStateActive {
 			expected[pauseDeadlineIdentity{Kind: PauseDeadlineGame, OwnerID: game.Game.ID}] = time.Time{}
 		}
-		if !paused && game.Game.State == domain.GameStateActive && game.Deadline != nil {
+		if !paused && game.Game.State == domain.GameStateActive && game.Deadline != nil && game.SourcePause == nil {
 			expected[pauseDeadlineIdentity{Kind: PauseDeadlineGame, OwnerID: game.Game.ID}] = *game.Deadline
 		}
 	}

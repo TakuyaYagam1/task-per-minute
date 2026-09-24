@@ -14,7 +14,8 @@ func PauseGraphRevisionsFrom(graph PauseGraph) PauseGraphRevisions {
 		GraphRevision: graph.Revision, TournamentState: graph.Tournament.State, TournamentRevision: graph.Tournament.Revision,
 		WaveRevision: graph.Wave.Revision, TerminalActionRevision: graph.TerminalActionRevision,
 		Series: make([]PauseChildRevision, len(graph.Series)), Games: make([]PauseChildRevision, len(graph.Games)),
-		Presence: make([]PausePresenceRevision, len(graph.Presence)), Reconnect: make([]PauseChildRevision, len(graph.Reconnect)),
+		SourcePauses: make([]PauseSourcePauseRevision, 0, len(graph.Games)),
+		Presence:     make([]PausePresenceRevision, len(graph.Presence)), Reconnect: make([]PauseChildRevision, len(graph.Reconnect)),
 		Counters: make([]PauseReconnectCounterRevision, len(graph.Counters)), FrozenDeadlines: make([]PauseFrozenDeadlineRevision, len(graph.FrozenDeadlines)),
 	}
 	for index := range graph.Series {
@@ -22,6 +23,13 @@ func PauseGraphRevisionsFrom(graph PauseGraph) PauseGraphRevisions {
 	}
 	for index := range graph.Games {
 		revisions.Games[index] = PauseChildRevision{ID: graph.Games[index].Game.ID, Revision: graph.Games[index].Revision}
+		if source := graph.Games[index].SourcePause; source != nil {
+			revisions.SourcePauses = append(revisions.SourcePauses, PauseSourcePauseRevision{
+				GameID: source.GameID, PauseID: source.PauseID, CurrentRevisionID: source.CurrentRevisionID,
+				Revision: source.Revision, DecisionNumber: source.DecisionNumber,
+				ClockRevision: source.Clock.Revision, Remaining: source.Clock.Remaining,
+			})
+		}
 	}
 	if graph.Draft != nil {
 		expected := draftusecase.Expectation(*graph.Draft)
@@ -52,7 +60,8 @@ func validatePauseGraphRevisions(value PauseGraphRevisions) error {
 	if !validPauseRootRevisions(value) {
 		return normalPauseError("invalid root revisions")
 	}
-	if !validUniqueChildRevisions(value.Series) || !validUniqueChildRevisions(value.Games) || !validUniqueChildRevisions(value.Reconnect) {
+	if !validUniqueChildRevisions(value.Series) || !validUniqueChildRevisions(value.Games) || !validUniqueChildRevisions(value.Reconnect) ||
+		!validSourcePauseRevisions(value.SourcePauses) {
 		return normalPauseError("invalid or duplicate child revision")
 	}
 	if err := validatePausePresenceRevisions(value.Presence); err != nil {
@@ -65,6 +74,30 @@ func validatePauseGraphRevisions(value PauseGraphRevisions) error {
 		return normalPauseError("invalid aggregate revision")
 	}
 	return nil
+}
+
+func validSourcePauseRevisions(values []PauseSourcePauseRevision) bool {
+	seen := make(map[uuid.UUID]struct{}, len(values))
+	seenGames := make(map[uuid.UUID]struct{}, len(values))
+	for _, value := range values {
+		if value.GameID == uuid.Nil || value.PauseID == uuid.Nil || value.CurrentRevisionID == uuid.Nil ||
+			value.Revision < 1 || value.DecisionNumber < 0 || value.ClockRevision < 1 || value.Remaining <= 0 || value.Remaining > maxFrozenPauseDuration {
+			return false
+		}
+		if _, duplicate := seen[value.PauseID]; duplicate {
+			return false
+		}
+		if _, duplicate := seenGames[value.GameID]; duplicate {
+			return false
+		}
+		seen[value.PauseID] = struct{}{}
+		seenGames[value.GameID] = struct{}{}
+	}
+	return true
+}
+
+func PauseSourceResumeRevisionID(commandID, pauseID uuid.UUID) uuid.UUID {
+	return uuid.NewSHA1(commandID, []byte("source-resume-revision:"+pauseID.String()))
 }
 
 func validPauseRootRevisions(value PauseGraphRevisions) bool {
@@ -156,12 +189,29 @@ func validFrozenDeadlineRevisions(values []PauseFrozenDeadlineRevision) bool {
 
 func pauseGraphRevisionsEqual(first, second PauseGraphRevisions) bool {
 	return revisionMapEqual(first.Series, second.Series) && revisionMapEqual(first.Games, second.Games) &&
+		sourcePauseRevisionMapEqual(first.SourcePauses, second.SourcePauses) &&
 		revisionMapEqual(first.Reconnect, second.Reconnect) && presenceRevisionMapEqual(first.Presence, second.Presence) &&
 		counterRevisionMapEqual(first.Counters, second.Counters) && frozenRevisionMapEqual(first.FrozenDeadlines, second.FrozenDeadlines) &&
 		first.GraphRevision == second.GraphRevision && first.TournamentRevision == second.TournamentRevision &&
 		first.TournamentState == second.TournamentState && first.WaveRevision == second.WaveRevision &&
 		first.DraftPreviousRevisionID == second.DraftPreviousRevisionID &&
 		first.TerminalActionRevision == second.TerminalActionRevision && reflect.DeepEqual(first.Draft, second.Draft)
+}
+
+func sourcePauseRevisionMapEqual(first, second []PauseSourcePauseRevision) bool {
+	if len(first) != len(second) {
+		return false
+	}
+	values := make(map[uuid.UUID]PauseSourcePauseRevision, len(first))
+	for _, value := range first {
+		values[value.PauseID] = value
+	}
+	for _, value := range second {
+		if values[value.PauseID] != value {
+			return false
+		}
+	}
+	return true
 }
 
 func counterRevisionMapEqual(first, second []PauseReconnectCounterRevision) bool {

@@ -60,12 +60,13 @@ JOIN series_score_heads AS score_head
     ON score_head.series_id = series.id
     AND score_head.roster_id = series.roster_id
 LEFT JOIN LATERAL (
-    SELECT pause_clock.resumed_deadline
+    SELECT pause_clock.resumed_at + (pause_clock.original_deadline - pause_clock.frozen_at) AS exact_resumed_deadline
     FROM pause_clocks AS pause_clock
     JOIN pauses AS clock_pause
         ON clock_pause.id = pause_clock.pause_id
         AND clock_pause.state = 'resumed'
     WHERE pause_clock.game_attempt_id = game_attempt.id
+        AND pause_clock.resumed_at IS NOT NULL
         AND pause_clock.resumed_deadline IS NOT NULL
     ORDER BY pause_clock.resumed_at DESC, pause_clock.pause_id DESC
     LIMIT 1
@@ -77,7 +78,7 @@ WHERE game_attempt.id = sqlc.arg(game_attempt_id)
     AND game_attempt.state = 'active'
     AND wave.state = 'active'
     AND COALESCE(
-        latest_clock.resumed_deadline,
+        latest_clock.exact_resumed_deadline,
         game_attempt.started_at + INTERVAL '180 seconds'
     ) = sqlc.arg(due_at)::TIMESTAMPTZ
 FOR UPDATE OF game_attempt, game_slot, assignment, series, wave, score_head;

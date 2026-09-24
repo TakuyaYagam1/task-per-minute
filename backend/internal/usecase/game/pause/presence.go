@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 )
@@ -69,7 +70,7 @@ func (u *PausedPresenceUseCase) changeLocked(ctx context.Context, command Paused
 	if err != nil || recorded != nil {
 		return reconcilePausedPresenceOutcome(recorded, command, err)
 	}
-	changedAt := u.clock.Now().Round(0).UTC()
+	changedAt := u.clock.Now().Round(0).UTC().Truncate(time.Microsecond)
 	if !pauseValidServerTime(changedAt) {
 		return pausedPresenceAttemptOutcome{}, domain.ErrValidation
 	}

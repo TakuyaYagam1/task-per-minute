@@ -64,7 +64,7 @@ func TestParticipantConnectionBindingFollowsCurrentSubscriberFence(t *testing.T)
 	require.NoError(t, err)
 	lifecycle := &participantConnectionRecordingLifecycle{
 		delegate:    coordinator,
-		disconnects: make(chan error, 4),
+		disconnects: make(chan participantConnectionLifecycleResult, 4),
 	}
 
 	realtime, err := inboundws.NewRealtimeDelivery(
@@ -196,8 +196,10 @@ func TestParticipantConnectionBindingSurvivesFinalGameAdvance(t *testing.T) {
 	})
 	require.NoError(t, err)
 	lifecycle := &participantConnectionRecordingLifecycle{
-		delegate:    coordinator,
-		disconnects: make(chan error, 8),
+		delegate:           coordinator,
+		connects:           make(chan participantConnectionLifecycleResult, 8),
+		disconnectAttempts: make(chan inbound.TournamentParticipantConnectionCommand, 8),
+		disconnects:        make(chan participantConnectionLifecycleResult, 8),
 	}
 
 	realtime, err := inboundws.NewRealtimeDelivery(
@@ -227,6 +229,8 @@ func TestParticipantConnectionBindingSurvivesFinalGameAdvance(t *testing.T) {
 	require.Len(t, firstStart.Games, 1)
 	first := dialTournamentFlowWebSocket(t, endpoint, options)
 	firstData := readTournamentFlowWebSocket(t, first)
+	firstConnect := participantConnectionWaitForConnectEvent(t, lifecycle)
+	require.NoError(t, firstConnect.err)
 	firstMessage, err := inboundws.DecodeTournamentParticipantMessage(firstData)
 	require.NoError(t, err)
 	require.NotNil(t, firstMessage.Participant)
@@ -260,7 +264,8 @@ func TestParticipantConnectionBindingSurvivesFinalGameAdvance(t *testing.T) {
 	// The unchanged current fence opened against Game 1.  Its close-time
 	// resolution must pause only the current Game 2, never the completed Game 1.
 	require.NoError(t, first.CloseNow())
-	require.NoError(t, participantConnectionWaitForDisconnect(t, lifecycle))
+	participantConnectionWaitForDisconnectAttemptMatching(t, lifecycle, firstConnect.command)
+	require.NoError(t, participantConnectionWaitForDisconnectMatching(t, lifecycle, firstConnect.command))
 	require.Eventually(t, func() bool {
 		return participantReconnectLeaseCount(ctx, fixture, participantID, "active") == 0 &&
 			participantReconnectGameState(ctx, fixture, ids.FirstGameID) == string(domain.GameStateCompleted) &&
@@ -279,8 +284,14 @@ func TestParticipantConnectionBindingSurvivesFinalGameAdvance(t *testing.T) {
 	// stale close cannot mutate the active Game 2.
 	reconnectAt := disconnectAt.Add(5 * time.Second)
 	clock.FreezeAt(reconnectAt)
+	replacementDisconnectRelease := make(chan struct{})
+	releaseReplacementDisconnect := sync.OnceFunc(func() { close(replacementDisconnectRelease) })
+	defer releaseReplacementDisconnect()
+	lifecycle.gateDisconnect(replacementDisconnectRelease)
 	third := dialTournamentFlowWebSocket(t, endpoint, options)
 	thirdData := readTournamentFlowWebSocket(t, third)
+	thirdConnect := participantConnectionWaitForConnectEvent(t, lifecycle)
+	require.NoError(t, thirdConnect.err)
 	thirdMessage, err := inboundws.DecodeTournamentParticipantMessage(thirdData)
 	require.NoError(t, err)
 	require.NotNil(t, thirdMessage.Participant)
@@ -296,18 +307,37 @@ func TestParticipantConnectionBindingSurvivesFinalGameAdvance(t *testing.T) {
 	require.Equal(t, reconnectAt, *resumed.GameClock.ResumedAt)
 	require.Equal(t, reconnectAt.Add(paused.GameClock.Remaining), *resumed.GameClock.ResumedDeadline)
 
-	// A replacement connection is a new mutation of the same presence.  Keep
-	// the deterministic clock strictly ahead of the reconnect timestamp before
-	// the coordinator closes generation three.
-	clock.FreezeAt(reconnectAt.Add(time.Second))
+	// A replacement connection can race the stale generation's close. Start the
+	// clock after every durable reconnect timestamp, then release the stale
+	// disconnect only after the durable subscriber takeover has reached the
+	// lifecycle boundary.
+	presenceUpdatedAt := participantConnectionPresenceUpdatedAt(ctx, t, fixture, ids.FinalSeriesID, participantID)
+	reconnectUpdatedAt := participantConnectionReconnectUpdatedAt(ctx, t, ids.SecondGameID, participantID)
+	replacementTimestamp := participantConnectionAuthorityTimestamp(resumed)
+	if presenceUpdatedAt.After(replacementTimestamp) {
+		replacementTimestamp = presenceUpdatedAt
+	}
+	if reconnectUpdatedAt.After(replacementTimestamp) {
+		replacementTimestamp = reconnectUpdatedAt
+	}
+	require.NotNil(t, resumed.GameClock.ResumedDeadline)
+	replacementAt := resumed.GameClock.ResumedDeadline.Add(-3 * time.Second)
+	require.True(t, replacementAt.After(replacementTimestamp),
+		"replacement connect must be after persisted reconnect state")
+	require.True(t, replacementAt.Before(*resumed.GameClock.ResumedDeadline),
+		"replacement close must remain inside the resumed game clock")
+	clock.FreezeAt(replacementAt)
 	fourth := dialTournamentFlowWebSocket(t, endpoint+"?resume_id="+thirdMessage.Participant.Envelope.ResumeID.String(), options)
+	fourthConnect := participantConnectionWaitForConnectEvent(t, lifecycle)
+	require.NoError(t, fourthConnect.err)
 	_ = readTournamentFlowWebSocket(t, fourth)
-	require.NoError(t, participantConnectionWaitForDisconnect(t, lifecycle))
-	require.Eventually(t, func() bool {
-		return participantReconnectLeaseCount(ctx, fixture, participantID, "active") == 1 &&
-			participantReconnectGameState(ctx, fixture, ids.SecondGameID) == string(domain.GameStateActive) &&
-			participantReconnectGamePauseCount(ctx, t, fixture, ids.SecondGameID) == 1
-	}, 3*time.Second, 20*time.Millisecond)
+	participantConnectionWaitForDisconnectAttemptMatching(t, lifecycle, thirdConnect.command)
+	clock.FreezeAt(resumed.GameClock.ResumedDeadline.Add(-time.Second))
+	releaseReplacementDisconnect()
+	require.NoError(t, participantConnectionWaitForDisconnectMatching(t, lifecycle, thirdConnect.command))
+	require.Equal(t, 1, participantReconnectLeaseCount(ctx, fixture, participantID, "active"))
+	require.Equal(t, string(domain.GameStateActive), participantReconnectGameState(ctx, fixture, ids.SecondGameID))
+	require.Equal(t, 1, participantReconnectGamePauseCount(ctx, t, fixture, ids.SecondGameID))
 }
 
 func participantConnectionEnsurePresence(
@@ -330,6 +360,60 @@ func participantConnectionEnsurePresence(
 				[]uuid.UUID{participantID}, time.Now().UTC().Truncate(time.Microsecond))
 		}
 	}
+}
+
+func participantConnectionPresenceUpdatedAt(
+	ctx context.Context,
+	t *testing.T,
+	fixture tournamentAdminSwissProofFixture,
+	seriesID, participantID uuid.UUID,
+) time.Time {
+	t.Helper()
+	var updatedAt time.Time
+	require.NoError(t, sharedPool.QueryRow(ctx, `
+		SELECT updated_at
+		FROM presence_states
+		WHERE tournament_id = $1 AND roster_id = $2 AND series_id = $3 AND participant_id = $4`,
+		fixture.tournamentID, fixture.rosterID, seriesID, participantID).Scan(&updatedAt))
+	return updatedAt.UTC().Truncate(time.Microsecond)
+}
+
+func participantConnectionReconnectUpdatedAt(
+	ctx context.Context,
+	t *testing.T,
+	gameID, participantID uuid.UUID,
+) time.Time {
+	t.Helper()
+	var updatedAt time.Time
+	require.NoError(t, sharedPool.QueryRow(ctx, `
+		SELECT COALESCE(MAX(updated_at), TIMESTAMPTZ 'epoch')
+		FROM reconnect_intervals
+		WHERE game_attempt_id = $1 AND participant_id = $2`, gameID, participantID).Scan(&updatedAt))
+	return updatedAt.UTC().Truncate(time.Microsecond)
+}
+
+func participantConnectionAuthorityTimestamp(authority gamereconnect.ReconnectAuthority) time.Time {
+	latest := time.Time{}
+	consider := func(candidate time.Time) {
+		if candidate.After(latest) {
+			latest = candidate
+		}
+	}
+	for _, presence := range authority.Presence {
+		consider(presence.ConnectedAt)
+		consider(presence.UpdatedAt)
+		if presence.DisconnectedAt != nil {
+			consider(*presence.DisconnectedAt)
+		}
+	}
+	for _, interval := range authority.Reconnect {
+		consider(interval.OpenedAt)
+		consider(interval.UpdatedAt)
+		if interval.ClosedAt != nil {
+			consider(*interval.ClosedAt)
+		}
+	}
+	return latest.UTC().Truncate(time.Microsecond)
 }
 
 type participantConnectionClock struct {
@@ -377,38 +461,201 @@ func (repository participantConnectionRealtimeRepository) OpenSubscription(
 type participantConnectionBindingFlow struct{}
 
 type participantConnectionRecordingLifecycle struct {
-	delegate    inbound.TournamentParticipantConnectionUseCase
-	disconnects chan error
+	delegate           inbound.TournamentParticipantConnectionUseCase
+	connects           chan participantConnectionLifecycleResult
+	disconnectAttempts chan inbound.TournamentParticipantConnectionCommand
+	disconnects        chan participantConnectionLifecycleResult
+	mu                 sync.Mutex
+	disconnectGate     *participantConnectionDisconnectGate
+	pendingAttempts    []inbound.TournamentParticipantConnectionCommand
+	pendingDisconnects []participantConnectionLifecycleResult
+}
+
+type participantConnectionLifecycleResult struct {
+	command inbound.TournamentParticipantConnectionCommand
+	err     error
+}
+
+type participantConnectionDisconnectGate struct {
+	release <-chan struct{}
+}
+
+func (lifecycle *participantConnectionRecordingLifecycle) gateDisconnect(release <-chan struct{}) {
+	lifecycle.mu.Lock()
+	defer lifecycle.mu.Unlock()
+	lifecycle.disconnectGate = &participantConnectionDisconnectGate{release: release}
 }
 
 func (lifecycle *participantConnectionRecordingLifecycle) Connect(
 	ctx context.Context,
 	command inbound.TournamentParticipantConnectionCommand,
 ) error {
-	return lifecycle.delegate.Connect(ctx, command)
+	err := lifecycle.delegate.Connect(ctx, command)
+	if lifecycle.connects != nil {
+		lifecycle.connects <- participantConnectionLifecycleResult{command: command, err: err}
+	}
+	return err
 }
 
 func (lifecycle *participantConnectionRecordingLifecycle) Disconnect(
 	ctx context.Context,
 	command inbound.TournamentParticipantConnectionCommand,
 ) error {
-	err := lifecycle.delegate.Disconnect(ctx, command)
-	lifecycle.disconnects <- err
+	if lifecycle.disconnectAttempts != nil {
+		lifecycle.disconnectAttempts <- command
+	}
+	lifecycle.mu.Lock()
+	gate := lifecycle.disconnectGate
+	lifecycle.mu.Unlock()
+	var err error
+	if gate != nil {
+		select {
+		case <-gate.release:
+		case <-ctx.Done():
+			err = ctx.Err()
+		}
+	}
+	if err == nil {
+		err = lifecycle.delegate.Disconnect(ctx, command)
+	}
+	if gate != nil && err == nil {
+		lifecycle.mu.Lock()
+		if lifecycle.disconnectGate == gate {
+			lifecycle.disconnectGate = nil
+		}
+		lifecycle.mu.Unlock()
+	}
+	lifecycle.disconnects <- participantConnectionLifecycleResult{command: command, err: err}
 	return err
 }
 
-func participantConnectionWaitForDisconnect(t *testing.T, lifecycle *participantConnectionRecordingLifecycle) error {
+func participantConnectionWaitForDisconnectAttemptMatching(
+	t *testing.T,
+	lifecycle *participantConnectionRecordingLifecycle,
+	expected inbound.TournamentParticipantConnectionCommand,
+) {
 	t.Helper()
-	var result error
 	require.Eventually(t, func() bool {
+		if lifecycle.takePendingDisconnectAttempt(expected) {
+			return true
+		}
 		select {
-		case result = <-lifecycle.disconnects:
+		case candidate := <-lifecycle.disconnectAttempts:
+			if !participantConnectionCommandsMatch(candidate, expected) {
+				lifecycle.mu.Lock()
+				lifecycle.pendingAttempts = append(lifecycle.pendingAttempts, candidate)
+				lifecycle.mu.Unlock()
+				return false
+			}
+			return true
+		default:
+			return false
+		}
+	}, 3*time.Second, 20*time.Millisecond)
+}
+
+func (lifecycle *participantConnectionRecordingLifecycle) takePendingDisconnectAttempt(
+	expected inbound.TournamentParticipantConnectionCommand,
+) bool {
+	lifecycle.mu.Lock()
+	defer lifecycle.mu.Unlock()
+	for index, candidate := range lifecycle.pendingAttempts {
+		if participantConnectionCommandsMatch(candidate, expected) {
+			lifecycle.pendingAttempts = append(
+				lifecycle.pendingAttempts[:index],
+				lifecycle.pendingAttempts[index+1:]...,
+			)
+			return true
+		}
+	}
+	return false
+}
+
+func participantConnectionWaitForDisconnect(t *testing.T, lifecycle *participantConnectionRecordingLifecycle) error {
+	return participantConnectionWaitForDisconnectResult(t, lifecycle, nil).err
+}
+
+func participantConnectionWaitForDisconnectMatching(
+	t *testing.T,
+	lifecycle *participantConnectionRecordingLifecycle,
+	expected inbound.TournamentParticipantConnectionCommand,
+) error {
+	return participantConnectionWaitForDisconnectResult(t, lifecycle, &expected).err
+}
+
+func participantConnectionWaitForDisconnectResult(
+	t *testing.T,
+	lifecycle *participantConnectionRecordingLifecycle,
+	expected *inbound.TournamentParticipantConnectionCommand,
+) participantConnectionLifecycleResult {
+	t.Helper()
+	var result participantConnectionLifecycleResult
+	require.Eventually(t, func() bool {
+		if pending, ok := lifecycle.takePendingDisconnect(expected); ok {
+			result = pending
+			return true
+		}
+		select {
+		case candidate := <-lifecycle.disconnects:
+			if expected != nil && !participantConnectionCommandsMatch(candidate.command, *expected) {
+				lifecycle.mu.Lock()
+				lifecycle.pendingDisconnects = append(lifecycle.pendingDisconnects, candidate)
+				lifecycle.mu.Unlock()
+				return false
+			}
+			result = candidate
 			return true
 		default:
 			return false
 		}
 	}, 3*time.Second, 20*time.Millisecond)
 	return result
+}
+
+func participantConnectionWaitForConnect(t *testing.T, lifecycle *participantConnectionRecordingLifecycle) error {
+	return participantConnectionWaitForConnectEvent(t, lifecycle).err
+}
+
+func participantConnectionWaitForConnectEvent(
+	t *testing.T,
+	lifecycle *participantConnectionRecordingLifecycle,
+) participantConnectionLifecycleResult {
+	t.Helper()
+	var result participantConnectionLifecycleResult
+	require.Eventually(t, func() bool {
+		select {
+		case result = <-lifecycle.connects:
+			return true
+		default:
+			return false
+		}
+	}, 3*time.Second, 20*time.Millisecond)
+	return result
+}
+
+func (lifecycle *participantConnectionRecordingLifecycle) takePendingDisconnect(
+	expected *inbound.TournamentParticipantConnectionCommand,
+) (participantConnectionLifecycleResult, bool) {
+	lifecycle.mu.Lock()
+	defer lifecycle.mu.Unlock()
+	for index, candidate := range lifecycle.pendingDisconnects {
+		if expected == nil || participantConnectionCommandsMatch(candidate.command, *expected) {
+			lifecycle.pendingDisconnects = append(
+				lifecycle.pendingDisconnects[:index],
+				lifecycle.pendingDisconnects[index+1:]...,
+			)
+			return candidate, true
+		}
+	}
+	return participantConnectionLifecycleResult{}, false
+}
+
+func participantConnectionCommandsMatch(
+	left inbound.TournamentParticipantConnectionCommand,
+	right inbound.TournamentParticipantConnectionCommand,
+) bool {
+	return left.ConnectionID == right.ConnectionID &&
+		left.ConnectionGeneration == right.ConnectionGeneration
 }
 
 func (participantConnectionBindingFlow) OpenTournamentParticipant(
