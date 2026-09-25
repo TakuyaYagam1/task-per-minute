@@ -341,7 +341,13 @@ function publicArguments(environment) {
   }));
 }
 
-export function createBuildRequest(context, { output, pushReference } = {}, environment = {}) {
+function assertBuildOnly(options) {
+  if ('pushReference' in options) throw new Error('publication is not supported by this build-only helper');
+}
+
+export function createBuildRequest(context, options = {}, environment = {}) {
+  assertBuildOnly(options);
+  let { output } = options;
   const snapshot = snapshots.get(context);
   if (!snapshot) throw new Error('unknown frozen context');
   output = validateOutput(output);
@@ -349,21 +355,12 @@ export function createBuildRequest(context, { output, pushReference } = {}, envi
   if (environment.DOCKER_CONFIG !== undefined && (!path.isAbsolute(environment.DOCKER_CONFIG) || /[\0\r\n]/.test(environment.DOCKER_CONFIG))) {
     throw new Error('DOCKER_CONFIG must be an explicit absolute directory');
   }
-  if (pushReference !== undefined) {
-    if (environment.GITHUB_ACTIONS !== 'true') throw new Error('publish requires explicit GITHUB_ACTIONS=true');
-    if (context.sourceDirty) throw new Error('publish requires clean selected source');
-    if (!environment.DOCKER_CONFIG) throw new Error('publish requires explicit DOCKER_CONFIG');
-    if (!new RegExp(`^ghcr\\.io/[a-z0-9]+(?:-[a-z0-9]+)*/task-per-minute-frontend:${context.revision}$`).test(pushReference)) {
-      throw new Error('publish reference must be ghcr.io/<owner>/task-per-minute-frontend:<exact revision>');
-    }
-  }
   const metadata = path.join(output, 'metadata.json');
   const args = [
     'buildx', 'build', '--platform', 'linux/amd64', '--provenance=mode=max,version=v0.2',
     '--attest', `type=sbom,generator=${scanner}`,
     '--output', `type=oci,dest=${path.join(output, 'image')},tar=false`, '--metadata-file', metadata,
   ];
-  if (pushReference) args.push('--output', `type=registry,name=${pushReference},oci-mediatypes=true`);
   const buildArgs = {
     SOURCE_REVISION: context.revision, SOURCE_DIRTY: String(context.sourceDirty),
     LOCKFILE_SHA256: context.lockfileSha256, CONTEXT_SHA256: context.contextSha256,
@@ -433,6 +430,7 @@ function existingLocalBuilder(run, env, logFd) {
 }
 
 export function buildFrontendImage(frontendRoot, options, { environment = process.env, run = execute } = {}) {
+  assertBuildOnly(options);
   const context = prepareContext(frontendRoot, options);
   const request = createBuildRequest(context, options, environment);
   const output = validateOutput(options.output);
@@ -469,7 +467,7 @@ export function buildFrontendImage(frontendRoot, options, { environment = proces
 export function parseArguments(args) {
   const names = new Map([
     ['--output', 'output'], ['--revision', 'revision'], ['--allow-dirty', 'allowDirty'],
-    ['--prepare-only', 'prepareOnly'], ['--push-reference', 'pushReference'],
+    ['--prepare-only', 'prepareOnly'],
   ]);
   const options = {};
   for (let index = 0; index < args.length; index++) {

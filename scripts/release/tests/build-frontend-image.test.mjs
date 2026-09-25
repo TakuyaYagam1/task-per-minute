@@ -234,25 +234,33 @@ test('public ports are decimal numbers in the supported range', (t) => {
   }
 });
 
-test('publish requires explicit CI, clean source, exact GHCR target and configured Docker directory', (t) => {
+test('publication options are rejected even for clean source in CI', (t) => {
   const f = fixture(t);
   const context = prepareContext(f.frontend);
   const config = path.join(f.root, 'docker-config');
   fs.mkdirSync(config);
   const pushReference = `ghcr.io/example/task-per-minute-frontend:${f.revision}`;
   const environment = { GITHUB_ACTIONS: 'true', DOCKER_CONFIG: config };
-  for (const env of [{}, { GITHUB_ACTIONS: 'false', DOCKER_CONFIG: config }, { GITHUB_ACTIONS: 'true' }]) {
-    assert.throws(() => createBuildRequest(context, { output: f.output, pushReference }, env), /publish|GITHUB_ACTIONS|DOCKER_CONFIG/i);
-  }
-  for (const ref of [`${pushReference}-extra`, 'ghcr.io/example/task-per-minute-frontend:latest', `docker.io/example/frontend:${f.revision}`]) {
-    assert.throws(() => createBuildRequest(context, { output: f.output, pushReference: ref }, environment), /reference|publish/i);
+  for (const value of [pushReference, undefined, null, false, '', `${pushReference}-extra`]) {
+    assert.throws(() => createBuildRequest(context, { output: f.output, pushReference: value }, environment), /publication|build-only/i);
+    assert.throws(() => buildFrontendImage(f.frontend, { output: f.output, pushReference: value }, {
+      environment, run: () => assert.fail('publication option must fail before any build command'),
+    }), /publication|build-only/i);
   }
   f.write('frontend/public/icon.svg', '<changed/>');
   const dirty = prepareContext(f.frontend, { allowDirty: true });
-  assert.throws(() => createBuildRequest(dirty, { output: f.output, pushReference }, environment), /clean|dirty/i);
-  const request = createBuildRequest(context, { output: f.output, pushReference }, environment);
-  assert.ok(request.build_args.includes(`type=registry,name=${pushReference},oci-mediatypes=true`));
+  assert.throws(() => createBuildRequest(dirty, { output: f.output, pushReference }, environment), /publication|build-only/i);
+  const request = createBuildRequest(context, { output: f.output }, environment);
+  assert.equal(request.build_args.some((arg) => arg.includes('type=registry') || arg === '--push'), false);
   assert.ok(request.build_args.includes(`type=oci,dest=${f.output}/image,tar=false`));
+  assert.equal(fs.existsSync(f.output), false);
+});
+
+test('CLI rejects the removed publication flag', (t) => {
+  const f = fixture(t);
+  assert.throws(() => parseArguments([
+    '--output', f.output, '--push-reference', `ghcr.io/example/task-per-minute-frontend:${f.revision}`,
+  ]), /unknown build option/i);
 });
 
 test('remote Docker endpoints and exporter injection paths are rejected', (t) => {

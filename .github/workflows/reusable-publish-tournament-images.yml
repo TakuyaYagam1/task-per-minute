@@ -1,0 +1,151 @@
+name: publish frontend release
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_revision:
+        description: Exact 40-character source revision of a successful main pipeline run.
+        required: true
+        type: string
+      build_run_id:
+        description: Successful main pipeline run ID containing the frontend OCI artifact.
+        required: true
+        type: string
+      image_digest:
+        description: Exact sha256 digest of the frontend OCI index, not a tag.
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: frontend-release
+  cancel-in-progress: false
+
+jobs:
+  sign:
+    if: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && github.ref_protected && github.workflow_ref == format('{0}/.github/workflows/reusable-publish-tournament-images.yml@refs/heads/main', github.repository) }}
+    uses: ./.github/workflows/reusable-sign-tournament-images.yml
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+    with:
+      source_revision: ${{ inputs.source_revision }}
+      build_run_id: ${{ inputs.build_run_id }}
+      image_digest: ${{ inputs.image_digest }}
+
+  publish:
+    needs: sign
+    if: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && github.ref_protected && github.workflow_ref == format('{0}/.github/workflows/reusable-publish-tournament-images.yml@refs/heads/main', github.repository) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: frontend-release
+    permissions:
+      contents: read
+      actions: read
+      packages: write
+    env:
+      SOURCE_REVISION: ${{ inputs.source_revision }}
+      IMAGE_DIGEST: ${{ inputs.image_digest }}
+      RELEASE_REPOSITORY: ${{ github.repository }}
+      ARTIFACT_DIR: ${{ runner.temp }}/frontend-image
+      TOOLS_DIR: ${{ runner.temp }}/frontend-release-tools
+    steps:
+      - name: checkout trusted release code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: setup node
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: 24.21.0
+
+      - name: download exact signed artifact from this run
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        with:
+          name: ${{ needs.sign.outputs.signed_artifact_name }}
+          path: ${{ runner.temp }}/frontend-image
+          run-id: ${{ github.run_id }}
+          github-token: ${{ github.token }}
+
+      - name: validate frontend publication inputs again
+        id: prepare
+        run: |
+          set -euo pipefail
+          node scripts/release/prepare-frontend-publication.mjs prepare \
+            --artifact "$ARTIFACT_DIR" --repository "$RELEASE_REPOSITORY" \
+            --revision "$SOURCE_REVISION" --digest "$IMAGE_DIGEST" \
+            --lockfile "$GITHUB_WORKSPACE/frontend/package-lock.json" --github-output "$GITHUB_OUTPUT"
+
+      - name: install pinned release tools
+        run: bash scripts/release/install-frontend-release-tools.sh --output "$TOOLS_DIR"
+
+      - name: refresh scanner database after approval
+        run: |
+          set -euo pipefail
+          env -i PATH="$PATH" HOME="$TOOLS_DIR" "$TOOLS_DIR/trivy" image --config /dev/null \
+            --cache-dir "$TOOLS_DIR/cache" --db-repository ghcr.io/aquasecurity/trivy-db:2 \
+            --download-db-only --disable-telemetry --skip-version-check --no-progress
+
+      - name: rescan exact frontend image after approval
+        run: |
+          set -euo pipefail
+          node scripts/release/scan-frontend-image.mjs \
+            --artifact "$ARTIFACT_DIR" --image-digest "$IMAGE_DIGEST" \
+            --cache-dir "$TOOLS_DIR/cache" --scanner "$TOOLS_DIR/trivy" \
+            --output "$ARTIFACT_DIR/publication-security"
+
+      - name: verify detached signature before registry credentials
+        env:
+          IMAGE_REF: ${{ steps.prepare.outputs.image_ref }}
+        run: |
+          set -euo pipefail
+          node scripts/release/verify-frontend-release.mjs \
+            --artifact "$ARTIFACT_DIR" --bundle "$ARTIFACT_DIR/signature.sigstore.json" \
+            --image-ref "$IMAGE_REF" --repository "$RELEASE_REPOSITORY" --revision "$SOURCE_REVISION" \
+            --cosign "$TOOLS_DIR/cosign" --output "$ARTIFACT_DIR/publication-gate.json"
+
+      - name: publish exact digest and attach detached signature
+        env:
+          IMAGE_REF: ${{ steps.prepare.outputs.image_ref }}
+          REGISTRY_USER: ${{ github.actor }}
+          REGISTRY_TOKEN: ${{ github.token }}
+          REGISTRY_CONFIG: ${{ runner.temp }}/frontend-registry.json
+        run: |
+          set -euo pipefail
+          umask 077
+          printf '%s' "$REGISTRY_TOKEN" | "$TOOLS_DIR/oras" login ghcr.io \
+            --username "$REGISTRY_USER" --password-stdin --registry-config "$REGISTRY_CONFIG"
+          trap '"$TOOLS_DIR/oras" logout ghcr.io --registry-config "$REGISTRY_CONFIG" >/dev/null 2>&1 || true' EXIT
+          "$TOOLS_DIR/oras" copy --from-oci-layout "$ARTIFACT_DIR/image@$IMAGE_DIGEST" "$IMAGE_REF" \
+            --to-registry-config "$REGISTRY_CONFIG"
+          RESOLVED_DIGEST=$("$TOOLS_DIR/oras" resolve "$IMAGE_REF" --registry-config "$REGISTRY_CONFIG")
+          [[ "$RESOLVED_DIGEST" == "$IMAGE_DIGEST" ]] || exit 1
+          cd "$ARTIFACT_DIR"
+          "$TOOLS_DIR/oras" attach --artifact-type application/vnd.dev.sigstore.bundle.v0.3+json \
+            --registry-config "$REGISTRY_CONFIG" "$IMAGE_REF" \
+            signature.sigstore.json:application/vnd.dev.sigstore.bundle.v0.3+json
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          import path from 'node:path';
+          const report = {
+            schema_version: 1, status: 'published', source_revision: process.env.SOURCE_REVISION,
+            image_digest: process.env.IMAGE_DIGEST, image_ref: process.env.IMAGE_REF,
+            signature_bundle: 'signature.sigstore.json', signature_gate: 'publication-gate.json',
+            evidence_type: 'detached_sigstore_index_signature',
+          };
+          fs.writeFileSync(path.join(process.env.ARTIFACT_DIR, 'publication.json'), `${JSON.stringify(report, null, 2)}\n`, { flag: 'wx', mode: 0o600 });
+          NODE
+
+      - name: retain frontend publication evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: frontend-publication-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/frontend-image
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0

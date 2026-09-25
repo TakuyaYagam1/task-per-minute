@@ -26,6 +26,7 @@ permissions:
 jobs:
   deploy:
     name: deploy production
+    if: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && github.ref_protected }}
     runs-on: ubuntu-latest
     timeout-minutes: 25
     environment: production

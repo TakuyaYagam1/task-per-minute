@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { readFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import { runInNewContext } from 'node:vm';
@@ -9,6 +11,7 @@ const root = new URL('../../../', import.meta.url);
 const read = (path) => readFileSync(new URL(path, root), 'utf8');
 const workflow = read('.github/workflows/reusable-build-images.yml');
 const pipeline = read('.github/workflows/pipeline.yml');
+const legacyDeploy = read('.github/workflows/reusable-deploy-production.yml');
 const dockerfile = read('frontend/Dockerfile');
 const dockerignore = read('frontend/.dockerignore');
 const baseDigest = 'sha256:9ec4a2e289874ed0d722e1772ec2de45d2801541db8612f3638b26f128c69ac2';
@@ -103,7 +106,7 @@ function checkJobs(text) {
   assert.equal(value(build.text, 'id', 8), 'build');
   assert.equal(value(section(build.text, 'with', 8), 'context', 10), 'backend');
   assert.equal(value(section(build.text, 'with', 8), 'file', 10), 'backend/Dockerfile');
-  assert.equal(value(section(build.text, 'with', 8), 'push', 10), 'true');
+  assert.equal(value(section(build.text, 'with', 8), 'push', 10), 'false');
   assert.doesNotMatch(frontend, /uses: docker\/build-push-action@/);
 }
 
@@ -118,15 +121,15 @@ function checkPermissions(text) {
   assert.doesNotMatch(text, /^\s*permissions: +\S/m, 'permissions must be an explicit mapping');
   const defaults = section(text, 'permissions', 0);
   assert.equal(value(defaults, 'contents', 2), 'read');
-  assert.equal(value(defaults, 'packages', 2), 'write');
+  assert.ok(!entries(defaults, 2).has('packages') || value(defaults, 'packages', 2) === 'read');
   for (const match of text.matchAll(/^( *)permissions:$/gm)) {
     const indent = match[1].length;
     const tail = text.slice(match.index).split('\n').slice(1);
     const end = tail.findIndex((line) => line.trim() && line.search(/\S/) <= indent);
     const permissions = entries(tail.slice(0, end < 0 ? tail.length : end).join('\n'), indent + 2);
-    assert.deepEqual([...permissions.keys()].sort(), ['contents', 'packages']);
+    assert.ok([...permissions.keys()].every((name) => ['contents', 'packages'].includes(name)));
     assert.equal(permissions.get('contents'), 'read');
-    assert.ok(['read', 'write'].includes(permissions.get('packages')));
+    assert.ok(!permissions.has('packages') || permissions.get('packages') === 'read');
   }
 }
 
@@ -145,15 +148,93 @@ function checkCommands(text) {
   }
 }
 
+function checkReadOnly(text) {
+  checkPermissions(text);
+  assert.doesNotMatch(text, /^\s*secrets:|\$\{\{\s*(?:secrets\.|github\.token)/m, 'ordinary CI must not inherit or pass credentials');
+  const allowedActions = new Set([
+    'actions/checkout', 'actions/setup-node', 'actions/setup-python', 'actions/upload-artifact',
+    'docker/setup-buildx-action', 'docker/build-push-action',
+  ]);
+  const allowedWorkflows = new Set([
+    './.github/workflows/reusable-backend-checks.yml', './.github/workflows/reusable-frontend-verify.yml',
+    './.github/workflows/reusable-build-images.yml',
+  ]);
+  for (const match of text.matchAll(/^\s+uses: ([^\s]+).*$/gm)) {
+    assert.ok(allowedActions.has(match[1].split('@')[0]) || allowedWorkflows.has(match[1]),
+      'ordinary CI must not call login, signing, publication or deploy actions/workflows');
+  }
+  for (const match of text.matchAll(/^\s+push: (.+)$/gm)) assert.equal(match[1], 'false', 'image publication must be disabled');
+  for (const name of entries(section(text, 'jobs', 0), 2).keys()) {
+    const contents = job(text, name);
+    if (!/^    steps:$/m.test(contents)) continue;
+    for (const step of steps(contents)) {
+      const command = run(step);
+      assert.doesNotMatch(command, /--push(?:[\s=]|$)|--push-reference|type=registry|push=true/);
+      assert.doesNotMatch(command, /\b(?:docker|podman|buildah|crane|skopeo)\b[^\n]*(?:\bpush\b|\blogin\b|\bcopy\b)/);
+      assert.doesNotMatch(command, /\b(?:cosign|notation)\b[^\n]*\b(?:sign|attest)\b/);
+      assert.doesNotMatch(command, /\b(?:ssh|scp|sftp)\b|\b(?:helm|kubectl)\b[^\n]*\b(?:upgrade|install|apply|rollout)\b/);
+      assert.doesNotMatch(command, /scripts\/release\/(?:publish|sign|deploy)[\w.-]*|\bgh\s+(?:release|workflow)\s+(?:create|run)\b/);
+    }
+  }
+}
+
+function checkPipeline(text) {
+  const events = section(text, 'on', 0);
+  assert.deepEqual([...entries(events, 2).keys()], ['push', 'pull_request', 'workflow_dispatch']);
+  for (const event of ['push', 'pull_request']) assert.match(section(events, event, 2), /^      - 'security\/\*\*'$/m);
+  assert.deepEqual([...entries(section(text, 'jobs', 0), 2).keys()], ['resolve', 'backend-checks', 'frontend-verify', 'build-images']);
+  const build = job(text, 'build-images');
+  assert.equal(value(build, 'uses', 4), './.github/workflows/reusable-build-images.yml');
+  assert.ok(!entries(build, 4).has('if'), 'build must run after successful checks on all pipeline events');
+  assert.deepEqual(section(build, 'needs', 4).split('\n').filter((line) => line.trim()).map((line) => line.trim()),
+    ['- resolve', '- backend-checks', '- frontend-verify']);
+  checkReadOnly(text);
+}
+
+function shell(command, environment) {
+  return execFileSync('bash', ['--noprofile', '--norc', '-c', command], {
+    env: { PATH: process.env.PATH, LC_ALL: 'C', ...environment }, stdio: ['ignore', 'pipe', 'pipe'],
+  }).toString();
+}
+
+function checkRevisionGuards(text) {
+  for (const name of ['backend-image', 'frontend-image']) {
+    const items = steps(job(text, name));
+    const guard = oneStep(items, (step) => step.name === 'validate source revision', 'source revision guard');
+    const checkout = oneStep(items, (step) => step.text.includes('uses: actions/checkout@'), 'checkout');
+    assert.ok(items.indexOf(guard) < items.indexOf(checkout));
+    assert.equal(value(section(guard.text, 'env', 8), 'TARGET_SHA', 10), '${{ inputs.target_sha }}');
+    shell(run(guard), { TARGET_SHA: revision });
+    for (const invalid of ['', 'HEAD', 'a'.repeat(39), 'a'.repeat(41), 'A'.repeat(40), `${revision}\n`, `${revision}\ninjected=true`]) {
+      assert.throws(() => shell(run(guard), { TARGET_SHA: invalid }), (error) => error.status === 1);
+    }
+  }
+}
+
+function checkLegacyGuard(text) {
+  const deploy = job(text, 'deploy');
+  assert.equal(value(deploy, 'environment', 4), 'production');
+  const guard = value(deploy, 'if', 4);
+  assert.equal(guard, "${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && github.ref_protected }}");
+  for (const event_name of ['push', 'pull_request', 'workflow_dispatch']) {
+    for (const ref of ['refs/heads/main', 'refs/heads/feature']) {
+      for (const ref_protected of [true, false]) {
+        assert.equal(runInNewContext(guard.slice(3, -2), { github: { event_name, ref, ref_protected } }, { timeout: 1000 }),
+          event_name === 'workflow_dispatch' && ref === 'refs/heads/main' && ref_protected);
+      }
+    }
+  }
+}
+
 function checkFrontendBuild(text) {
   const frontend = job(text, 'frontend-image');
   const items = steps(frontend);
   const build = oneStep(items, (step) => run(step).includes('node scripts/release/build-frontend-image.mjs'), 'frontend wrapper');
   const env = section(build.text, 'env', 8);
   assert.equal(value(env, 'TARGET_SHA', 10), '${{ inputs.target_sha }}');
-  assert.equal(value(env, 'IMAGE_REF', 10), '${{ inputs.frontend_image_ref }}');
+  assert.ok(!entries(env, 10).has('IMAGE_REF'), 'build-only frontend must not receive a publication target');
   assert.match(run(build), /--revision\s+"\$TARGET_SHA"(?:\s|$)/);
-  assert.match(run(build), /--push-reference\s+"\$IMAGE_REF"(?:\s|$)/);
+  assert.doesNotMatch(run(build), /--push-reference|\$IMAGE_REF/);
   assert.match(run(build), /--output\s+"\$RUNNER_TEMP\/frontend-image"(?:\s|$)/);
   assert.doesNotMatch(run(build), /\|\||continue-on-error|--env-file/);
   assert.doesNotMatch(frontend, /\bnpm (?:ci|install)\b/, 'image contract tests cannot depend on host npm installs');
@@ -422,14 +503,45 @@ test('workflow actions are immutable and permissions remain least privilege', ()
     checkActions(text);
     checkPermissions(text);
   }
-  assert.equal(value(section(job(pipeline, 'build-images'), 'permissions', 4), 'packages', 6), 'write');
-  assert.equal(value(section(job(pipeline, 'deploy-production'), 'permissions', 4), 'packages', 6), 'read');
+  assert.equal(value(section(job(pipeline, 'build-images'), 'permissions', 4), 'packages', 6), 'read');
 });
 test('input expressions enter commands through env and do not copy private context', () => {
   checkCommands(workflow);
   checkCommands(pipeline);
 });
-test('frontend CI uses the wrapper with quoted revision and explicit push reference', () => checkFrontendBuild(workflow));
+test('frontend CI uses the build-only wrapper with a quoted revision', () => checkFrontendBuild(workflow));
+test('ordinary CI is read-only and builds after checks on push, PR and dispatch', () => {
+  checkPipeline(pipeline);
+  checkReadOnly(workflow);
+});
+test('both reusable builds reject noncanonical revisions before checkout', () => checkRevisionGuards(workflow));
+test('legacy production deploy requires protected main and manual dispatch', () => checkLegacyGuard(legacyDeploy));
+test('pipeline metadata rejects noncanonical revisions before writing outputs', (t) => {
+  const directory = mkdtempSync(join(tmpdir(), 'pipeline-metadata-'));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const resolver = oneStep(steps(job(pipeline, 'resolve')), (step) => entries(step.text, 8).get('id') === 'resolve', 'metadata resolver');
+  const command = run(resolver);
+  let index = 0;
+  const execute = (DISPATCH_SHA, REF_SHA) => {
+    const output = join(directory, `output-${index++}`);
+    const env = {
+      DISPATCH_SHA, REF_SHA, GITHUB_OUTPUT: output, REPOSITORY_OWNER: 'Example',
+      REGISTRY: 'ghcr.io', BACKEND_IMAGE_NAME: 'task-per-minute-backend', FRONTEND_IMAGE_NAME: 'task-per-minute-frontend',
+    };
+    return { output, env };
+  };
+  for (const [dispatch, fallback, expected] of [['', revision, revision], ['b'.repeat(40), revision, 'b'.repeat(40)]]) {
+    const { output, env } = execute(dispatch, fallback);
+    shell(command, env);
+    assert.match(readFileSync(output, 'utf8'), new RegExp(`^target_sha=${expected}$`, 'm'));
+    assert.match(readFileSync(output, 'utf8'), new RegExp(`^frontend_image_ref=ghcr.io/example/task-per-minute-frontend:${expected}$`, 'm'));
+  }
+  for (const invalid of ['', 'HEAD', 'a'.repeat(39), 'a'.repeat(41), 'A'.repeat(40), `${revision}\n`, `${revision}\ninjected=true`]) {
+    const { output, env } = execute(invalid, invalid);
+    assert.throws(() => shell(command, env), (error) => error.status === 1);
+    assert.equal(existsSync(output), false);
+  }
+});
 test('frontend evidence is retained and missing artifacts fail', () => checkArtifact(workflow));
 test('identity output rejects failed, dirty, stale, missing and malformed reports', () => checkIdentity(workflow));
 test('Dockerfile pins both stages, preserves labels and disables npm lifecycle scripts', () => checkDockerfile(dockerfile));
@@ -459,11 +571,15 @@ const workflowMutations = [
   ['frontend digest from backend', 'value: ${{ jobs.frontend-image.outputs.digest }}', 'value: ${{ jobs.backend-image.outputs.digest }}', checkJobs],
   ['frontend output before validation', 'digest: ${{ steps.identity.outputs.digest }}', 'digest: ${{ steps.build.outputs.digest }}', checkJobs],
   ['unpinned upload action', 'actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02', 'actions/upload-artifact@v4', checkActions],
-  ['write-all permissions', 'permissions:\n  contents: read\n  packages: write', 'permissions: write-all', checkPermissions],
-  ['extra privileged permission', 'permissions:\n  contents: read\n  packages: write', 'permissions:\n  contents: read\n  packages: write\n  id-token: write', checkPermissions],
+  ['write-all permissions', 'permissions:\n  contents: read\n  packages: read', 'permissions: write-all', checkPermissions],
+  ['extra privileged permission', 'permissions:\n  contents: read\n  packages: read', 'permissions:\n  contents: read\n  packages: read\n  id-token: write', checkPermissions],
+  ['package write permission', '  packages: read', '  packages: write', checkPermissions],
+  ['content write permission', '  contents: read', '  contents: write', checkPermissions],
+  ['nested write permission', '    name: build backend image\n', '    name: build backend image\n    permissions:\n      contents: read\n      packages: write\n', checkPermissions],
   ['direct SHA interpolation', '--revision "$TARGET_SHA"', '--revision "${{ inputs.target_sha }}"', checkCommands],
   ['unquoted SHA', '--revision "$TARGET_SHA"', '--revision $TARGET_SHA', checkFrontendBuild],
-  ['implicit frontend publication', '--push-reference "$IMAGE_REF"', '', checkFrontendBuild],
+  ['frontend publication flag', '--revision "$TARGET_SHA"', '--revision "$TARGET_SHA" --push-reference "$IMAGE_REF"', checkFrontendBuild],
+  ['backend publication', '          push: false', '          push: true', checkReadOnly],
   ['env file input', '--revision "$TARGET_SHA"', '--env-file .env --revision "$TARGET_SHA"', checkCommands],
   ['private context copy', '--revision "$TARGET_SHA"', '--revision "$TARGET_SHA"\n          cp -r preview/ "$RUNNER_TEMP/frontend-image"', checkCommands],
   ['missing artifact tolerated', 'if-no-files-found: error', 'if-no-files-found: ignore', checkArtifact],
@@ -475,6 +591,47 @@ const workflowMutations = [
 for (const [name, before, after, check] of workflowMutations) {
   test(`contract rejects ${name}`, () => assert.throws(() => check(replaceOnce(workflow, before, after))));
 }
+
+for (const [name, step] of [
+  ['registry login action', '      - name: login\n        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121\n'],
+  ['registry login command', '      - name: login\n        run: docker login ghcr.io\n'],
+  ['image push command', '      - name: publish\n        run: docker push ghcr.io/example/frontend:test\n'],
+  ['registry exporter', '      - name: publish\n        run: docker buildx build --output type=registry,name=ghcr.io/example/frontend:test frontend\n'],
+  ['image push flag', '      - name: publish\n        run: docker buildx build --push frontend\n'],
+  ['image signing', '      - name: sign\n        run: cosign sign ghcr.io/example/frontend:test\n'],
+  ['image attestation signing', '      - name: attest\n        run: cosign attest ghcr.io/example/frontend:test\n'],
+  ['deploy command', '      - name: deploy\n        run: ssh example.invalid deploy\n'],
+]) {
+  test(`ordinary CI rejects ${name}`, () => {
+    checkReadOnly(workflow);
+    const changed = replaceOnce(workflow, '      - name: setup node\n', `${step}\n      - name: setup node\n`);
+    assert.throws(() => checkReadOnly(changed));
+  });
+}
+
+test('ordinary pipeline cannot call manual publication, signing or deploy workflows', () => {
+  checkPipeline(pipeline);
+  for (const name of ['publish-frontend', 'sign-frontend', 'reusable-deploy-production']) {
+    const changed = `${pipeline}\n  external-write:\n    uses: ./.github/workflows/${name}.yml\n`;
+    assert.throws(() => checkPipeline(changed));
+    assert.throws(() => checkReadOnly(changed));
+  }
+});
+
+test('ordinary pipeline rejects inherited secrets and PR build exclusion', () => {
+  checkPipeline(pipeline);
+  const target = '    uses: ./.github/workflows/reusable-build-images.yml\n';
+  assert.throws(() => checkReadOnly(replaceOnce(pipeline, target, `${target}    secrets: inherit\n`)));
+  assert.throws(() => checkPipeline(replaceOnce(pipeline, target, `${target}    if: github.event_name != 'pull_request'\n`)));
+  assert.throws(() => checkPipeline(pipeline.replace("      - 'security/**'\n", '')));
+});
+
+test('legacy deployment guard cannot omit any manual protected-main restriction', () => {
+  checkLegacyGuard(legacyDeploy);
+  for (const restriction of ["github.event_name == 'workflow_dispatch' && ", "github.ref == 'refs/heads/main' && ", ' && github.ref_protected']) {
+    assert.throws(() => checkLegacyGuard(replaceOnce(legacyDeploy, restriction, '')));
+  }
+});
 
 test('Docker contract rejects a mutable base and removed identity label', () => {
   assert.throws(() => checkDockerfile(dockerfile.replace(`@${baseDigest}`, '')));
