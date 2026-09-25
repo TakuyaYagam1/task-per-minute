@@ -180,7 +180,7 @@ jobs:
           version: v0.35.0
 
       - name: test frontend image evidence
-        run: node --test scripts/release/tests/build-frontend-image.test.mjs scripts/release/tests/validate-frontend-image.test.mjs scripts/release/tests/frontend-image-workflow.test.mjs scripts/release/tests/scan-frontend-image.test.mjs scripts/release/tests/check-frontend-runtime.test.mjs scripts/release/tests/verify-frontend-release.test.mjs scripts/release/tests/frontend-publication.test.mjs
+        run: node --test scripts/release/tests/build-frontend-image.test.mjs scripts/release/tests/validate-frontend-image.test.mjs scripts/release/tests/frontend-image-workflow.test.mjs scripts/release/tests/scan-frontend-image.test.mjs scripts/release/tests/check-frontend-runtime.test.mjs scripts/release/tests/verify-frontend-release.test.mjs scripts/release/tests/frontend-publication.test.mjs scripts/release/tests/validate-frontend-rollout.test.mjs
 
       - name: build frontend OCI artifact
         env:
