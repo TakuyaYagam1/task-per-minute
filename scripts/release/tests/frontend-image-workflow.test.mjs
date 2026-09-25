@@ -184,6 +184,55 @@ function checkArtifact(text) {
   assert.match(value(options, 'retention-days', 10), /^[1-9][0-9]*$/);
 }
 
+function checkFrontendSecurity(text) {
+  const items = steps(job(text, 'frontend-image'));
+  const build = oneStep(items, (step) => run(step).includes('node scripts/release/build-frontend-image.mjs'), 'frontend build');
+  const prepare = oneStep(items, (step) => step.name === 'prepare frontend vulnerability scanner', 'scanner preparation');
+  const scan = oneStep(items, (step) => step.name === 'scan exact frontend image', 'frontend security gate');
+  const identity = oneStep(items, (step) => entries(step.text, 8).get('id') === 'identity', 'verified identity');
+  assert.ok(items.indexOf(build) < items.indexOf(prepare));
+  assert.ok(items.indexOf(prepare) < items.indexOf(scan));
+  assert.ok(items.indexOf(scan) < items.indexOf(identity), 'security gate must pass before identity is exposed');
+  for (const step of [prepare, scan]) {
+    assert.doesNotMatch(step.text, /continue-on-error|^\s*if:|\|\|/m, 'security checks cannot be skipped or ignored');
+    assert.match(run(step), /^set -euo pipefail/m);
+  }
+  const provision = run(prepare);
+  assert.match(provision, /https:\/\/github\.com\/aquasecurity\/trivy\/releases\/download\/v0\.72\.0\/trivy_0\.72\.0_Linux-64bit\.tar\.gz/);
+  for (const pin of ['bbb64b9695866ce4a7a8f5c9592002c5961cab378577fa3f8a040df362b9b2ea', '0e69edd134a3c338baa1a6806920773615d682b18cbc6a0cba2a3b658ef9b63e']) assert.ok(provision.includes(pin));
+  assert.equal((provision.match(/sha256sum --check --status/g) || []).length, 2);
+  assert.match(provision, /--config \/dev\/null/);
+  assert.match(provision, /--db-repository ghcr\.io\/aquasecurity\/trivy-db:2 --download-db-only/);
+  assert.ok(provision.indexOf('sha256sum --check --status') < provision.indexOf('tar --extract'));
+  assert.ok(provision.lastIndexOf('sha256sum --check --status') < provision.indexOf('image --config'));
+  const gate = run(scan);
+  assert.match(gate, /node scripts\/release\/scan-frontend-image\.mjs/);
+  for (const flag of ['--artifact', '--image-digest', '--cache-dir', '--scanner', '--output']) assert.ok(gate.includes(flag));
+  assert.match(gate, /--image-digest "\$IMAGE_DIGEST"/);
+  assert.match(gate, /--output "\$RUNNER_TEMP\/frontend-image\/security"/);
+  assert.doesNotMatch(gate, /--ignore|--skip|--severity/);
+  const tests = oneStep(items, (step) => run(step).startsWith('node --test '), 'image tests');
+  for (const name of ['scan-frontend-image', 'check-frontend-runtime']) assert.ok(run(tests).includes(`scripts/release/tests/${name}.test.mjs`));
+}
+
+test('frontend security gate precedes verified outputs with pinned tooling', () => checkFrontendSecurity(workflow));
+test('frontend security gate cannot be made non-blocking', () => {
+  const changed = replaceOnce(workflow, '      - name: scan exact frontend image\n', '      - name: scan exact frontend image\n        continue-on-error: true\n');
+  assert.throws(() => checkFrontendSecurity(changed));
+});
+test('frontend security gate cannot be omitted', () => {
+  const changed = replaceOnce(workflow, '      - name: scan exact frontend image\n', '      - name: unused check\n');
+  assert.throws(() => checkFrontendSecurity(changed));
+});
+test('frontend scanner archive must retain its reviewed pin', () => {
+  const changed = replaceOnce(workflow, 'bbb64b9695866ce4a7a8f5c9592002c5961cab378577fa3f8a040df362b9b2ea', '0'.repeat(64));
+  assert.throws(() => checkFrontendSecurity(changed));
+});
+test('frontend security report must be retained with OCI evidence', () => {
+  const changed = replaceOnce(workflow, '--output "$RUNNER_TEMP/frontend-image/security"', '--output "$RUNNER_TEMP/unretained"');
+  assert.throws(() => checkFrontendSecurity(changed));
+});
+
 function identityProgram(text) {
   const step = oneStep(steps(job(text, 'frontend-image')), (item) => entries(item.text, 8).get('id') === 'identity', 'identity');
   const command = run(step);
@@ -199,8 +248,9 @@ function identityProgram(text) {
 
 const revision = 'a'.repeat(40);
 const validReport = { status: 'pass', source_dirty: false, source_revision: revision, index_digest: `sha256:${'b'.repeat(64)}` };
+const validSecurity = { ...validReport, counts: { HIGH: 0, CRITICAL: 0 } };
 
-function exposeIdentity(program, report) {
+function exposeIdentity(program, report, security = validSecurity) {
   const writes = [];
   let error;
   try {
@@ -208,9 +258,11 @@ function exposeIdentity(program, report) {
       process: { env: { TARGET_SHA: revision, RUNNER_TEMP: '/synthetic', GITHUB_OUTPUT: '/synthetic/output' } },
       join,
       readFileSync(path, encoding) {
-        assert.equal(path, '/synthetic/frontend-image/identity.json');
         assert.equal(encoding, 'utf8');
-        return JSON.stringify(report);
+        if (path === '/synthetic/frontend-image/identity.json') return JSON.stringify(report);
+        assert.equal(path, '/synthetic/frontend-image/security/report.json');
+        if (security === null) throw new Error('Security evidence missing');
+        return JSON.stringify(security);
       },
       appendFileSync(path, contents) {
         assert.equal(path, '/synthetic/output');
@@ -246,6 +298,25 @@ function checkIdentity(text) {
     const result = exposeIdentity(program, report);
     assert.ok(result.error, 'invalid identity must fail before outputs');
     assert.deepEqual(result.writes, [], 'invalid identity must publish no outputs');
+  }
+  const staleRevision = 'c'.repeat(40);
+  const stalePair = exposeIdentity(program,
+    { ...validReport, source_revision: staleRevision },
+    { ...validSecurity, source_revision: staleRevision });
+  assert.ok(stalePair.error, 'matching reports from another revision cannot authorize this build');
+  assert.deepEqual(stalePair.writes, []);
+  for (const security of [
+    null, {}, { ...validSecurity, status: 'fail' },
+    { ...validSecurity, source_dirty: true },
+    { ...validSecurity, source_revision: 'd'.repeat(40) },
+    { ...validSecurity, index_digest: `sha256:${'e'.repeat(64)}` },
+    { ...validSecurity, counts: undefined },
+    { ...validSecurity, counts: { HIGH: 1, CRITICAL: 0 } },
+    { ...validSecurity, counts: { HIGH: 0, CRITICAL: 1 } },
+  ]) {
+    const result = exposeIdentity(program, validReport, security);
+    assert.ok(result.error, 'invalid security evidence must fail before outputs');
+    assert.deepEqual(result.writes, []);
   }
 }
 

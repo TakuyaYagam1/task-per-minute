@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "scanner": {
+    "name": "trivy",
+    "version": "0.72.0",
+    "accepted_executable_sha256": [
+      "6854ff0a4373688d1a2d158e22378395f663b769f490e84e9666732e3adad54f",
+      "0e69edd134a3c338baa1a6806920773615d682b18cbc6a0cba2a3b658ef9b63e"
+    ],
+    "provenance": {
+      "native": "Nix store content and cache.nixos.org-1 signature verified",
+      "official_archive_sha256": "bbb64b9695866ce4a7a8f5c9592002c5961cab378577fa3f8a040df362b9b2ea",
+      "official_identity": "https://github.com/aquasecurity/trivy/.github/workflows/reusable-release.yaml@refs/tags/v0.72.0",
+      "official_issuer": "https://token.actions.githubusercontent.com"
+    }
+  },
+  "database": { "schema_version": 2, "max_age_hours": 24 },
+  "deny_severities": ["HIGH", "CRITICAL"]
+}

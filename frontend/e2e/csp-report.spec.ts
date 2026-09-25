@@ -40,12 +40,39 @@ test('csp report endpoint rejects oversized reports', async ({ request }) => {
   expect(response.status()).toBe(413);
 });
 
-test('csp report-only header keeps same-origin API and realtime enabled', async ({ request }) => {
+test('csp header keeps same-origin API and realtime enabled', async ({ request }) => {
   const response = await request.get('/');
-  const csp = response.headers()['content-security-policy-report-only'];
+  const headers = response.headers();
+  const production = process.env.E2E_PRODUCTION === '1';
+  const csp = headers[production ? 'content-security-policy' : 'content-security-policy-report-only'];
 
   expect(response.ok()).toBe(true);
+  if (production) {
+    expect(headers['content-security-policy-report-only']).toBeUndefined();
+    expect(csp).toContain('upgrade-insecure-requests');
+  }
   expect(csp).toContain("default-src 'self'");
   expect(csp).toContain("connect-src 'self'");
   expect(csp).toContain('report-uri /csp-report');
+});
+
+test('public page navigation returns the configured security headers', async ({ page }) => {
+  const response = await page.goto('/');
+  expect(response).not.toBeNull();
+  if (!response) throw new Error('public page navigation did not return a response');
+  expect(response.status()).toBe(200);
+  const headers = response.headers();
+  expect(headers['content-type']).toContain('text/html');
+  expect(headers['x-frame-options']).toBe('DENY');
+  expect(headers['x-content-type-options']).toBe('nosniff');
+  expect(headers['strict-transport-security']).toBe('max-age=63072000; includeSubDomains; preload');
+  expect(headers['referrer-policy']).toBe('strict-origin-when-cross-origin');
+  expect(headers['permissions-policy']).toBe('camera=(), microphone=(), geolocation=(), interest-cohort=()');
+  expect(headers['cross-origin-opener-policy']).toBe('same-origin');
+  if (process.env.E2E_PRODUCTION === '1') {
+    expect(headers['content-security-policy']).toContain("default-src 'self'");
+    expect(headers['content-security-policy-report-only']).toBeUndefined();
+  } else {
+    expect(headers['content-security-policy-report-only']).toContain("default-src 'self'");
+  }
 });

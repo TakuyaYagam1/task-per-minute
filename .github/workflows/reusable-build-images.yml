@@ -175,7 +175,7 @@ jobs:
           version: v0.35.0
 
       - name: test frontend image evidence
-        run: node --test scripts/release/tests/build-frontend-image.test.mjs scripts/release/tests/validate-frontend-image.test.mjs scripts/release/tests/frontend-image-workflow.test.mjs
+        run: node --test scripts/release/tests/build-frontend-image.test.mjs scripts/release/tests/validate-frontend-image.test.mjs scripts/release/tests/frontend-image-workflow.test.mjs scripts/release/tests/scan-frontend-image.test.mjs scripts/release/tests/check-frontend-runtime.test.mjs
 
       - name: build frontend OCI artifact
         env:
@@ -193,6 +193,35 @@ jobs:
           --revision "$TARGET_SHA"
           --push-reference "$IMAGE_REF"
 
+      - name: prepare frontend vulnerability scanner
+        run: |
+          set -euo pipefail
+          umask 077
+          mkdir "$RUNNER_TEMP/frontend-scanner"
+          curl --disable --fail --location --proto '=https' --tlsv1.2 --max-time 120 --retry 2 --silent --show-error \
+            --output "$RUNNER_TEMP/frontend-scanner/trivy.tar.gz" \
+            https://github.com/aquasecurity/trivy/releases/download/v0.72.0/trivy_0.72.0_Linux-64bit.tar.gz
+          printf '%s  %s\n' bbb64b9695866ce4a7a8f5c9592002c5961cab378577fa3f8a040df362b9b2ea "$RUNNER_TEMP/frontend-scanner/trivy.tar.gz" | sha256sum --check --status
+          tar --extract --gzip --file "$RUNNER_TEMP/frontend-scanner/trivy.tar.gz" \
+            --directory "$RUNNER_TEMP/frontend-scanner" --no-same-owner --no-same-permissions --keep-old-files trivy
+          printf '%s  %s\n' 0e69edd134a3c338baa1a6806920773615d682b18cbc6a0cba2a3b658ef9b63e "$RUNNER_TEMP/frontend-scanner/trivy" | sha256sum --check --status
+          chmod 700 "$RUNNER_TEMP/frontend-scanner/trivy"
+          env -i PATH="$PATH" HOME="$RUNNER_TEMP/frontend-scanner" \
+            "$RUNNER_TEMP/frontend-scanner/trivy" image --config /dev/null \
+            --cache-dir "$RUNNER_TEMP/frontend-scanner/cache" \
+            --db-repository ghcr.io/aquasecurity/trivy-db:2 --download-db-only \
+            --disable-telemetry --skip-version-check --no-progress
+
+      - name: scan exact frontend image
+        run: |
+          set -euo pipefail
+          IMAGE_DIGEST=$(node --input-type=module -e 'import fs from "node:fs"; const report = JSON.parse(fs.readFileSync(process.env.RUNNER_TEMP + "/frontend-image/identity.json", "utf8")); if (!/^sha256:[a-f0-9]{64}$/.test(report.index_digest)) throw Error("Invalid image digest"); process.stdout.write(report.index_digest);')
+          node scripts/release/scan-frontend-image.mjs \
+            --artifact "$RUNNER_TEMP/frontend-image" --image-digest "$IMAGE_DIGEST" \
+            --cache-dir "$RUNNER_TEMP/frontend-scanner/cache" \
+            --scanner "$RUNNER_TEMP/frontend-scanner/trivy" \
+            --output "$RUNNER_TEMP/frontend-image/security"
+
       - name: expose verified frontend identity
         id: identity
         env:
@@ -204,6 +233,10 @@ jobs:
           const report = JSON.parse(readFileSync(join(process.env.RUNNER_TEMP, 'frontend-image', 'identity.json'), 'utf8'));
           if (report.status !== 'pass' || report.source_dirty !== false || report.source_revision !== process.env.TARGET_SHA || typeof report.index_digest !== 'string' || report.index_digest.length !== 71 || !/^sha256:[a-f0-9]{64}$/.test(report.index_digest)) {
             throw new Error('Frontend image identity is missing or stale');
+          }
+          const security = JSON.parse(readFileSync(join(process.env.RUNNER_TEMP, 'frontend-image', 'security', 'report.json'), 'utf8'));
+          if (security.status !== 'pass' || security.source_dirty !== false || security.source_revision !== report.source_revision || security.index_digest !== report.index_digest || security.counts?.HIGH !== 0 || security.counts?.CRITICAL !== 0) {
+            throw new Error('Frontend image security evidence is missing or stale');
           }
           appendFileSync(process.env.GITHUB_OUTPUT, `digest=${report.index_digest}\nsource_revision=${report.source_revision}\n`);
           NODE
