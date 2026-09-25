@@ -199,8 +199,10 @@ services:
     healthcheck:
       test:
         [
-          "CMD-SHELL",
-          "wget --quiet --spider --tries=1 \"http://127.0.0.1:$${PORT:-3000}/\"",
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:' + (process.env.PORT || '3000') + '/health', {signal: AbortSignal.timeout(4000)}).then(r => process.exit(r.status === 200 ? 0 : 1), () => process.exit(1))",
         ]
       interval: 10s
       timeout: 5s

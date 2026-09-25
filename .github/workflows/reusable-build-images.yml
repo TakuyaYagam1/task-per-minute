@@ -12,6 +12,16 @@ on:
       frontend_image_ref:
         required: true
         type: string
+    outputs:
+      backend_digest:
+        description: Backend image digest from the backend build.
+        value: ${{ jobs.backend-image.outputs.digest }}
+      frontend_digest:
+        description: Verified frontend OCI index digest.
+        value: ${{ jobs.frontend-image.outputs.digest }}
+      frontend_source_revision:
+        description: Source revision verified against the frontend provenance.
+        value: ${{ jobs.frontend-image.outputs.source_revision }}
 
 permissions:
   contents: read
@@ -19,20 +29,55 @@ permissions:
 
 env:
   REGISTRY: ghcr.io
-  NODE_VERSION: 24.15.0
+  NODE_VERSION: 24.21.0
   PYTHON_VERSION: '3.13'
   FRONTEND_WORKDIR: frontend
 
 jobs:
-  build-images:
-    name: build and push images
+  backend-image:
+    name: build and push backend image
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
     steps:
       - name: checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           ref: ${{ inputs.target_sha }}
+          persist-credentials: false
+      - name: login to ghcr
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - name: setup buildx
+        uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
+      - name: build and push backend image
+        id: build
+        uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7.1.0
+        with:
+          context: backend
+          file: backend/Dockerfile
+          push: true
+          tags: ${{ inputs.backend_image_ref }}
+
+  frontend-image:
+    name: build and verify frontend image
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      DOCKER_CONFIG: ${{ runner.temp }}/frontend-docker
+    outputs:
+      digest: ${{ steps.identity.outputs.digest }}
+      source_revision: ${{ steps.identity.outputs.source_revision }}
+    steps:
+      - name: checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ inputs.target_sha }}
+          persist-credentials: false
 
       - name: login to ghcr
         uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
@@ -45,24 +90,11 @@ jobs:
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: npm
-          cache-dependency-path: frontend/package-lock.json
 
       - name: setup python
         uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
         with:
           python-version: ${{ env.PYTHON_VERSION }}
-
-      - name: install openapi generator dependency
-        run: python -m pip install --disable-pip-version-check PyYAML==6.0.3
-
-      - name: install frontend dependencies
-        working-directory: ${{ env.FRONTEND_WORKDIR }}
-        run: npm ci
-
-      - name: generate api types
-        working-directory: ${{ env.FRONTEND_WORKDIR }}
-        run: npm run openapi:generate
 
       - name: validate public frontend urls
         env:
@@ -139,28 +171,48 @@ jobs:
 
       - name: setup buildx
         uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
-
-      - name: build and push backend image
-        uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7.1.0
         with:
-          context: backend
-          file: backend/Dockerfile
-          push: true
-          tags: |
-            ${{ inputs.backend_image_ref }}
+          version: v0.35.0
 
-      - name: build and push frontend image
-        uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7.1.0
+      - name: test frontend image evidence
+        run: node --test scripts/release/tests/build-frontend-image.test.mjs scripts/release/tests/validate-frontend-image.test.mjs scripts/release/tests/frontend-image-workflow.test.mjs
+
+      - name: build frontend OCI artifact
+        env:
+          TARGET_SHA: ${{ inputs.target_sha }}
+          IMAGE_REF: ${{ inputs.frontend_image_ref }}
+          BACKEND_PORT: ${{ vars.BACKEND_PORT || 8080 }}
+          BACKEND_URL: ${{ vars.FRONTEND_BACKEND_URL || format('http://backend:{0}', vars.BACKEND_PORT || 8080) }}
+          FRONTEND_PORT: ${{ vars.FRONTEND_PORT || 3000 }}
+          NEXT_PUBLIC_API_URL: ${{ vars.NEXT_PUBLIC_API_URL }}
+          NEXT_PUBLIC_ADMIN_API_URL: ${{ vars.NEXT_PUBLIC_ADMIN_API_URL }}
+          NEXT_PUBLIC_SOURCE_FILE_ORIGINS: ${{ vars.NEXT_PUBLIC_SOURCE_FILE_ORIGINS }}
+        run: >-
+          node scripts/release/build-frontend-image.mjs
+          --output "$RUNNER_TEMP/frontend-image"
+          --revision "$TARGET_SHA"
+          --push-reference "$IMAGE_REF"
+
+      - name: expose verified frontend identity
+        id: identity
+        env:
+          TARGET_SHA: ${{ inputs.target_sha }}
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFileSync, appendFileSync } from 'node:fs';
+          import { join } from 'node:path';
+          const report = JSON.parse(readFileSync(join(process.env.RUNNER_TEMP, 'frontend-image', 'identity.json'), 'utf8'));
+          if (report.status !== 'pass' || report.source_dirty !== false || report.source_revision !== process.env.TARGET_SHA || typeof report.index_digest !== 'string' || report.index_digest.length !== 71 || !/^sha256:[a-f0-9]{64}$/.test(report.index_digest)) {
+            throw new Error('Frontend image identity is missing or stale');
+          }
+          appendFileSync(process.env.GITHUB_OUTPUT, `digest=${report.index_digest}\nsource_revision=${report.source_revision}\n`);
+          NODE
+
+      - name: retain frontend OCI artifact and evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          context: frontend
-          file: frontend/Dockerfile
-          push: true
-          build-args: |
-            BACKEND_PORT=${{ vars.BACKEND_PORT || 8080 }}
-            BACKEND_URL=${{ vars.FRONTEND_BACKEND_URL || format('http://backend:{0}', vars.BACKEND_PORT || 8080) }}
-            FRONTEND_PORT=${{ vars.FRONTEND_PORT || 3000 }}
-            NEXT_PUBLIC_API_URL=${{ vars.NEXT_PUBLIC_API_URL }}
-            NEXT_PUBLIC_ADMIN_API_URL=${{ vars.NEXT_PUBLIC_ADMIN_API_URL }}
-            NEXT_PUBLIC_SOURCE_FILE_ORIGINS=${{ vars.NEXT_PUBLIC_SOURCE_FILE_ORIGINS }}
-          tags: |
-            ${{ inputs.frontend_image_ref }}
+          name: frontend-image-${{ inputs.target_sha }}
+          path: ${{ runner.temp }}/frontend-image
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
