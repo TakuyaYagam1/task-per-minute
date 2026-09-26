@@ -25,6 +25,11 @@
       "owner": "lib/pages/arena/exports.ts"
     },
     {
+      "route": "/arena/tournaments/[publicId]",
+      "entry": "app/arena/tournaments/[publicId]/page.tsx",
+      "owner": "lib/pages/arena/exports.ts"
+    },
+    {
       "route": "/health",
       "entry": "app/health/route.ts",
       "owner": "app/health/route.ts"

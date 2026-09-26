@@ -59,11 +59,64 @@ type LastUploadedSource = {
   expiresInSeconds: number;
 };
 
+type TaskFormSnapshot = Readonly<{
+  title: string;
+  description: string;
+  category: TaskCategory;
+  difficulty: TaskDifficulty;
+  kind: TaskKind;
+  timeLimit: string;
+  flag: string;
+  hints: readonly string[];
+  taskUrl: string;
+  existingSourceFileURL: string | null;
+  sourceFileCleared: boolean;
+  sourceFileName: string | null;
+  sourceFileSize: number | null;
+  sourceFileLastModified: number | null;
+}>;
+
+const emptyTaskFormSnapshot = (): TaskFormSnapshot => ({
+  title: "",
+  description: "",
+  category: "web",
+  difficulty: "easy",
+  kind: "normal",
+  timeLimit: "60",
+  flag: "",
+  hints: emptyHintInputs(),
+  taskUrl: "",
+  existingSourceFileURL: null,
+  sourceFileCleared: false,
+  sourceFileName: null,
+  sourceFileSize: null,
+  sourceFileLastModified: null,
+});
+
+const taskSnapshotFromTask = (task: Task): TaskFormSnapshot => ({
+  title: task.title,
+  description: task.description,
+  category: task.category,
+  difficulty: task.difficulty,
+  kind: task.kind,
+  timeLimit: String(task.time_limit),
+  flag: task.flag,
+  hints: hintInputsFromTask(task),
+  taskUrl: task.task_url ?? "",
+  existingSourceFileURL: task.source_file_url ?? null,
+  sourceFileCleared: false,
+  sourceFileName: null,
+  sourceFileSize: null,
+  sourceFileLastModified: null,
+});
+
 type TournamentContentManagerProps = Readonly<{
   content: TournamentContentSelection | null;
+  contentEmpty?: boolean;
   contentState: LoadState;
   contentError: string | null;
   onReloadContent: () => void;
+  onDirtyChange?: (dirty: boolean) => void;
   onSessionExpired?: () => void;
   runAdminRequest?: AdminRequestRunner;
 }>;
@@ -204,8 +257,10 @@ const formatRevisionID = (value: string): string => value;
 
 export const TournamentContentManager = ({
   content,
+  contentEmpty = false,
   contentState,
   contentError,
+  onDirtyChange,
   onReloadContent,
   onSessionExpired,
   runAdminRequest,
@@ -238,8 +293,32 @@ export const TournamentContentManager = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const formRef = useRef<HTMLFormElement>(null);
   const mountedRef = useRef(false);
+  const formBaselineRef = useRef<TaskFormSnapshot>(emptyTaskFormSnapshot());
   const { notification, showNotification } =
     useTimedNotification<Notification>();
+
+  const formSnapshot: TaskFormSnapshot = {
+    title,
+    description,
+    category,
+    difficulty,
+    kind,
+    timeLimit,
+    flag,
+    hints,
+    taskUrl,
+    existingSourceFileURL,
+    sourceFileCleared,
+    sourceFileName: sourceFile?.name ?? null,
+    sourceFileSize: sourceFile?.size ?? null,
+    sourceFileLastModified: sourceFile?.lastModified ?? null,
+  };
+  const formDirty =
+    JSON.stringify(formSnapshot) !== JSON.stringify(formBaselineRef.current);
+
+  useEffect(() => {
+    onDirtyChange?.(formDirty);
+  }, [formDirty, onDirtyChange]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -332,7 +411,14 @@ export const TournamentContentManager = ({
     });
   }, []);
 
-  const resetForm = useCallback(() => {
+  const resetForm = useCallback((options: Readonly<{ force?: boolean }> = {}): boolean => {
+    if (
+      formDirty &&
+      !options.force &&
+      !window.confirm("Есть несохраненные изменения. Очистить форму?")
+    ) {
+      return false;
+    }
     setEditingTaskId(null);
     setTitle("");
     setDescription("");
@@ -350,9 +436,21 @@ export const TournamentContentManager = ({
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
-  }, []);
+    formBaselineRef.current = emptyTaskFormSnapshot();
+    return true;
+  }, [formDirty]);
 
   const startEditing = useCallback((task: Task) => {
+    if (editingTaskId === task.id) {
+      return;
+    }
+    if (
+      formDirty &&
+      !window.confirm("Есть несохраненные изменения. Открыть другую задачу?")
+    ) {
+      return;
+    }
+    formBaselineRef.current = taskSnapshotFromTask(task);
     setEditingTaskId(task.id);
     setTitle(task.title);
     setDescription(task.description);
@@ -372,7 +470,7 @@ export const TournamentContentManager = ({
       fileInputRef.current.value = "";
     }
     formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-  }, []);
+  }, [editingTaskId, formDirty]);
 
   const updateHint = useCallback(
     (index: number, value: string) => {
@@ -567,7 +665,7 @@ export const TournamentContentManager = ({
         notify("warning", taskMessage);
       } else {
         notify("success", wasEditing ? "Задача успешно обновлена!" : "Задача успешно создана!");
-        resetForm();
+        resetForm({ force: true });
         setLastUploadedSource(uploadedSource);
       }
       onReloadContent();
@@ -612,7 +710,7 @@ export const TournamentContentManager = ({
       }
       setTasks((current) => current.filter((task) => task.id !== taskId));
       if (editingTaskId === taskId) {
-        resetForm();
+        resetForm({ force: true });
       }
       notify("success", "Задача удалена");
       onReloadContent();
@@ -661,7 +759,7 @@ export const TournamentContentManager = ({
 
       <Panel
         title="Каталог контента"
-        description="Управляйте задачами и исходниками, которые доступны оператору. Публикация и состав пулов остаются серверными операциями."
+        description="Управляйте задачами и исходниками. Публикация и состав пулов обновляются отдельно."
         className={styles.catalogPanel}
       >
         <div className={styles.contentSummary}>
@@ -685,7 +783,10 @@ export const TournamentContentManager = ({
             </Message>
           )}
           {contentState === "error" && (
-            <Message tone="error" title="Контент недоступен">
+            <Message
+              tone={contentEmpty ? "empty" : "error"}
+              title={contentEmpty ? "Публикации пока нет" : "Контент недоступен"}
+            >
               {contentError || "Не удалось получить доступную ревизию контента"}
               <Button
                 variant="secondary"
@@ -915,7 +1016,7 @@ export const TournamentContentManager = ({
                 <span className={styles.categoryFieldLabel}>ZIP-архив с исходниками</span>
                 <label htmlFor="admin-task-source" className={styles.fileUploadZone}>
                   <span className={styles.fileUploadText}>
-                    <strong>Нажмите для выбора</strong> или перетащите ZIP-архив
+                    <strong>Выбрать ZIP-архив</strong>
                   </span>
                 </label>
                 <input
@@ -998,7 +1099,14 @@ export const TournamentContentManager = ({
                 <Button type="submit" loading={submitting} loadingLabel={editingTaskId ? "Сохраняем" : "Создаем"}>
                   {editingTaskId ? "Сохранить задачу" : "Создать задачу"}
                 </Button>
-                <Button type="button" variant="secondary" onClick={resetForm} disabled={submitting}>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => {
+                    resetForm();
+                  }}
+                  disabled={submitting}
+                >
                   {editingTaskId ? "Отменить" : "Очистить"}
                 </Button>
               </div>

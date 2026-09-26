@@ -2,6 +2,7 @@ package participant
 
 import (
 	"context"
+	"errors"
 
 	"github.com/google/uuid"
 
@@ -114,7 +115,7 @@ func (c *CommandCoordinator) SubmitDraftAction(
 		}
 		result, err := c.draft.Apply(txCtx, resolved.Command)
 		if err != nil {
-			return err
+			return normalizeDraftActionError(err, command, resolved.Authority)
 		}
 		if result.Draft.Validate() != nil {
 			return domain.ErrInternal
@@ -136,6 +137,37 @@ func (c *CommandCoordinator) SubmitDraftAction(
 		return draftusecase.Execution{}, err
 	}
 	return execution, nil
+}
+
+func normalizeDraftActionError(
+	err error,
+	command usecase.DraftActionCommand,
+	authority ParticipantCommandAuthority,
+) error {
+	if isDraftValidationError(err) {
+		return domain.ErrValidation
+	}
+	if !isDraftStateConflict(err) {
+		return err
+	}
+	return &usecase.RevisionConflictError{
+		TournamentID:     command.TournamentID,
+		ExpectedRevision: command.ExpectedProjectionRevision,
+		CurrentRevision:  authority.ProjectionRevision,
+		CurrentState:     authority.TournamentState,
+	}
+}
+
+func isDraftValidationError(err error) bool {
+	return errors.Is(err, domain.ErrDraftIllegalAction) ||
+		errors.Is(err, domain.ErrDraftCategoryUsed)
+}
+
+func isDraftStateConflict(err error) bool {
+	return errors.Is(err, domain.ErrDraftDeadline) ||
+		errors.Is(err, domain.ErrDraftStaleTurn) ||
+		errors.Is(err, domain.ErrDraftCompleted) ||
+		errors.Is(err, draftusecase.ErrActionConflict)
 }
 
 //nolint:gocyclo // One transactional workflow keeps ordering, rollback, and fail-closed branches explicit.

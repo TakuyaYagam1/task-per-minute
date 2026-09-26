@@ -25,6 +25,8 @@ type RosterEditorProps = Readonly<{
   onSelectTournament: (id: string) => void;
   onReloadTournaments: () => Promise<void>;
   onSessionExpired?: () => void;
+  onDirtyChange?: (dirty: boolean) => void;
+  showTournamentChooser?: boolean;
 }>;
 
 type LoadState = "loading" | "ready" | "error";
@@ -96,6 +98,8 @@ export const RosterEditor = ({
   selectedTournament,
   selectedTournamentId,
   tournaments,
+  onDirtyChange,
+  showTournamentChooser = true,
 }: RosterEditorProps) => {
   const tournamentId = selectedTournament?.id ?? "";
   const rosterControllerRef = useRef<AbortController | null>(null);
@@ -119,6 +123,23 @@ export const RosterEditor = ({
   const [unlockingRoster, setUnlockingRoster] = useState(false);
   const [unlockConfirmed, setUnlockConfirmed] = useState(false);
   const [unlockReason, setUnlockReason] = useState("");
+
+  useEffect(() => {
+    if (!selectedTournamentId || !roster) {
+      onDirtyChange?.(false);
+      return;
+    }
+    const draftChanged =
+      JSON.stringify(draftFromRoster(roster)) !== JSON.stringify(draftParticipants);
+    onDirtyChange?.(draftChanged || unlockConfirmed || Boolean(unlockReason.trim()));
+  }, [
+    draftParticipants,
+    onDirtyChange,
+    roster,
+    selectedTournamentId,
+    unlockConfirmed,
+    unlockReason,
+  ]);
 
   const resetPreflight = useCallback((): void => {
     preflightControllerRef.current?.abort();
@@ -628,7 +649,7 @@ export const RosterEditor = ({
       description="Выберите турнир, чтобы загрузить его состав и активных игроков."
       className={styles.panel}
     >
-      <div className={styles.chooser}>
+      {showTournamentChooser ? <div className={styles.chooser}>
         <label htmlFor="roster-tournament-select">
           Турнир для редактирования состава
         </label>
@@ -645,7 +666,7 @@ export const RosterEditor = ({
             </option>
           ))}
         </select>
-      </div>
+      </div> : null}
 
       {!selectedTournament && (
         <Message tone="empty" title="Турнир не выбран">

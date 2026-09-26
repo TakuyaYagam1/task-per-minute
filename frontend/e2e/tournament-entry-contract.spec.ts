@@ -133,18 +133,40 @@ const expectOnlyPaths = (
   expect(new Set(evidence.apiPaths)).toEqual(new Set(expectedPaths));
 };
 
-test("Arena landing links expose direct participant, operator, and spectator routes", async ({ page }) => {
+test("Arena landing exposes the public catalog without a role picker", async ({ page }) => {
+  await page.route("**/api/v1/public/tournaments**", async (route) => {
+    expect(route.request().method()).toBe("GET");
+    await fulfillJSON(route, {
+      items: [{
+        created_at: "2026-09-13T10:00:00Z",
+        finished_at: null,
+        group: "upcoming",
+        name: "Сентябрьский контур",
+        planned_roster_size: 16,
+        preset: "tournament_v1",
+        public_id: "september-contour",
+        roster_size: 4,
+        scheduled_at: null,
+        stage: "registration",
+        started_at: null,
+        state: "registration",
+        tournament_id: tournamentId,
+      }],
+      next_cursor: null,
+    });
+  });
+
   await page.goto("/arena");
 
-  await page.getByLabel("Идентификатор турнира").fill(tournamentId);
-
-  for (const role of ["participant", "operator", "spectator"] as const) {
-    await expect(page.getByRole("link", { name: {
-      participant: "Участник",
-      operator: "Оператор",
-      spectator: "Наблюдатель",
-    }[role] })).toHaveAttribute("href", roleURL(role));
-  }
+  await expect(page.getByRole("heading", { name: "Турниры", exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: /Сентябрьский контур/ })).toHaveAttribute(
+    "href",
+    /\/arena\/tournaments\/september-contour\?view=overview&return=/,
+  );
+  await expect(page.getByLabel("Идентификатор турнира")).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "Участник", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "Оператор", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "Наблюдатель", exact: true })).toHaveCount(0);
 });
 
 test("direct participant link uses the participant API boundary", async ({ page }) => {
@@ -162,6 +184,22 @@ test("direct participant link uses the participant API boundary", async ({ page 
   expectOnlyPaths(evidence, [publicPath, participantPath, participantSnapshotPath]);
   expect(evidence.apiPaths.some((path) => path.includes("/admin/"))).toBe(false);
   expectNoAuthorization(evidence);
+});
+
+test("participant workspace preserves a validated public tournament return link", async ({ page }) => {
+  const fixtureSet = createTournamentFixtureSet();
+  const returnPath = `/arena/tournaments/september-contour?view=matches&return=${encodeURIComponent("/arena?group=live")}`;
+  await installPublicRoute(page, fixtureSet.public.tournament);
+  await installParticipantRoute(page, fixtureSet.participant.lobby);
+
+  await page.goto(roleURL("participant", `?return=${encodeURIComponent(returnPath)}`));
+  await expect(page.getByRole("link", { name: "Вернуться к турниру" })).toHaveAttribute(
+    "href",
+    returnPath,
+  );
+
+  await page.goto(roleURL("participant", `?return=${encodeURIComponent("https://evil.example")}`));
+  await expect(page.getByRole("link", { name: "Вернуться к турниру" })).toHaveCount(0);
 });
 
 test("direct operator link uses the admin API boundary and shows the tournament name", async ({ page }) => {

@@ -25,6 +25,8 @@ type SwissPairingEditorProps = Readonly<{
   onSelectTournament: (id: string) => void;
   onReloadTournaments: () => Promise<void>;
   onSessionExpired?: () => void;
+  onDirtyChange?: (dirty: boolean) => void;
+  showTournamentChooser?: boolean;
 }>;
 
 type LoadState = "loading" | "ready" | "error";
@@ -177,6 +179,8 @@ export const SwissPairingEditor = ({
   selectedTournament,
   selectedTournamentId,
   tournaments,
+  onDirtyChange,
+  showTournamentChooser = true,
 }: SwissPairingEditorProps) => {
   const tournamentId = selectedTournament?.id ?? "";
   const loadControllerRef = useRef<AbortController | null>(null);
@@ -199,6 +203,12 @@ export const SwissPairingEditor = ({
   const [formError, setFormError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (!selectedTournamentId) {
+      onDirtyChange?.(false);
+    }
+  }, [onDirtyChange, selectedTournamentId]);
 
   const loadTournamentData = useCallback(async (id: string): Promise<void> => {
     loadControllerRef.current?.abort();
@@ -237,6 +247,7 @@ export const SwissPairingEditor = ({
       setDraftPairings(blankPairings(eligible.length));
       setByeParticipantId("");
       setLoadState("ready");
+      onDirtyChange?.(false);
     } catch (error) {
       if (controller.signal.aborted || loadRunRef.current !== runId || isAbortError(error)) {
         return;
@@ -251,7 +262,7 @@ export const SwissPairingEditor = ({
         loadControllerRef.current = null;
       }
     }
-  }, [onSessionExpired]);
+  }, [onDirtyChange, onSessionExpired]);
 
   useEffect(() => {
     if (!tournamentId) {
@@ -311,6 +322,7 @@ export const SwissPairingEditor = ({
   );
 
   const updatePairingMode = (nextMode: PairingMode): void => {
+    onDirtyChange?.(true);
     setPairingMode(nextMode);
     setFormError(null);
     setNotice(null);
@@ -323,6 +335,7 @@ export const SwissPairingEditor = ({
   };
 
   const updateCategory = (category: Category, checked: boolean): void => {
+    onDirtyChange?.(true);
     setCategories((current) => {
       if (checked) {
         return current.includes(category) ? current : [...current, category];
@@ -338,6 +351,7 @@ export const SwissPairingEditor = ({
     field: keyof PairingDraft,
     value: string,
   ): void => {
+    onDirtyChange?.(true);
     setDraftPairings((current) =>
       current.map((pairing, pairingIndex) =>
         pairingIndex === index ? { ...pairing, [field]: value } : pairing,
@@ -426,6 +440,7 @@ export const SwissPairingEditor = ({
       }
       setSavedRound(configuredRound);
       setNotice(`Раунд ${configuredRound.round_number} сформирован сервером.`);
+      onDirtyChange?.(false);
       await onReloadTournaments();
     } catch (error) {
       if (controller.signal.aborted || isAbortError(error)) {
@@ -467,7 +482,7 @@ export const SwissPairingEditor = ({
       description="Сформируйте следующий раунд на основе актуального серверного состояния турнира."
       className={styles.panel}
     >
-      <div className={styles.chooser}>
+      {showTournamentChooser ? <div className={styles.chooser}>
         <label htmlFor="pairing-tournament-select">Турнир для формирования пар</label>
         <select
           id="pairing-tournament-select"
@@ -483,7 +498,7 @@ export const SwissPairingEditor = ({
             </option>
           ))}
         </select>
-      </div>
+      </div> : null}
 
       {!selectedTournament && (
         <Message tone="empty" title="Турнир не выбран">
@@ -601,6 +616,7 @@ export const SwissPairingEditor = ({
                     setCategoryMode(event.target.value as CategoryMode);
                     setFormError(null);
                     setNotice(null);
+                    onDirtyChange?.(true);
                   }}
                   disabled={editingLocked || submitting}
                 >
@@ -696,6 +712,7 @@ export const SwissPairingEditor = ({
                             setByeParticipantId(event.target.value);
                             setFormError(null);
                             setNotice(null);
+                            onDirtyChange?.(true);
                           }}
                           disabled={editingLocked || submitting}
                         >

@@ -46,6 +46,7 @@ export const loginAdminWithEmptyTaskList = async (page: Page): Promise<void> => 
   await page.goto('/admin');
   await page.getByPlaceholder('Введите пароль...').fill('correct-password');
   await page.getByRole('button', { name: 'Войти' }).click();
+  await page.getByRole('button', { name: 'Задачи' }).click();
   await expect(page.getByText('Пока нет созданных задач')).toBeVisible();
 };
 

@@ -1,0 +1,112 @@
+/api/v1/tournaments/{tournament_id}/participant/queue:
+  parameters:
+    - $ref: '../components/parameters.yml#/TournamentId'
+  get:
+    operationId: getTournamentAdmissionStatus
+    tags: [tournament]
+    summary: Read the authenticated player's tournament admission status
+    description: >-
+      The player identity comes from the authenticated session. A known
+      published tournament returns status not_registered when the player has
+      not joined yet. Draft and unknown tournaments are hidden as not found.
+    x-auth-scope: tournament:participate
+    security:
+      - PlayerSessionAuth: []
+    responses:
+      '200':
+        description: Authenticated player admission status.
+        content:
+          application/json:
+            schema:
+              $ref: '../components/schemas.yml#/TournamentAdmissionView'
+      '401':
+        $ref: '../components/responses.yml#/UnauthorizedProblem'
+      '403':
+        $ref: '../components/responses.yml#/ForbiddenProblem'
+      '404':
+        $ref: '../components/responses.yml#/NotFoundProblem'
+      '429':
+        $ref: '../components/responses.yml#/RateLimitedProblem'
+      default:
+        $ref: '../components/responses.yml#/UnexpectedServerProblem'
+  post:
+    operationId: joinTournamentAdmission
+    tags: [tournament]
+    summary: Join the authenticated player's tournament roster
+    description: >-
+      The request has no body. Identity comes from the player session and the
+      idempotency key identifies the command. Retrying while the registration
+      is still present returns the current roster state with changed false;
+      command responses are not replayed from a stored receipt. Registration
+      is accepted only while the tournament remains open and capacity is
+      available.
+    x-auth-scope: tournament:participate
+    security:
+      - PlayerSessionAuth: []
+    parameters:
+      - $ref: '../components/parameters.yml#/IdempotencyKey'
+      - $ref: '../components/parameters.yml#/RequiredPlayerCSRFToken'
+    responses:
+      '200':
+        description: Current admission view after the idempotent join command.
+        content:
+          application/json:
+            schema:
+              $ref: '../components/schemas.yml#/TournamentAdmissionMutation'
+      '400':
+        $ref: '../components/responses.yml#/InvalidRequestProblem'
+      '401':
+        $ref: '../components/responses.yml#/UnauthorizedProblem'
+      '403':
+        $ref: '../components/responses.yml#/ForbiddenProblem'
+      '404':
+        $ref: '../components/responses.yml#/NotFoundProblem'
+      '409':
+        description: The tournament is closed, full, withdrawn, or blocked by another reservation.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/TournamentAdmissionConflictProblem'
+      '429':
+        $ref: '../components/responses.yml#/RateLimitedProblem'
+      default:
+        $ref: '../components/responses.yml#/UnexpectedServerProblem'
+  delete:
+    operationId: cancelTournamentAdmission
+    tags: [tournament]
+    summary: Withdraw the authenticated player's tournament registration
+    description: >-
+      The request has no body. The idempotency key identifies the command. A
+      repeated withdrawal returns the current status with changed false;
+      command responses are not replayed from a stored receipt.
+    x-auth-scope: tournament:participate
+    security:
+      - PlayerSessionAuth: []
+    parameters:
+      - $ref: '../components/parameters.yml#/IdempotencyKey'
+      - $ref: '../components/parameters.yml#/RequiredPlayerCSRFToken'
+    responses:
+      '200':
+        description: Current admission view after the idempotent withdrawal command.
+        content:
+          application/json:
+            schema:
+              $ref: '../components/schemas.yml#/TournamentAdmissionMutation'
+      '400':
+        $ref: '../components/responses.yml#/InvalidRequestProblem'
+      '401':
+        $ref: '../components/responses.yml#/UnauthorizedProblem'
+      '403':
+        $ref: '../components/responses.yml#/ForbiddenProblem'
+      '404':
+        $ref: '../components/responses.yml#/NotFoundProblem'
+      '409':
+        description: The tournament is closed or the admission state cannot be withdrawn.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/TournamentAdmissionConflictProblem'
+      '429':
+        $ref: '../components/responses.yml#/RateLimitedProblem'
+      default:
+        $ref: '../components/responses.yml#/UnexpectedServerProblem'

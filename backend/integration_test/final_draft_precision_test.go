@@ -40,6 +40,11 @@ func TestFinalDraftActionAtTurnTwoClockPrecision(t *testing.T) {
 			actionTimeOffset: -time.Second,
 			wantStatus:       http.StatusOK,
 		},
+		{
+			name:             "just_after_deadline",
+			actionTimeOffset: time.Microsecond,
+			wantStatus:       http.StatusConflict,
+		},
 	}
 
 	for _, tc := range cases {
@@ -313,7 +318,9 @@ func runFinalDraftPrecisionScenario(t *testing.T, actionTimeOffset time.Duration
 
 	secondActorID := draft.SecondParticipantId
 	secondPlayer, found := playersByParticipant[secondActorID]
-	require.True(t, found, "missing participant for second final draft turn")
+	require.True(t, found, "missing player for second final draft turn")
+	firstPlayer, found := playersByParticipant[draft.FirstParticipantId]
+	require.True(t, found, "missing player for first final draft turn")
 	secondSnapshot := participantSnapshotThroughREST(t, fixture, created.Id, secondPlayer)
 	require.NotNil(t, secondSnapshot.Draft)
 	secondDraft := *secondSnapshot.Draft
@@ -322,6 +329,33 @@ func runFinalDraftPrecisionScenario(t *testing.T, actionTimeOffset time.Duration
 		secondDraft.State, secondDraft.Turn, secondDraft.Revision,
 		secondSnapshot.NextCursor.ProjectionRevision,
 	)
+	if automaticFirst {
+		wrongCategory := productionNextDraftCategory(t, secondDraft)
+		freezeTournamentFlowClockForSingleInstant(runtime.clock, secondDraft.TurnDeadline.Add(-time.Second))
+		wrongBody, err := json.Marshal(api.ParticipantDraftActionRequest{
+			ExpectedProjectionRevision: secondSnapshot.NextCursor.ProjectionRevision,
+			ExpectedDraftRevision:      secondDraft.Revision,
+			ExpectedTurn:               secondDraft.Turn,
+			Action:                     api.Ban,
+			Category:                   wrongCategory,
+		})
+		require.NoError(t, err)
+		wrongPath := "/api/v1/tournaments/" + created.Id.String() + "/participant/series/" +
+			secondDraft.SeriesId.String() + "/draft/actions"
+		wrongReq, wrongResp := doTournamentFlowJSON(
+			t, fixture, http.MethodPost, wrongPath, string(wrongBody),
+			cookieSession(firstPlayer.session.String()), uuid.New(), firstPlayer.csrf,
+		)
+		require.Equal(t, http.StatusBadRequest, wrongResp.Code,
+			"wrong final draft actor must be rejected as an invalid command")
+		fixture.validateResponse(t, wrongReq, wrongResp)
+		unchanged := participantSnapshotThroughREST(t, fixture, created.Id, secondPlayer)
+		require.NotNil(t, unchanged.Draft)
+		require.Equal(t, secondSnapshot.NextCursor.ProjectionRevision, unchanged.NextCursor.ProjectionRevision)
+		require.Equal(t, secondDraft.Revision, unchanged.Draft.Revision)
+		require.Equal(t, secondDraft.Turn, unchanged.Draft.Turn)
+		require.Len(t, unchanged.Draft.Actions, len(secondDraft.Actions))
+	}
 	require.Equal(t, api.DraftStateActive, secondDraft.State)
 	require.EqualValues(t, 2, secondDraft.Turn)
 	require.Equal(t, expectedSecondDraftRevision, secondDraft.Revision)

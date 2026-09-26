@@ -25,12 +25,6 @@ type ArenaShellProps = Readonly<{
   children?: ReactNode;
 }>;
 
-const ROLE_LINKS: ReadonlyArray<Readonly<{ role: ArenaRole; label: string }>> = [
-  { role: "participant", label: "Участник" },
-  { role: "operator", label: "Оператор" },
-  { role: "spectator", label: "Наблюдатель" },
-];
-
 const ROLE_LABELS: Record<ArenaRole, string> = {
   participant: "Участник",
   operator: "Оператор",
@@ -99,25 +93,12 @@ export const ArenaShell = ({
             </div>
             <nav className={styles.utilityNav} aria-label="Основная навигация">
               <Link href="/" className={styles.utilityLink}>Главная</Link>
-              <Link href="/leaderboard" className={styles.utilityLink}>Рейтинг</Link>
+              <Link href="/leaderboard" className={styles.utilityLink}>Общий рейтинг</Link>
             </nav>
           </div>
 
           {hasTournamentContext && (
             <>
-              <nav className={styles.roleNav} aria-label="Режим Arena" data-testid="arena-role-nav">
-                {ROLE_LINKS.map((item) => (
-                  <Link
-                    key={item.role}
-                    href={rolePath(item.role, tournamentId!)}
-                    className={styles.navLink}
-                    aria-current={role === item.role ? "page" : undefined}
-                  >
-                    {item.label}
-                  </Link>
-                ))}
-              </nav>
-
               <section className={styles.context} aria-label="Контекст турнира">
                 <div className={styles.contextDetails}>
                   <code

@@ -12,8 +12,8 @@ import { adminApi, ApiError } from '../lib/shared/api';
 const openTournamentTaskCatalog = async (page: Page): Promise<void> => {
   const taskForm = page.getByPlaceholder('Введите название...');
   if (!(await taskForm.isVisible().catch(() => false))) {
-    await expect(page.getByRole('button', { name: 'Турниры' })).toBeVisible();
-    await page.getByRole('button', { name: 'Турниры' }).click();
+    await expect(page.getByRole('button', { name: 'Задачи' })).toBeVisible();
+    await page.getByRole('button', { name: 'Задачи' }).click();
   }
   await expect(taskForm).toBeVisible();
 };
@@ -24,7 +24,7 @@ const loginAdminAndOpenTournamentTaskCatalog = async (
   await page.goto('/admin');
   await page.getByPlaceholder('Введите пароль...').fill('correct-password');
   await page.getByRole('button', { name: 'Войти' }).click();
-  await openTournamentTaskCatalog(page);
+  await page.getByRole('button', { name: 'Задачи' }).click();
   await expect(page.getByText('Пока нет созданных задач')).toBeVisible();
 };
 
@@ -1669,7 +1669,11 @@ test('admin malformed successful REST responses do not persist invalid state', a
   });
   await page.getByRole('button', { name: /Создать задачу/ }).click();
 
-  await expect(page.getByText('Задача создана, но файл не загрузился')).toBeVisible();
+  await expect(
+    page
+      .getByRole('alert')
+      .filter({ hasText: 'Задача создана, но файл не загрузился' }),
+  ).toBeVisible();
   await expect(page.getByText('Invalid Source URL')).toBeHidden();
   expect(createCalls).toBe(1);
   expect(uploadCalls).toBe(1);
@@ -1724,7 +1728,9 @@ test('malformed admin bootstrap refresh rejects the session without a protected 
 
   await page.goto('/admin');
 
-  await expect(page.getByText('Авторизация')).toBeVisible();
+  await expect(
+    page.getByRole('heading', { name: 'Вход администратора' }),
+  ).toBeVisible();
   expect(refreshCalls).toBe(1);
   expect(listCalls).toBe(0);
   expect(authorizationHeaders).toEqual([]);
@@ -1778,9 +1784,12 @@ test('malformed admin retry refresh clears an active cookie session', async ({ p
   await page.goto('/admin');
   await page.getByPlaceholder('Введите пароль...').fill('correct-password');
   await page.getByRole('button', { name: 'Войти' }).click();
+  await page.getByRole('button', { name: 'Задачи' }).click();
 
   await expect(page.getByText('Сессия истекла. Войдите снова.')).toBeVisible();
-  await expect(page.getByText('Авторизация')).toBeVisible();
+  await expect(
+    page.getByRole('heading', { name: 'Вход администратора' }),
+  ).toBeVisible();
   expect(refreshCalls).toBe(1);
   expect(listCalls).toBeGreaterThanOrEqual(1);
   expect(authorizationHeaders).toEqual([]);
@@ -1860,12 +1869,16 @@ test('admin logout ignores delayed refresh and prevents stale retry', async ({ p
   await expect.poll(() => refreshCalls).toBe(2);
 
   await page.getByRole('button', { name: 'Выйти' }).click();
-  await expect(page.getByText('Авторизация')).toBeVisible();
+  await expect(
+    page.getByRole('heading', { name: 'Вход администратора' }),
+  ).toBeVisible();
 
   releaseRefresh();
   await page.waitForTimeout(150);
 
-  await expect(page.getByText('Авторизация')).toBeVisible();
+  await expect(
+    page.getByRole('heading', { name: 'Вход администратора' }),
+  ).toBeVisible();
   await expect(page.getByText('Stale Refreshed Task')).toBeHidden();
   expect(listAuthorizations.length).toBeGreaterThanOrEqual(1);
   expect(listAuthorizations.every((authorization) => authorization === undefined)).toBe(true);
@@ -1909,7 +1922,9 @@ test('admin logout sends stored refresh csrf before clearing local admin session
   await expect(page.getByRole('button', { name: 'Выйти' })).toBeVisible();
 
   await page.getByRole('button', { name: 'Выйти' }).click();
-  await expect(page.getByText('Авторизация')).toBeVisible();
+  await expect(
+    page.getByRole('heading', { name: 'Вход администратора' }),
+  ).toBeVisible();
 
   expect(logoutCSRFHeader).toBe(refreshCSRFToken);
   expect(logoutRefreshCSRFHeader).toBeUndefined();
@@ -1967,7 +1982,9 @@ test('admin waits for delayed logout before accepting a new login', async ({ pag
   await expect(page.getByRole('button', { name: 'Выйти' })).toBeVisible();
 
   await page.getByRole('button', { name: 'Выйти' }).click();
-  await expect(page.getByText('Авторизация')).toBeVisible();
+  await expect(
+    page.getByRole('heading', { name: 'Вход администратора' }),
+  ).toBeVisible();
   await page.getByPlaceholder('Введите пароль...').fill('correct-password');
   const loginButton = page.locator('form').getByRole('button');
   await expect(loginButton).toBeDisabled();
@@ -2070,7 +2087,9 @@ test('admin new login ignores delayed refresh from previous session', async ({ p
   await expect.poll(() => refreshCalls).toBe(2);
 
   await page.getByRole('button', { name: 'Выйти' }).click();
-  await expect(page.getByText('Авторизация')).toBeVisible();
+  await expect(
+    page.getByRole('heading', { name: 'Вход администратора' }),
+  ).toBeVisible();
 
   newLoginStarted = true;
   await page.getByPlaceholder('Введите пароль...').fill('correct-password');
@@ -2141,13 +2160,17 @@ test('admin logout ignores delayed task list response', async ({ page }) => {
   await expect.poll(() => listCalls).toBeGreaterThanOrEqual(1);
 
   await page.getByRole('button', { name: 'Выйти' }).click();
-  await expect(page.getByText('Авторизация')).toBeVisible();
+  await expect(
+    page.getByRole('heading', { name: 'Вход администратора' }),
+  ).toBeVisible();
   await expect.poll(() => listRequestFailed).toBe(true);
 
   releaseList();
   await page.waitForTimeout(150);
 
-  await expect(page.getByText('Авторизация')).toBeVisible();
+  await expect(
+    page.getByRole('heading', { name: 'Вход администратора' }),
+  ).toBeVisible();
   await expect(page.getByText('Old Delayed Task')).toBeHidden();
 });
 
@@ -2219,7 +2242,9 @@ test('admin new login is not overwritten by old delayed task list', async ({ pag
   await expect.poll(() => oldListCalls).toBeGreaterThanOrEqual(1);
 
   await page.getByRole('button', { name: 'Выйти' }).click();
-  await expect(page.getByText('Авторизация')).toBeVisible();
+  await expect(
+    page.getByRole('heading', { name: 'Вход администратора' }),
+  ).toBeVisible();
 
   newSessionStarted = true;
   await page.getByPlaceholder('Введите пароль...').fill('correct-password');
@@ -2319,6 +2344,10 @@ test('malformed admin create and update responses keep previous valid task state
   await expect(page.getByText('Existing Contract Task')).toBeVisible();
   await expect(page.getByText('Malformed Created Task')).toBeHidden();
 
+  page.once('dialog', async (dialog) => {
+    expect(dialog.type()).toBe('confirm');
+    await dialog.accept();
+  });
   await page.locator('[title="Редактировать задачу"]').click();
   await page.getByPlaceholder('Введите название...').fill('Malformed Updated Task');
   await page.getByRole('button', { name: /Сохранить задачу/ }).click();
@@ -2326,6 +2355,7 @@ test('malformed admin create and update responses keep previous valid task state
   await expect(page.getByText('Ошибка при обновлении задачи')).toBeVisible();
   await expect(page.getByText('Existing Contract Task')).toBeVisible();
   await expect(page.getByText('Malformed Updated Task')).toBeHidden();
+  await expect(page.getByPlaceholder('Введите название...')).toHaveValue('Malformed Updated Task');
 
   expect(createCalls).toBe(1);
   expect(updateCalls).toBe(1);

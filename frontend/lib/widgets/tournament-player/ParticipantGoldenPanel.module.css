@@ -6,9 +6,7 @@
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: clamp(1rem, 3vw, 1.5rem);
-  background:
-    linear-gradient(135deg, color-mix(in srgb, var(--accent) 12%, transparent), transparent 42%),
-    var(--surface);
+  background: var(--surface);
   box-shadow: var(--shadow);
 }
 

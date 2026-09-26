@@ -1,0 +1,1 @@
+export { TournamentCatalog } from "./TournamentCatalog";

@@ -49,7 +49,7 @@ snapshot_sources() {
     "$REPO_ROOT/frontend/package-lock.json" \
     "$REPO_ROOT/backend/go.mod" \
     "$REPO_ROOT/backend/go.sum" \
-    "$REPO_ROOT/docs/engineering/openapi-toolchain-trust.md" \
+    "$REPO_ROOT/security/tools/openapi-tools.policy" \
     "$REPO_ROOT/security/tools/release-tools.lock.json" \
     "$REPO_ROOT/security/semgrep/frontend.yml" \
     "$REPO_ROOT/scripts/release/validate-openapi-toolchain-trust.sh" \
@@ -88,7 +88,7 @@ NODE_VERSION="$(run_locked_node --version)"
 NPM_VERSION="$(run_locked_node "$LOCKED_NPM" --version)"
 GENERATED_AT="$(run_locked_node -e 'process.stdout.write(new Date().toISOString())')"
 PACKAGE_LOCK_SHA256="$(sha256sum "$REPO_ROOT/frontend/package-lock.json" | awk '{print $1}')"
-POLICY_SHA256="$(sha256sum "$REPO_ROOT/docs/engineering/openapi-toolchain-trust.md" | awk '{print $1}')"
+POLICY_SHA256="$(sha256sum "$REPO_ROOT/security/tools/openapi-tools.policy" | awk '{print $1}')"
 TOOLS_LOCK_SHA256="$(sha256sum "$REPO_ROOT/security/tools/release-tools.lock.json" | awk '{print $1}')"
 PACKAGE_JSON_SHA256="$(sha256sum "$REPO_ROOT/frontend/package.json" | awk '{print $1}')"
 GO_MOD_SHA256="$(sha256sum "$REPO_ROOT/backend/go.mod" | awk '{print $1}')"
@@ -132,15 +132,15 @@ const report = {
     { name: "npm", version: npmVersion, identity_check: "security/tools/release-tools.lock.json", exit_code: Number(securityStatus) },
     { name: "playwright", version: toolVersions.playwright, identity_check: "security/tools/release-tools.lock.json", exit_code: Number(securityStatus) },
     { name: "chromium", version: toolVersions.chromium, binding_version: toolVersions.chromium_binding, identity_check: "security/tools/release-tools.lock.json", exit_code: Number(securityStatus) },
-    { name: "@redocly/cli", version: toolVersions.redocly, identity_check: "docs/engineering/openapi-toolchain-trust.md", exit_code: Number(openapiStatus) },
-    { name: "openapi-typescript", version: toolVersions.openapi_typescript, identity_check: "docs/engineering/openapi-toolchain-trust.md", exit_code: Number(openapiStatus) },
+    { name: "@redocly/cli", version: toolVersions.redocly, identity_check: "security/tools/openapi-tools.policy", exit_code: Number(openapiStatus) },
+    { name: "openapi-typescript", version: toolVersions.openapi_typescript, identity_check: "security/tools/openapi-tools.policy", exit_code: Number(openapiStatus) },
   ],
   data_sources: [
     { path: "frontend/package.json", sha256: packageJsonSha256 },
     { path: "frontend/package-lock.json", sha256: packageLockSha256 },
     { path: "backend/go.mod", sha256: goModSha256 },
     { path: "backend/go.sum", sha256: goSumSha256 },
-    { path: "docs/engineering/openapi-toolchain-trust.md", sha256: policySha256 },
+    { path: "security/tools/openapi-tools.policy", sha256: policySha256 },
     { path: "security/tools/release-tools.lock.json", sha256: toolsLockSha256 },
     { path: "security/semgrep/frontend.yml", sha256: semgrepRulesSha256 },
     { path: "scripts/release/validate-openapi-toolchain-trust.sh", sha256: openapiValidatorSha256 },

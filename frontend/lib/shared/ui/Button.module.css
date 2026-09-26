@@ -19,10 +19,8 @@
   transition:
     background-color var(--motion),
     border-color var(--motion),
-    box-shadow var(--motion),
     color var(--motion),
-    transform var(--motion),
-    filter var(--motion);
+    transform var(--motion);
 }
 
 .button:hover:not(:disabled) {
@@ -36,7 +34,6 @@
 .button:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 3px;
-  box-shadow: 0 0 0 5px var(--accent-ring);
 }
 
 .button:disabled,
@@ -55,7 +52,6 @@
 
 .variant-primary:hover:not(:disabled) {
   background: var(--accent-strong);
-  box-shadow: 0 6px 16px var(--accent-ring);
 }
 
 .variant-secondary {
@@ -77,8 +73,8 @@
 }
 
 .variant-success:hover:not(:disabled) {
-  filter: brightness(1.06);
-  box-shadow: 0 6px 16px var(--accent-ring);
+  background: var(--success-soft);
+  color: var(--success);
 }
 
 .variant-danger {
@@ -88,8 +84,8 @@
 }
 
 .variant-danger:hover:not(:disabled) {
-  filter: brightness(1.08);
-  box-shadow: 0 6px 16px var(--accent-ring);
+  background: var(--error-soft);
+  color: var(--error);
 }
 
 .variant-ghost {

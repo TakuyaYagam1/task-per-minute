@@ -104,6 +104,16 @@ const setupAdminRoutes = async (
     await fulfillJSON(route, 200, { expires_in: 900 }, {
       "X-CSRF-Token": accessCSRF,
       "X-Admin-Refresh-CSRF-Token": refreshCSRF,
+      "Set-Cookie": `tpm_admin_refresh_csrf=${refreshCSRF}; Path=/`,
+    });
+  });
+
+  await page.route("**/api/v1/admin/refresh", async (route) => {
+    expect(route.request().method()).toBe("POST");
+    await fulfillJSON(route, 200, { expires_in: 900 }, {
+      "X-CSRF-Token": accessCSRF,
+      "X-Admin-Refresh-CSRF-Token": refreshCSRF,
+      "Set-Cookie": `tpm_admin_refresh_csrf=${refreshCSRF}; Path=/`,
     });
   });
 
@@ -186,7 +196,7 @@ test("показывает состояния загрузки списка ту
 
   await loginAndOpenTournamentList(page);
   await expect(
-    page.getByRole("region", { name: "Каталог контента" }).getByText("Загружаем публикацию"),
+    page.getByRole("region", { name: "Новый турнир" }).getByText("Проверяем публикацию"),
   ).toBeVisible();
   await expect(
     page.getByRole("region", { name: "Турниры" }).getByText("Загружаем турниры"),
@@ -205,8 +215,31 @@ test("показывает пустой список турниров", async ({
   await expect(page.getByText("Турниров пока нет")).toBeVisible();
 });
 
+test("открывает detail турнира, сохраняет подраздел и выбор при reload", async ({ page }) => {
+  const selected = tournament({
+    id: "10000000-0000-4000-8000-000000000099",
+    name: "Detail турнир",
+  });
+  await setupAdminRoutes(page, { listBody: { items: [selected], next_cursor: null } });
+  await loginAndOpenTournamentList(page);
+
+  await page.getByRole("row").filter({ hasText: "Detail турнир" }).getByRole("button", { name: "Открыть" }).click();
+  await expect(page.getByRole("heading", { name: "Detail турнир" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Обзор" })).toHaveAttribute("aria-current", "page");
+  await expect(page.getByText("Формат", { exact: true })).toBeVisible();
+  await expect(page.getByText(selected.preset, { exact: true })).toBeVisible();
+
+  await page.getByRole("button", { name: "Участники" }).click();
+  await expect(page).toHaveURL(new RegExp(`[?&]tournament=${selected.id}(?:&|$)`));
+  await expect(page).toHaveURL(new RegExp(`[?&]view=participants(?:&|$)`));
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "Detail турнир" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Участники" })).toHaveAttribute("aria-current", "page");
+});
+
 test("показывает ошибку списка и доступен повторный запрос", async ({ page }) => {
   let listRequests = 0;
+  let listUnavailable = true;
   await page.route("**/api/v1/admin/login", async (route) => {
     await fulfillJSON(route, 200, { expires_in: 900 }, {
       "X-CSRF-Token": accessCSRF,
@@ -221,7 +254,7 @@ test("показывает ошибку списка и доступен пов�
   });
   await page.route("**/api/v1/admin/tournaments**", async (route) => {
     listRequests += 1;
-    if (listRequests <= 2) {
+    if (listUnavailable) {
       await fulfillJSON(route, 503, problem(503, "Сервис списка временно недоступен"));
       return;
     }
@@ -234,6 +267,7 @@ test("показывает ошибку списка и доступен пов�
   );
   const failedRequestCount = listRequests;
   expect(failedRequestCount).toBeGreaterThanOrEqual(1);
+  listUnavailable = false;
   await page.getByRole("region", { name: "Турниры" }).getByRole("button", { name: "Обновить список" }).click();
   await expect(page.getByText("Турниров пока нет")).toBeVisible();
   expect(listRequests).toBe(failedRequestCount + 1);
@@ -340,18 +374,16 @@ test("отображает серверные состояния, состав, 
   await setupAdminRoutes(page, { listBody: { items, next_cursor: null } });
   await loginAndOpenTournamentList(page);
 
-  const table = page.getByRole("table", { name: "Операторские турниры" });
+  const table = page
+    .getByRole("region", { name: "Список турниров" })
+    .getByRole("table");
   await expect(table.getByRole("row")).toHaveCount(stateCases.length + 1);
   for (const [index, item] of stateCases.entries()) {
     const row = table.getByRole("row").filter({ hasText: `Состояние ${item.state}` });
     await expect(row).toContainText(item.label);
     await expect(row).toContainText(`${item.rosterSize} / ${item.plannedRosterSize}`);
-    await expect(row).toContainText("Демо (tournament_v1)");
     await expect(row).toContainText("13.09");
-    await expect(row.getByRole("link", { name: "Открыть" })).toHaveAttribute(
-      "href",
-      `/arena/operator/${items[index].id}`,
-    );
+    await expect(row.getByRole("button", { name: "Открыть" })).toBeVisible();
   }
 });
 
@@ -378,12 +410,12 @@ test("создает турнир с актуальной ревизией и о
   await page.getByLabel("Название турнира").fill("Весенний турнир");
   await page.getByLabel("Плановый размер состава").selectOption("8");
   await expect(
-    page.getByRole("region", { name: "Каталог контента" }).getByText(`Ревизия ${contentRevision}`, { exact: true }),
+    page.getByRole("region", { name: "Новый турнир" }).getByText(`Ревизия ${contentRevision}`, { exact: true }),
   ).toBeVisible();
-  const createButton = page.getByRole("button", { name: "Создать демо-турнир" });
+  const createButton = page.getByRole("button", { name: "Создать турнир" });
   await expect(createButton).toBeEnabled();
   await Promise.all([
-    page.waitForURL(`**/arena/operator/${createdID}`),
+    page.waitForURL(new RegExp(`[?&]tournament=${createdID}(?:&|$)`)),
     createButton.click(),
   ]);
 
@@ -417,13 +449,47 @@ test("двойное нажатие отправляет один запрос �
 
   await loginAndOpenTournamentList(page);
   await page.getByLabel("Название турнира").fill("Двойной клик");
-  const createButton = page.getByRole("button", { name: "Создать демо-турнир" });
+  const createButton = page.getByRole("button", { name: "Создать турнир" });
   await createButton.click({ clickCount: 2 });
   await expect.poll(() => createRequests.length).toBe(1);
   releaseCreate?.();
-  await page.waitForURL(`**/arena/operator/${createdID}`);
+  await expect(page).toHaveURL(new RegExp(`[?&]tournament=${createdID}(?:&|$)`));
   expect(createRequests).toHaveLength(1);
   expect(createRequests[0]).toMatch(/^[0-9a-f-]{36}$/i);
+});
+
+test("не возвращает пользователя в турнир после ухода во время создания", async ({ page }) => {
+  const createdID = "10000000-0000-4000-8000-000000000092";
+  const createRequests: string[] = [];
+  let releaseCreate: (() => void) | undefined;
+  const createGate = new Promise<void>((resolve) => {
+    releaseCreate = resolve;
+  });
+
+  await setupAdminRoutes(page, {
+    create: async (route) => {
+      createRequests.push(route.request().headers()["idempotency-key"] ?? "");
+      await createGate;
+      await fulfillJSON(route, 201, tournament({ id: createdID, name: "Поздний ответ" }));
+    },
+  });
+
+  await loginAndOpenTournamentList(page);
+  await page.getByLabel("Название турнира").fill("Поздний ответ");
+  await page.getByRole("button", { name: "Создать турнир" }).click();
+  await expect.poll(() => createRequests.length).toBe(1);
+
+  const dialogPromise = page.waitForEvent("dialog").then(async (dialog) => {
+    expect(dialog.message()).toContain("несохраненные изменения");
+    await dialog.accept();
+  });
+  await page.getByRole("button", { name: "Задачи" }).click();
+  await dialogPromise;
+  await expect(page.getByPlaceholder("Введите название...")).toBeVisible();
+
+  releaseCreate?.();
+  await expect(page).toHaveURL(/[?&]section=tasks(?:&|$)/);
+  await expect(page).not.toHaveURL(new RegExp(`[?&]tournament=${createdID}(?:&|$)`));
 });
 
 test("409 показывает восстановимое сообщение и сохраняет введенное название", async ({ page }) => {
@@ -436,12 +502,12 @@ test("409 показывает восстановимое сообщение и 
   await loginAndOpenTournamentList(page);
   const name = "Конфликтный турнир";
   await page.getByLabel("Название турнира").fill(name);
-  await page.getByRole("button", { name: "Создать демо-турнир" }).click();
+  await page.getByRole("button", { name: "Создать турнир" }).click();
   await expect(page.getByRole("region", { name: "Новый турнир" }).getByRole("alert")).toContainText(
     "Турнир уже был создан другим оператором",
   );
   await expect(page.getByLabel("Название турнира")).toHaveValue(name);
-  await expect(page.getByRole("button", { name: "Создать демо-турнир" })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "Создать турнир" })).toBeEnabled();
 });
 
 test("422 показывает сообщение о ревизии и сохраняет введенное название", async ({ page }) => {
@@ -454,12 +520,12 @@ test("422 показывает сообщение о ревизии и сохр�
   await loginAndOpenTournamentList(page);
   const name = "Устаревшая ревизия";
   await page.getByLabel("Название турнира").fill(name);
-  await page.getByRole("button", { name: "Создать демо-турнир" }).click();
+  await page.getByRole("button", { name: "Создать турнир" }).click();
   await expect(page.getByRole("region", { name: "Новый турнир" }).getByRole("alert")).toContainText(
     "Ревизия контента больше недоступна",
   );
   await expect(page.getByLabel("Название турнира")).toHaveValue(name);
-  await expect(page.getByRole("button", { name: "Создать демо-турнир" })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "Создать турнир" })).toBeEnabled();
 });
 
 test("список не создает горизонтальный overflow в темной и светлой теме на мобильной ширине", async ({ page }) => {
@@ -494,6 +560,9 @@ test("список не создает горизонтальный overflow в 
     expect(dimensions.documentWidth).toBeLessThanOrEqual(dimensions.viewportWidth);
   }
   await expect(
-    page.getByRole("table", { name: "Операторские турниры" }).getByText("Мобильный турнир", { exact: true }),
+    page
+      .getByRole("region", { name: "Список турниров" })
+      .getByRole("table")
+      .getByText("Мобильный турнир", { exact: true }),
   ).toBeVisible();
 });

@@ -366,7 +366,8 @@ const openAdminTournament = async (page: Page): Promise<void> => {
   await page.getByRole("button", { name: "Войти" }).click();
   await page.getByRole("button", { name: "Турниры" }).click();
   await expect(page.getByRole("heading", { name: "Новый турнир" })).toBeVisible();
-  await page.getByRole("button", { name: "Редактировать состав" }).click();
+  await page.getByRole("button", { name: "Открыть" }).click();
+  await page.getByRole("button", { name: "Проведение" }).click();
   await expect(page.getByTestId("operator-wave-control-panel")).toBeVisible();
 };
 
@@ -404,6 +405,7 @@ test("открывает и запускает волну с текущей ре
   );
 
   await openAdminTournament(page);
+  await expect(page.getByTestId("operator-wave-connection")).toContainText("Realtime на связи");
   const connectionsBeforeOpen = realtimeConnections;
   const openButton = page.locator('[data-testid^="wave-open-"]').first();
   await expect(openButton).toBeEnabled();

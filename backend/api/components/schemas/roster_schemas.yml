@@ -1,6 +1,7 @@
 AttendanceState:
   type: string
   enum: [invited, registered, checked_in, withdrawn]
+  x-enum-varnames: [Invited, Registered, CheckedIn, Withdrawn]
 
 Roster:
   type: object

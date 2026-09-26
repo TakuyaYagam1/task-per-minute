@@ -192,7 +192,7 @@ test('changing player clears the restore cache and calls logout', async ({ page 
 test('home exposes leaderboard and Arena navigation', async ({ page }) => {
   await page.goto('/');
 
-  await expect(page.getByRole('link', { name: 'Лидерборд' })).toHaveAttribute('href', '/leaderboard');
+  await expect(page.getByRole('link', { name: 'Общий рейтинг' })).toHaveAttribute('href', '/leaderboard');
   await expect(page.getByRole('link', { name: 'Открыть Arena' })).toHaveAttribute('href', '/arena');
   await expect(page.getByRole('link')).toHaveCount(2);
 });

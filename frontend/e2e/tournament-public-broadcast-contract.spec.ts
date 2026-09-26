@@ -16,10 +16,14 @@ const jsonHeaders = {
 const installSocketStub = async (
   page: Page,
   initialFrame: Record<string, unknown> | null = null,
+  closeCode: number | null = null,
 ): Promise<void> => {
-  await page.addInitScript((serializedFrame: string | null) => {
+  await page.addInitScript((input: { serializedFrame: string | null; closeCode: number | null }) => {
     const NativeWebSocket = window.WebSocket;
-    const frame = serializedFrame === null ? null : JSON.parse(serializedFrame) as Record<string, unknown>;
+    let publicSocketCount = 0;
+    const frame = input.serializedFrame === null
+      ? null
+      : JSON.parse(input.serializedFrame) as Record<string, unknown>;
     class PublicSocket {
       static readonly CLOSED = 3;
       static readonly CLOSING = 2;
@@ -32,11 +36,15 @@ const installSocketStub = async (
       readyState = PublicSocket.CONNECTING;
 
       constructor(readonly url: string) {
+        publicSocketCount += 1;
         queueMicrotask(() => {
           this.readyState = PublicSocket.OPEN;
           this.onopen?.();
           if (frame !== null) {
             this.onmessage?.({ data: JSON.stringify(frame) });
+          }
+          if (input.closeCode !== null) {
+            this.onclose?.({ code: input.closeCode });
           }
         });
       }
@@ -60,7 +68,14 @@ const installSocketStub = async (
       configurable: true,
       value: WebSocketProxy,
     });
-  }, initialFrame === null ? null : JSON.stringify(initialFrame));
+    Object.defineProperty(window, "__publicSocketCount", {
+      configurable: true,
+      get: () => publicSocketCount,
+    });
+  }, {
+    closeCode,
+    serializedFrame: initialFrame === null ? null : JSON.stringify(initialFrame),
+  });
 };
 
 const installFullscreenMock = async (page: Page): Promise<void> => {
@@ -339,6 +354,27 @@ const publicRealtimeFrame = (
   };
 };
 
+const publicSnapshotWithNextDraftTurn = (): Record<string, unknown> => {
+  const snapshot = publicSnapshot("live");
+  const draft = snapshot.live_draft as Record<string, unknown>;
+  draft.actions = [
+    ...(draft.actions as Array<Record<string, unknown>>),
+    {
+      action: "pick",
+      actor_display_name: "Боб",
+      automatic: false,
+      category: "crypto",
+      occurred_at: "2026-09-15T10:02:00Z",
+      turn: 2,
+    },
+  ];
+  draft.current_action = "ban";
+  draft.current_actor_display_name = "Алиса";
+  draft.current_turn = 3;
+  draft.turn_deadline = "2026-09-15T10:04:00Z";
+  return snapshot;
+};
+
 type SnapshotFactory = (mode: SnapshotMode) => Record<string, unknown>;
 
 const installArenaRoutes = async (
@@ -520,6 +556,169 @@ test("FE-041 anchors countdown to the latest public websocket timestamp", async 
   );
   await expect(broadcast.getByTestId("broadcast-game-countdown")).toHaveText("4:00");
 });
+
+test("FE-047 falls back to fresh public REST snapshots after terminal realtime close", async ({ page }) => {
+  let snapshotRequests = 0;
+  let refreshRequestsWithCursor = 0;
+  let releaseFirstRefresh = (): void => {
+    throw new Error("Synthetic refresh barrier was not initialized");
+  };
+  const firstRefreshBarrier = new Promise<void>((resolve) => {
+    releaseFirstRefresh = resolve;
+  });
+  const nextDraftSnapshot = publicSnapshotWithNextDraftTurn();
+  await page.clock.install({ time: new Date(serverTimestamp).getTime() - 60_000 });
+  await page.clock.pauseAt(serverTimestamp);
+  await installSocketStub(page, publicRealtimeFrame("live", "2026-09-15T10:01:00Z"), 4403);
+  await page.route(`**${tournamentPath}`, async (route) => {
+    await route.fulfill({
+      body: JSON.stringify(publicSnapshot("live").tournament),
+      headers: jsonHeaders,
+      status: 200,
+    });
+  });
+  await page.route(`**${snapshotPath}*`, async (route) => {
+    snapshotRequests += 1;
+    if (snapshotRequests >= 2 && new URL(route.request().url()).searchParams.has("cursor")) {
+      refreshRequestsWithCursor += 1;
+    }
+    if (snapshotRequests === 2) {
+      await firstRefreshBarrier;
+    }
+    await route.fulfill({
+      body: JSON.stringify(snapshotRequests === 1 ? publicSnapshot("live") : nextDraftSnapshot),
+      headers: jsonHeaders,
+      status: 200,
+    });
+  });
+
+  await page.goto(`/arena/spectator/${tournamentId}?match=series:${firstSeriesId}`, {
+    waitUntil: "domcontentloaded",
+  });
+
+  const broadcast = page.getByTestId("tournament-broadcast");
+  const draft = broadcast.getByTestId("broadcast-draft");
+  await expect(draft.getByTestId("broadcast-draft-turn")).toHaveText("2");
+  const summary = page.getByTestId("public-realtime-summary");
+  await expect(summary).toHaveAttribute("data-refreshing", "true");
+  await expect(summary).toContainText("Периодическое обновление");
+  expect(await page.evaluate(() => (
+    window as Window & { __publicSocketCount?: number }
+  ).__publicSocketCount ?? 0)).toBe(1);
+  releaseFirstRefresh();
+  await expect(draft.getByTestId("broadcast-draft-turn")).toHaveText("3");
+  await expect(draft).toHaveAttribute("data-deadline", "2026-09-15T10:04:00Z");
+  expect(snapshotRequests).toBeGreaterThanOrEqual(2);
+  expect(refreshRequestsWithCursor).toBe(0);
+
+  await page.clock.runFor(4_999);
+  expect(snapshotRequests).toBe(2);
+  await page.clock.runFor(1);
+  await expect.poll(() => snapshotRequests).toBeGreaterThanOrEqual(3);
+  expect(refreshRequestsWithCursor).toBe(0);
+  expect(await page.evaluate(() => (
+    window as Window & { __publicSocketCount?: number }
+  ).__publicSocketCount ?? 0)).toBe(1);
+
+  await page.evaluate(() => {
+    Object.defineProperty(document, "visibilityState", {
+      configurable: true,
+      value: "hidden",
+    });
+    document.dispatchEvent(new Event("visibilitychange"));
+  });
+  const requestsBeforeHidden = snapshotRequests;
+  await page.clock.runFor(5_000);
+  expect(snapshotRequests).toBe(requestsBeforeHidden);
+  await page.evaluate(() => {
+    Object.defineProperty(document, "visibilityState", {
+      configurable: true,
+      value: "visible",
+    });
+    document.dispatchEvent(new Event("visibilitychange"));
+  });
+  await expect.poll(() => snapshotRequests).toBeGreaterThan(requestsBeforeHidden);
+
+  const requestsBeforeUnmount = snapshotRequests;
+  await page.getByRole("link", { name: "Arena", exact: true }).click();
+  await expect(page).toHaveURL(/\/arena(?:\?.*)?$/);
+  await page.clock.runFor(20_000);
+  expect(snapshotRequests).toBe(requestsBeforeUnmount);
+});
+
+test("FE-047 stops public polling after an authoritative terminal REST snapshot", async ({ page }) => {
+  let snapshotRequests = 0;
+  await page.clock.install({ time: serverTimestamp });
+  await installSocketStub(page, publicRealtimeFrame("live", "2026-09-15T10:01:00Z"), 4403);
+  await page.route(`**${tournamentPath}`, async (route) => {
+    await route.fulfill({
+      body: JSON.stringify(publicSnapshot("live").tournament),
+      headers: jsonHeaders,
+      status: 200,
+    });
+  });
+  await page.route(`**${snapshotPath}*`, async (route) => {
+    snapshotRequests += 1;
+    await route.fulfill({
+      body: JSON.stringify(snapshotRequests === 1 ? publicSnapshot("live") : publicSnapshot("result")),
+      headers: jsonHeaders,
+      status: 200,
+    });
+  });
+
+  await page.goto(`/arena/spectator/${tournamentId}?match=series:${firstSeriesId}`, {
+    waitUntil: "domcontentloaded",
+  });
+
+  const summary = page.getByTestId("public-realtime-summary");
+  await expect(summary).toHaveAttribute("data-refreshing", "false");
+  await expect(page.getByTestId("broadcast-official-result")).toContainText("2:1");
+  await page.clock.runFor(20_000);
+  expect(snapshotRequests).toBe(2);
+});
+
+for (const responseStatus of [403, 404] as const) {
+  test(`FE-047 stops public polling after permanent REST ${responseStatus}`, async ({ page }) => {
+    let snapshotRequests = 0;
+    await page.clock.install({ time: serverTimestamp });
+    await installSocketStub(page, publicRealtimeFrame("live", "2026-09-15T10:01:00Z"), 4403);
+    await page.route(`**${tournamentPath}`, async (route) => {
+      await route.fulfill({
+        body: JSON.stringify(publicSnapshot("live").tournament),
+        headers: jsonHeaders,
+        status: 200,
+      });
+    });
+    await page.route(`**${snapshotPath}*`, async (route) => {
+      snapshotRequests += 1;
+      if (snapshotRequests === 1) {
+        await route.fulfill({
+          body: JSON.stringify(publicSnapshot("live")),
+          headers: jsonHeaders,
+          status: 200,
+        });
+        return;
+      }
+      await route.fulfill({
+        body: JSON.stringify({ detail: `HTTP ${responseStatus}`, status: responseStatus, title: "Synthetic error" }),
+        headers: jsonHeaders,
+        status: responseStatus,
+      });
+    });
+
+    await page.goto(`/arena/spectator/${tournamentId}?match=series:${firstSeriesId}`, {
+      waitUntil: "domcontentloaded",
+    });
+
+    const summary = page.getByTestId("public-realtime-summary");
+    await expect(summary).toHaveAttribute("data-refreshing", "false");
+    await page.clock.runFor(20_000);
+    expect(snapshotRequests).toBe(2);
+    expect(await page.evaluate(() => (
+      window as Window & { __publicSocketCount?: number }
+    ).__publicSocketCount ?? 0)).toBe(1);
+  });
+}
 
 test("FE-042 keeps spectator tabs, names, focus, motion, and responsive actions accessible", async ({ page }) => {
   await page.clock.install({ time: serverTimestamp });

@@ -23,6 +23,7 @@ type TournamentAuditPanelProps = Readonly<{
   selectedTournamentId: string;
   onSelectTournament: (tournamentId: string) => void;
   onSessionExpired?: () => void;
+  showTournamentChooser?: boolean;
 }>;
 
 type AuditFilters = Readonly<{
@@ -177,6 +178,7 @@ export const TournamentAuditPanel = ({
   selectedTournamentId,
   onSelectTournament,
   onSessionExpired,
+  showTournamentChooser = true,
 }: TournamentAuditPanelProps) => {
   const [filters, setFilters] = useState<AuditFilters>(emptyFilters);
   const [appliedQuery, setAppliedQuery] = useState<AppliedAuditQuery>(defaultQuery);
@@ -365,21 +367,23 @@ export const TournamentAuditPanel = ({
       className={styles.panel}
     >
       <div className={styles.toolbar}>
-        <div className={styles.fieldWide}>
-          <label htmlFor="audit-tournament">Турнир для аудита</label>
-          <select
-            id="audit-tournament"
-            value={selectedTournamentId}
-            onChange={(event) => onSelectTournament(event.target.value)}
-          >
-            <option value="">Выберите турнир</option>
-            {tournaments.map((tournament) => (
-              <option key={tournament.id} value={tournament.id}>
-                {tournament.name} - {tournament.state}
-              </option>
-            ))}
-          </select>
-        </div>
+        {showTournamentChooser ? (
+          <div className={styles.fieldWide}>
+            <label htmlFor="audit-tournament">Турнир для аудита</label>
+            <select
+              id="audit-tournament"
+              value={selectedTournamentId}
+              onChange={(event) => onSelectTournament(event.target.value)}
+            >
+              <option value="">Выберите турнир</option>
+              {tournaments.map((tournament) => (
+                <option key={tournament.id} value={tournament.id}>
+                  {tournament.name} - {tournament.state}
+                </option>
+              ))}
+            </select>
+          </div>
+        ) : null}
         <div className={styles.bundleAction}>
           <Button
             type="button"

@@ -5,11 +5,15 @@ type Theme = 'dark' | 'light';
 type ThemeTokens = {
   bg: string;
   surface: string;
+  surfaceStrong: string;
   text: string;
   secondary: string;
+  subtle: string;
   accent: string;
   accentStrong: string;
   accentSoft: string;
+  success: string;
+  successSoft: string;
   error: string;
   errorSoft: string;
 };
@@ -35,30 +39,38 @@ type ThemeControl =
 type RGB = [number, number, number];
 
 const themeStorageKey = 'task-per-minute-theme';
-const viewportWidths = [390, 768, 1440] as const;
+const viewportWidths = [375, 768, 1440] as const;
 
 const expectedTokens: Record<Theme, ThemeTokens> = {
   dark: {
-    bg: '#101419',
-    surface: '#1A2027',
-    text: '#F2F5F7',
-    secondary: '#A8B3BE',
-    accent: '#70B5E8',
-    accentStrong: '#9BD2F5',
-    accentSoft: '#23394B',
-    error: '#FF6B6B',
-    errorSoft: '#451F25',
+    bg: '#121212',
+    surface: '#1B1B1B',
+    surfaceStrong: '#242424',
+    text: '#F2F2F2',
+    secondary: '#B5B5B5',
+    subtle: '#939393',
+    accent: '#D0D0D0',
+    accentStrong: '#F5F5F5',
+    accentSoft: '#2D2D2D',
+    success: '#68B381',
+    successSoft: '#1D3025',
+    error: '#E07171',
+    errorSoft: '#3A2024',
   },
   light: {
-    bg: '#F5F7FA',
+    bg: '#F5F5F5',
     surface: '#FFFFFF',
-    text: '#18212B',
-    secondary: '#526173',
-    accent: '#175CD3',
-    accentStrong: '#124BB0',
-    accentSoft: '#E6EFFF',
-    error: '#B42318',
-    errorSoft: '#FEF3F2',
+    surfaceStrong: '#E9E9E9',
+    text: '#202020',
+    secondary: '#5D5D5D',
+    subtle: '#626262',
+    accent: '#444444',
+    accentStrong: '#1F1F1F',
+    accentSoft: '#E8E8E8',
+    success: '#286B40',
+    successSoft: '#E7F3EB',
+    error: '#B4232D',
+    errorSoft: '#FCEDEE',
   },
 };
 
@@ -204,11 +216,15 @@ const readThemeState = async (page: Page) => page.evaluate(() => {
     tokens: {
       bg: rootStyles.getPropertyValue('--bg').trim(),
       surface: rootStyles.getPropertyValue('--surface').trim(),
+      surfaceStrong: rootStyles.getPropertyValue('--surface-strong').trim(),
       text: rootStyles.getPropertyValue('--text').trim(),
       secondary: rootStyles.getPropertyValue('--secondary').trim(),
+      subtle: rootStyles.getPropertyValue('--subtle').trim(),
       accent: rootStyles.getPropertyValue('--accent').trim(),
       accentStrong: rootStyles.getPropertyValue('--accent-strong').trim(),
       accentSoft: rootStyles.getPropertyValue('--accent-soft').trim(),
+      success: rootStyles.getPropertyValue('--success').trim(),
+      successSoft: rootStyles.getPropertyValue('--success-soft').trim(),
       error: rootStyles.getPropertyValue('--error').trim(),
       errorSoft: rootStyles.getPropertyValue('--error-soft').trim(),
     },
@@ -306,11 +322,15 @@ const assertThemeVisualContract = async (page: Page, theme: Theme): Promise<void
   expect(state.tokens).toEqual({
     bg: tokens.bg.toLowerCase(),
     surface: tokens.surface.toLowerCase(),
+    surfaceStrong: tokens.surfaceStrong.toLowerCase(),
     text: tokens.text.toLowerCase(),
     secondary: tokens.secondary.toLowerCase(),
+    subtle: tokens.subtle.toLowerCase(),
     accent: tokens.accent.toLowerCase(),
     accentStrong: tokens.accentStrong.toLowerCase(),
     accentSoft: tokens.accentSoft.toLowerCase(),
+    success: tokens.success.toLowerCase(),
+    successSoft: tokens.successSoft.toLowerCase(),
     error: tokens.error.toLowerCase(),
     errorSoft: tokens.errorSoft.toLowerCase(),
   });
@@ -340,12 +360,27 @@ const assertThemeVisualContract = async (page: Page, theme: Theme): Promise<void
   expect(contrastRatio(secondaryTextColor, surfaceBackground)).toBeGreaterThanOrEqual(4.5);
   const focusColor = parseColor(tokens.accentStrong);
   const focusSurface = parseColor(tokens.accentSoft);
+  const subtleColor = parseColor(tokens.subtle);
+  const strongSurface = parseColor(tokens.surfaceStrong);
+  const successColor = parseColor(tokens.success);
+  const successSurface = parseColor(tokens.successSoft);
   const errorColor = parseColor(tokens.error);
   const errorSurface = parseColor(tokens.errorSoft);
-  if (!focusColor || !focusSurface || !errorColor || !errorSurface) {
-    throw new Error('Focus or error colors could not be parsed from theme tokens');
+  if (
+    !focusColor
+    || !focusSurface
+    || !subtleColor
+    || !strongSurface
+    || !successColor
+    || !successSurface
+    || !errorColor
+    || !errorSurface
+  ) {
+    throw new Error('Theme status or focus colors could not be parsed from theme tokens');
   }
   expect(contrastRatio(focusColor, focusSurface)).toBeGreaterThanOrEqual(3);
+  expect(contrastRatio(subtleColor, strongSurface)).toBeGreaterThanOrEqual(4.5);
+  expect(contrastRatio(successColor, successSurface)).toBeGreaterThanOrEqual(4.5);
   expect(contrastRatio(errorColor, errorSurface)).toBeGreaterThanOrEqual(4.5);
   expect(state.documentScrollWidth).toBeLessThanOrEqual(state.viewportWidth);
   expect(state.bodyScrollWidth).toBeLessThanOrEqual(state.viewportWidth);

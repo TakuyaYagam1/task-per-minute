@@ -22,7 +22,7 @@ export type RefreshPlayerResult =
 
 const isAbortError = (error: unknown): boolean =>
   error instanceof DOMException &&
-  (error.name === "AbortError" || error.name === "TimeoutError");
+  error.name === "AbortError";
 
 export const playerModel = {
   async initializePlayer(
@@ -57,6 +57,39 @@ export const playerModel = {
     player: Player,
     signal?: AbortSignal,
   ): Promise<RefreshPlayerResult> {
+    try {
+      const data = await playerApi.me(signal);
+      const nextPlayer: Player = {
+        id: data.player.id,
+        username: data.player.username,
+      };
+
+      playerStorage.clearSession();
+      playerStorage.setPlayerId(nextPlayer.id);
+      playerStorage.setUsername(nextPlayer.username);
+
+      return {
+        kind: "ok",
+        state: {
+          player: nextPlayer,
+        },
+      };
+    } catch (error) {
+      if (isAbortError(error)) {
+        return { kind: "aborted" };
+      }
+      if (error instanceof ApiError && error.status === 401) {
+        playerStorage.clearSession();
+        return { kind: "expired" };
+      }
+      if (error instanceof ApiContractError) {
+        return { kind: "contract" };
+      }
+      return { kind: "error" };
+    }
+  },
+
+  async restoreCurrentPlayer(signal?: AbortSignal): Promise<RefreshPlayerResult> {
     try {
       const data = await playerApi.me(signal);
       const nextPlayer: Player = {

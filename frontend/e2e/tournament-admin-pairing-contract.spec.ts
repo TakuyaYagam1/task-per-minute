@@ -319,10 +319,12 @@ const openPairingEditor = async (page: Page): Promise<ReturnType<typeof pairingR
   await page.getByRole("button", { name: "Войти" }).click();
   await page.getByRole("button", { name: "Турниры" }).click();
   const row = page.getByRole("row").filter({ hasText: "Swiss контракт" });
-  await row.getByRole("button", { name: "Редактировать состав" }).click();
+  await row.getByRole("button", { name: "Открыть" }).click();
+  await expect(page.locator("#tournament-detail-title")).toHaveText("Swiss контракт");
+  await page.getByRole("button", { name: "Сетка и серии" }).click();
   const region = pairingRegion(page);
   await expect(region).toBeVisible();
-  await expect(region.getByLabel("Турнир для формирования пар")).toHaveValue(tournamentId);
+  await expect(page).toHaveURL(new RegExp(`[?&]tournament=${tournamentId}(?:&|$)`));
   await expect(region.getByText(/Текущая ревизия/)).toBeVisible();
   return region;
 };
@@ -518,7 +520,9 @@ test("остается непустым в светлой, темной и мо�
 
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(region).toBeVisible();
-  await expect(region.getByLabel("Турнир для формирования пар")).toBeVisible();
+  await expect(page.locator("#tournament-detail-title")).toHaveText("Swiss контракт");
+  await expect(page.getByRole("button", { name: "Сетка и серии" })).toHaveAttribute("aria-current", "page");
+  await expect(page).toHaveURL(new RegExp(`[?&]tournament=${tournamentId}(?:&|$)`));
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1);
   expect(overflow).toBe(true);
 });

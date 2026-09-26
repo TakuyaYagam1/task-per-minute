@@ -34,6 +34,8 @@ type Dependencies struct {
 	Upload                               UploadService
 	Leaderboard                          LeaderboardService
 	Tournaments                          usecase.TournamentUseCase
+	PublicTournamentCatalog              usecase.PublicTournamentCatalogUseCase
+	TournamentAdmission                  usecase.TournamentAdmissionUseCase
 	TournamentAdmin                      usecase.TournamentAdminUseCase
 	TournamentConfiguration              usecase.TournamentConfigurationUseCase
 	TournamentParticipant                usecase.TournamentParticipantUseCase
@@ -64,6 +66,8 @@ type Server struct {
 	adminPlayerEvents                    AdminPlayerEventSubscriber
 	upload                               UploadService
 	leaderboard                          LeaderboardService
+	publicTournamentCatalog              usecase.PublicTournamentCatalogUseCase
+	tournamentAdmission                  usecase.TournamentAdmissionUseCase
 	tournamentParticipant                usecase.TournamentParticipantUseCase
 	participantArchive                   usecase.ParticipantArchiveUseCase
 	tournamentSnapshots                  usecase.TournamentSnapshotUseCase
@@ -90,6 +94,8 @@ func New(deps Dependencies) *Server {
 	}
 	return &Server{
 		tournamentController:                 newTournamentController(deps.Tournaments, deps.TournamentAdmin, deps.TournamentConfiguration),
+		publicTournamentCatalog:              deps.PublicTournamentCatalog,
+		tournamentAdmission:                  deps.TournamentAdmission,
 		players:                              deps.Players,
 		adminAuth:                            deps.AdminAuth,
 		tasks:                                deps.Tasks,

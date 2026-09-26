@@ -10,9 +10,11 @@ import {
   openPublicRealtimeMessage,
   parsePublicRealtimeMessage,
   publicRealtimeUrl,
+  recoverPublicTournament,
   type PublicRecoveryState,
   type RoleAwareRecoveryState,
 } from "../../shared/api";
+import type { TournamentRecoveryError } from "./use-tournament-recovery";
 
 export type PublicRealtimeConnectionStatus =
   | "idle"
@@ -26,11 +28,15 @@ export type PublicRealtimeConnectionStatus =
 type UsePublicTournamentRealtimeInput = Readonly<{
   enabled: boolean;
   recovery: RoleAwareRecoveryState | null;
-  retry: () => void;
+  refresh: () => Promise<boolean>;
+  recoveryError: TournamentRecoveryError | null;
+  retry: () => Promise<boolean>;
   tournamentId: string;
 }>;
 
 export type PublicTournamentRealtime = Readonly<{
+  recoveryAuthoritative: boolean;
+  refreshing: boolean;
   state: PublicRecoveryState | null;
   status: PublicRealtimeConnectionStatus;
   ready: boolean;
@@ -38,23 +44,51 @@ export type PublicTournamentRealtime = Readonly<{
 
 const MAX_RECONNECTS = 3;
 const RECONNECT_DELAYS_MS = [250, 500, 1_000] as const;
+const PUBLIC_REFRESH_INTERVAL_MS = 5_000;
+const PUBLIC_REFRESH_BACKOFF_MS = [1_000, 2_000, 4_000, 8_000, 16_000] as const;
 const TERMINAL_CLOSE_CODES = new Set([1008, 4001, 4003, 4401, 4403]);
+
+const hasTerminalPublicRecovery = (value: RoleAwareRecoveryState | null): boolean => {
+  if (value?.role !== "public") {
+    return false;
+  }
+  try {
+    const state = recoverPublicTournament(value.snapshot).display.tournament.state;
+    return state === "cancelled" || state === "completed";
+  } catch {
+    return false;
+  }
+};
+
+const isPermanentRecoveryError = (value: TournamentRecoveryError | null): boolean =>
+  value?.kind === "not_found" ||
+  (value?.kind === "http" && (value.status === 401 || value.status === 403 || value.status === 404));
 
 export const usePublicTournamentRealtime = ({
   enabled,
   recovery,
+  recoveryError,
+  refresh,
   retry,
   tournamentId,
 }: UsePublicTournamentRealtimeInput): PublicTournamentRealtime => {
   const [state, setState] = useState<PublicRecoveryState | null>(null);
   const [status, setStatus] = useState<PublicRealtimeConnectionStatus>("idle");
+  const [recoveryAuthoritative, setRecoveryAuthoritative] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const stateRef = useRef<PublicRecoveryState | null>(null);
   const socketRef = useRef<WebSocket | null>(null);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const generationRef = useRef(0);
   const reconnectCountRef = useRef(0);
   const terminalGenerationRef = useRef<number | null>(null);
   const recoveryGenerationRef = useRef<number | null>(null);
+  const refreshGenerationRef = useRef<number | null>(null);
+  const refreshInFlightRef = useRef(false);
+  const refreshStoppedRef = useRef(false);
+  const refreshFailureCountRef = useRef(0);
+  const refreshVisibilityHandlerRef = useRef<(() => void) | null>(null);
   const confirmedResumeIdRef = useRef<string | null>(null);
   const activeTournamentRef = useRef<string | null>(null);
   const connectRef = useRef<(() => void) | null>(null);
@@ -65,6 +99,14 @@ export const usePublicTournamentRealtime = ({
     if (reconnectTimerRef.current !== null) {
       clearTimeout(reconnectTimerRef.current);
       reconnectTimerRef.current = null;
+    }
+    if (refreshTimerRef.current !== null) {
+      clearTimeout(refreshTimerRef.current);
+      refreshTimerRef.current = null;
+    }
+    if (refreshVisibilityHandlerRef.current !== null && typeof document !== "undefined") {
+      document.removeEventListener("visibilitychange", refreshVisibilityHandlerRef.current);
+      refreshVisibilityHandlerRef.current = null;
     }
     const socket = socketRef.current;
     socketRef.current = null;
@@ -78,22 +120,125 @@ export const usePublicTournamentRealtime = ({
     generationRef.current += 1;
     terminalGenerationRef.current = null;
     recoveryGenerationRef.current = null;
+    refreshGenerationRef.current = null;
+    refreshInFlightRef.current = false;
+    refreshStoppedRef.current = false;
+    refreshFailureCountRef.current = 0;
     clearSocket();
+    setRecoveryAuthoritative(false);
+    setRefreshing(false);
 
     if (activeTournamentRef.current !== tournamentId) {
       activeTournamentRef.current = tournamentId;
       confirmedResumeIdRef.current = null;
+      reconnectCountRef.current = 0;
     }
 
     if (!active) {
       stateRef.current = null;
       setState(null);
+      setRecoveryAuthoritative(false);
+      setRefreshing(false);
       setStatus("idle");
       connectRef.current = null;
       return () => clearSocket();
     }
 
     let disposed = false;
+
+    function schedulePublicRefresh(generation: number, delayMs: number, failureCount: number): void {
+      if (
+        disposed ||
+        generation !== generationRef.current ||
+        refreshStoppedRef.current ||
+        refreshTimerRef.current !== null
+      ) {
+        return;
+      }
+      refreshFailureCountRef.current = failureCount;
+      refreshTimerRef.current = setTimeout(() => {
+        refreshTimerRef.current = null;
+        void runPublicRefresh(generation, failureCount);
+      }, delayMs);
+    }
+
+    async function runPublicRefresh(generation: number, failureCount: number): Promise<void> {
+      if (
+        disposed ||
+        generation !== generationRef.current ||
+        refreshStoppedRef.current ||
+        refreshInFlightRef.current ||
+        (typeof document !== "undefined" && document.visibilityState !== "visible")
+      ) {
+        return;
+      }
+      refreshInFlightRef.current = true;
+      let succeeded = false;
+      try {
+        succeeded = await refresh();
+      } catch {
+        succeeded = false;
+      } finally {
+        refreshInFlightRef.current = false;
+      }
+      if (
+        disposed ||
+        generation !== generationRef.current ||
+        refreshStoppedRef.current
+      ) {
+        return;
+      }
+      if (succeeded) {
+        schedulePublicRefresh(generation, PUBLIC_REFRESH_INTERVAL_MS, 0);
+        return;
+      }
+      const nextFailureCount = Math.min(
+        failureCount + 1,
+        PUBLIC_REFRESH_BACKOFF_MS.length,
+      );
+      const backoffIndex = Math.max(0, nextFailureCount - 1);
+      schedulePublicRefresh(
+        generation,
+        PUBLIC_REFRESH_BACKOFF_MS[backoffIndex],
+        nextFailureCount,
+      );
+    }
+
+    const beginPublicRefresh = (generation: number): void => {
+      if (
+        disposed ||
+        generation !== generationRef.current ||
+        refreshGenerationRef.current === generation
+      ) {
+        return;
+      }
+      refreshGenerationRef.current = generation;
+      terminalGenerationRef.current = generation;
+      recoveryGenerationRef.current = generation;
+      refreshStoppedRef.current = false;
+      refreshFailureCountRef.current = 0;
+      clearSocket();
+      setRefreshing(true);
+      setStatus("recovering");
+
+      if (typeof document !== "undefined") {
+        const handleVisibilityChange = (): void => {
+          if (
+            document.visibilityState === "visible" &&
+            refreshTimerRef.current === null &&
+            !refreshInFlightRef.current
+          ) {
+            void runPublicRefresh(generation, refreshFailureCountRef.current);
+          }
+        };
+        refreshVisibilityHandlerRef.current = handleVisibilityChange;
+        document.addEventListener("visibilitychange", handleVisibilityChange);
+        if (document.visibilityState !== "visible") {
+          return;
+        }
+      }
+      void runPublicRefresh(generation, 0);
+    };
 
     const scheduleReconnect = (generation: number): void => {
       if (
@@ -105,7 +250,7 @@ export const usePublicTournamentRealtime = ({
         return;
       }
       if (reconnectCountRef.current >= MAX_RECONNECTS) {
-        setStatus("error");
+        beginPublicRefresh(generation);
         return;
       }
       const delay = RECONNECT_DELAYS_MS[reconnectCountRef.current] ?? 1_000;
@@ -127,7 +272,34 @@ export const usePublicTournamentRealtime = ({
       }
       recoveryGenerationRef.current = generation;
       setStatus("recovering");
-      retry();
+      void retry()
+        .then((succeeded) => {
+          if (
+            disposed ||
+            generation !== generationRef.current ||
+            refreshGenerationRef.current !== null
+          ) {
+            return;
+          }
+          recoveryGenerationRef.current = null;
+          if (succeeded) {
+            reconnectCountRef.current = 0;
+            connectRef.current?.();
+            return;
+          }
+          scheduleReconnect(generation);
+        })
+        .catch(() => {
+          if (
+            disposed ||
+            generation !== generationRef.current ||
+            refreshGenerationRef.current !== null
+          ) {
+            return;
+          }
+          recoveryGenerationRef.current = null;
+          scheduleReconnect(generation);
+        });
       socketRef.current?.close(1000, "public realtime recovery required");
     };
 
@@ -159,16 +331,19 @@ export const usePublicTournamentRealtime = ({
       };
 
       socket.onmessage = (event) => {
-        if (disposed || generation !== generationRef.current) {
+        if (
+          disposed ||
+          generation !== generationRef.current ||
+          terminalGenerationRef.current === generation ||
+          recoveryGenerationRef.current === generation
+        ) {
           return;
         }
         let value: unknown;
         try {
           value = typeof event.data === "string" ? JSON.parse(event.data) : event.data;
           if (isPublicRealtimeRejection(value)) {
-            terminalGenerationRef.current = generation;
-            setStatus("rejected");
-            socket.close(1000, "public realtime rejected");
+            beginPublicRefresh(generation);
             return;
           }
           if (isPublicRealtimeTerminal(value, tournamentId)) {
@@ -241,7 +416,7 @@ export const usePublicTournamentRealtime = ({
           terminalGenerationRef.current === generation ||
           TERMINAL_CLOSE_CODES.has(event.code)
         ) {
-          setStatus("rejected");
+          beginPublicRefresh(generation);
           return;
         }
         if (event.code === 1000 && stateRef.current !== null) {
@@ -261,9 +436,34 @@ export const usePublicTournamentRealtime = ({
       connectRef.current = null;
       clearSocket();
     };
-  }, [clearSocket, enabled, hasRecovery, recovery, retry, tournamentId]);
+  }, [clearSocket, enabled, hasRecovery, refresh, retry, tournamentId]);
+
+  useEffect(() => {
+    if (!refreshing) {
+      return;
+    }
+    const terminal = hasTerminalPublicRecovery(recovery);
+    const permanentError = isPermanentRecoveryError(recoveryError);
+    if (!terminal && !permanentError) {
+      return;
+    }
+    refreshStoppedRef.current = true;
+    if (refreshTimerRef.current !== null) {
+      clearTimeout(refreshTimerRef.current);
+      refreshTimerRef.current = null;
+    }
+    if (refreshVisibilityHandlerRef.current !== null && typeof document !== "undefined") {
+      document.removeEventListener("visibilitychange", refreshVisibilityHandlerRef.current);
+      refreshVisibilityHandlerRef.current = null;
+    }
+    setRefreshing(false);
+    setRecoveryAuthoritative(terminal);
+    setStatus(terminal ? "recovering" : "error");
+  }, [recovery, recoveryError, refreshing]);
 
   return {
+    recoveryAuthoritative,
+    refreshing,
     state,
     status,
     ready: state !== null,

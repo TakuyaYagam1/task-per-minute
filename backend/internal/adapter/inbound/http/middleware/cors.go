@@ -6,7 +6,7 @@ import (
 )
 
 const (
-	corsAllowedMethods = "GET, POST, PUT, DELETE, OPTIONS"
+	corsAllowedMethods = "GET, POST, PUT, PATCH, DELETE, OPTIONS"
 	corsAllowedHeaders = "Content-Type, Idempotency-Key, X-CSRF-Token"
 	corsExposedHeaders = "Date, Retry-After, X-CSRF-Token, X-Admin-Refresh-CSRF-Token"
 )

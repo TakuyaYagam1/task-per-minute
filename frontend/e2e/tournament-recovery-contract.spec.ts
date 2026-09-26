@@ -2293,7 +2293,7 @@ test("FE-012 public route uses a snapshot-first stream and recovers sequence gap
     control.emit(1, message);
   }, publicRealtimeMessage(3, 3, firstEventId, arenaTournamentId));
   await expect.poll(() => snapshotRequests.length).toBe(requestCountBeforeGap + 1);
-  await expect(state).toHaveAttribute("data-projection-revision", "1");
+  await expect(state).toHaveAttribute("data-projection-revision", "10");
 
   await page.getByRole("button", { name: "Темная тема" }).click();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
@@ -2323,7 +2323,12 @@ for (const role of ["public", "operator"] as const) {
       const pageErrors: string[] = [];
       page.on("pageerror", (error) => pageErrors.push(error.message));
 
-      await page.clock.install({ time: "2026-09-15T10:00:00Z" });
+      if (role === "public" && failure === "rejection") {
+        await page.clock.install({ time: new Date("2026-09-15T10:00:00Z").getTime() - 60_000 });
+        await page.clock.pauseAt("2026-09-15T10:00:00Z");
+      } else {
+        await page.clock.install({ time: "2026-09-15T10:00:00Z" });
+      }
       await installArenaAccessRoutes(page, fixtureSet);
       await page.route(`**${snapshotPath}*`, async (route) => {
         expect(route.request().method()).toBe("GET");
@@ -2367,12 +2372,19 @@ for (const role of ["public", "operator"] as const) {
       await expect.poll(() => closes.length + pageErrors.length).toBeGreaterThan(0);
       expect(pageErrors).toEqual([]);
       const reason = failure === "rejection"
-        ? `${role} realtime rejected`
+        ? role === "public" ? "public realtime cleanup" : `${role} realtime rejected`
         : role === "public" ? "public realtime recovery required" : "invalid operator realtime frame";
       expect(closes).toEqual([{ code: 1000, reason }]);
 
       if (failure === "rejection") {
-        await expect(state).toHaveAttribute("data-connection", "rejected");
+        if (role === "public") {
+          await expect(state).toHaveAttribute("data-connection", "recovering");
+          await expect(state).toHaveAttribute("data-refreshing", "true");
+          await expect(state).toContainText("Периодическое обновление");
+          await expect(state).toHaveAttribute("data-ready", "true");
+        } else {
+          await expect(state).toHaveAttribute("data-connection", "rejected");
+        }
       } else {
         await expect.poll(() => sockets.length).toBe(2);
         await expect(state).toHaveAttribute("data-connection", "connected");
@@ -2383,11 +2395,17 @@ for (const role of ["public", "operator"] as const) {
       // A frame from the closed generation must not restore access or replace recovered state.
       originalSocket.send(JSON.stringify(realtimeMessage(99, 99, revisionId, arenaTournamentId)));
       await page.clock.fastForward(2_000);
-      await expect(state).toHaveAttribute("data-connection", failure === "rejection" ? "rejected" : "connected");
-      await expect(state).toHaveAttribute("data-projection-revision", failure === "rejection" ? "10" : "11");
+      await expect(state).toHaveAttribute(
+        "data-connection",
+        failure === "rejection" && role === "public" ? "recovering" : failure === "rejection" ? "rejected" : "connected",
+      );
+      await expect(state).toHaveAttribute(
+        "data-projection-revision",
+        failure === "rejection" && role === "public" ? "10" : failure === "rejection" ? "10" : "11",
+      );
       expect(sockets).toHaveLength(failure === "rejection" ? 1 : 2);
       expect(snapshotRequests).toHaveLength(
-        snapshotsBeforeFailure + (role === "public" && failure === "invalid frame" ? 1 : 0),
+        snapshotsBeforeFailure + (role === "public" ? 1 : 0),
       );
       expect(closes).toEqual([{ code: 1000, reason }]);
       expect(pageErrors).toEqual([]);
@@ -2398,12 +2416,15 @@ for (const role of ["public", "operator"] as const) {
 test("FE-012 public realtime rejection is terminal and visible", async ({ page }) => {
   const fixtureSet = createTournamentFixtureSet();
   const serverTimestamp = "2026-09-15T10:00:00Z";
+  const snapshotRequests: URL[] = [];
 
-  await page.clock.install({ time: serverTimestamp });
+  await page.clock.install({ time: new Date(serverTimestamp).getTime() - 60_000 });
+  await page.clock.pauseAt(serverTimestamp);
   await installOperatorWebSocketStub(page);
   await installArenaAccessRoutes(page, fixtureSet);
   await page.route(`**${arenaPublicSnapshotPath}*`, async (route) => {
     expect(route.request().method()).toBe("GET");
+    snapshotRequests.push(new URL(route.request().url()));
     await fulfillJSON(
       route,
       publicRecovery(9),
@@ -2433,9 +2454,22 @@ test("FE-012 public realtime rejection is terminal and visible", async ({ page }
     code: "tournament.forbidden",
     message: "Публичный канал отклонен",
   });
-  await expect(state).toHaveAttribute("data-connection", "rejected");
-  await expect(state).toContainText("Доступ отклонен");
-  await expect(state).toHaveAttribute("data-ready", "false");
+  await expect(state).toHaveAttribute("data-connection", "recovering");
+  await expect(state).toHaveAttribute("data-refreshing", "true");
+  await expect(state).toContainText("Периодическое обновление");
+  await expect(state).toHaveAttribute("data-ready", "true");
+  await expect.poll(() => snapshotRequests.length).toBe(2);
+  const refreshRequest = snapshotRequests.at(-1);
+  expect(refreshRequest?.search).toBe("");
+  await expect.poll(async () => {
+    const sockets = await page.evaluate(() => {
+      const control = (window as unknown as {
+        __operatorWebSocketControl?: { get: () => Array<{ url: string; sent: string[] }> };
+      }).__operatorWebSocketControl;
+      return control?.get() ?? [];
+    });
+    return sockets.length;
+  }).toBe(1);
 });
 
 test("FE-050 public terminal frame recovers the cancelled snapshot", async ({ page }) => {

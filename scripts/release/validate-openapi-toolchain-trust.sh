@@ -2,7 +2,7 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-POLICY="$REPO_ROOT/docs/engineering/openapi-toolchain-trust.md"
+POLICY="$REPO_ROOT/security/tools/openapi-tools.policy"
 PACKAGE_JSON="$REPO_ROOT/frontend/package.json"
 PACKAGE_LOCK="$REPO_ROOT/frontend/package-lock.json"
 NPM_USERCONFIG="$REPO_ROOT/frontend/config/npm-empty-userconfig"

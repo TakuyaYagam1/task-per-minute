@@ -55,7 +55,7 @@ NotFoundProblem:
         $ref: './schemas/common_schemas.yml#/ProblemDetails'
 
 ProjectionRevisionConflictProblem:
-  description: The expected tournament projection revision is stale.
+  description: The tournament projection or participant draft state conflicts with the supplied state cursor. Draft runtime conflicts may report equal expected and current projection revisions.
   content:
     application/problem+json:
       schema:

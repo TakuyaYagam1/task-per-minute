@@ -368,9 +368,11 @@ const openRoster = async (page: Page, expectParticipant: boolean = true): Promis
   await page.getByRole("button", { name: "Войти" }).click();
   await page.getByRole("button", { name: "Турниры" }).click();
   const row = page.getByRole("row").filter({ hasText: "Турнир состава" });
-  const open = row.getByRole("button", { name: "Редактировать состав" });
+  const open = row.getByRole("button", { name: "Открыть" });
   await expect(open).toBeVisible();
   await open.click();
+  await expect(page.getByRole("heading", { name: "Турнир состава" })).toBeVisible();
+  await page.getByRole("button", { name: "Участники" }).click();
   await expect(page.getByText(/Состав турнира|Участники турнира|Участники/i).first()).toBeVisible();
   if (expectParticipant) {
     await expect(rosterRegion(page).getByRole("group").first()).toBeVisible();

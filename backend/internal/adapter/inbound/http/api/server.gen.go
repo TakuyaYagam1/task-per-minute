@@ -158,6 +158,12 @@ type ServerInterface interface {
 	// GetCurrentPlayer Resolve the current player session
 	// (GET /api/v1/players/me)
 	GetCurrentPlayer(w http.ResponseWriter, r *http.Request)
+	// ListPublicTournaments List publicly visible tournaments
+	// (GET /api/v1/public/tournaments)
+	ListPublicTournaments(w http.ResponseWriter, r *http.Request, params ListPublicTournamentsParams)
+	// GetPublicTournamentByPublicID Read one publicly visible tournament
+	// (GET /api/v1/public/tournaments/{public_id})
+	GetPublicTournamentByPublicID(w http.ResponseWriter, r *http.Request, publicId string)
 	// GetPublicTournament Read the public tournament display projection
 	// (GET /api/v1/tournaments/{tournament_id})
 	GetPublicTournament(w http.ResponseWriter, r *http.Request, tournamentId TournamentId)
@@ -185,6 +191,15 @@ type ServerInterface interface {
 	// GetParticipantLobby Read the authenticated participant tournament lobby
 	// (GET /api/v1/tournaments/{tournament_id}/participant/lobby)
 	GetParticipantLobby(w http.ResponseWriter, r *http.Request, tournamentId TournamentId)
+	// CancelTournamentAdmission Withdraw the authenticated player's tournament registration
+	// (DELETE /api/v1/tournaments/{tournament_id}/participant/queue)
+	CancelTournamentAdmission(w http.ResponseWriter, r *http.Request, tournamentId TournamentId, params CancelTournamentAdmissionParams)
+	// GetTournamentAdmissionStatus Read the authenticated player's tournament admission status
+	// (GET /api/v1/tournaments/{tournament_id}/participant/queue)
+	GetTournamentAdmissionStatus(w http.ResponseWriter, r *http.Request, tournamentId TournamentId)
+	// JoinTournamentAdmission Join the authenticated player's tournament roster
+	// (POST /api/v1/tournaments/{tournament_id}/participant/queue)
+	JoinTournamentAdmission(w http.ResponseWriter, r *http.Request, tournamentId TournamentId, params JoinTournamentAdmissionParams)
 	// SubmitParticipantDraftAction Submit an authenticated participant draft action
 	// (POST /api/v1/tournaments/{tournament_id}/participant/series/{series_id}/draft/actions)
 	SubmitParticipantDraftAction(w http.ResponseWriter, r *http.Request, tournamentId TournamentId, seriesId SeriesId, params SubmitParticipantDraftActionParams)
@@ -494,6 +509,18 @@ func (_ Unimplemented) GetCurrentPlayer(w http.ResponseWriter, r *http.Request) 
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// ListPublicTournaments List publicly visible tournaments
+// (GET /api/v1/public/tournaments)
+func (_ Unimplemented) ListPublicTournaments(w http.ResponseWriter, r *http.Request, params ListPublicTournamentsParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// GetPublicTournamentByPublicID Read one publicly visible tournament
+// (GET /api/v1/public/tournaments/{public_id})
+func (_ Unimplemented) GetPublicTournamentByPublicID(w http.ResponseWriter, r *http.Request, publicId string) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
 // GetPublicTournament Read the public tournament display projection
 // (GET /api/v1/tournaments/{tournament_id})
 func (_ Unimplemented) GetPublicTournament(w http.ResponseWriter, r *http.Request, tournamentId TournamentId) {
@@ -545,6 +572,24 @@ func (_ Unimplemented) SubmitGoldenFlag(w http.ResponseWriter, r *http.Request, 
 // GetParticipantLobby Read the authenticated participant tournament lobby
 // (GET /api/v1/tournaments/{tournament_id}/participant/lobby)
 func (_ Unimplemented) GetParticipantLobby(w http.ResponseWriter, r *http.Request, tournamentId TournamentId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// CancelTournamentAdmission Withdraw the authenticated player's tournament registration
+// (DELETE /api/v1/tournaments/{tournament_id}/participant/queue)
+func (_ Unimplemented) CancelTournamentAdmission(w http.ResponseWriter, r *http.Request, tournamentId TournamentId, params CancelTournamentAdmissionParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// GetTournamentAdmissionStatus Read the authenticated player's tournament admission status
+// (GET /api/v1/tournaments/{tournament_id}/participant/queue)
+func (_ Unimplemented) GetTournamentAdmissionStatus(w http.ResponseWriter, r *http.Request, tournamentId TournamentId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// JoinTournamentAdmission Join the authenticated player's tournament roster
+// (POST /api/v1/tournaments/{tournament_id}/participant/queue)
+func (_ Unimplemented) JoinTournamentAdmission(w http.ResponseWriter, r *http.Request, tournamentId TournamentId, params JoinTournamentAdmissionParams) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -3482,6 +3527,117 @@ func (siw *ServerInterfaceWrapper) GetCurrentPlayer(w http.ResponseWriter, r *ht
 	handler.ServeHTTP(w, r)
 }
 
+// ListPublicTournaments operation middleware
+func (siw *ServerInterfaceWrapper) ListPublicTournaments(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListPublicTournamentsParams
+
+	// ------------- Optional query parameter "q" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "q", r.URL.Query(), &params.Q, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "q"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "q", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "group" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "group", r.URL.Query(), &params.Group, runtime.BindQueryParameterOptions{Type: "", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "group"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "group", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "sort" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "sort", r.URL.Query(), &params.Sort, runtime.BindQueryParameterOptions{Type: "", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "sort"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "sort", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: "int32"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "cursor" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "cursor", r.URL.Query(), &params.Cursor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "cursor"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "cursor", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListPublicTournaments(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetPublicTournamentByPublicID operation middleware
+func (siw *ServerInterfaceWrapper) GetPublicTournamentByPublicID(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "public_id" -------------
+	var publicId string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "public_id", chi.URLParam(r, "public_id"), &publicId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "public_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetPublicTournamentByPublicID(w, r, publicId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetPublicTournament operation middleware
 func (siw *ServerInterfaceWrapper) GetPublicTournament(w http.ResponseWriter, r *http.Request) {
 
@@ -3863,6 +4019,204 @@ func (siw *ServerInterfaceWrapper) GetParticipantLobby(w http.ResponseWriter, r 
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetParticipantLobby(w, r, tournamentId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CancelTournamentAdmission operation middleware
+func (siw *ServerInterfaceWrapper) CancelTournamentAdmission(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "tournament_id" -------------
+	var tournamentId TournamentId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "tournament_id", chi.URLParam(r, "tournament_id"), &tournamentId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "tournament_id", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, PlayerSessionAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params CancelTournamentAdmissionParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		err := fmt.Errorf("Header parameter Idempotency-Key is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "Idempotency-Key", Err: err})
+		return
+	}
+
+	// ------------- Required header parameter "X-CSRF-Token" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-CSRF-Token")]; found {
+		var XCSRFToken RequiredPlayerCSRFToken
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-CSRF-Token", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-CSRF-Token", valueList[0], &XCSRFToken, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-CSRF-Token", Err: err})
+			return
+		}
+
+		params.XCSRFToken = XCSRFToken
+
+	} else {
+		err := fmt.Errorf("Header parameter X-CSRF-Token is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-CSRF-Token", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CancelTournamentAdmission(w, r, tournamentId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetTournamentAdmissionStatus operation middleware
+func (siw *ServerInterfaceWrapper) GetTournamentAdmissionStatus(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "tournament_id" -------------
+	var tournamentId TournamentId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "tournament_id", chi.URLParam(r, "tournament_id"), &tournamentId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "tournament_id", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, PlayerSessionAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetTournamentAdmissionStatus(w, r, tournamentId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// JoinTournamentAdmission operation middleware
+func (siw *ServerInterfaceWrapper) JoinTournamentAdmission(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "tournament_id" -------------
+	var tournamentId TournamentId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "tournament_id", chi.URLParam(r, "tournament_id"), &tournamentId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "tournament_id", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, PlayerSessionAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params JoinTournamentAdmissionParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		err := fmt.Errorf("Header parameter Idempotency-Key is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "Idempotency-Key", Err: err})
+		return
+	}
+
+	// ------------- Required header parameter "X-CSRF-Token" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-CSRF-Token")]; found {
+		var XCSRFToken RequiredPlayerCSRFToken
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-CSRF-Token", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-CSRF-Token", valueList[0], &XCSRFToken, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-CSRF-Token", Err: err})
+			return
+		}
+
+		params.XCSRFToken = XCSRFToken
+
+	} else {
+		err := fmt.Errorf("Header parameter X-CSRF-Token is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-CSRF-Token", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.JoinTournamentAdmission(w, r, tournamentId, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -4729,6 +5083,15 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Get(options.BaseURL+"/api/v1/tournaments/{tournament_id}/participant/lobby", wrapper.GetParticipantLobby)
 	})
 	r.Group(func(r chi.Router) {
+		r.Delete(options.BaseURL+"/api/v1/tournaments/{tournament_id}/participant/queue", wrapper.CancelTournamentAdmission)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/tournaments/{tournament_id}/participant/queue", wrapper.GetTournamentAdmissionStatus)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v1/tournaments/{tournament_id}/participant/queue", wrapper.JoinTournamentAdmission)
+	})
+	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/tournaments/{tournament_id}/participant/assignments/{assignment_id}", wrapper.GetParticipantAssignment)
 	})
 	r.Group(func(r chi.Router) {
@@ -4760,6 +5123,12 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/api/v1/tournaments/{tournament_id}/participant/golden/submissions", wrapper.SubmitGoldenFlag)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/public/tournaments", wrapper.ListPublicTournaments)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/public/tournaments/{public_id}", wrapper.GetPublicTournamentByPublicID)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/tournaments/{tournament_id}", wrapper.GetPublicTournament)
@@ -10287,6 +10656,154 @@ func (response GetCurrentPlayerdefaultApplicationProblemPlusJSONResponse) VisitG
 	return err
 }
 
+type ListPublicTournamentsRequestObject struct {
+	Params ListPublicTournamentsParams
+}
+
+type ListPublicTournamentsResponseObject interface {
+	VisitListPublicTournamentsResponse(w http.ResponseWriter) error
+}
+
+type ListPublicTournaments200JSONResponse PublicTournamentCatalogResponse
+
+func (response ListPublicTournaments200JSONResponse) VisitListPublicTournamentsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListPublicTournaments400ApplicationProblemPlusJSONResponse struct {
+	InvalidRequestProblemApplicationProblemPlusJSONResponse
+}
+
+func (response ListPublicTournaments400ApplicationProblemPlusJSONResponse) VisitListPublicTournamentsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListPublicTournaments429ApplicationProblemPlusJSONResponse struct {
+	RateLimitedProblemApplicationProblemPlusJSONResponse
+}
+
+func (response ListPublicTournaments429ApplicationProblemPlusJSONResponse) VisitListPublicTournamentsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	if response.Headers.RetryAfter != nil {
+		w.Header().Set("Retry-After", fmt.Sprint(*response.Headers.RetryAfter))
+	}
+	w.WriteHeader(429)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListPublicTournamentsdefaultApplicationProblemPlusJSONResponse struct {
+	Body       ProblemDetails
+	StatusCode int
+}
+
+func (response ListPublicTournamentsdefaultApplicationProblemPlusJSONResponse) VisitListPublicTournamentsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetPublicTournamentByPublicIDRequestObject struct {
+	PublicId string `json:"public_id"`
+}
+
+type GetPublicTournamentByPublicIDResponseObject interface {
+	VisitGetPublicTournamentByPublicIDResponse(w http.ResponseWriter) error
+}
+
+type GetPublicTournamentByPublicID200JSONResponse PublicTournamentCatalogItem
+
+func (response GetPublicTournamentByPublicID200JSONResponse) VisitGetPublicTournamentByPublicIDResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetPublicTournamentByPublicID404ApplicationProblemPlusJSONResponse struct {
+	NotFoundProblemApplicationProblemPlusJSONResponse
+}
+
+func (response GetPublicTournamentByPublicID404ApplicationProblemPlusJSONResponse) VisitGetPublicTournamentByPublicIDResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetPublicTournamentByPublicID429ApplicationProblemPlusJSONResponse struct {
+	RateLimitedProblemApplicationProblemPlusJSONResponse
+}
+
+func (response GetPublicTournamentByPublicID429ApplicationProblemPlusJSONResponse) VisitGetPublicTournamentByPublicIDResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	if response.Headers.RetryAfter != nil {
+		w.Header().Set("Retry-After", fmt.Sprint(*response.Headers.RetryAfter))
+	}
+	w.WriteHeader(429)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetPublicTournamentByPublicIDdefaultApplicationProblemPlusJSONResponse struct {
+	Body       ProblemDetails
+	StatusCode int
+}
+
+func (response GetPublicTournamentByPublicIDdefaultApplicationProblemPlusJSONResponse) VisitGetPublicTournamentByPublicIDResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type GetPublicTournamentRequestObject struct {
 	TournamentId TournamentId `json:"tournament_id"`
 }
@@ -11122,6 +11639,386 @@ type GetParticipantLobbydefaultApplicationProblemPlusJSONResponse struct {
 }
 
 func (response GetParticipantLobbydefaultApplicationProblemPlusJSONResponse) VisitGetParticipantLobbyResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CancelTournamentAdmissionRequestObject struct {
+	TournamentId TournamentId `json:"tournament_id"`
+	Params       CancelTournamentAdmissionParams
+}
+
+type CancelTournamentAdmissionResponseObject interface {
+	VisitCancelTournamentAdmissionResponse(w http.ResponseWriter) error
+}
+
+type CancelTournamentAdmission200JSONResponse TournamentAdmissionMutation
+
+func (response CancelTournamentAdmission200JSONResponse) VisitCancelTournamentAdmissionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CancelTournamentAdmission400ApplicationProblemPlusJSONResponse struct {
+	InvalidRequestProblemApplicationProblemPlusJSONResponse
+}
+
+func (response CancelTournamentAdmission400ApplicationProblemPlusJSONResponse) VisitCancelTournamentAdmissionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CancelTournamentAdmission401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedProblemApplicationProblemPlusJSONResponse
+}
+
+func (response CancelTournamentAdmission401ApplicationProblemPlusJSONResponse) VisitCancelTournamentAdmissionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CancelTournamentAdmission403ApplicationProblemPlusJSONResponse struct {
+	ForbiddenProblemApplicationProblemPlusJSONResponse
+}
+
+func (response CancelTournamentAdmission403ApplicationProblemPlusJSONResponse) VisitCancelTournamentAdmissionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CancelTournamentAdmission404ApplicationProblemPlusJSONResponse struct {
+	NotFoundProblemApplicationProblemPlusJSONResponse
+}
+
+func (response CancelTournamentAdmission404ApplicationProblemPlusJSONResponse) VisitCancelTournamentAdmissionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CancelTournamentAdmission409ApplicationProblemPlusJSONResponse TournamentAdmissionConflictProblem
+
+func (response CancelTournamentAdmission409ApplicationProblemPlusJSONResponse) VisitCancelTournamentAdmissionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CancelTournamentAdmission429ApplicationProblemPlusJSONResponse struct {
+	RateLimitedProblemApplicationProblemPlusJSONResponse
+}
+
+func (response CancelTournamentAdmission429ApplicationProblemPlusJSONResponse) VisitCancelTournamentAdmissionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	if response.Headers.RetryAfter != nil {
+		w.Header().Set("Retry-After", fmt.Sprint(*response.Headers.RetryAfter))
+	}
+	w.WriteHeader(429)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CancelTournamentAdmissiondefaultApplicationProblemPlusJSONResponse struct {
+	Body       ProblemDetails
+	StatusCode int
+}
+
+func (response CancelTournamentAdmissiondefaultApplicationProblemPlusJSONResponse) VisitCancelTournamentAdmissionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetTournamentAdmissionStatusRequestObject struct {
+	TournamentId TournamentId `json:"tournament_id"`
+}
+
+type GetTournamentAdmissionStatusResponseObject interface {
+	VisitGetTournamentAdmissionStatusResponse(w http.ResponseWriter) error
+}
+
+type GetTournamentAdmissionStatus200JSONResponse TournamentAdmissionView
+
+func (response GetTournamentAdmissionStatus200JSONResponse) VisitGetTournamentAdmissionStatusResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetTournamentAdmissionStatus401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedProblemApplicationProblemPlusJSONResponse
+}
+
+func (response GetTournamentAdmissionStatus401ApplicationProblemPlusJSONResponse) VisitGetTournamentAdmissionStatusResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetTournamentAdmissionStatus403ApplicationProblemPlusJSONResponse struct {
+	ForbiddenProblemApplicationProblemPlusJSONResponse
+}
+
+func (response GetTournamentAdmissionStatus403ApplicationProblemPlusJSONResponse) VisitGetTournamentAdmissionStatusResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetTournamentAdmissionStatus404ApplicationProblemPlusJSONResponse struct {
+	NotFoundProblemApplicationProblemPlusJSONResponse
+}
+
+func (response GetTournamentAdmissionStatus404ApplicationProblemPlusJSONResponse) VisitGetTournamentAdmissionStatusResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetTournamentAdmissionStatus429ApplicationProblemPlusJSONResponse struct {
+	RateLimitedProblemApplicationProblemPlusJSONResponse
+}
+
+func (response GetTournamentAdmissionStatus429ApplicationProblemPlusJSONResponse) VisitGetTournamentAdmissionStatusResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	if response.Headers.RetryAfter != nil {
+		w.Header().Set("Retry-After", fmt.Sprint(*response.Headers.RetryAfter))
+	}
+	w.WriteHeader(429)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetTournamentAdmissionStatusdefaultApplicationProblemPlusJSONResponse struct {
+	Body       ProblemDetails
+	StatusCode int
+}
+
+func (response GetTournamentAdmissionStatusdefaultApplicationProblemPlusJSONResponse) VisitGetTournamentAdmissionStatusResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type JoinTournamentAdmissionRequestObject struct {
+	TournamentId TournamentId `json:"tournament_id"`
+	Params       JoinTournamentAdmissionParams
+}
+
+type JoinTournamentAdmissionResponseObject interface {
+	VisitJoinTournamentAdmissionResponse(w http.ResponseWriter) error
+}
+
+type JoinTournamentAdmission200JSONResponse TournamentAdmissionMutation
+
+func (response JoinTournamentAdmission200JSONResponse) VisitJoinTournamentAdmissionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type JoinTournamentAdmission400ApplicationProblemPlusJSONResponse struct {
+	InvalidRequestProblemApplicationProblemPlusJSONResponse
+}
+
+func (response JoinTournamentAdmission400ApplicationProblemPlusJSONResponse) VisitJoinTournamentAdmissionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type JoinTournamentAdmission401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedProblemApplicationProblemPlusJSONResponse
+}
+
+func (response JoinTournamentAdmission401ApplicationProblemPlusJSONResponse) VisitJoinTournamentAdmissionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type JoinTournamentAdmission403ApplicationProblemPlusJSONResponse struct {
+	ForbiddenProblemApplicationProblemPlusJSONResponse
+}
+
+func (response JoinTournamentAdmission403ApplicationProblemPlusJSONResponse) VisitJoinTournamentAdmissionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type JoinTournamentAdmission404ApplicationProblemPlusJSONResponse struct {
+	NotFoundProblemApplicationProblemPlusJSONResponse
+}
+
+func (response JoinTournamentAdmission404ApplicationProblemPlusJSONResponse) VisitJoinTournamentAdmissionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type JoinTournamentAdmission409ApplicationProblemPlusJSONResponse TournamentAdmissionConflictProblem
+
+func (response JoinTournamentAdmission409ApplicationProblemPlusJSONResponse) VisitJoinTournamentAdmissionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type JoinTournamentAdmission429ApplicationProblemPlusJSONResponse struct {
+	RateLimitedProblemApplicationProblemPlusJSONResponse
+}
+
+func (response JoinTournamentAdmission429ApplicationProblemPlusJSONResponse) VisitJoinTournamentAdmissionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	if response.Headers.RetryAfter != nil {
+		w.Header().Set("Retry-After", fmt.Sprint(*response.Headers.RetryAfter))
+	}
+	w.WriteHeader(429)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type JoinTournamentAdmissiondefaultApplicationProblemPlusJSONResponse struct {
+	Body       ProblemDetails
+	StatusCode int
+}
+
+func (response JoinTournamentAdmissiondefaultApplicationProblemPlusJSONResponse) VisitJoinTournamentAdmissionResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -12448,6 +13345,12 @@ type StrictServerInterface interface {
 	// GetCurrentPlayer Resolve the current player session
 	// (GET /api/v1/players/me)
 	GetCurrentPlayer(ctx context.Context, request GetCurrentPlayerRequestObject) (GetCurrentPlayerResponseObject, error)
+	// ListPublicTournaments List publicly visible tournaments
+	// (GET /api/v1/public/tournaments)
+	ListPublicTournaments(ctx context.Context, request ListPublicTournamentsRequestObject) (ListPublicTournamentsResponseObject, error)
+	// GetPublicTournamentByPublicID Read one publicly visible tournament
+	// (GET /api/v1/public/tournaments/{public_id})
+	GetPublicTournamentByPublicID(ctx context.Context, request GetPublicTournamentByPublicIDRequestObject) (GetPublicTournamentByPublicIDResponseObject, error)
 	// GetPublicTournament Read the public tournament display projection
 	// (GET /api/v1/tournaments/{tournament_id})
 	GetPublicTournament(ctx context.Context, request GetPublicTournamentRequestObject) (GetPublicTournamentResponseObject, error)
@@ -12475,6 +13378,15 @@ type StrictServerInterface interface {
 	// GetParticipantLobby Read the authenticated participant tournament lobby
 	// (GET /api/v1/tournaments/{tournament_id}/participant/lobby)
 	GetParticipantLobby(ctx context.Context, request GetParticipantLobbyRequestObject) (GetParticipantLobbyResponseObject, error)
+	// CancelTournamentAdmission Withdraw the authenticated player's tournament registration
+	// (DELETE /api/v1/tournaments/{tournament_id}/participant/queue)
+	CancelTournamentAdmission(ctx context.Context, request CancelTournamentAdmissionRequestObject) (CancelTournamentAdmissionResponseObject, error)
+	// GetTournamentAdmissionStatus Read the authenticated player's tournament admission status
+	// (GET /api/v1/tournaments/{tournament_id}/participant/queue)
+	GetTournamentAdmissionStatus(ctx context.Context, request GetTournamentAdmissionStatusRequestObject) (GetTournamentAdmissionStatusResponseObject, error)
+	// JoinTournamentAdmission Join the authenticated player's tournament roster
+	// (POST /api/v1/tournaments/{tournament_id}/participant/queue)
+	JoinTournamentAdmission(ctx context.Context, request JoinTournamentAdmissionRequestObject) (JoinTournamentAdmissionResponseObject, error)
 	// SubmitParticipantDraftAction Submit an authenticated participant draft action
 	// (POST /api/v1/tournaments/{tournament_id}/participant/series/{series_id}/draft/actions)
 	SubmitParticipantDraftAction(ctx context.Context, request SubmitParticipantDraftActionRequestObject) (SubmitParticipantDraftActionResponseObject, error)
@@ -13939,6 +14851,58 @@ func (sh *strictHandler) GetCurrentPlayer(w http.ResponseWriter, r *http.Request
 	}
 }
 
+// ListPublicTournaments operation middleware
+func (sh *strictHandler) ListPublicTournaments(w http.ResponseWriter, r *http.Request, params ListPublicTournamentsParams) {
+	var request ListPublicTournamentsRequestObject
+
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListPublicTournaments(ctx, request.(ListPublicTournamentsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListPublicTournaments")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListPublicTournamentsResponseObject); ok {
+		if err := validResponse.VisitListPublicTournamentsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetPublicTournamentByPublicID operation middleware
+func (sh *strictHandler) GetPublicTournamentByPublicID(w http.ResponseWriter, r *http.Request, publicId string) {
+	var request GetPublicTournamentByPublicIDRequestObject
+
+	request.PublicId = publicId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetPublicTournamentByPublicID(ctx, request.(GetPublicTournamentByPublicIDRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetPublicTournamentByPublicID")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetPublicTournamentByPublicIDResponseObject); ok {
+		if err := validResponse.VisitGetPublicTournamentByPublicIDResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // GetPublicTournament operation middleware
 func (sh *strictHandler) GetPublicTournament(w http.ResponseWriter, r *http.Request, tournamentId TournamentId) {
 	var request GetPublicTournamentRequestObject
@@ -14184,6 +15148,86 @@ func (sh *strictHandler) GetParticipantLobby(w http.ResponseWriter, r *http.Requ
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(GetParticipantLobbyResponseObject); ok {
 		if err := validResponse.VisitGetParticipantLobbyResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CancelTournamentAdmission operation middleware
+func (sh *strictHandler) CancelTournamentAdmission(w http.ResponseWriter, r *http.Request, tournamentId TournamentId, params CancelTournamentAdmissionParams) {
+	var request CancelTournamentAdmissionRequestObject
+
+	request.TournamentId = tournamentId
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.CancelTournamentAdmission(ctx, request.(CancelTournamentAdmissionRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CancelTournamentAdmission")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CancelTournamentAdmissionResponseObject); ok {
+		if err := validResponse.VisitCancelTournamentAdmissionResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetTournamentAdmissionStatus operation middleware
+func (sh *strictHandler) GetTournamentAdmissionStatus(w http.ResponseWriter, r *http.Request, tournamentId TournamentId) {
+	var request GetTournamentAdmissionStatusRequestObject
+
+	request.TournamentId = tournamentId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetTournamentAdmissionStatus(ctx, request.(GetTournamentAdmissionStatusRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetTournamentAdmissionStatus")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetTournamentAdmissionStatusResponseObject); ok {
+		if err := validResponse.VisitGetTournamentAdmissionStatusResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// JoinTournamentAdmission operation middleware
+func (sh *strictHandler) JoinTournamentAdmission(w http.ResponseWriter, r *http.Request, tournamentId TournamentId, params JoinTournamentAdmissionParams) {
+	var request JoinTournamentAdmissionRequestObject
+
+	request.TournamentId = tournamentId
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.JoinTournamentAdmission(ctx, request.(JoinTournamentAdmissionRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "JoinTournamentAdmission")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(JoinTournamentAdmissionResponseObject); ok {
+		if err := validResponse.VisitJoinTournamentAdmissionResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

@@ -422,7 +422,8 @@ const loginThroughAdminUI = async (page: Page): Promise<void> => {
   await page.goto('/admin');
   await page.getByPlaceholder('Введите пароль...').fill(adminPassword);
   await page.getByRole('button', { name: 'Войти' }).click();
-  await expect(page.getByRole('button', { name: 'Турниры' })).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByRole('button', { name: 'Задачи' })).toBeVisible({ timeout: 15_000 });
+  await page.getByRole('button', { name: 'Задачи' }).click();
 
   const cookies = await page.context().cookies();
   expect(cookies.some((cookie) => cookie.name === 'tpm_admin_access')).toBe(true);
@@ -560,22 +561,77 @@ const sortRosterParticipantsBySeed = (
   participants: FullStackRoster['participants'],
 ): FullStackRoster['participants'] => [...participants].sort((first, second) => first.seed - second.seed);
 
+type OperatorSnapshotEnvelope = {
+  next_cursor?: { projection_revision?: unknown };
+  tournament?: { id?: unknown; state?: unknown };
+};
+
+const readOperatorSnapshotViaApi = async <T = OperatorSnapshotEnvelope>(
+  request: APIRequestContext,
+  tournamentID: string,
+): Promise<T> => {
+  const snapshotURL = `${backendURL}/api/v1/admin/tournaments/${tournamentID}/snapshot`;
+  const maxAttempts = 4;
+  const totalTimeoutMs = 75_000;
+  const deadline = Date.now() + totalTimeoutMs;
+  let response: APIResponse | null = null;
+
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    const remainingMs = deadline - Date.now();
+    if (remainingMs <= 0) {
+      break;
+    }
+
+    response = await request.get(snapshotURL, {
+      headers: { Origin: frontendURL },
+      timeout: Math.max(1, Math.min(15_000, remainingMs)),
+    });
+    if (response.status() !== 429 || attempt + 1 >= maxAttempts) {
+      break;
+    }
+
+    const retryAfter = response.headers()['retry-after']?.trim() ?? '';
+    let retryDelayMs: number | null = null;
+    if (/^\d+$/.test(retryAfter)) {
+      const retryAfterSeconds = Number(retryAfter);
+      retryDelayMs = Number.isFinite(retryAfterSeconds)
+        ? retryAfterSeconds * 1_000
+        : Number.MAX_SAFE_INTEGER;
+    } else if (retryAfter !== '') {
+      const retryAt = Date.parse(retryAfter);
+      if (Number.isFinite(retryAt)) {
+        retryDelayMs = Math.max(0, retryAt - Date.now());
+      }
+    }
+
+    const waitBudgetMs = deadline - Date.now();
+    const waitMs = Math.min(
+      waitBudgetMs,
+      (retryDelayMs ?? transientRetryDelayMs(attempt)) + 100,
+    );
+    if (waitMs <= 0) {
+      break;
+    }
+    await new Promise((resolve) => setTimeout(resolve, waitMs));
+  }
+
+  if (!response) {
+    throw new Error(`operator snapshot GET exceeded ${totalTimeoutMs}ms for ${tournamentID}`);
+  }
+  expect(response.status(), `operator snapshot GET failed with ${response.status()}`).toBe(200);
+  const snapshot = (await response.json()) as T;
+  const envelope = snapshot as T & OperatorSnapshotEnvelope;
+  expect(envelope.tournament?.id, 'operator snapshot returned the wrong tournament id').toBe(
+    tournamentID,
+  );
+  return snapshot;
+};
+
 const getOperatorProjectionRevisionViaApi = async (
   request: APIRequestContext,
   tournamentID: string,
 ): Promise<number> => {
-  const response = await request.get(
-    `${backendURL}/api/v1/admin/tournaments/${tournamentID}/snapshot`,
-    { headers: { Origin: frontendURL } },
-  );
-  expect(response.ok(), `operator snapshot GET failed with ${response.status()}`).toBeTruthy();
-  const snapshot = (await response.json()) as {
-    next_cursor?: { projection_revision?: unknown };
-    tournament?: { id?: unknown };
-  };
-  expect(snapshot.tournament?.id, 'operator snapshot returned the wrong tournament id').toBe(
-    tournamentID,
-  );
+  const snapshot = await readOperatorSnapshotViaApi<OperatorSnapshotEnvelope>(request, tournamentID);
   const projectionRevision = snapshot.next_cursor?.projection_revision;
   expect(projectionRevision, 'operator snapshot did not return projection_revision').toEqual(
     expect.any(Number),
@@ -594,24 +650,9 @@ const cancelOwnedTournamentFixtureViaApi = async (
   request: APIRequestContext,
   tournamentID: string,
 ): Promise<void> => {
-  const snapshotResponse = await request.get(
-    `${backendURL}/api/v1/admin/tournaments/${tournamentID}/snapshot`,
-    { headers: { Origin: frontendURL }, timeout: 15_000 },
-  ).catch(() => {
-    throw new Error('owned tournament cleanup snapshot request failed');
-  });
-  if (snapshotResponse.status() !== 200) {
-    throw new Error(`owned tournament cleanup snapshot failed with status ${snapshotResponse.status()}`);
-  }
-
-  const snapshot = (await snapshotResponse.json().catch(() => {
-    throw new Error('owned tournament cleanup snapshot returned invalid JSON');
-  })) as {
-    next_cursor?: { projection_revision?: unknown };
-    tournament?: { id?: unknown; state?: unknown };
-  };
-  if (snapshot.tournament?.id !== tournamentID) {
-    throw new Error('owned tournament cleanup snapshot returned a different tournament');
+  const snapshot = await readOperatorSnapshotViaApi<OperatorSnapshotEnvelope>(request, tournamentID);
+  if (!snapshot.tournament) {
+    throw new Error('owned tournament cleanup snapshot returned no tournament');
   }
   if (snapshot.tournament.state === 'cancelled' || snapshot.tournament.state === 'completed') {
     return;
@@ -1209,49 +1250,6 @@ const joinAsPlayer = async (page: Page, username: string): Promise<void> => {
   await expect(page.getByText('Игрок готов')).toBeVisible({ timeout: 15_000 });
 };
 
-const observeOperatorStreamRejection = async (
-  page: Page,
-  socketURL: string,
-): Promise<{ closed: boolean; code: number; message: string | null; opened: boolean }> =>
-  page.evaluate((url) => new Promise<{
-    closed: boolean;
-    code: number;
-    message: string | null;
-    opened: boolean;
-  }>((resolve) => {
-    const socket = new WebSocket(url);
-    let opened = false;
-    let message: string | null = null;
-    let settled = false;
-    const settle = (code: number): void => {
-      if (settled) {
-        return;
-      }
-      settled = true;
-      resolve({ closed: true, code, message, opened });
-    };
-
-    socket.onopen = () => {
-      opened = true;
-    };
-    socket.onmessage = (event) => {
-      message = String(event.data);
-      if (message.includes('tournament.rejected')) {
-        socket.close();
-      }
-    };
-    socket.onerror = () => {
-      // The close event carries the server rejection code.
-    };
-    socket.onclose = (event) => settle(event.code);
-    setTimeout(() => {
-      if (socket.readyState < WebSocket.CLOSING) {
-        socket.close();
-      }
-      settle(socket.readyState);
-    }, 5_000);
-  }), socketURL);
-
 const cookieHeaderForPage = async (page: Page): Promise<string> => {
   const cookies = await page.context().cookies();
   return cookies.map((cookie) => `${cookie.name}=${cookie.value}`).join('; ');
@@ -1349,7 +1347,7 @@ test.describe('local compose full stack e2e', () => {
     };
     await loginThroughAdminUI(page);
     await adminLogin(request);
-    await page.getByRole('button', { name: 'Турниры' }).click();
+    await page.getByRole('button', { name: 'Задачи' }).click();
     await expect(page.getByPlaceholder('Введите название...')).toBeVisible();
     await fillAdminTaskForm(page, taskInput);
     const createResponsePromise = page.waitForResponse(
@@ -1384,7 +1382,7 @@ test.describe('local compose full stack e2e', () => {
     await expect(page.getByText(title)).toBeHidden({ timeout: 15_000 });
 
     await page.goto('/leaderboard');
-    await expect(page.getByRole('heading', { name: 'Leaderboard' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Общий рейтинг' })).toBeVisible();
   });
 
   test('admin UI creates a tournament from the current content revision', async ({ page, ownedFixture }) => {
@@ -1431,7 +1429,7 @@ test.describe('local compose full stack e2e', () => {
       await reloadPublication.click();
     }
     await expect(
-      page.getByRole('region', { name: 'Каталог контента' }).getByText(`Ревизия ${contentRevision}`),
+      page.getByRole('region', { name: 'Новый турнир' }).getByText(`Ревизия ${contentRevision}`),
     ).toBeVisible();
     await page.getByLabel('Название турнира').fill(tournamentName);
     await page.getByLabel('Плановый размер состава').selectOption('4');
@@ -1441,7 +1439,7 @@ test.describe('local compose full stack e2e', () => {
         new URL(response.url()).pathname === '/api/v1/admin/tournaments' &&
         response.request().method() === 'POST',
     );
-    await page.getByRole('button', { name: 'Создать демо-турнир' }).click();
+    await page.getByRole('button', { name: 'Создать турнир' }).click();
 
     const response = await createResponse;
     expect(response.status()).toBe(201);
@@ -1452,13 +1450,16 @@ test.describe('local compose full stack e2e', () => {
     expect(tournament.content_revision).toBe(contentRevision);
     expect(tournament.name).toBe(tournamentName);
     expect(tournament.state).toBe('draft');
-    await expect(page).toHaveURL(
-      new URL(`/arena/operator/${tournament.id}`, frontendURL).toString(),
-    );
+    const isTournamentOverviewURL = (url: URL): boolean =>
+      url.origin === new URL(frontendURL).origin
+      && url.pathname === '/admin'
+      && url.searchParams.size === 3
+      && url.searchParams.get('section') === 'tournaments'
+      && url.searchParams.get('tournament') === tournament.id
+      && url.searchParams.get('view') === 'overview';
+    await expect(page).toHaveURL(isTournamentOverviewURL);
     await page.reload({ waitUntil: 'domcontentloaded' });
-    await expect(page).toHaveURL(
-      new URL(`/arena/operator/${tournament.id}`, frontendURL).toString(),
-    );
+    await expect(page).toHaveURL(isTournamentOverviewURL);
     await expect(page.getByRole('heading').filter({ hasText: tournamentName })).toBeVisible({
       timeout: 15_000,
     });
@@ -1499,7 +1500,7 @@ test.describe('local compose full stack e2e', () => {
       hints: ['normal hint one', 'normal hint two', 'normal hint three'],
       task_url: 'https://example.com/fe028-normal',
     });
-    await page.getByRole('button', { name: 'Турниры' }).click();
+    await page.getByRole('button', { name: 'Задачи' }).click();
     await expect(page.getByPlaceholder('Введите название...')).toBeVisible({ timeout: 15_000 });
 
     await fillAdminTaskForm(page, taskInput);
@@ -1722,8 +1723,8 @@ test.describe('local compose full stack e2e', () => {
         ),
       ).toBe(true);
       const tournamentRow = page.getByRole('row').filter({ hasText: tournamentName });
-      const editRosterButton = tournamentRow.getByRole('button', { name: 'Редактировать состав' });
-      await expect(editRosterButton).toBeVisible({ timeout: 15_000 });
+      const openTournamentButton = tournamentRow.getByRole('button', { name: 'Открыть', exact: true });
+      await expect(openTournamentButton).toBeVisible({ timeout: 15_000 });
       const playersResponse = page.waitForResponse(
         (response) =>
           new URL(response.url()).pathname === '/api/v1/admin/players' &&
@@ -1734,7 +1735,8 @@ test.describe('local compose full stack e2e', () => {
           new URL(response.url()).pathname === `/api/v1/admin/tournaments/${tournament.id}/roster` &&
           response.request().method() === 'GET',
       );
-      await editRosterButton.click();
+      await openTournamentButton.click();
+      await page.getByRole('button', { name: 'Участники', exact: true }).click();
       expect((await playersResponse).status()).toBe(200);
       const initialRoster = await readRosterResponse(await rosterResponse, tournament.id);
 
@@ -1803,10 +1805,8 @@ test.describe('local compose full stack e2e', () => {
       adminAccessCSRFToken = refreshedAdminAccessCSRF?.value ?? '';
       expect(adminAccessCSRFToken, 'admin reload did not restore the access CSRF cookie').toBeTruthy();
       await page.getByRole('button', { name: 'Турниры' }).click();
+      await page.getByRole('button', { name: 'Участники', exact: true }).click();
       await expect(rosterRegion).toBeVisible({ timeout: 15_000 });
-      await rosterRegion
-        .getByLabel('Турнир для редактирования состава')
-        .selectOption(tournament.id);
       await expect(rosterRegion.getByRole('group')).toHaveCount(4);
       for (const [index, participant] of savedParticipants.entries()) {
         const group = rosterRegion.getByRole('group', { name: `Участник ${index + 1}` });
@@ -1903,6 +1903,11 @@ test.describe('local compose full stack e2e', () => {
         'checked_in',
       ]);
 
+      const preflightRosterResponse = page.waitForResponse(
+        (response) =>
+          new URL(response.url()).pathname === `/api/v1/admin/tournaments/${tournament.id}/roster` &&
+          response.request().method() === 'GET',
+      );
       await page.reload({ waitUntil: 'domcontentloaded' });
       await expect(page.getByRole('button', { name: 'Турниры' })).toBeVisible({ timeout: 15_000 });
       const preflightAdminAccessCSRF = (await page.context().cookies()).find(
@@ -1914,16 +1919,9 @@ test.describe('local compose full stack e2e', () => {
         'admin reload before FE-029 did not restore the access CSRF cookie',
       ).toBeTruthy();
       await page.getByRole('button', { name: 'Турниры' }).click();
-      const preflightRosterResponse = page.waitForResponse(
-        (response) =>
-          new URL(response.url()).pathname === `/api/v1/admin/tournaments/${tournament.id}/roster` &&
-          response.request().method() === 'GET',
-      );
-      await rosterRegion
-        .getByLabel('Турнир для редактирования состава')
-        .selectOption(tournament.id);
-      expect((await preflightRosterResponse).status()).toBe(200);
+      await page.getByRole('button', { name: 'Участники', exact: true }).click();
       await expect(rosterRegion).toBeVisible({ timeout: 15_000 });
+      expect((await preflightRosterResponse).status()).toBe(200);
       await expect(rosterRegion.getByText('На месте', { exact: true })).toHaveCount(4);
 
       const browserPreflightResponse = page.waitForResponse(
@@ -2145,6 +2143,7 @@ test.describe('local compose full stack e2e', () => {
       const swissTournament = (await startSwissResponse.json()) as AdminTournament;
       expect(swissTournament.state).toBe('swiss');
 
+      await page.getByRole('button', { name: 'Сетка и серии', exact: true }).click();
       const pairingRegion = page.getByRole('region', { name: 'Пары Swiss' });
       await expect(pairingRegion).toBeVisible({ timeout: 15_000 });
       const pairingReload = page.waitForResponse(
@@ -2234,6 +2233,7 @@ test.describe('local compose full stack e2e', () => {
       await expect(successorSeries.getByLabel(/Режим серии/)).toHaveValue('admin');
       await expect(successorSeries.getByLabel(/Категория серии/)).toHaveValue('crypto');
 
+      await page.getByRole('button', { name: 'Проведение', exact: true }).click();
       const waveRegion = page.getByRole('region', { name: 'Волны и матчи' });
       await expect(waveRegion).toBeVisible();
       const refreshedWaveSnapshotResponse = page.waitForResponse(
@@ -2920,8 +2920,12 @@ test.describe('local compose full stack e2e', () => {
       const waveAction = async (
         waveID: string,
         action: 'open_ready_window' | 'start' | 'complete',
+        knownProjectionRevision?: number,
       ): Promise<FullStackWave> => {
-        let expectedRevision = await getOperatorProjectionRevisionViaApi(adminRequest, tournament.id);
+        let expectedRevision = knownProjectionRevision ?? await getOperatorProjectionRevisionViaApi(
+          adminRequest,
+          tournament.id,
+        );
         let response: APIResponse | null = null;
         for (let attempt = 0; attempt < 60; attempt += 1) {
           response = await adminRequest.post(
@@ -3027,12 +3031,10 @@ test.describe('local compose full stack e2e', () => {
           }
         }
 
-        const snapshotResponse = await adminRequest.get(
-          `${backendURL}/api/v1/admin/tournaments/${tournament.id}/snapshot`,
-          { headers: { Origin: frontendURL } },
+        const snapshot = await readOperatorSnapshotViaApi<FullStackOperatorSnapshot>(
+          adminRequest,
+          tournament.id,
         );
-        expect(snapshotResponse.status()).toBe(200);
-        const snapshot = (await snapshotResponse.json()) as FullStackOperatorSnapshot;
         const currentWave = snapshot.waves.find((candidate) => candidate.id === wave.id);
         expect(currentWave, `snapshot lost Wave ${wave.id}`).toBeDefined();
         if (currentWave?.state !== 'completed') {
@@ -3067,18 +3069,17 @@ test.describe('local compose full stack e2e', () => {
         );
         expect(pairing.status(), `Swiss round ${roundNumber} pairing failed with ${pairing.status()} ${pairing.statusText()}`).toBe(200);
 
-        const snapshotResponse = await adminRequest.get(
-          `${backendURL}/api/v1/admin/tournaments/${tournament.id}/snapshot`,
-          { headers: { Origin: frontendURL } },
+        const snapshot = await readOperatorSnapshotViaApi<FullStackOperatorSnapshot>(
+          adminRequest,
+          tournament.id,
         );
-        expect(snapshotResponse.status()).toBe(200);
-        const snapshot = (await snapshotResponse.json()) as FullStackOperatorSnapshot;
         const wave = snapshot.waves.find((candidate) => !knownWaveIDs.has(candidate.id));
         expect(wave, `Swiss round ${roundNumber} did not create a Wave`).toBeDefined();
         if (!wave) {
           throw new Error(`Swiss round ${roundNumber} did not create a Wave`);
         }
-        await waveAction(wave.id, 'open_ready_window');
+        const waveProjectionRevision = snapshot.next_cursor.projection_revision;
+        await waveAction(wave.id, 'open_ready_window', waveProjectionRevision);
         for (const member of wave.members) {
           const context = contextForParticipant(member.participant_id);
           const participant = await readParticipantSnapshotViaApi(context, tournament.id);
@@ -3102,7 +3103,7 @@ test.describe('local compose full stack e2e', () => {
           );
           expect(readiness.status(), `round ${roundNumber} readiness failed with ${readiness.status()} ${readiness.statusText()}`).toBe(200);
         }
-        await waveAction(wave.id, 'start');
+        await waveAction(wave.id, 'start', waveProjectionRevision);
         return wave;
       };
 
@@ -3129,12 +3130,10 @@ test.describe('local compose full stack e2e', () => {
       );
       expect(startPlayoffs.status(), `start playoffs failed with ${startPlayoffs.status()} ${startPlayoffs.statusText()}`).toBe(200);
 
-      const operatorSnapshotResponse = await adminRequest.get(
-        `${backendURL}/api/v1/admin/tournaments/${tournament.id}/snapshot`,
-        { headers: { Origin: frontendURL } },
+      const operatorSnapshot = await readOperatorSnapshotViaApi<CorrectionSnapshot>(
+        adminRequest,
+        tournament.id,
       );
-      expect(operatorSnapshotResponse.status()).toBe(200);
-      const operatorSnapshot = (await operatorSnapshotResponse.json()) as CorrectionSnapshot;
       const targetSeries = operatorSnapshot.series.find((series) => series.id === correctionTarget.seriesID);
       const targetGame = targetSeries?.slots.flatMap((slot) => slot.attempts).find(
         (attempt) => attempt.id === correctionTarget?.gameID,
@@ -3184,12 +3183,10 @@ test.describe('local compose full stack e2e', () => {
       expect(Array.isArray(preparedCorrection.unlock_intents)).toBe(true);
       await expect(page.getByText('Новая проекция подтверждена.')).toBeVisible();
 
-      const correctedOperatorSnapshotResponse = await adminRequest.get(
-        `${backendURL}/api/v1/admin/tournaments/${tournament.id}/snapshot`,
-        { headers: { Origin: frontendURL } },
+      const correctedOperatorSnapshot = await readOperatorSnapshotViaApi<CorrectionSnapshot>(
+        adminRequest,
+        tournament.id,
       );
-      expect(correctedOperatorSnapshotResponse.status()).toBe(200);
-      const correctedOperatorSnapshot = (await correctedOperatorSnapshotResponse.json()) as CorrectionSnapshot;
       expect(correctedOperatorSnapshot.next_cursor.projection_revision)
         .toBeGreaterThan(sourceProjectionRevision);
       const correctedSeries = correctedOperatorSnapshot.series.find(
@@ -3249,12 +3246,11 @@ test.describe('local compose full stack e2e', () => {
         .toBe(correctedOperatorSnapshot.next_cursor.projection_revision);
       expect(repeatedCorrectionProblem.current_revision)
         .toBe(correctedOperatorSnapshot.next_cursor.projection_revision);
-      const afterRejectedCorrectionResponse = await adminRequest.get(
-        `${backendURL}/api/v1/admin/tournaments/${tournament.id}/snapshot`,
-        { headers: { Origin: frontendURL } },
+      const afterRejectedCorrectionSnapshot = await readOperatorSnapshotViaApi<CorrectionSnapshot>(
+        adminRequest,
+        tournament.id,
       );
-      expect(afterRejectedCorrectionResponse.status()).toBe(200);
-      expect(await afterRejectedCorrectionResponse.json()).toEqual(correctedOperatorSnapshot);
+      expect(afterRejectedCorrectionSnapshot).toEqual(correctedOperatorSnapshot);
 
       let dependentCutoffCode: 'cutoff_wave_started' | 'cutoff_golden_direct_allocated';
       let startedDependentSnapshot: CorrectionSnapshot;
@@ -3379,8 +3375,9 @@ test.describe('local compose full stack e2e', () => {
         }
         dependentCutoffCode = 'cutoff_golden_direct_allocated';
       } else {
+        const dependentProjectionRevision = correctedOperatorSnapshot.next_cursor.projection_revision;
         for (const dependentWave of dependentWaves) {
-          await waveAction(dependentWave.id, 'open_ready_window');
+          await waveAction(dependentWave.id, 'open_ready_window', dependentProjectionRevision);
           for (const member of dependentWave.members) {
             const context = contextForParticipant(member.participant_id);
             const participant = await readParticipantSnapshotViaApi(context, tournament.id);
@@ -3404,17 +3401,15 @@ test.describe('local compose full stack e2e', () => {
             );
             expect(readiness.status(), `dependent Wave readiness failed with ${readiness.status()} ${readiness.statusText()}`).toBe(200);
           }
-          await waveAction(dependentWave.id, 'start');
+          await waveAction(dependentWave.id, 'start', dependentProjectionRevision);
         }
         dependentCutoffCode = 'cutoff_wave_started';
       }
 
-      const startedDependentSnapshotResponse = await adminRequest.get(
-        `${backendURL}/api/v1/admin/tournaments/${tournament.id}/snapshot`,
-        { headers: { Origin: frontendURL } },
+      startedDependentSnapshot = await readOperatorSnapshotViaApi<CorrectionSnapshot>(
+        adminRequest,
+        tournament.id,
       );
-      expect(startedDependentSnapshotResponse.status()).toBe(200);
-      startedDependentSnapshot = (await startedDependentSnapshotResponse.json()) as CorrectionSnapshot;
       expect(startedDependentSnapshot.next_cursor.projection_revision)
         .toBeGreaterThanOrEqual(correctedOperatorSnapshot.next_cursor.projection_revision);
 
@@ -3445,12 +3440,11 @@ test.describe('local compose full stack e2e', () => {
         .toBe(startedDependentSnapshot.next_cursor.projection_revision);
       expect(dependentCorrectionProblem.current_revision)
         .toBe(startedDependentSnapshot.next_cursor.projection_revision);
-      const afterDependentCorrectionResponse = await adminRequest.get(
-        `${backendURL}/api/v1/admin/tournaments/${tournament.id}/snapshot`,
-        { headers: { Origin: frontendURL } },
+      const afterDependentCorrectionSnapshot = await readOperatorSnapshotViaApi<CorrectionSnapshot>(
+        adminRequest,
+        tournament.id,
       );
-      expect(afterDependentCorrectionResponse.status()).toBe(200);
-      expect(await afterDependentCorrectionResponse.json()).toEqual(startedDependentSnapshot);
+      expect(afterDependentCorrectionSnapshot).toEqual(startedDependentSnapshot);
 
       const expectedDependentWaves = dependentWaveIDs.map((dependentWaveID) => {
         const expectedDependentWave = startedDependentSnapshot.waves.find(
@@ -3618,7 +3612,11 @@ test.describe('local compose full stack e2e', () => {
             url.searchParams.get('tournament_id') === tournament.id;
         },
       );
-      await tournamentRow.getByRole('button', { name: 'Открыть аудит' }).click();
+      await tournamentRow.getByRole('button', { name: 'Открыть', exact: true }).click();
+      await page
+        .getByRole('navigation', { name: 'Разделы турнира' })
+        .getByRole('button', { name: 'Журнал', exact: true })
+        .click();
       const auditResponse = await auditResponsePromise;
       expect(
         auditResponse.status(),
@@ -3680,12 +3678,10 @@ test.describe('local compose full stack e2e', () => {
         tournament.id,
       );
       expect(cancelledProjectionRevision).toBeGreaterThanOrEqual(revisionBeforeCancellation);
-      const cancelledOperatorSnapshotResponse = await adminRequest.get(
-        `${backendURL}/api/v1/admin/tournaments/${tournament.id}/snapshot`,
-        { headers: { Origin: frontendURL } },
+      const cancelledOperatorSnapshot = await readOperatorSnapshotViaApi<CorrectionSnapshot>(
+        adminRequest,
+        tournament.id,
       );
-      expect(cancelledOperatorSnapshotResponse.status()).toBe(200);
-      const cancelledOperatorSnapshot = (await cancelledOperatorSnapshotResponse.json()) as CorrectionSnapshot;
       expect(cancelledOperatorSnapshot.tournament.state).toBe('cancelled');
       const blockedCommand = await adminRequest.post(
         `${backendURL}/api/v1/admin/tournaments/${tournament.id}/actions`,
@@ -3714,12 +3710,11 @@ test.describe('local compose full stack e2e', () => {
         current_state: 'cancelled',
         expected_revision: cancelledProjectionRevision,
       });
-      const afterBlockedCommandResponse = await adminRequest.get(
-        `${backendURL}/api/v1/admin/tournaments/${tournament.id}/snapshot`,
-        { headers: { Origin: frontendURL } },
+      const afterBlockedCommandSnapshot = await readOperatorSnapshotViaApi<CorrectionSnapshot>(
+        adminRequest,
+        tournament.id,
       );
-      expect(afterBlockedCommandResponse.status()).toBe(200);
-      expect(await afterBlockedCommandResponse.json()).toEqual(cancelledOperatorSnapshot);
+      expect(afterBlockedCommandSnapshot).toEqual(cancelledOperatorSnapshot);
 
       const cancelledAuditResponse = await adminRequest.get(
         `${backendURL}/api/v1/admin/tournament-audit?tournament_id=${tournament.id}`,
@@ -3973,6 +3968,7 @@ test.describe('local compose full stack e2e', () => {
       const operatorAction = async (
         waveID: string,
         action: 'open_ready_window' | 'start' | 'complete',
+        knownProjectionRevision?: number,
       ) => {
         const response = await request.post(
           `${backendURL}/api/v1/admin/tournaments/${tournament.id}/waves/${waveID}/actions`,
@@ -3985,7 +3981,10 @@ test.describe('local compose full stack e2e', () => {
             data: {
               action,
               confirmed: true,
-              expected_projection_revision: await getOperatorProjectionRevisionViaApi(request, tournament.id),
+              expected_projection_revision: knownProjectionRevision ?? await getOperatorProjectionRevisionViaApi(
+                request,
+                tournament.id,
+              ),
             },
           },
         );
@@ -4007,14 +4006,15 @@ test.describe('local compose full stack e2e', () => {
         },
       });
       expect(pairing.status()).toBe(200);
-      const operatorBeforeReady = (await (await request.get(
-        `${backendURL}/api/v1/admin/tournaments/${tournament.id}/snapshot`,
-        { headers: { Origin: frontendURL } },
-      )).json()) as ReplaySnapshot;
+      const operatorBeforeReady = await readOperatorSnapshotViaApi<ReplaySnapshot>(
+        request,
+        tournament.id,
+      );
       const wave = operatorBeforeReady.waves.at(-1);
       expect(wave).toBeDefined();
       if (!wave) throw new Error('FE-049 did not materialize a Swiss wave');
-      await operatorAction(wave.id, 'open_ready_window');
+      const waveProjectionRevision = operatorBeforeReady.next_cursor.projection_revision;
+      await operatorAction(wave.id, 'open_ready_window', waveProjectionRevision);
 
       const contextForParticipant = (participantID: string): BrowserContext => {
         const rosterParticipant = checkedInParticipants.find((participant) => participant.id === participantID);
@@ -4039,7 +4039,7 @@ test.describe('local compose full stack e2e', () => {
         );
         expect(ready.status()).toBe(200);
       }
-      await operatorAction(wave.id, 'start');
+      await operatorAction(wave.id, 'start', waveProjectionRevision);
       const waveSeriesIDs = [...new Set(wave.members.map((member) => member.series_id).filter((id): id is string => id !== null && id !== undefined))];
       expect(waveSeriesIDs.length).toBeGreaterThan(0);
       const targetSeriesID = waveSeriesIDs[0];
@@ -4327,8 +4327,15 @@ test.describe('local compose full stack e2e', () => {
         return context;
       };
 
-      const waveAction = async (waveID: string, action: 'open_ready_window' | 'start' | 'complete') => {
-        let expectedRevision = await getOperatorProjectionRevisionViaApi(request, tournament.id);
+      const waveAction = async (
+        waveID: string,
+        action: 'open_ready_window' | 'start' | 'complete',
+        knownProjectionRevision?: number,
+      ) => {
+        let expectedRevision = knownProjectionRevision ?? await getOperatorProjectionRevisionViaApi(
+          request,
+          tournament.id,
+        );
         let response: APIResponse | null = null;
         for (let attempt = 0; attempt < 60; attempt += 1) {
           response = await request.post(
@@ -4434,16 +4441,16 @@ test.describe('local compose full stack e2e', () => {
         expect(pairing.status()).toBe(200);
         const configured = (await pairing.json()) as FullStackSwissRound;
         expect(configured.pairings).toHaveLength(3);
-        const snapshotResponse = await request.get(`${backendURL}/api/v1/admin/tournaments/${tournament.id}/snapshot`, {
-          headers: { Origin: frontendURL },
-        });
-        expect(snapshotResponse.status()).toBe(200);
-        const snapshot = (await snapshotResponse.json()) as FullStackOperatorSnapshot & { series?: FullStackPlayoffSeries[] };
+        const snapshot = await readOperatorSnapshotViaApi<FullStackOperatorSnapshot & { series?: FullStackPlayoffSeries[] }>(
+          request,
+          tournament.id,
+        );
         const wave = snapshot.waves.find((candidate) => !knownWaveIDs.has(candidate.id));
         expect(wave).toBeDefined();
         if (!wave) throw new Error(`round ${roundNumber} Wave was not materialized`);
         knownWaveIDs.add(wave.id);
-        await waveAction(wave.id, 'open_ready_window');
+        const waveProjectionRevision = snapshot.next_cursor.projection_revision;
+        await waveAction(wave.id, 'open_ready_window', waveProjectionRevision);
         for (const member of wave.members) {
           const context = contextForParticipant(member.participant_id);
           const participant = await readParticipantSnapshotViaApi(context, tournament.id);
@@ -4458,7 +4465,7 @@ test.describe('local compose full stack e2e', () => {
           );
           expect(ready.status()).toBe(200);
         }
-        await waveAction(wave.id, 'start');
+        await waveAction(wave.id, 'start', waveProjectionRevision);
         const membersBySeries = new Map<string, FullStackWave['members']>();
         for (const member of wave.members) {
           if (!member.series_id) continue;
@@ -4518,9 +4525,10 @@ test.describe('local compose full stack e2e', () => {
             series.score.first_participant_wins + series.score.second_participant_wins === 1
           )) ?? false;
         }, { timeout: 20_000 }).toBe(true);
-        const currentWave = (await (await request.get(`${backendURL}/api/v1/admin/tournaments/${tournament.id}/snapshot`, {
-          headers: { Origin: frontendURL },
-        })).json() as FullStackOperatorSnapshot).waves.find((candidate) => candidate.id === wave.id);
+        const currentWave = (await readOperatorSnapshotViaApi<FullStackOperatorSnapshot>(
+          request,
+          tournament.id,
+        )).waves.find((candidate) => candidate.id === wave.id);
         if (currentWave?.state !== 'completed') await waveAction(wave.id, 'complete');
       }
       expect(checkedInParticipants.map((participant) => swissPoints.get(participant.id) ?? 0)).toEqual([
@@ -4809,9 +4817,10 @@ test.describe('local compose full stack e2e', () => {
         await page.goto('/admin', { waitUntil: 'domcontentloaded' });
         await page.getByRole('button', { name: 'Турниры', exact: true }).click();
         const tournamentRow = page.getByRole('row').filter({
-          has: page.getByText(tournament.id, { exact: true }),
+          hasText: tournamentName,
         });
-        await tournamentRow.getByRole('button', { name: 'Редактировать состав', exact: true }).click();
+        await tournamentRow.getByRole('button', { name: 'Открыть', exact: true }).click();
+        await page.getByRole('button', { name: 'Проведение', exact: true }).click();
         const goldenPanel = page.getByTestId('operator-golden-playoff-control-panel');
         await expect(goldenPanel).toBeVisible();
         const operatorGroup = goldenPanel.locator(
@@ -5091,7 +5100,11 @@ test.describe('local compose full stack e2e', () => {
       const opponentPairs = new Set<string>();
 
       type WaveAction = 'open_ready_window' | 'start' | 'complete';
-      const waveAction = async (waveID: string, action: WaveAction): Promise<FullStackWave> => {
+      const waveAction = async (
+        waveID: string,
+        action: WaveAction,
+        knownProjectionRevision?: number,
+      ): Promise<FullStackWave> => {
         const response = await request.post(
           `${backendURL}/api/v1/admin/tournaments/${tournament.id}/waves/${waveID}/actions`,
           {
@@ -5103,7 +5116,7 @@ test.describe('local compose full stack e2e', () => {
             data: {
               action,
               confirmed: true,
-              expected_projection_revision: await getOperatorProjectionRevisionViaApi(
+              expected_projection_revision: knownProjectionRevision ?? await getOperatorProjectionRevisionViaApi(
                 request,
                 tournament.id,
               ),
@@ -5158,19 +5171,18 @@ test.describe('local compose full stack e2e', () => {
           );
         }
 
-        const snapshotResponse = await request.get(
-          `${backendURL}/api/v1/admin/tournaments/${tournament.id}/snapshot`,
-          { headers: { Origin: frontendURL } },
+        const snapshot = await readOperatorSnapshotViaApi<FullStackOperatorSnapshot>(
+          request,
+          tournament.id,
         );
-        expect(snapshotResponse.status(), `operator snapshot failed with ${snapshotResponse.status()}`).toBe(200);
-        const snapshot = (await snapshotResponse.json()) as FullStackOperatorSnapshot;
         const wave = snapshot.waves.find((candidate) => !knownWaveIDs.has(candidate.id));
         expect(wave, `Swiss round ${roundNumber} did not create a Wave`).toBeDefined();
         if (!wave) {
           throw new Error(`Swiss round ${roundNumber} did not create a Wave`);
         }
 
-        await waveAction(wave.id, 'open_ready_window');
+        const waveProjectionRevision = snapshot.next_cursor.projection_revision;
+        await waveAction(wave.id, 'open_ready_window', waveProjectionRevision);
         for (const member of wave.members.filter((candidate) => candidate.series_id !== null)) {
           const context = contextForParticipant(member.participant_id);
           const participant = await readParticipantSnapshotViaApi(context, tournament.id);
@@ -5194,7 +5206,7 @@ test.describe('local compose full stack e2e', () => {
           );
           expect(readiness.status(), `round ${roundNumber} readiness failed with ${readiness.status()}`).toBe(200);
         }
-        return waveAction(wave.id, 'start');
+        return waveAction(wave.id, 'start', waveProjectionRevision);
       };
 
       const submitCorrectAssignment = async (
@@ -5309,12 +5321,10 @@ test.describe('local compose full stack e2e', () => {
           );
         }
 
-        const snapshotResponse = await request.get(
-          `${backendURL}/api/v1/admin/tournaments/${tournament.id}/snapshot`,
-          { headers: { Origin: frontendURL } },
+        const snapshot = await readOperatorSnapshotViaApi<FullStackOperatorSnapshot>(
+          request,
+          tournament.id,
         );
-        expect(snapshotResponse.status()).toBe(200);
-        const snapshot = (await snapshotResponse.json()) as FullStackOperatorSnapshot;
         const currentWave = snapshot.waves.find((candidate) => candidate.id === wave.id);
         expect(currentWave, `snapshot lost Wave ${wave.id}`).toBeDefined();
         if (currentWave && currentWave.state !== 'completed') {
@@ -5761,12 +5771,10 @@ test.describe('local compose full stack e2e', () => {
       ).toBe(200);
 
       const readPlayoffSnapshot = async (): Promise<FullStackPlayoffSnapshot> => {
-        const response = await request.get(
-          `${backendURL}/api/v1/admin/tournaments/${tournament.id}/snapshot`,
-          { headers: { Origin: frontendURL } },
+        const snapshot = await readOperatorSnapshotViaApi<FullStackPlayoffSnapshot>(
+          request,
+          tournament.id,
         );
-        expect(response.status(), `playoff snapshot failed with ${response.status()}`).toBe(200);
-        const snapshot = (await response.json()) as FullStackPlayoffSnapshot;
         expect(snapshot.series).toBeDefined();
         expect(snapshot.tournament.id).toBe(tournament.id);
         return snapshot;
@@ -5810,15 +5818,9 @@ test.describe('local compose full stack e2e', () => {
           if (!wave) {
             throw new Error(`playoff series ${seriesID} did not expose a Wave`);
           }
+          const waveProjectionRevision = snapshot.next_cursor.projection_revision;
           if (wave.state === 'planned') {
-            await waveAction(wave.id, 'open_ready_window');
-          }
-
-          snapshot = await readPlayoffSnapshot();
-          wave = waveForSeries(snapshot, seriesID);
-          expect(wave, `playoff series ${seriesID} lost its Wave`).toBeDefined();
-          if (!wave) {
-            throw new Error(`playoff series ${seriesID} lost its Wave`);
+            wave = await waveAction(wave.id, 'open_ready_window', waveProjectionRevision);
           }
           if (wave.state === 'ready_window_open' || wave.state === 'ready') {
             for (const member of wave.members.filter((candidate) => candidate.series_id === seriesID)) {
@@ -5844,15 +5846,7 @@ test.describe('local compose full stack e2e', () => {
               );
               expect(readiness.status(), `playoff readiness failed with ${readiness.status()}`).toBe(200);
             }
-            snapshot = await readPlayoffSnapshot();
-            wave = waveForSeries(snapshot, seriesID);
-            expect(wave).toBeDefined();
-            if (!wave) {
-              throw new Error(`playoff series ${seriesID} lost its ready Wave`);
-            }
-            if (wave.state !== 'active') {
-              wave = await waveAction(wave.id, 'start');
-            }
+            wave = await waveAction(wave.id, 'start', waveProjectionRevision);
           }
           expect(wave.state).toBe('active');
 
@@ -6053,19 +6047,44 @@ test.describe('local compose full stack e2e', () => {
       }
 
       while (finalDraft.state === 'active') {
-        expect(finalDraft.current_actor_id).toBeTruthy();
-        expect(finalDraft.current_action).toBeTruthy();
-        if (!finalDraft.current_actor_id || !finalDraft.current_action) {
-          throw new Error('final draft did not expose its server-authoritative actor and action');
+        let actorContext: BrowserContext | undefined;
+        let participant: FullStackParticipantSnapshot | undefined;
+        let currentDraft: FullStackDraft | null | undefined;
+        for (let refresh = 0; refresh < 3; refresh += 1) {
+          expect(finalDraft.current_actor_id).toBeTruthy();
+          expect(finalDraft.current_action).toBeTruthy();
+          if (!finalDraft.current_actor_id || !finalDraft.current_action) {
+            throw new Error('final draft did not expose its server-authoritative actor and action');
+          }
+          actorContext = contextForParticipant(finalDraft.current_actor_id);
+          participant = await readParticipantSnapshotViaApi(actorContext, tournament.id);
+          expect(participant.draft?.id).toBe(finalDraft.id);
+          currentDraft = participant.draft;
+          expect(currentDraft).not.toBeNull();
+          if (!currentDraft) {
+            throw new Error('final draft disappeared from participant snapshot');
+          }
+          if (currentDraft.state !== 'active' || currentDraft.current_actor_id === finalDraft.current_actor_id) {
+            break;
+          }
+          if (refresh === 2) {
+            throw new Error('final draft actor did not converge to a fresh participant snapshot');
+          }
+          finalDraft = currentDraft;
         }
-        const actorContext = contextForParticipant(finalDraft.current_actor_id);
-        const participant = await readParticipantSnapshotViaApi(actorContext, tournament.id);
-        expect(participant.draft?.id).toBe(finalDraft.id);
-        const currentDraft = participant.draft;
-        expect(currentDraft).not.toBeNull();
-        if (!currentDraft) {
-          throw new Error('final draft disappeared from participant snapshot');
+        if (!actorContext || !participant || !currentDraft) {
+          throw new Error('final draft actor did not converge to a fresh participant snapshot');
         }
+        if (currentDraft.state !== 'active') {
+          finalDraft = currentDraft;
+          continue;
+        }
+        expect(currentDraft.current_actor_id).toBeTruthy();
+        expect(currentDraft.current_action).toBeTruthy();
+        if (!currentDraft.current_actor_id || !currentDraft.current_action) {
+          throw new Error('fresh final draft did not expose its server-authoritative actor and action');
+        }
+        expect(participant.lobby?.participant_id).toBe(currentDraft.current_actor_id);
         const turnDeadline = currentDraft.turn_deadline === null
           ? Number.NaN
           : Date.parse(currentDraft.turn_deadline);
@@ -6318,12 +6337,10 @@ test.describe('local compose full stack e2e', () => {
     expect((await download.body()).equals(payload)).toBe(true);
   });
 
-  test('real backend preserves Arena entry context across roles', async ({ page, browser, ownedFixture }) => {
-    test.setTimeout(120_000);
+  test('real backend publishes the public catalog and reaches participant assignment', async ({ page, browser, ownedFixture }) => {
+    test.setTimeout(600_000);
+    page.setDefaultTimeout(20_000);
 
-    const tournamentName = uniqueName('fullstack-arena');
-    const tournamentPublicID = uniqueName('arena-public');
-    const playerName = uniqueName('arena-player');
     await loginThroughAdminUI(page);
     const adminAccessCSRF = (await page.context().cookies()).find(
       (cookie) => cookie.name === 'tpm_admin_access_csrf',
@@ -6331,191 +6348,451 @@ test.describe('local compose full stack e2e', () => {
     const adminAccessCSRFToken = adminAccessCSRF?.value ?? '';
     expect(adminAccessCSRFToken, 'admin login did not issue an access CSRF cookie').toBeTruthy();
     const adminRequest = page.context().request;
-    const normalTaskName = uniqueName('arena-normal');
-    const goldenTaskName = uniqueName('arena-golden');
-    await createTaskViaApi(ownedFixture, adminRequest, { access_csrf_token: adminAccessCSRFToken }, {
-      title: normalTaskName,
-      description: 'Healthy normal Arena content task.',
-      kind: 'normal',
-      category: 'web',
-      difficulty: 'easy',
-      time_limit: 90,
-      flag: `flag{${normalTaskName.replaceAll('-', '_')}}`,
-      hints: ['normal hint one', 'normal hint two', 'normal hint three'],
-      task_url: 'https://example.com/arena-normal',
-    });
-    await createTaskViaApi(ownedFixture, adminRequest, { access_csrf_token: adminAccessCSRFToken }, {
-      title: goldenTaskName,
-      description: 'Healthy golden Arena content task.',
-      kind: 'golden',
-      category: 'web',
-      difficulty: 'easy',
-      time_limit: 90,
-      flag: `flag{${goldenTaskName.replaceAll('-', '_')}}`,
-      hints: ['golden hint one', 'golden hint two', 'golden hint three'],
-      task_url: 'https://example.com/arena-golden',
-    });
+    const catalogPrefix = uniqueName('fullstack-catalog');
+
+    // The start gate certifies the whole preset, including BO3 and reserve tasks.
+    const normalTaskGroups: Array<{ category: FullStackTaskInput['category']; count: number }> = [
+      { category: 'web', count: 27 },
+      { category: 'crypto', count: 27 },
+      { category: 'reverse', count: 27 },
+      { category: 'forensics', count: 3 },
+      { category: 'pwn', count: 3 },
+    ];
+    for (const group of normalTaskGroups) {
+      for (let index = 0; index < group.count; index += 1) {
+        const title = uniqueName(`catalog-${group.category}-${index + 1}`);
+        await createTaskViaApi(ownedFixture, adminRequest, { access_csrf_token: adminAccessCSRFToken }, {
+          title,
+          description: 'Normal task for the public catalog assignment flow.',
+          kind: 'normal',
+          category: group.category,
+          difficulty: 'easy',
+          time_limit: 90,
+          flag: `flag{${title.replaceAll('-', '_')}}`,
+          hints: ['catalog hint one', 'catalog hint two', 'catalog hint three'],
+          task_url: 'https://example.com/fullstack-catalog-normal',
+        });
+      }
+    }
+    for (let index = 0; index < 6; index += 1) {
+      const title = uniqueName(`catalog-golden-${index + 1}`);
+      await createTaskViaApi(ownedFixture, adminRequest, { access_csrf_token: adminAccessCSRFToken }, {
+        title,
+        description: 'Golden task for the published tournament content flow.',
+        kind: 'golden',
+        category: 'web',
+        difficulty: 'easy',
+        time_limit: 90,
+        flag: `flag{${title.replaceAll('-', '_')}}`,
+        hints: ['catalog hint one', 'catalog hint two', 'catalog hint three'],
+        task_url: 'https://example.com/fullstack-catalog-golden',
+      });
+    }
+
     const contentRevision = await getTournamentContentRevision(adminRequest);
-    const tournament = await createTournamentViaApi(
-      ownedFixture,
-      adminRequest,
-      { access_csrf_token: adminAccessCSRFToken },
-      {
-        name: tournamentName,
-        content_revision: contentRevision,
-        planned_roster_size: 4,
-        public_id: tournamentPublicID,
-        preset: 'tournament_v1',
-        expected_revision: 0,
-      },
-    );
-    const spectatorPath = `/arena/spectator/${tournament.id}`;
-    const operatorPath = `/arena/operator/${tournament.id}`;
-    const participantPath = `/arena/participant/${tournament.id}`;
-    const spectatorURL = `${spectatorPath}?source=e2e`;
-
-    const adminCookies = await page.context().cookies();
-    expect(adminCookies.some((cookie) => cookie.name === 'tpm_admin_access')).toBe(true);
-    expect(adminCookies.some((cookie) => cookie.name === 'tpm_admin_refresh')).toBe(true);
-
-    let publicSocketURL = '';
-    const publicFrames: string[] = [];
-    const publicSentFrames: string[] = [];
-    page.on('websocket', (socket) => {
-      if (new URL(socket.url()).pathname !== `/api/v1/tournaments/${tournament.id}/realtime`) {
-        return;
+    const tournaments: AdminTournament[] = [];
+    const openRegistration = async (tournamentID: string): Promise<void> => {
+      let response: APIResponse | null = null;
+      for (let attempt = 0; attempt < 8; attempt += 1) {
+        response = await applyOpenRegistrationViaApi(
+          adminRequest,
+          tournamentID,
+          adminAccessCSRFToken,
+        );
+        if (response.status() === 200) {
+          return;
+        }
+        if (response.status() !== 409 && response.status() !== 429) {
+          break;
+        }
+        await waitForTransientRetry(attempt);
       }
-      publicSocketURL = socket.url();
-      socket.on('framereceived', (frame) => publicFrames.push(
-        typeof frame.payload === 'string' ? frame.payload : frame.payload.toString('utf8'),
-      ));
-      socket.on('framesent', (frame) => publicSentFrames.push(
-        typeof frame.payload === 'string' ? frame.payload : frame.payload.toString('utf8'),
-      ));
-    });
-
-    await page.goto(spectatorURL);
-    await expect(page).toHaveURL(new URL(spectatorURL, frontendURL).toString());
-    await expect(page.getByRole('main')).toBeVisible();
-    await expect(page.getByText(tournament.id, { exact: false }).first()).toBeVisible();
-    await page.reload({ waitUntil: 'domcontentloaded' });
-    await expect(page).toHaveURL(new URL(spectatorURL, frontendURL).toString());
-    await expect(page.getByText(tournament.id, { exact: false }).first()).toBeVisible();
-
-    await expect.poll(() => publicSocketURL).toContain(
-      `/api/v1/tournaments/${tournament.id}/realtime`,
-    );
-    await expect.poll(() => publicFrames.length).toBeGreaterThan(0);
-    expect(new URL(publicSocketURL).pathname).toBe(
-      `/api/v1/tournaments/${tournament.id}/realtime`,
-    );
-    expect(publicSentFrames).toEqual([]);
-    const initialPublicFrame = JSON.parse(publicFrames[0] ?? '{}') as {
-      type?: string;
-      payload?: {
-        envelope?: {
-          tournament_id?: string;
-          public?: Record<string, unknown>;
-        };
-      };
+      expect(response?.status(), `open registration failed for ${tournamentID}`).toBe(200);
     };
-    expect(initialPublicFrame.type).toBe('tournament.public');
-    expect(initialPublicFrame.payload?.envelope?.tournament_id).toBe(tournament.id);
-    expect(Object.keys(initialPublicFrame.payload?.envelope?.public ?? {})).not.toContain('assignment');
-    expect(Object.keys(initialPublicFrame.payload?.envelope?.public ?? {})).not.toContain('task');
 
-    let operatorSocketURL = '';
-    const operatorFrames: string[] = [];
-    const operatorSentFrames: string[] = [];
-    page.on('websocket', (socket) => {
-      if (!socket.url().includes(`/api/v1/admin/tournaments/${tournament.id}/realtime`)) {
-        return;
-      }
-      operatorSocketURL = socket.url();
-      socket.on('framereceived', (frame) => operatorFrames.push(
-        typeof frame.payload === 'string' ? frame.payload : frame.payload.toString('utf8'),
-      ));
-      socket.on('framesent', (frame) => operatorSentFrames.push(
-        typeof frame.payload === 'string' ? frame.payload : frame.payload.toString('utf8'),
-      ));
-    });
+    for (let index = 0; index < 25; index += 1) {
+      const tournament = await createTournamentViaApi(
+        ownedFixture,
+        adminRequest,
+        { access_csrf_token: adminAccessCSRFToken },
+        {
+          name: `${catalogPrefix}-${index + 1}`,
+          content_revision: contentRevision,
+          planned_roster_size: 4,
+          public_id: `${catalogPrefix}-public-${index + 1}`,
+          preset: 'tournament_v1',
+          expected_revision: 0,
+        },
+      );
+      await openRegistration(tournament.id);
+      tournaments.push(tournament);
+    }
 
-    await page.goto(operatorPath);
-    await expect(page).toHaveURL(new URL(operatorPath, frontendURL).toString());
-    await expect(page.getByRole('main')).toBeVisible();
-    await expect(page.getByRole('heading').filter({ hasText: tournamentName })).toBeVisible();
-    await expect.poll(() => operatorSocketURL).toContain(
-      `/api/v1/admin/tournaments/${tournament.id}/realtime`,
-    );
-    await expect.poll(() => operatorFrames.length).toBeGreaterThan(0);
-    expect(new URL(operatorSocketURL).pathname).toBe(
-      `/api/v1/admin/tournaments/${tournament.id}/realtime`,
-    );
-    expect(operatorSentFrames).toEqual([]);
-    const initialOperatorFrame = JSON.parse(operatorFrames[0] ?? '{}') as {
-      type?: string;
-      payload?: { envelope?: { tournament_id?: string } };
-    };
-    expect(initialOperatorFrame.type).toBe('tournament.operator');
-    expect(initialOperatorFrame.payload?.envelope?.tournament_id).toBe(tournament.id);
-    await expect(page.getByTestId('operator-realtime-summary')).toContainText('Соединение');
+    const primaryTournament = tournaments[0];
+    const secondaryTournament = tournaments[1];
+    expect(primaryTournament).toBeDefined();
+    expect(secondaryTournament).toBeDefined();
+    if (!primaryTournament || !secondaryTournament) {
+      throw new Error('catalog fixture did not create the two target tournaments');
+    }
 
     const anonymousContext = await browser.newContext({ baseURL: frontendURL });
-    try {
-      const anonymousPage = await anonymousContext.newPage();
-      await anonymousPage.goto('/');
-      const anonymousRejection = await observeOperatorStreamRejection(
-        anonymousPage,
-        operatorSocketURL,
-      );
-      expect(anonymousRejection.closed).toBe(true);
-      expect(
-        !anonymousRejection.opened ||
-          anonymousRejection.message?.includes('tournament.rejected') ||
-          [1008, 4001, 4003, 4401, 4403].includes(anonymousRejection.code),
-      ).toBe(true);
-    } finally {
-      ownedFixture.contexts.push(anonymousContext);
-    }
+    ownedFixture.contexts.push(anonymousContext);
+    const anonymousPage = await anonymousContext.newPage();
+    const catalogLinks = anonymousPage.getByRole('link').filter({ hasText: catalogPrefix });
+    await anonymousPage.goto(`/arena?q=${encodeURIComponent(catalogPrefix)}`);
+    await expect(anonymousPage.getByRole('heading', { name: 'Турниры', exact: true })).toBeVisible();
+    await expect(catalogLinks).toHaveCount(20);
+    await expect(anonymousPage.getByRole('button', { name: 'Следующая страница' })).toBeVisible();
+    await anonymousPage.getByLabel('Состояние').selectOption('upcoming');
+    await expect(anonymousPage).toHaveURL(/group=upcoming/);
+    await expect(catalogLinks).toHaveCount(20);
+    await anonymousPage.getByLabel('Сортировка').selectOption('name');
+    await expect(anonymousPage).toHaveURL(/sort=name/);
+    await expect(catalogLinks).toHaveCount(20);
+    await anonymousPage.getByRole('button', { name: 'Следующая страница' }).click();
+    await expect(anonymousPage).toHaveURL(/cursor=/);
+    await expect(catalogLinks).toHaveCount(5);
 
-    const playerContext = await browser.newContext({ baseURL: frontendURL });
-    try {
-      const playerPage = await playerContext.newPage();
-      await joinAsPlayer(playerPage, playerName);
-      const playerRejection = await observeOperatorStreamRejection(playerPage, operatorSocketURL);
-      expect(playerRejection.closed).toBe(true);
-      expect(
-        !playerRejection.opened ||
-          playerRejection.message?.includes('tournament.rejected') ||
-          [1008, 4001, 4003, 4401, 4403].includes(playerRejection.code),
-      ).toBe(true);
-      await playerPage.goto(participantPath);
-      await expect(playerPage).toHaveURL(new URL(participantPath, frontendURL).toString());
-      await expect(playerPage.getByRole('main')).toBeVisible();
-      await expect(
-        playerPage.getByText(
-          /forbidden|access denied|нет доступа|доступ запрещ|запрещен|запрещён|недоступ|403/i,
-        ).first(),
-      ).toBeVisible();
-      await expect(
-        playerPage.getByRole('heading').filter({ hasText: /spectator|operator|наблюдател|оператор/i }),
-      ).toHaveCount(0);
-    } finally {
-      ownedFixture.contexts.push(playerContext);
-    }
-
-    const logoutButton = page.getByRole('button', { name: /log ?out|выйти/i });
-    await expect(logoutButton).toHaveCount(1);
-    const logoutResponse = page.waitForResponse(
-      (response) =>
-        new URL(response.url()).pathname === '/api/v1/admin/logout' &&
-        response.request().method() === 'POST',
+    await anonymousPage.goto(
+      `/arena?q=${encodeURIComponent(primaryTournament.name)}&group=upcoming&sort=name`,
     );
-    await logoutButton.click();
-    expect((await logoutResponse).status()).toBe(204);
-    await expect(page).toHaveURL(new URL(operatorPath, frontendURL).toString());
-    await expect(page.getByRole('link', { name: 'Войти как оператор' })).toBeVisible({
-      timeout: 15_000,
+    const primaryCatalogLink = anonymousPage
+      .getByRole('link')
+      .filter({
+        has: anonymousPage.getByRole('heading', {
+          name: primaryTournament.name,
+          exact: true,
+        }),
+      })
+      .first();
+    await expect(primaryCatalogLink).toBeVisible();
+    const primaryHref = await primaryCatalogLink.getAttribute('href');
+    expect(primaryHref).toContain(`/arena/tournaments/${primaryTournament.public_id}`);
+    expect(primaryHref).not.toContain(primaryTournament.id);
+    await primaryCatalogLink.click();
+    await expect(anonymousPage).toHaveURL((url) =>
+      url.pathname === `/arena/tournaments/${primaryTournament.public_id}`,
+    );
+    await expect(
+      anonymousPage.getByRole('heading', { name: primaryTournament.name, level: 1, exact: true }),
+    ).toBeVisible();
+    expect(anonymousPage.url()).toContain(`/arena/tournaments/${primaryTournament.public_id}`);
+    expect(anonymousPage.url()).not.toContain(primaryTournament.id);
+    await expect(
+      anonymousPage.getByRole('link', { name: /Участник|Оператор|Наблюдатель/i }),
+    ).toHaveCount(0);
+    const anonymousHrefs = await anonymousPage.locator('a').evaluateAll((links) =>
+      links.map((link) => link.getAttribute('href') ?? ''),
+    );
+    expect(anonymousHrefs.some((href) => /\/arena\/(participant|operator|spectator)\//.test(href))).toBe(false);
+
+    type AdmissionView = {
+      attendance: string | null;
+      participant_id: string | null;
+      player_id: string;
+      roster_locked: boolean;
+      status: string;
+      tournament_id: string;
+      tournament_state: string;
+    };
+    const readAdmission = async (
+      context: BrowserContext,
+      tournamentID: string,
+    ): Promise<AdmissionView> => {
+      const response = await context.request.get(
+        `${backendURL}/api/v1/tournaments/${tournamentID}/participant/queue`,
+        { headers: { Origin: frontendURL } },
+      );
+      expect(response.status(), `queue GET failed with ${response.status()}`).toBe(200);
+      return (await response.json()) as AdmissionView;
+    };
+
+    type PlayerFixture = {
+      context: BrowserContext;
+      page: Page;
+      player: FullStackPlayer;
+    };
+    const playerFixtures: PlayerFixture[] = [];
+    for (let index = 0; index < 4; index += 1) {
+      const context = await browser.newContext({ baseURL: frontendURL });
+      ownedFixture.contexts.push(context);
+      const playerPage = await context.newPage();
+      const username = uniqueName(`catalog-player-${index + 1}`);
+      if (index === 0) {
+        await playerPage.goto(`/arena/tournaments/${primaryTournament.public_id}`);
+        await playerPage.getByRole('button', { name: 'Участвовать', exact: true }).click();
+        await playerPage.getByLabel('Никнейм', { exact: true }).fill(username);
+        const queuePost = playerPage.waitForResponse((response) =>
+          new URL(response.url()).pathname === `/api/v1/tournaments/${primaryTournament.id}/participant/queue`
+          && response.request().method() === 'POST',
+        );
+        await playerPage.getByRole('button', { name: 'Подтвердить участие', exact: true }).click();
+        expect((await queuePost).status()).toBe(200);
+        await expect(playerPage.getByTestId('tournament-admission-status')).toContainText('Ожидает подтверждения');
+      } else {
+        await joinAsPlayer(playerPage, username);
+      }
+      const meResponse = await context.request.get(`${backendURL}/api/v1/players/me`, {
+        headers: { Origin: frontendURL },
+      });
+      expect(meResponse.status()).toBe(200);
+      const me = (await meResponse.json()) as { player: FullStackPlayer };
+      expect(me.player.id).toMatch(/^[0-9a-f-]{36}$/i);
+      playerFixtures.push({ context, page: playerPage, player: me.player });
+    }
+
+    const joinPlayerToTournament = async (
+      playerPage: Page,
+      tournament: AdminTournament,
+    ): Promise<void> => {
+      await playerPage.goto(`/arena/tournaments/${tournament.public_id}?view=overview`);
+      await expect(playerPage.getByRole('heading', { name: tournament.name, exact: true })).toBeVisible();
+      const participateButton = playerPage.getByRole('button', { name: 'Участвовать', exact: true });
+      await expect(participateButton).toBeVisible();
+      const queuePost = playerPage.waitForResponse(
+        (response) =>
+          new URL(response.url()).pathname ===
+            `/api/v1/tournaments/${tournament.id}/participant/queue` &&
+          response.request().method() === 'POST',
+      );
+      await participateButton.click();
+      expect((await queuePost).status()).toBe(200);
+      await expect(playerPage.getByTestId('tournament-admission-status')).toContainText(
+        'Ожидает подтверждения',
+      );
+    };
+
+    for (const fixture of playerFixtures.slice(1)) {
+      await joinPlayerToTournament(fixture.page, primaryTournament);
+    }
+    const primaryFixture = playerFixtures[0];
+    expect(primaryFixture).toBeDefined();
+    if (!primaryFixture) {
+      throw new Error('catalog fixture did not create a primary player');
+    }
+    await expectNoSensitiveAuthStorage(primaryFixture.page);
+    const primaryCookieHeader = await cookieHeaderForPage(primaryFixture.page);
+    expect(primaryCookieHeader).toContain('tpm_player_session=');
+    expect(primaryCookieHeader).toContain('tpm_player_csrf=');
+    const restoredPrimaryPage = await primaryFixture.context.newPage();
+    await restoredPrimaryPage.addInitScript(() => {
+      (window as Window & { __fullStackInitialPlayerID?: string | null }).__fullStackInitialPlayerID =
+        window.sessionStorage.getItem('player_id');
+    });
+    await restoredPrimaryPage.goto(`/arena/tournaments/${primaryTournament.public_id}?view=overview`);
+    const initialPlayerID = await restoredPrimaryPage.evaluate(
+      () => (window as Window & { __fullStackInitialPlayerID?: string | null }).__fullStackInitialPlayerID ?? null,
+    );
+    expect(initialPlayerID, 'new page must not restore player identity from sessionStorage').toBeNull();
+    await expectNoSensitiveAuthStorage(restoredPrimaryPage);
+    await expect(restoredPrimaryPage.getByTestId('tournament-admission-status')).toContainText(
+      'Ожидает подтверждения',
+    );
+    const restoredPlayerID = await restoredPrimaryPage.evaluate(() => window.sessionStorage.getItem('player_id'));
+    expect(restoredPlayerID, 'cookie-backed restore should repopulate the current player id').toBe(
+      primaryFixture.player.id,
+    );
+    await expect(restoredPrimaryPage.getByLabel('Никнейм')).toHaveCount(0);
+
+    const primaryAdmission = await readAdmission(primaryFixture.context, primaryTournament.id);
+    expect(primaryAdmission.tournament_id).toBe(primaryTournament.id);
+    expect(primaryAdmission.player_id).toBe(primaryFixture.player.id);
+    expect(primaryAdmission.status).toBe('registered');
+    expect(primaryAdmission.participant_id).toMatch(/^[0-9a-f-]{36}$/i);
+    expect(primaryAdmission.roster_locked).toBe(false);
+
+    const secondaryAdmission = await readAdmission(primaryFixture.context, secondaryTournament.id);
+    expect(secondaryAdmission.tournament_id).toBe(secondaryTournament.id);
+    expect(secondaryAdmission.player_id).toBe(primaryFixture.player.id);
+    expect(secondaryAdmission.status).toBe('not_registered');
+    expect(secondaryAdmission.participant_id).toBeNull();
+
+    const roster = await getRosterViaApi(adminRequest, primaryTournament.id);
+    expect(roster.participants).toHaveLength(playerFixtures.length);
+    expect(new Set(roster.participants.map((participant) => participant.player_id))).toEqual(
+      new Set(playerFixtures.map((fixture) => fixture.player.id)),
+    );
+    const checkedIn = await replaceRosterViaApi(
+      adminRequest,
+      primaryTournament.id,
+      adminAccessCSRFToken,
+      await getOperatorProjectionRevisionViaApi(adminRequest, primaryTournament.id),
+      playerFixtures.map((fixture, index) => ({
+        attendance: 'checked_in' as const,
+        player_id: fixture.player.id,
+        seed: index + 1,
+      })),
+    );
+    const checkedInRoster = await readRosterResponse(checkedIn, primaryTournament.id, roster.id);
+    const checkedInParticipants = sortRosterParticipantsBySeed(checkedInRoster.participants);
+    expect(checkedInParticipants).toHaveLength(4);
+    expect(checkedInParticipants.every((participant) => participant.attendance === 'checked_in')).toBe(true);
+    const preflightResponse = await runRosterPreflightViaApi(
+      adminRequest,
+      primaryTournament.id,
+      adminAccessCSRFToken,
+    );
+    expect(preflightResponse.status()).toBe(200);
+    const preflightReport = (await preflightResponse.json()) as FullStackPreflightReport;
+    expect(preflightReport.passed, JSON.stringify(preflightReport.checks ?? [])).toBe(true);
+    const locked = await lockRosterViaApi(
+      adminRequest,
+      primaryTournament.id,
+      adminAccessCSRFToken,
+      preflightReport.id,
+      checkedInParticipants.map((participant) => participant.player_id),
+    );
+    const lockedRoster = await readRosterResponse(locked, primaryTournament.id, roster.id);
+    expect(lockedRoster.locked).toBe(true);
+
+    const startSwiss = await applyStartSwissViaApi(
+      adminRequest,
+      primaryTournament.id,
+      adminAccessCSRFToken,
+    );
+    expect(startSwiss.status(), `start Swiss failed with ${startSwiss.status()}`).toBe(200);
+    const startedTournament = (await startSwiss.json()) as { state?: string };
+    expect(startedTournament.state).toBe('swiss');
+    const secondSnapshot = await readOperatorSnapshotViaApi<OperatorSnapshotEnvelope>(
+      adminRequest,
+      secondaryTournament.id,
+    );
+    if (!secondSnapshot.tournament) {
+      throw new Error('catalog fixture secondary snapshot returned no tournament');
+    }
+    expect(secondSnapshot.tournament?.state).toBe('registration');
+
+    const pairingResponse = await adminRequest.post(
+      `${backendURL}/api/v1/admin/tournaments/${primaryTournament.id}/pairings`,
+      {
+        headers: {
+          'X-CSRF-Token': adminAccessCSRFToken,
+          'Idempotency-Key': randomUUID(),
+          Origin: frontendURL,
+        },
+        data: {
+          categories: ['web'],
+          category_mode: 'random',
+          expected_projection_revision: await getOperatorProjectionRevisionViaApi(
+            adminRequest,
+            primaryTournament.id,
+          ),
+          pairing_mode: 'automatic',
+          round_number: 1,
+        },
+      },
+    );
+    expect(pairingResponse.status(), `Swiss pairing failed with ${pairingResponse.status()}`).toBe(200);
+    const pairing = (await pairingResponse.json()) as FullStackSwissRound;
+    expect(pairing.pairings.length).toBeGreaterThan(0);
+
+    const operatorSnapshot = await readOperatorSnapshotViaApi<FullStackOperatorSnapshot>(
+      adminRequest,
+      primaryTournament.id,
+    );
+    const wave = operatorSnapshot.waves.at(-1);
+    expect(wave).toBeDefined();
+    if (!wave) {
+      throw new Error('catalog fixture did not materialize a Swiss wave');
+    }
+
+    const waveAction = async (
+      action: 'open_ready_window' | 'start',
+      knownProjectionRevision?: number,
+    ): Promise<FullStackWave> => {
+      const response = await adminRequest.post(
+        `${backendURL}/api/v1/admin/tournaments/${primaryTournament.id}/waves/${wave.id}/actions`,
+        {
+          headers: {
+            'X-CSRF-Token': adminAccessCSRFToken,
+            'Idempotency-Key': randomUUID(),
+            Origin: frontendURL,
+          },
+          data: {
+            action,
+            confirmed: true,
+            expected_projection_revision: knownProjectionRevision ?? await getOperatorProjectionRevisionViaApi(
+              adminRequest,
+              primaryTournament.id,
+            ),
+          },
+        },
+      );
+      expect(response.status(), `${action} Wave failed with ${response.status()}`).toBe(200);
+      return (await response.json()) as FullStackWave;
+    };
+
+    const waveProjectionRevision = operatorSnapshot.next_cursor.projection_revision;
+    await waveAction('open_ready_window', waveProjectionRevision);
+    const contextForParticipant = (participantID: string): BrowserContext => {
+      const rosterParticipant = checkedInParticipants.find(
+        (participant) => participant.id === participantID,
+      );
+      expect(rosterParticipant).toBeDefined();
+      if (!rosterParticipant) {
+        throw new Error(`missing roster participant ${participantID}`);
+      }
+      const fixture = playerFixtures.find((candidate) => candidate.player.id === rosterParticipant.player_id);
+      expect(fixture).toBeDefined();
+      if (!fixture) {
+        throw new Error(`missing player context for ${rosterParticipant.player_id}`);
+      }
+      return fixture.context;
+    };
+
+    for (const member of wave.members.filter((candidate) => candidate.series_id !== null)) {
+      const context = contextForParticipant(member.participant_id);
+      const participant = await readParticipantSnapshotViaApi(context, primaryTournament.id);
+      const csrfToken = (await context.cookies()).find(
+        (cookie) => cookie.name === 'tpm_player_csrf',
+      )?.value;
+      expect(csrfToken).toBeTruthy();
+      const readiness = await context.request.post(
+        `${backendURL}/api/v1/tournaments/${primaryTournament.id}/participant/waves/${wave.id}/ready`,
+        {
+          headers: {
+            'X-CSRF-Token': csrfToken ?? '',
+            'Idempotency-Key': randomUUID(),
+            Origin: frontendURL,
+          },
+          data: {
+            expected_projection_revision: participant.projection_revision,
+            ready: true,
+          },
+        },
+      );
+      expect(readiness.status(), `wave readiness failed with ${readiness.status()}`).toBe(200);
+    }
+    const startedWave = await waveAction('start', waveProjectionRevision);
+    expect(startedWave.state).toBe('active');
+
+    const assignmentMember = wave.members.find((candidate) => candidate.series_id !== null);
+    expect(assignmentMember).toBeDefined();
+    if (!assignmentMember) {
+      throw new Error('catalog fixture did not expose a playable Swiss member');
+    }
+    const assignedContext = contextForParticipant(assignmentMember.participant_id);
+    await expect.poll(async () => {
+      const snapshot = await readParticipantSnapshotViaApi(assignedContext, primaryTournament.id);
+      return snapshot.assignment?.context.series_id ?? null;
+    }, { timeout: 30_000, intervals: [500, 1_000] }).toBeTruthy();
+    const assignedSnapshot = await readParticipantSnapshotViaApi(
+      assignedContext,
+      primaryTournament.id,
+    );
+    expect(assignedSnapshot.assignment?.context.series_id).toBeTruthy();
+    expect(assignedSnapshot.assignment?.active_snapshot.task_id).toMatch(/^[0-9a-f-]{36}$/i);
+
+    await restoredPrimaryPage.reload({ waitUntil: 'domcontentloaded' });
+    const workspaceLink = restoredPrimaryPage.getByRole('link', { name: 'Перейти к участию' });
+    await expect(workspaceLink).toBeVisible({ timeout: 30_000 });
+    await workspaceLink.click();
+    await expect(restoredPrimaryPage).toHaveURL(
+      new RegExp(`/arena/participant/${primaryTournament.id}`),
+    );
+    await expect(restoredPrimaryPage.getByTestId('participant-player-panel')).toBeVisible({
+      timeout: 30_000,
     });
   });
 

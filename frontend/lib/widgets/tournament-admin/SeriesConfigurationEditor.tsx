@@ -26,6 +26,8 @@ type SeriesConfigurationEditorProps = Readonly<{
   selectedTournamentId: string;
   onSelectTournament: (id: string) => void;
   onSessionExpired?: () => void;
+  onDirtyChange?: (dirty: boolean) => void;
+  showTournamentChooser?: boolean;
 }>;
 
 type LoadState = "ready" | "loading" | "error";
@@ -144,6 +146,8 @@ export const SeriesConfigurationEditor = ({
   selectedTournament,
   selectedTournamentId,
   tournaments,
+  onDirtyChange,
+  showTournamentChooser = true,
 }: SeriesConfigurationEditorProps) => {
   const tournamentId = selectedTournament?.id ?? "";
   const mountedRef = useRef(false);
@@ -153,6 +157,7 @@ export const SeriesConfigurationEditor = ({
   const submitRunRef = useRef(0);
   const submittingRef = useRef(false);
   const dirtySeriesIdsRef = useRef(new Set<string>());
+  const dirtyReserveRef = useRef(false);
   const [configuration, setConfiguration] =
     useState<TournamentConfiguration | null>(null);
   const [drafts, setDrafts] = useState<Record<string, SeriesDraft>>({});
@@ -168,6 +173,12 @@ export const SeriesConfigurationEditor = ({
   const [submittingSeriesId, setSubmittingSeriesId] = useState<string | null>(
     null,
   );
+
+  useEffect(() => {
+    if (!selectedTournamentId) {
+      onDirtyChange?.(false);
+    }
+  }, [onDirtyChange, selectedTournamentId]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -229,6 +240,7 @@ export const SeriesConfigurationEditor = ({
         setDrafts((current) => {
           if (!options.preserveDirtyDrafts) {
             dirtySeriesIdsRef.current.clear();
+            dirtyReserveRef.current = false;
             return nextDrafts;
           }
           const merged = { ...nextDrafts };
@@ -247,6 +259,9 @@ export const SeriesConfigurationEditor = ({
           return merged;
         });
         setLoadState("ready");
+        if (!options.preserveDirtyDrafts) {
+          onDirtyChange?.(false);
+        }
         return nextConfiguration;
       } catch (error) {
         if (
@@ -271,7 +286,7 @@ export const SeriesConfigurationEditor = ({
         }
       }
     },
-    [onSessionExpired],
+    [onDirtyChange, onSessionExpired],
   );
 
   useEffect(() => {
@@ -281,6 +296,7 @@ export const SeriesConfigurationEditor = ({
       loadRunRef.current += 1;
       submitRunRef.current += 1;
       dirtySeriesIdsRef.current.clear();
+      dirtyReserveRef.current = false;
       setConfiguration(null);
       setDrafts({});
       setLoadState("ready");
@@ -349,6 +365,7 @@ export const SeriesConfigurationEditor = ({
 
   const updateMode = useCallback(
     (seriesId: string, mode: SeriesMode): void => {
+      onDirtyChange?.(true);
       dirtySeriesIdsRef.current.add(seriesId);
       setDrafts((current) => {
         const draft = current[seriesId];
@@ -359,11 +376,12 @@ export const SeriesConfigurationEditor = ({
       });
       clearFeedback(seriesId);
     },
-    [clearFeedback],
+    [clearFeedback, onDirtyChange],
   );
 
   const updateCategory = useCallback(
     (seriesId: string, category: Category): void => {
+      onDirtyChange?.(true);
       dirtySeriesIdsRef.current.add(seriesId);
       setDrafts((current) => {
         const draft = current[seriesId];
@@ -374,7 +392,7 @@ export const SeriesConfigurationEditor = ({
       });
       clearFeedback(seriesId);
     },
-    [clearFeedback],
+    [clearFeedback, onDirtyChange],
   );
 
   const updateReserveCount = useCallback((value: string): void => {
@@ -382,10 +400,12 @@ export const SeriesConfigurationEditor = ({
     if (nextReserveCount === null) {
       return;
     }
+    onDirtyChange?.(true);
     setReserveCountDraft(nextReserveCount);
+    dirtyReserveRef.current = true;
     setReserveError(null);
     setReserveNotice(null);
-  }, []);
+  }, [onDirtyChange]);
 
   const reserveEditingClosed = Boolean(
     reserveServerCutoff ||
@@ -445,6 +465,8 @@ export const SeriesConfigurationEditor = ({
         replaceReserveCount: true,
       });
       if (reloaded && mountedRef.current) {
+        dirtyReserveRef.current = false;
+        onDirtyChange?.(dirtySeriesIdsRef.current.size > 0);
         setReserveNotice("Резерв сохранен. Конфигурация обновлена с сервера.");
       }
     } catch (error) {
@@ -478,6 +500,7 @@ export const SeriesConfigurationEditor = ({
     configuration,
     loadConfiguration,
     loadState,
+    onDirtyChange,
     onSessionExpired,
     reserveCountDraft,
     reserveEditingClosed,
@@ -581,6 +604,8 @@ export const SeriesConfigurationEditor = ({
           replaceSeriesId: series.id,
         });
         if (reloaded && mountedRef.current) {
+          dirtySeriesIdsRef.current.delete(series.id);
+          onDirtyChange?.(dirtySeriesIdsRef.current.size > 0 || dirtyReserveRef.current);
           setNotices((current) => ({
             ...current,
             [series.id]: "Настройки серии сохранены. Конфигурация обновлена с сервера.",
@@ -631,6 +656,7 @@ export const SeriesConfigurationEditor = ({
       drafts,
       loadConfiguration,
       loadState,
+      onDirtyChange,
       onSessionExpired,
       tournamentId,
     ],
@@ -642,7 +668,7 @@ export const SeriesConfigurationEditor = ({
       description="Настройте режим и категории каждой серии по официальным пулам турнира."
       className={styles.panel}
     >
-      <div className={styles.chooser}>
+      {showTournamentChooser ? <div className={styles.chooser}>
         <label htmlFor="series-configuration-tournament-select">
           Турнир для настройки серий
         </label>
@@ -660,7 +686,7 @@ export const SeriesConfigurationEditor = ({
             </option>
           ))}
         </select>
-      </div>
+      </div> : null}
 
       {!selectedTournament && (
         <Message tone="empty" title="Турнир не выбран">

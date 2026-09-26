@@ -13,7 +13,10 @@ import { useServerCountdown } from "./use-server-countdown";
 import { useOperatorTournamentRealtime } from "./use-operator-tournament-realtime";
 import { useParticipantTournamentRealtime } from "./use-participant-tournament-realtime";
 import { usePublicTournamentRealtime } from "./use-public-tournament-realtime";
-import { useTournamentRecovery } from "./use-tournament-recovery";
+import {
+  useTournamentRecovery,
+  type TournamentRecoveryError,
+} from "./use-tournament-recovery";
 import { TournamentLivePanel, type TournamentLiveConnectionStatus } from "./TournamentLivePanel";
 import styles from "./TournamentLivePanel.module.css";
 
@@ -23,6 +26,7 @@ export type TournamentRecoveryRenderContext = Readonly<{
   participantRefreshSequence: number;
   publicConnectionStatus: ReturnType<typeof usePublicTournamentRealtime>["status"];
   publicState: PublicRecoveryState | null;
+  recoveryError: TournamentRecoveryError | null;
   recovery: RoleAwareRecoveryState | null;
   receivedAtMonotonicMs?: number;
   retry: () => void;
@@ -30,6 +34,7 @@ export type TournamentRecoveryRenderContext = Readonly<{
 }>;
 
 type TournamentRecoveryPanelProps = Readonly<{
+  contentOnly?: boolean;
   role: ArenaLiveRole;
   tournamentId: string;
   children?: (context: TournamentRecoveryRenderContext) => ReactNode;
@@ -224,11 +229,19 @@ const CountdownPanel = ({
 
 export const TournamentRecoveryPanel = ({
   children,
+  contentOnly = false,
   role,
   tournamentId,
 }: TournamentRecoveryPanelProps) => {
   const liveRole = recoveryRole(role);
-  const { receivedAtMonotonicMs, recovery, retry, status } = useTournamentRecovery(
+  const {
+    error: recoveryError,
+    receivedAtMonotonicMs,
+    recovery,
+    refresh,
+    retry,
+    status,
+  } = useTournamentRecovery(
     liveRole,
     tournamentId,
   );
@@ -243,6 +256,8 @@ export const TournamentRecoveryPanel = ({
   const publicRealtime = usePublicTournamentRealtime({
     enabled: liveRole === "public",
     recovery: liveRole === "public" ? recovery : null,
+    recoveryError: liveRole === "public" ? recoveryError : null,
+    refresh,
     retry,
     tournamentId,
   });
@@ -258,26 +273,32 @@ export const TournamentRecoveryPanel = ({
       ? publicPanelStatus(status, publicRealtime.status)
       : participantPanelStatus(status, participantRealtime.status);
   const retryAll = () => {
+    if (liveRole === "public" && publicRealtime.refreshing) {
+      void refresh();
+      return;
+    }
     if (liveRole === "participant") {
       participantRealtime.retry();
     }
     retry();
   };
-  const panelRevision = operatorRealtime.state?.projectionRevision ??
-    publicRealtime.state?.cursor.projection_revision ??
-    recovery?.cursor.projection_revision;
   const publicRecoveryState = liveRole === "public" && recovery?.role === "public"
     ? recoverPublicTournament(recovery.snapshot)
     : null;
-  const publicBroadcastState = publicRealtime.state !== null && (
-    publicRecoveryState === null ||
-    comparePublicRecoveryCursor(
-      publicRealtime.state.cursor,
-      publicRecoveryState.cursor,
-    ) >= 0
+  const publicRealtimeCursor = publicRealtime.state?.cursor;
+  const publicBroadcastState = publicRecoveryState !== null && (
+    publicRealtime.status !== "connected" && (
+      publicRealtime.refreshing ||
+      publicRealtime.recoveryAuthoritative ||
+      publicRealtimeCursor === undefined ||
+      comparePublicRecoveryCursor(publicRealtimeCursor, publicRecoveryState.cursor) < 0
+    )
   )
-    ? publicRealtime.state
-    : publicRecoveryState;
+    ? publicRecoveryState
+    : publicRealtime.state;
+  const panelRevision = operatorRealtime.state?.projectionRevision ??
+    (liveRole === "public" ? publicBroadcastState?.cursor.projection_revision : undefined) ??
+    recovery?.cursor.projection_revision;
   const operatorState = liveRole === "operator" ? (
     <dl
       aria-label="Состояние realtime оператора"
@@ -315,8 +336,9 @@ export const TournamentRecoveryPanel = ({
       aria-label="Состояние realtime публичного просмотра"
       className={styles.telemetry}
       data-connection={publicRealtime.status}
-      data-projection-revision={publicRealtime.state?.cursor.projection_revision ?? ""}
-      data-ready={publicRealtime.ready ? "true" : "false"}
+      data-projection-revision={publicBroadcastState?.cursor.projection_revision ?? ""}
+      data-ready={publicBroadcastState !== null ? "true" : "false"}
+      data-refreshing={publicRealtime.refreshing ? "true" : "false"}
       data-testid="public-realtime-summary"
     >
       <div>
@@ -325,16 +347,22 @@ export const TournamentRecoveryPanel = ({
       </div>
       <div>
         <dt>Участники</dt>
-        <dd>{publicRealtime.state?.display.scoreboard.length ?? 0}</dd>
+        <dd>{publicBroadcastState?.display.scoreboard.length ?? 0}</dd>
       </div>
       <div>
         <dt>Результаты</dt>
-        <dd>{publicRealtime.state?.display.officialResults.length ?? 0}</dd>
+        <dd>{publicBroadcastState?.display.officialResults.length ?? 0}</dd>
       </div>
       <div>
         <dt>Ревизия</dt>
-        <dd>{publicRealtime.state?.cursor.projection_revision ?? recovery?.cursor.projection_revision ?? "-"}</dd>
+        <dd>{publicBroadcastState?.cursor.projection_revision ?? recovery?.cursor.projection_revision ?? "-"}</dd>
       </div>
+      {publicRealtime.refreshing && (
+        <div>
+          <dt>Режим</dt>
+          <dd>Периодическое обновление</dd>
+        </div>
+      )}
     </dl>
   ) : null;
   const realtimeState = operatorState ?? publicState;
@@ -344,12 +372,17 @@ export const TournamentRecoveryPanel = ({
       participantRefreshSequence: participantRealtime.refreshSequence,
       publicConnectionStatus: publicRealtime.status,
       publicState: publicBroadcastState,
+      recoveryError,
       receivedAtMonotonicMs,
       recovery,
       retry,
       status: panelStatus,
     })
     : null;
+
+  if (contentOnly) {
+    return <>{roleSlot}</>;
+  }
 
   if (recovery && deadline) {
     return (

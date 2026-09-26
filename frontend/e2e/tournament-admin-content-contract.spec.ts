@@ -213,8 +213,8 @@ const loginAndOpenTaskCatalog = async (page: Page): Promise<void> => {
   await page.goto("/admin");
   await page.getByPlaceholder("Введите пароль...").fill("correct-password");
   await page.getByRole("button", { name: "Войти" }).click();
-  await expect(page.getByRole("button", { name: "Турниры" })).toBeVisible();
-  await page.getByRole("button", { name: "Турниры" }).click();
+  await expect(page.getByRole("button", { name: "Задачи" })).toBeVisible();
+  await page.getByRole("button", { name: "Задачи" }).click();
   await expect(page.getByPlaceholder("Введите название...")).toBeVisible();
 };
 
@@ -322,7 +322,9 @@ test("FE-028 upload failure keeps entered task data in the catalog form", async 
   });
 
   await page.getByRole("button", { name: /Создать задачу/ }).click();
-  await expect(page.getByText("Задача создана, но файл не загрузился")).toBeVisible();
+  await expect(
+    page.getByRole("alert").filter({ hasText: "Задача создана, но файл не загрузился" }),
+  ).toBeVisible();
   await expect(page.getByPlaceholder("Введите название...")).toHaveValue(title);
   await expect(page.getByPlaceholder("Опишите задачу...")).toHaveValue(description);
   await expect(page.getByPlaceholder("flag{...}")).toHaveValue("flag{fe028}");
@@ -373,7 +375,12 @@ test("FE-028 server validation keeps create and update form input", async ({ pag
   expect(state.createCalls).toBe(1);
   expect(state.sourceCalls).toBe(0);
 
+  const editConfirmation = page.waitForEvent("dialog").then(async (dialog) => {
+    expect(dialog.message()).toContain("несохраненные изменения");
+    await dialog.accept();
+  });
   await page.getByTitle("Редактировать задачу").click();
+  await editConfirmation;
   await contentCatalog.getByPlaceholder("Введите название...").fill("FE-028 Rejected Update");
   await contentCatalog.getByLabel("Пул задания").selectOption("golden");
   await page.locator('input[type="file"]').setInputFiles({
@@ -394,15 +401,53 @@ test("FE-028 server validation keeps create and update form input", async ({ pag
   expect(state.sourceCalls).toBe(0);
 });
 
+test("защищает переход между задачами после изменения только select и лимита времени", async ({ page }) => {
+  const firstTask = taskResponse({
+    id: "62000000-0000-4000-8000-000000000010",
+    title: "FE-028 First Task",
+    description: "Первая задача для проверки dirty состояния.",
+    category: "forensics",
+    difficulty: "easy",
+    kind: "normal",
+    time_limit: 120,
+  });
+  const secondTask = taskResponse({
+    id: "62000000-0000-4000-8000-000000000011",
+    title: "FE-028 Second Task",
+    description: "Вторая задача для проверки перехода.",
+    category: "web",
+    difficulty: "medium",
+    kind: "golden",
+    time_limit: 90,
+  });
+  await setupAdminRoutes(page, { tasks: [firstTask, secondTask] });
+  await loginAndOpenTaskCatalog(page);
+  await page.getByTitle("Редактировать задачу").first().click();
+  const catalog = page.getByRole("region", { name: "Каталог контента" });
+  await catalog.getByLabel("Категория").selectOption("crypto");
+  await catalog.getByLabel("Лимит времени (сек)").fill("180");
+
+  const dialogMessage = new Promise<string>((resolve) => {
+    page.once("dialog", async (dialog) => {
+      resolve(dialog.message());
+      await dialog.dismiss();
+    });
+  });
+  await page.getByTitle("Редактировать задачу").nth(1).click();
+  await expect(dialogMessage).resolves.toContain("несохраненные изменения");
+  await expect(catalog.getByLabel("Категория")).toHaveValue("crypto");
+  await expect(catalog.getByLabel("Лимит времени (сек)")).toHaveValue("180");
+});
+
 test("FE-028 empty catalog and unavailable content keep Russian responsive UI in both themes", async ({ page }) => {
   await setupAdminRoutes(page, { contentStatus: 422 });
   await loginAndOpenTaskCatalog(page);
   const contentCatalog = page.getByRole("region", { name: "Каталог контента" });
 
-  await expect(contentCatalog.getByText("Контент недоступен")).toBeVisible();
-  await expect(contentCatalog.getByText("Нет доступной опубликованной ревизии контента")).toBeVisible();
+  await expect(contentCatalog.getByText("Публикации пока нет")).toBeVisible();
+  await expect(contentCatalog.getByText(/Опубликованной ревизии пока нет/)).toBeVisible();
   await expect(page.getByText("Пока нет созданных задач")).toBeVisible();
-  await expect(page.getByRole("button", { name: "Создать демо-турнир" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Создать задачу" })).toBeEnabled();
 
   await page.getByRole("button", { name: "Темная тема" }).click();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
@@ -413,6 +458,6 @@ test("FE-028 empty catalog and unavailable content keep Russian responsive UI in
   expect(darkBackground).not.toBe(lightBackground);
 
   await page.setViewportSize({ width: 390, height: 844 });
-  await expect(contentCatalog.getByText("Контент недоступен")).toBeVisible();
+  await expect(contentCatalog.getByText("Публикации пока нет")).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });

@@ -383,7 +383,7 @@ func writeParticipantError(w http.ResponseWriter, r *http.Request, err error) {
 			errmap.HandleError(w, r, domain.ErrInternal)
 			return
 		}
-		detail, instance, requestID := tournamentProblemContext(r, "projection revision conflict")
+		detail, instance, requestID := tournamentProblemContext(r, "participant state conflict")
 		payload := api.ProjectionRevisionProblem{
 			Type: "about:blank", Title: http.StatusText(http.StatusConflict),
 			Status: int32(http.StatusConflict), Detail: &detail, Instance: &instance, RequestId: &requestID,

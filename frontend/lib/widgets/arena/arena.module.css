@@ -70,9 +70,7 @@
   gap: 0.45rem;
 }
 
-.utilityLink,
-.navLink,
-.roleCard {
+.utilityLink {
   color: var(--text);
   text-decoration: none;
 }
@@ -98,51 +96,9 @@
 }
 
 .utilityLink:focus-visible,
-.navLink:focus-visible,
-.stateAction:focus-visible,
-.roleCard:focus-visible {
+.stateAction:focus-visible {
   outline: 2px solid var(--accent-strong);
   outline-offset: 3px;
-}
-
-.roleNav {
-  display: flex;
-  min-width: 0;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.4rem;
-  margin-top: 1rem;
-}
-
-.navLink {
-  display: inline-flex;
-  min-height: 2.25rem;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-small);
-  padding: 0.35rem 0.72rem;
-  background: var(--surface-muted);
-  color: var(--secondary);
-  font-size: 0.8rem;
-  font-weight: 700;
-  transition:
-    border-color var(--motion),
-    background-color var(--motion),
-    color var(--motion),
-    transform var(--motion);
-}
-
-.navLink:hover,
-.navLink:focus-visible,
-.navLink[aria-current="page"] {
-  border-color: var(--accent);
-  background: var(--accent-soft);
-  color: var(--accent-strong);
-}
-
-.navLink:hover {
-  transform: translateY(-1px);
 }
 
 .context {
@@ -213,136 +169,8 @@
   background: var(--surface-strong);
 }
 
-.landing {
-  display: grid;
-  min-width: 0;
-  grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
-  gap: 1.25rem;
-  align-items: start;
-}
-
-.hero {
-  display: grid;
-  min-width: 0;
-  gap: 1rem;
-  padding: 1rem 0;
-}
-
-.heroTitle {
-  max-width: 12ch;
-  margin: 0;
-  color: var(--text);
-  font-size: clamp(2rem, 7vw, 4.7rem);
-  letter-spacing: -0.04em;
-  line-height: 0.98;
-}
-
-.heroLead {
-  max-width: 52ch;
-  margin: 0;
-  color: var(--secondary);
-  font-size: clamp(1rem, 2vw, 1.15rem);
-}
-
-.heroNote {
-  margin: 0;
-  color: var(--subtle);
-  font-size: 0.85rem;
-}
-
 .landingPanel {
   min-width: 0;
-}
-
-.form {
-  display: grid;
-  gap: 0.75rem;
-}
-
-.fieldLabel {
-  color: var(--text);
-  font-size: 0.85rem;
-  font-weight: 750;
-}
-
-.fieldHint {
-  margin: -0.35rem 0 0;
-  color: var(--secondary);
-  font-size: 0.76rem;
-}
-
-.input {
-  width: 100%;
-  min-width: 0;
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-small);
-  padding: 0.75rem 0.8rem;
-  background: var(--surface-muted);
-  color: var(--text);
-  font: inherit;
-}
-
-.input:focus {
-  border-color: var(--accent);
-  outline: 2px solid var(--accent-ring);
-  outline-offset: 1px;
-}
-
-.input::placeholder {
-  color: var(--subtle);
-}
-
-.roleChoices {
-  display: grid;
-  min-width: 0;
-  gap: 0.65rem;
-  margin-top: 1.25rem;
-}
-
-.roleChoicesTitle {
-  margin: 0;
-  color: var(--text);
-  font-size: 0.95rem;
-}
-
-.roleGrid {
-  display: grid;
-  min-width: 0;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 0.75rem;
-}
-
-.roleCard {
-  display: grid;
-  min-width: 0;
-  gap: 0.35rem;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-small);
-  padding: 0.9rem;
-  background: var(--surface-muted);
-  transition:
-    border-color var(--motion),
-    background-color var(--motion),
-    transform var(--motion);
-}
-
-.roleCard:hover,
-.roleCard:focus-visible {
-  border-color: var(--accent);
-  background: var(--accent-soft);
-  transform: translateY(-2px);
-}
-
-.roleCardTitle {
-  color: var(--text);
-  font-size: 0.9rem;
-  font-weight: 800;
-}
-
-.roleCardDescription {
-  color: var(--secondary);
-  font-size: 0.76rem;
-  line-height: 1.45;
 }
 
 .overview {
@@ -409,16 +237,6 @@
   margin-top: 1rem;
 }
 
-@media (max-width: 760px) {
-  .landing {
-    grid-template-columns: 1fr;
-  }
-
-  .heroTitle {
-    max-width: 15ch;
-  }
-}
-
 @media (max-width: 560px) {
   .shell {
     padding-right: 0.75rem;
@@ -436,17 +254,7 @@
     justify-content: flex-start;
   }
 
-  .roleNav {
-    align-items: flex-start;
-    flex-direction: column;
-  }
-
-  .navLink {
-    width: 100%;
-  }
-
   .utilityLink,
-  .navLink,
   .stateAction {
     min-height: 44px;
     align-items: center;
@@ -456,7 +264,6 @@
     flex-wrap: wrap;
   }
 
-  .roleGrid,
   .metrics {
     grid-template-columns: 1fr;
   }
@@ -467,15 +274,8 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .utilityLink,
-  .navLink,
-  .roleCard {
+  .utilityLink {
     transition: none;
   }
 
-  .navLink:hover,
-  .roleCard:hover,
-  .roleCard:focus-visible {
-    transform: none;
-  }
 }

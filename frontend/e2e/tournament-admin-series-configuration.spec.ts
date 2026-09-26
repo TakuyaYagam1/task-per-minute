@@ -394,10 +394,12 @@ const loginAndOpenSeriesEditor = async (page: Page): Promise<ReturnType<Page['ge
   await page.getByPlaceholder('Введите пароль...').fill('correct-password');
   await page.getByRole('button', { name: 'Войти' }).click();
   await page.getByRole('button', { name: 'Турниры' }).click();
-
+  const row = page.getByRole('row').filter({ hasText: 'Series конфигурация' });
+  await row.getByRole('button', { name: 'Открыть' }).click();
+  await page.getByRole('button', { name: 'Сетка и серии' }).click();
   const region = page.getByRole('region', { name: 'Конфигурация серий' });
   await expect(region).toBeVisible();
-  await region.getByLabel('Турнир для настройки серий').selectOption(tournamentID);
+  await expect(page).toHaveURL(new RegExp(`[?&]tournament=${tournamentID}(?:&|$)`));
   await expect(region.getByRole('article')).toHaveCount(5);
   return region;
 };

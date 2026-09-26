@@ -1,0 +1,95 @@
+/api/v1/public/tournaments:
+  get:
+    operationId: listPublicTournaments
+    tags: [tournament]
+    summary: List publicly visible tournaments
+    description: >-
+      Returns a stable, redacted catalog of tournaments that have left draft
+      state. Search is a literal case-insensitive substring match against the
+      public name and public identifier. The cursor is bound to the search,
+      group, and sort parameters used for the page that produced it.
+    security: []
+    parameters:
+      - in: query
+        name: q
+        required: false
+        schema:
+          type: string
+          maxLength: 80
+          default: ''
+      - in: query
+        name: group
+        required: false
+        schema:
+          allOf:
+            - $ref: '../components/schemas.yml#/TournamentCatalogFilterGroup'
+          default: all
+      - in: query
+        name: sort
+        required: false
+        schema:
+          allOf:
+            - $ref: '../components/schemas.yml#/TournamentCatalogSort'
+          default: activity
+      - in: query
+        name: limit
+        required: false
+        schema:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 50
+          default: 20
+      - in: query
+        name: cursor
+        required: false
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 2048
+          pattern: '^[A-Za-z0-9_-]+$'
+    responses:
+      '200':
+        description: Public tournament catalog page.
+        content:
+          application/json:
+            schema:
+              $ref: '../components/schemas.yml#/PublicTournamentCatalogResponse'
+      '400':
+        $ref: '../components/responses.yml#/InvalidRequestProblem'
+      '429':
+        $ref: '../components/responses.yml#/RateLimitedProblem'
+      default:
+        $ref: '../components/responses.yml#/UnexpectedServerProblem'
+
+/api/v1/public/tournaments/{public_id}:
+  parameters:
+    - in: path
+      name: public_id
+      required: true
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 64
+        pattern: '^[a-z0-9]+(-[a-z0-9]+)*$'
+  get:
+    operationId: getPublicTournamentByPublicID
+    tags: [tournament]
+    summary: Read one publicly visible tournament
+    description: >-
+      Returns the same redacted tournament item used by the public catalog.
+      Draft tournaments are never addressable through this path.
+    security: []
+    responses:
+      '200':
+        description: Public tournament catalog item.
+        content:
+          application/json:
+            schema:
+              $ref: '../components/schemas.yml#/PublicTournamentCatalogItem'
+      '404':
+        $ref: '../components/responses.yml#/NotFoundProblem'
+      '429':
+        $ref: '../components/responses.yml#/RateLimitedProblem'
+      default:
+        $ref: '../components/responses.yml#/UnexpectedServerProblem'

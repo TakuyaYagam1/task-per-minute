@@ -6,6 +6,7 @@ import {
   applyRoleRecoverySnapshot,
   classifyRoleRecoveryError,
   getRoleRecoverySnapshot,
+  ApiError,
   type RoleAwareRecoveryState,
   type TournamentLiveRole,
 } from "../../shared/api";
@@ -13,24 +14,51 @@ import { readMonotonicNow } from "./countdown";
 import type { TournamentLiveConnectionStatus } from "./TournamentLivePanel";
 
 type RecoveryView = Readonly<{
+  error: TournamentRecoveryError | null;
   recovery: RoleAwareRecoveryState | null;
   receivedAtMonotonicMs?: number;
   status: TournamentLiveConnectionStatus;
 }>;
 
+export type TournamentRecoveryErrorKind =
+  | "not_found"
+  | "rate_limited"
+  | "transport"
+  | "contract"
+  | "http";
+
+export type TournamentRecoveryError = Readonly<{
+  kind: TournamentRecoveryErrorKind;
+  status: number;
+}>;
+
 type RecoveryActions = Readonly<{
-  refresh: () => void;
-  retry: () => void;
+  refresh: () => Promise<boolean>;
+  retry: () => Promise<boolean>;
 }>;
 
 const initialView: RecoveryView = {
+  error: null,
   recovery: null,
   status: "connecting",
 };
 
 const isAbortError = (error: unknown): boolean =>
   error instanceof DOMException &&
-  (error.name === "AbortError" || error.name === "TimeoutError");
+  error.name === "AbortError";
+
+const recoveryErrorFor = (error: unknown): TournamentRecoveryError => {
+  if (error instanceof DOMException && error.name === "TimeoutError") {
+    return { kind: "transport", status: 0 };
+  }
+  if (error instanceof ApiError) {
+    if (error.kind === "not_found" || error.kind === "rate_limited" || error.kind === "transport") {
+      return { kind: error.kind, status: error.status };
+    }
+    return { kind: "http", status: error.status };
+  }
+  return { kind: "contract", status: 0 };
+};
 
 export const useTournamentRecovery = (
   role: TournamentLiveRole,
@@ -41,7 +69,7 @@ export const useTournamentRecovery = (
   const controllerRef = useRef<AbortController | null>(null);
   const requestRef = useRef(0);
 
-  const load = useCallback(async (withCursor: boolean): Promise<void> => {
+  const load = useCallback(async (withCursor: boolean): Promise<boolean> => {
     controllerRef.current?.abort();
     const controller = new AbortController();
     controllerRef.current = controller;
@@ -50,10 +78,11 @@ export const useTournamentRecovery = (
 
     setView((current) => ({
       ...current,
+      error: null,
       status: previous === null ? "connecting" : "recovering",
     }));
 
-    const accept = async (fresh: boolean): Promise<void> => {
+    const accept = async (fresh: boolean): Promise<boolean> => {
       const response = await getRoleRecoverySnapshot(
         role,
         tournamentId,
@@ -62,7 +91,7 @@ export const useTournamentRecovery = (
       );
       const receivedAtMonotonicMs = readMonotonicNow();
       if (controller.signal.aborted || request !== requestRef.current) {
-        return;
+        return false;
       }
       const transition = applyRoleRecoverySnapshot(recoveryRef.current, {
         role,
@@ -73,18 +102,21 @@ export const useTournamentRecovery = (
       });
       recoveryRef.current = transition.state;
       setView({
+        error: null,
         recovery: transition.state,
         receivedAtMonotonicMs,
         status: transition.changed || transition.outcome === "duplicate" ? "live" : "stale",
       });
+      return true;
     };
 
     try {
-      await accept(!withCursor);
+      return await accept(!withCursor);
     } catch (error) {
       if (controller.signal.aborted || request !== requestRef.current || isAbortError(error)) {
-        return;
+        return false;
       }
+      let finalError = error;
       const failure = classifyRoleRecoveryError(previous, error);
       const shouldRetryFresh = failure.outcome === "unknown_schema" || (
         withCursor &&
@@ -93,22 +125,24 @@ export const useTournamentRecovery = (
       if (shouldRetryFresh) {
         setView((current) => ({ ...current, status: "recovering" }));
         try {
-          await accept(true);
-          return;
+          return await accept(true);
         } catch (freshError) {
           if (
             controller.signal.aborted ||
             request !== requestRef.current ||
             isAbortError(freshError)
           ) {
-            return;
+            return false;
           }
+          finalError = freshError;
         }
       }
       setView((current) => ({
         ...current,
+        error: recoveryErrorFor(finalError),
         status: previous === null ? "rejected" : "stale",
       }));
+      return false;
     }
   }, [role, tournamentId]);
 
@@ -123,11 +157,11 @@ export const useTournamentRecovery = (
   }, [load]);
 
   const retry = useCallback(() => {
-    void load(recoveryRef.current !== null);
+    return load(recoveryRef.current !== null);
   }, [load]);
 
   const refresh = useCallback(() => {
-    void load(false);
+    return load(false);
   }, [load]);
 
   return { ...view, refresh, retry };

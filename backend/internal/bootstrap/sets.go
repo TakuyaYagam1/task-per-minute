@@ -31,6 +31,7 @@ import (
 	adminresultrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/admin/result"
 	adminrosterrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/admin/roster"
 	adminsnapshotrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/admin/snapshot"
+	admissionrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/admission"
 	cancellationrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/cancellation"
 	catalogrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/catalog"
 	contentrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/configuration"
@@ -79,6 +80,7 @@ import (
 	tournamentadminresult "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/result"
 	tournamentadminroster "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/roster"
 	tournamentadminsnapshot "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/snapshot"
+	admissionusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admission"
 	tournamentcancellation "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/cancellation"
 	catalogusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/catalog"
 	participantconnection "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/connection"
@@ -86,6 +88,7 @@ import (
 	tournamentparticipant "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/participant"
 	tournamentpause "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/pause"
 	tournamentprogression "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/progression"
+	publiccatalog "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/publiccatalog"
 )
 
 var ConfigSet = wire.NewSet(
@@ -200,6 +203,7 @@ var ReposSet = wire.NewSet(
 	wire.Bind(new(tournamentprogression.Transitioner), new(*progressionrepo.TournamentProgressionPostgres)),
 	wire.Bind(new(tournamentprogression.PlayoffProjectionPublisher), new(*progressionrepo.TournamentProgressionPostgres)),
 	participantauthorityrepo.NewTournamentParticipantPostgres,
+	admissionrepo.NewTournamentAdmissionPostgres,
 	wire.Bind(new(tournamentparticipant.CommandAuthority), new(*participantauthorityrepo.TournamentParticipantPostgres)),
 	participantstaterepo.NewParticipantStatePostgres,
 	wire.Bind(new(tournamentparticipant.StateReader), new(*participantstaterepo.ParticipantStatePostgres)),
@@ -247,6 +251,7 @@ var UseCasesSet = wire.NewSet(
 	wire.Bind(new(tournamentadminobservability.OperationClock), new(clockFunc)),
 	wire.Bind(new(tournamentparticipant.ParticipantOperationClock), new(clockFunc)),
 	wire.Bind(new(tournamentprogression.ProgressionClock), new(clockFunc)),
+	wire.Bind(new(admissionusecase.Clock), new(clockFunc)),
 	provideRevocationRedis,
 	wire.Bind(new(authusecase.RevocationStore), new(*redisadapter.RevocationRedis)),
 
@@ -283,6 +288,10 @@ var UseCasesSet = wire.NewSet(
 	wire.Bind(new(catalogusecase.IDGenerator), new(*catalogusecase.DeterministicIDGenerator)),
 	provideTournamentCatalog,
 	wire.Bind(new(catalogusecase.TournamentLister), new(*catalogusecase.TournamentUseCase)),
+	providePublicTournamentCatalog,
+	wire.Bind(new(inbound.PublicTournamentCatalogUseCase), new(*publiccatalog.Service)),
+	provideTournamentAdmission,
+	wire.Bind(new(inbound.TournamentAdmissionUseCase), new(*admissionusecase.AdmissionUseCase)),
 	provideTournamentCommandReceipts,
 	wire.Bind(new(idempotency.Store), new(*redisadapter.CommandReceiptStore)),
 	provideDistributedCommandCoordinator,

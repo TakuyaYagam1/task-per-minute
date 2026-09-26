@@ -1,0 +1,127 @@
+TournamentCatalogFilterGroup:
+  type: string
+  enum: [all, live, upcoming, completed]
+  x-enum-varnames:
+    - TournamentCatalogFilterGroupAll
+    - TournamentCatalogFilterGroupLive
+    - TournamentCatalogFilterGroupUpcoming
+    - TournamentCatalogFilterGroupCompleted
+
+TournamentCatalogGroup:
+  type: string
+  enum: [live, upcoming, completed]
+  x-enum-varnames:
+    - TournamentCatalogGroupLive
+    - TournamentCatalogGroupUpcoming
+    - TournamentCatalogGroupCompleted
+
+TournamentCatalogSort:
+  type: string
+  enum: [activity, name, newest]
+  x-enum-varnames:
+    - TournamentCatalogSortActivity
+    - TournamentCatalogSortName
+    - TournamentCatalogSortNewest
+
+TournamentCatalogStage:
+  type: string
+  enum: [registration, roster_locked, swiss, golden, playoffs, completed, cancelled]
+  x-enum-varnames:
+    - TournamentCatalogStageRegistration
+    - TournamentCatalogStageRosterLocked
+    - TournamentCatalogStageSwiss
+    - TournamentCatalogStageGolden
+    - TournamentCatalogStagePlayoffs
+    - TournamentCatalogStageCompleted
+    - TournamentCatalogStageCancelled
+
+PublicTournamentCatalogItem:
+  type: object
+  additionalProperties: false
+  required:
+    - tournament_id
+    - public_id
+    - name
+    - preset
+    - state
+    - group
+    - stage
+    - planned_roster_size
+    - roster_size
+    - created_at
+    - started_at
+    - finished_at
+    - scheduled_at
+  properties:
+    tournament_id:
+      type: string
+      format: uuid
+      readOnly: true
+    public_id:
+      type: string
+      minLength: 1
+      maxLength: 64
+      pattern: '^[a-z0-9]+(-[a-z0-9]+)*$'
+      readOnly: true
+    name:
+      type: string
+      minLength: 1
+      maxLength: 120
+      readOnly: true
+    preset:
+      $ref: '#/TournamentPreset'
+    state:
+      $ref: '#/TournamentState'
+    group:
+      $ref: '#/TournamentCatalogGroup'
+    stage:
+      $ref: '#/TournamentCatalogStage'
+    planned_roster_size:
+      type: integer
+      format: int32
+      minimum: 4
+      maximum: 16
+      readOnly: true
+    roster_size:
+      type: integer
+      format: int32
+      minimum: 0
+      maximum: 16
+      readOnly: true
+    created_at:
+      type: string
+      format: date-time
+      readOnly: true
+    started_at:
+      type: string
+      format: date-time
+      nullable: true
+      readOnly: true
+    finished_at:
+      type: string
+      format: date-time
+      nullable: true
+      readOnly: true
+    scheduled_at:
+      type: string
+      format: date-time
+      nullable: true
+      description: Planned start time when the tournament has one. It is currently null when no schedule is stored.
+      readOnly: true
+
+PublicTournamentCatalogResponse:
+  type: object
+  additionalProperties: false
+  required: [items, next_cursor]
+  properties:
+    items:
+      type: array
+      maxItems: 50
+      items:
+        $ref: '#/PublicTournamentCatalogItem'
+    next_cursor:
+      type: string
+      minLength: 1
+      maxLength: 2048
+      pattern: '^[A-Za-z0-9_-]+$'
+      nullable: true

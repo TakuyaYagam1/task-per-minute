@@ -10,6 +10,8 @@ type JoinPlayerResponse = components["schemas"]["JoinPlayerResponse"];
 type LeaderboardEntry = components["schemas"]["LeaderboardEntry"];
 type LeaderboardResponse = components["schemas"]["LeaderboardResponse"];
 type PublicTournamentResponse = components["schemas"]["PublicTournamentResponse"];
+type PublicTournamentCatalogItem = components["schemas"]["PublicTournamentCatalogItem"];
+type PublicTournamentCatalogResponse = components["schemas"]["PublicTournamentCatalogResponse"];
 type PublicScoreboardEntry = components["schemas"]["PublicScoreboardEntry"];
 type PublicScoreboardResponse = components["schemas"]["PublicScoreboardResponse"];
 type PublicBracketMatch = components["schemas"]["PublicBracketMatch"];
@@ -168,6 +170,57 @@ const PUBLIC_TOURNAMENT_STATES = new Set<string>([
   "cancelled",
 ]);
 
+const PUBLIC_CATALOG_GROUPS = new Set<components["schemas"]["TournamentCatalogGroup"]>([
+  "live",
+  "upcoming",
+  "completed",
+]);
+
+const PUBLIC_CATALOG_STAGES = new Set<components["schemas"]["TournamentCatalogStage"]>([
+  "registration",
+  "roster_locked",
+  "swiss",
+  "golden",
+  "playoffs",
+  "completed",
+  "cancelled",
+]);
+
+const isPublicCatalogStateConsistent = (
+  state: unknown,
+  group: unknown,
+  stage: unknown,
+): boolean => {
+  if (state === "registration" && (group !== "upcoming" || stage !== "registration")) {
+    return false;
+  }
+  if (state === "roster_locked" && (group !== "upcoming" || stage !== "roster_locked")) {
+    return false;
+  }
+  if (state === "swiss" && (group !== "live" || stage !== "swiss")) {
+    return false;
+  }
+  if (state === "golden" && (group !== "live" || stage !== "golden")) {
+    return false;
+  }
+  if (state === "playoffs" && (group !== "live" || stage !== "playoffs")) {
+    return false;
+  }
+  if (state === "technical_pause" && (
+    group !== "live" ||
+    (stage !== "swiss" && stage !== "golden" && stage !== "playoffs")
+  )) {
+    return false;
+  }
+  if (state === "completed" && (group !== "completed" || stage !== "completed")) {
+    return false;
+  }
+  if (state === "cancelled" && (group !== "completed" || stage !== "cancelled")) {
+    return false;
+  }
+  return state !== "draft";
+};
+
 const PUBLIC_SERIES_STATES = new Set<string>([
   "planned",
   "locked",
@@ -219,6 +272,74 @@ export const isPublicTournamentResponse = (
   isPublicOptionalDateTime(value.started_at) &&
   isPublicOptionalDateTime(value.finished_at) &&
   isSafePositiveInteger(value.projection_revision);
+
+export const isPublicTournamentCatalogItem = (
+  value: unknown,
+): value is PublicTournamentCatalogItem =>
+  isRecord(value) &&
+  hasExactKeys(value, [
+    "tournament_id",
+    "public_id",
+    "name",
+    "preset",
+    "state",
+    "group",
+    "stage",
+    "planned_roster_size",
+    "roster_size",
+    "created_at",
+    "started_at",
+    "finished_at",
+    "scheduled_at",
+  ]) &&
+  isNonNilUUID(value.tournament_id) &&
+  isString(value.public_id) &&
+  /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(value.public_id) &&
+  value.public_id.length <= 64 &&
+  isString(value.name) &&
+  value.name.trim().length > 0 &&
+  Array.from(value.name).length <= 120 &&
+  value.preset === "tournament_v1" &&
+  isString(value.state) &&
+  PUBLIC_TOURNAMENT_STATES.has(value.state) &&
+  isString(value.group) &&
+  PUBLIC_CATALOG_GROUPS.has(value.group as components["schemas"]["TournamentCatalogGroup"]) &&
+  isString(value.stage) &&
+  PUBLIC_CATALOG_STAGES.has(value.stage as components["schemas"]["TournamentCatalogStage"]) &&
+  isPublicCatalogStateConsistent(value.state, value.group, value.stage) &&
+  isSafeInteger(value.planned_roster_size) &&
+  value.planned_roster_size >= 4 &&
+  value.planned_roster_size <= 16 &&
+  isSafeInteger(value.roster_size) &&
+  value.roster_size >= 0 &&
+  value.roster_size <= 16 &&
+  isDateTimeString(value.created_at) &&
+  isPublicOptionalDateTime(value.started_at) &&
+  isPublicOptionalDateTime(value.finished_at) &&
+  isPublicOptionalDateTime(value.scheduled_at);
+
+export const isPublicTournamentCatalogResponse = (
+  value: unknown,
+): value is PublicTournamentCatalogResponse =>
+  isRecord(value) &&
+  hasExactKeys(value, ["items", "next_cursor"]) &&
+  Array.isArray(value.items) &&
+  value.items.length <= 50 &&
+  value.items.every(isPublicTournamentCatalogItem) &&
+  new Set(value.items.map((item) => (
+    isRecord(item) && typeof item.public_id === "string" ? item.public_id : ""
+  ))).size === value.items.length &&
+  new Set(value.items.map((item) => (
+    isRecord(item) && typeof item.tournament_id === "string" ? item.tournament_id : ""
+  ))).size === value.items.length &&
+  (
+    value.next_cursor === null ||
+    (
+      isString(value.next_cursor) &&
+      /^[A-Za-z0-9_-]+$/.test(value.next_cursor) &&
+      value.next_cursor.length <= 2048
+    )
+  );
 
 export const isPublicScoreboardEntry = (
   value: unknown,

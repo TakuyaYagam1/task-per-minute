@@ -3,7 +3,7 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 VALIDATOR="$REPO_ROOT/scripts/release/validate-openapi-toolchain-trust.sh"
-POLICY="$REPO_ROOT/docs/engineering/openapi-toolchain-trust.md"
+POLICY="$REPO_ROOT/security/tools/openapi-tools.policy"
 PACKAGE_JSON="$REPO_ROOT/frontend/package.json"
 PACKAGE_LOCK="$REPO_ROOT/frontend/package-lock.json"
 NPM_USERCONFIG="$REPO_ROOT/frontend/config/npm-empty-userconfig"
@@ -15,7 +15,7 @@ trap 'rm -rf -- "$TEST_TMP"' EXIT
 
 run_validator() {
   bash "$VALIDATOR" \
-    --policy "$1/policy.md" \
+    --policy "$1/policy.txt" \
     --package-json "$1/package.json" \
     --package-lock "$1/package-lock.json" \
     --npm-userconfig "$1/npm-empty-userconfig" \
@@ -27,7 +27,7 @@ make_fixture() {
   local name="$1"
   local fixture="$TEST_TMP/$name"
   mkdir -p "$fixture"
-  cp "$POLICY" "$fixture/policy.md"
+  cp "$POLICY" "$fixture/policy.txt"
   cp "$PACKAGE_JSON" "$fixture/package.json"
   cp "$PACKAGE_LOCK" "$fixture/package-lock.json"
   cp "$NPM_USERCONFIG" "$fixture/npm-empty-userconfig"
@@ -56,20 +56,20 @@ run_validator "$baseline" >/dev/null
 printf 'PASS: accepted locked toolchain\n'
 
 fixture="$(make_fixture unofficial-source)"
-sed -i 's#redocly.repository=https://github.com/Redocly/redocly-cli#redocly.repository=https://example.invalid/redocly-cli#' "$fixture/policy.md"
+sed -i 's#redocly.repository=https://github.com/Redocly/redocly-cli#redocly.repository=https://example.invalid/redocly-cli#' "$fixture/policy.txt"
 expect_reject unofficial-source "$fixture"
 
 fixture="$(make_fixture missing-license)"
-sed -i 's/^oapi.license=.*/oapi.license=/' "$fixture/policy.md"
+sed -i 's/^oapi.license=.*/oapi.license=/' "$fixture/policy.txt"
 expect_reject missing-license "$fixture"
 
 fixture="$(make_fixture stale-security-evidence)"
-sed -i 's/^redocly.security_evidence_date=.*/redocly.security_evidence_date=2020-01-01/' "$fixture/policy.md"
+sed -i 's/^redocly.security_evidence_date=.*/redocly.security_evidence_date=2020-01-01/' "$fixture/policy.txt"
 expect_reject stale-security-evidence "$fixture"
 
 fixture="$(make_fixture missing-scorecard)"
-sed -i 's#^redocly.scorecard_url=.*#redocly.scorecard_url=#' "$fixture/policy.md"
-sed -i 's/^redocly.scorecard_justification=.*/redocly.scorecard_justification=/' "$fixture/policy.md"
+sed -i 's#^redocly.scorecard_url=.*#redocly.scorecard_url=#' "$fixture/policy.txt"
+sed -i 's/^redocly.scorecard_justification=.*/redocly.scorecard_justification=/' "$fixture/policy.txt"
 expect_reject missing-scorecard "$fixture"
 
 fixture="$(make_fixture wrong-lock-identity)"
@@ -107,7 +107,7 @@ sed -i 's# && bash ../scripts/release/run-npm-build-tool-audit.sh##' "$fixture/p
 expect_reject advisory-gate-bypass "$fixture"
 
 fixture="$(make_fixture unnamed-trust-decision)"
-sed -i 's/^oapi.trust_decision=.*/oapi.trust_decision=/' "$fixture/policy.md"
+sed -i 's/^oapi.trust_decision=.*/oapi.trust_decision=/' "$fixture/policy.txt"
 expect_reject unnamed-trust-decision "$fixture"
 
 printf 'openapi toolchain trust fixture tests passed\n'

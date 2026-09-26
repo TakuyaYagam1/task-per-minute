@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
 import { playerModel } from "../../entities/player";
@@ -27,7 +28,7 @@ import {
   type OperatorRecoverySnapshot,
   type PublicTournamentResponse,
 } from "../../shared/api";
-import { formatTournamentState } from "../../shared/lib";
+import { formatTournamentState, getSafeArenaPublicReturnPath } from "../../shared/lib";
 import {
   ArenaShell,
   buildArenaLoginHref,
@@ -41,8 +42,10 @@ import {
   TournamentPlayerPanel,
 } from "../../widgets/tournament-player";
 import { TournamentBroadcastPanel } from "../../widgets/tournament-broadcast";
+import arenaStyles from "../../widgets/arena/arena.module.css";
 
 type ArenaRolePageProps = Readonly<{
+  returnPath?: string | null;
   role: ArenaRole;
   tournamentId: string;
 }>;
@@ -172,9 +175,12 @@ const messageFor = (
   }
 };
 
-export const ArenaRolePage = ({ role, tournamentId }: ArenaRolePageProps) => {
+export const ArenaRolePage = ({ returnPath, role, tournamentId }: ArenaRolePageProps) => {
   const [state, setState] = useState<ArenaRoleState>(initialState);
   const [logoutPending, setLogoutPending] = useState(false);
+  const safePublicReturnPath = role === "participant"
+    ? getSafeArenaPublicReturnPath(returnPath)
+    : null;
 
   useEffect(() => {
     const controller = new AbortController();
@@ -462,6 +468,11 @@ export const ArenaRolePage = ({ role, tournamentId }: ArenaRolePageProps) => {
           : undefined
       }
     >
+      {safePublicReturnPath && (
+        <Link className={arenaStyles.stateAction} href={safePublicReturnPath}>
+          Вернуться к турниру
+        </Link>
+      )}
       {(state.accessStatus === "ready" || state.accessStatus === "completed") && (
         role === "participant" ? (
           <TournamentRecoveryPanel role={role} tournamentId={tournamentId}>

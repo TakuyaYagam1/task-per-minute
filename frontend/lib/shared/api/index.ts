@@ -7,6 +7,8 @@ export * from './tournament-content';
 export * from './tournament-admin-configuration';
 export * from './tournament-operator';
 export * from './tournament-public';
+export * from './tournament-catalog';
+export * from './tournament-admission';
 export * from './arena';
 export * from './participant';
 export * from './golden';

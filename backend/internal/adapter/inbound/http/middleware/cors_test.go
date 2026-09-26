@@ -17,9 +17,9 @@ func TestCORS_AllowedPreflight(t *testing.T) {
 	handler := middleware.CORS([]string{"http://localhost:3000"})(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
 		called = true
 	}))
-	req := httptest.NewRequest(http.MethodOptions, "/api/v1/players/join", nil)
+	req := httptest.NewRequest(http.MethodOptions, "/api/v1/admin/tournaments/1/series/1/configuration", nil)
 	req.Header.Set("Origin", "http://localhost:3000")
-	req.Header.Set("Access-Control-Request-Method", http.MethodPost)
+	req.Header.Set("Access-Control-Request-Method", http.MethodPatch)
 	req.Header.Set("Access-Control-Request-Headers", "Content-Type, Idempotency-Key, X-CSRF-Token")
 	rr := httptest.NewRecorder()
 
@@ -29,7 +29,7 @@ func TestCORS_AllowedPreflight(t *testing.T) {
 	require.Equal(t, http.StatusNoContent, rr.Code)
 	require.Equal(t, "http://localhost:3000", rr.Header().Get("Access-Control-Allow-Origin"))
 	require.Equal(t, "true", rr.Header().Get("Access-Control-Allow-Credentials"))
-	require.Equal(t, "GET, POST, PUT, DELETE, OPTIONS", rr.Header().Get("Access-Control-Allow-Methods"))
+	require.Equal(t, "GET, POST, PUT, PATCH, DELETE, OPTIONS", rr.Header().Get("Access-Control-Allow-Methods"))
 	require.Equal(t, "Content-Type, Idempotency-Key, X-CSRF-Token", rr.Header().Get("Access-Control-Allow-Headers"))
 	require.Equal(t, "Date, Retry-After, X-CSRF-Token, X-Admin-Refresh-CSRF-Token", rr.Header().Get("Access-Control-Expose-Headers"))
 	require.Contains(t, rr.Header().Values("Vary"), "Origin")

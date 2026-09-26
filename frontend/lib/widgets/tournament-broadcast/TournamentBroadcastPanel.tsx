@@ -30,11 +30,19 @@ type PublicConnectionStatus =
   | "rejected"
   | "error";
 
+export type TournamentBroadcastView =
+  | "all"
+  | "overview"
+  | "matches"
+  | "bracket"
+  | "standings";
+
 type TournamentBroadcastPanelProps = Readonly<{
   connectionStatus: PublicConnectionStatus;
   receivedAtMonotonicMs?: number;
   serverTimestamp?: string;
   state: PublicRecoveryState | null;
+  view?: TournamentBroadcastView;
 }>;
 
 type BroadcastMatch = Readonly<{
@@ -140,23 +148,23 @@ const CONNECTION_LABELS: Readonly<Record<PublicConnectionStatus, string>> = {
 const PHASE_COPY: Readonly<Record<BroadcastPhase, Readonly<{ title: string; description: string }>>> = {
   waiting: {
     title: "Турнир ожидает старта",
-    description: "Матчи появятся после публикации серверного расписания.",
+    description: "Матчи появятся после публикации расписания.",
   },
   live: {
     title: "Турнир идет",
-    description: "Счет и состояния матчей обновляются из публичного server snapshot.",
+    description: "Счет и статусы матчей обновляются автоматически.",
   },
   technical_pause: {
     title: "Техническая пауза",
-    description: "Сервер остановил ход турнира. Результаты и дедлайны не вычисляются локально.",
+    description: "Турнир приостановлен. Ожидайте продолжения.",
   },
   cancelled: {
     title: "Турнир отменен",
-    description: "Показывается последнее подтвержденное публичное состояние.",
+    description: "Показаны результаты на момент отмены турнира.",
   },
   completed: {
     title: "Турнир завершен",
-    description: "Таблица и сетка зафиксированы сервером и доступны только для просмотра.",
+    description: "Итоговая таблица и сетка доступны для просмотра.",
   },
 };
 
@@ -790,6 +798,7 @@ export const TournamentBroadcastPanel = ({
   receivedAtMonotonicMs,
   serverTimestamp,
   state,
+  view = "all",
 }: TournamentBroadcastPanelProps) => {
   const panelRef = useRef<HTMLElement | null>(null);
   const tabRefs = useRef<Partial<Record<ProjectionView, HTMLButtonElement | null>>>({});
@@ -867,6 +876,19 @@ export const TournamentBroadcastPanel = ({
     .filter((entry) => entry.qualification_status === "qualified")
     .sort((first, second) => (integerValue(first.rank) ?? 0) - (integerValue(second.rank) ?? 0))
     .slice(0, 4), [scoreboard]);
+  const projectionView: ProjectionView = view === "bracket"
+    ? (activeView === "swiss" || activeView === "playoff" ? activeView : "playoff")
+    : view === "standings"
+      ? "scoreboard"
+      : activeView;
+  const showMatchCenter = view === "all" || view === "overview" || view === "matches";
+  const showProjections = view !== "matches";
+  const showProjectionTabs = view === "all" || view === "overview" || view === "bracket";
+  const projectionTabs = view === "bracket"
+    ? PROJECTION_TABS.filter((tab) => tab.view === "swiss" || tab.view === "playoff")
+    : PROJECTION_TABS;
+  const projectionTabVisible = (tabView: ProjectionView): boolean =>
+    showProjectionTabs && projectionTabs.some((tab) => tab.view === tabView);
 
   const selectMatch = (match: BroadcastMatch): void => {
     setSelectedMatchKey(match.key);
@@ -884,20 +906,20 @@ export const TournamentBroadcastPanel = ({
     event: KeyboardEvent<HTMLButtonElement>,
     view: ProjectionView,
   ): void => {
-    const currentIndex = PROJECTION_TABS.findIndex((tab) => tab.view === view);
+    const currentIndex = projectionTabs.findIndex((tab) => tab.view === view);
     if (currentIndex < 0) {
       return;
     }
 
     let nextIndex: number | null = null;
     if (event.key === "ArrowRight") {
-      nextIndex = (currentIndex + 1) % PROJECTION_TABS.length;
+      nextIndex = (currentIndex + 1) % projectionTabs.length;
     } else if (event.key === "ArrowLeft") {
-      nextIndex = (currentIndex - 1 + PROJECTION_TABS.length) % PROJECTION_TABS.length;
+      nextIndex = (currentIndex - 1 + projectionTabs.length) % projectionTabs.length;
     } else if (event.key === "Home") {
       nextIndex = 0;
     } else if (event.key === "End") {
-      nextIndex = PROJECTION_TABS.length - 1;
+      nextIndex = projectionTabs.length - 1;
     }
 
     if (nextIndex === null) {
@@ -905,7 +927,7 @@ export const TournamentBroadcastPanel = ({
     }
 
     event.preventDefault();
-    const nextTab = PROJECTION_TABS[nextIndex];
+    const nextTab = projectionTabs[nextIndex];
     if (nextTab !== undefined) {
       selectProjectionView(nextTab.view, true);
     }
@@ -990,7 +1012,7 @@ export const TournamentBroadcastPanel = ({
         {finishedAt && <span>Финиш: {formatArenaDateTime(finishedAt)}</span>}
       </div>
 
-      <div className={styles.matchCenter}>
+      {showMatchCenter && <div className={styles.matchCenter}>
         <section className={styles.schedule} aria-labelledby="schedule-title">
           <div className={styles.sectionHeading}>
             <h3 id="schedule-title">Матчи сервера</h3>
@@ -1072,14 +1094,14 @@ export const TournamentBroadcastPanel = ({
             </div>
           )}
         </section>
-      </div>
+      </div>}
 
-      <section className={styles.projections} aria-label="Публичные проекции турнира">
-        <div className={styles.tabs} role="tablist" aria-label="Таблица и этапы турнира">
-          {PROJECTION_TABS.map((tab) => (
+      {showProjections && <section className={styles.projections} aria-label="Публичные проекции турнира">
+        {showProjectionTabs && <div className={styles.tabs} role="tablist" aria-label="Таблица и этапы турнира">
+          {projectionTabs.map((tab) => (
             <button
               aria-controls={tab.panelId}
-              aria-selected={activeView === tab.view}
+              aria-selected={projectionView === tab.view}
               className={styles.tab}
               id={tab.tabId}
               key={tab.view}
@@ -1089,17 +1111,19 @@ export const TournamentBroadcastPanel = ({
                 tabRefs.current[tab.view] = element;
               }}
               role="tab"
-              tabIndex={activeView === tab.view ? 0 : -1}
+              tabIndex={projectionView === tab.view ? 0 : -1}
               type="button"
             >
               {tab.label}
             </button>
           ))}
-        </div>
+        </div>}
 
-        {activeView === "scoreboard" ? (
+        {projectionView === "scoreboard" ? (
           <div
-            aria-labelledby="broadcast-scoreboard-tab"
+            {...(showProjectionTabs
+              ? { "aria-labelledby": "broadcast-scoreboard-tab" }
+              : { "aria-label": "Турнирная таблица" })}
             className={styles.tableWrap}
             id="broadcast-scoreboard"
             role="tabpanel"
@@ -1149,9 +1173,11 @@ export const TournamentBroadcastPanel = ({
               </table>
             )}
           </div>
-        ) : activeView === "swiss" ? (
+        ) : projectionView === "swiss" ? (
           <div
-            aria-labelledby="broadcast-swiss-tab"
+            {...(showProjectionTabs
+              ? { "aria-labelledby": "broadcast-swiss-tab" }
+              : { "aria-label": "Swiss этап" })}
             className={styles.swiss}
             id="broadcast-swiss"
             role="tabpanel"
@@ -1197,7 +1223,9 @@ export const TournamentBroadcastPanel = ({
           </div>
         ) : (
           <div
-            aria-labelledby="broadcast-playoff-tab"
+            {...(showProjectionTabs
+              ? { "aria-labelledby": "broadcast-playoff-tab" }
+              : { "aria-label": "Плей-офф" })}
             className={styles.playoff}
             id="broadcast-playoff"
             role="tabpanel"
@@ -1272,7 +1300,7 @@ export const TournamentBroadcastPanel = ({
             </div>
           </div>
         )}
-        {activeView !== "scoreboard" && (
+        {projectionTabVisible("scoreboard") && projectionView !== "scoreboard" && (
           <div
             aria-labelledby="broadcast-scoreboard-tab"
             hidden
@@ -1280,7 +1308,7 @@ export const TournamentBroadcastPanel = ({
             role="tabpanel"
           />
         )}
-        {activeView !== "swiss" && (
+        {projectionTabVisible("swiss") && projectionView !== "swiss" && (
           <div
             aria-labelledby="broadcast-swiss-tab"
             hidden
@@ -1288,7 +1316,7 @@ export const TournamentBroadcastPanel = ({
             role="tabpanel"
           />
         )}
-        {activeView !== "playoff" && (
+        {projectionTabVisible("playoff") && projectionView !== "playoff" && (
           <div
             aria-labelledby="broadcast-playoff-tab"
             hidden
@@ -1296,7 +1324,7 @@ export const TournamentBroadcastPanel = ({
             role="tabpanel"
           />
         )}
-      </section>
+      </section>}
     </section>
   );
 };

@@ -485,7 +485,8 @@ const loginAndSelectTournament = async (page: Page): Promise<ReturnType<Page["ge
   await page.getByRole("button", { name: "Турниры" }).click();
   const row = page.getByRole("row").filter({ hasText: "Golden playoff контракт" });
   await expect(row).toBeVisible();
-  await row.getByRole("button", { name: "Редактировать состав" }).click();
+  await row.getByRole("button", { name: "Открыть" }).click();
+  await page.getByRole("button", { name: "Проведение" }).click();
   const panel = page.getByTestId("operator-golden-playoff-control-panel");
   await expect(panel).toBeVisible();
   await expect(panel.getByText(tournamentId, { exact: true })).toBeVisible();

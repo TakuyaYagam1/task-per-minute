@@ -402,6 +402,7 @@ type Querier interface {
 	FindExecutionAuthorityCommand(ctx context.Context, arg FindExecutionAuthorityCommandParams) (ExecutionAuthorityLease, error)
 	FindExecutionEpochReplayByCommand(ctx context.Context, commandID uuid.UUID) (ExecutionEpochReplay, error)
 	FindExecutionEpochReplayByGame(ctx context.Context, gameAttemptID uuid.UUID) (ExecutionEpochReplay, error)
+	FindFirstAvailableParticipantSeed(ctx context.Context, arg FindFirstAvailableParticipantSeedParams) (int32, error)
 	FindGoldenRepositoryCommand(ctx context.Context, arg FindGoldenRepositoryCommandParams) (FindGoldenRepositoryCommandRow, error)
 	FindLatestWaveStartCommand(ctx context.Context, arg FindLatestWaveStartCommandParams) (WaveControlCommand, error)
 	FindOperatorReplayReserveCommand(ctx context.Context, commandID uuid.UUID) (OperatorReplayReserve, error)
@@ -505,6 +506,7 @@ type Querier interface {
 	GetProjectionCutoffByID(ctx context.Context, arg GetProjectionCutoffByIDParams) (ProjectionCutoff, error)
 	GetProjectionPublicationHealth(ctx context.Context) (GetProjectionPublicationHealthRow, error)
 	GetProjectionRevisionScoped(ctx context.Context, arg GetProjectionRevisionScopedParams) (ProjectionRevision, error)
+	GetPublicTournamentCatalogItem(ctx context.Context, publicID string) (GetPublicTournamentCatalogItemRow, error)
 	GetPublicTournamentReadDraft(ctx context.Context, tournamentID uuid.UUID) (GetPublicTournamentReadDraftRow, error)
 	GetPublicTournamentReadSummary(ctx context.Context, tournamentID uuid.UUID) (GetPublicTournamentReadSummaryRow, error)
 	GetReadyWindow(ctx context.Context, waveID uuid.UUID) (ReadyWindow, error)
@@ -545,6 +547,7 @@ type Querier interface {
 	GetTournamentAdminReplayTime(ctx context.Context) (pgtype.Timestamptz, error)
 	GetTournamentAdminRoster(ctx context.Context, tournamentID uuid.UUID) (Roster, error)
 	GetTournamentAdminSnapshotHeader(ctx context.Context, tournamentID uuid.UUID) (GetTournamentAdminSnapshotHeaderRow, error)
+	GetTournamentAdmissionStatus(ctx context.Context, arg GetTournamentAdmissionStatusParams) (GetTournamentAdmissionStatusRow, error)
 	GetTournamentCancellationAudit(ctx context.Context, tournamentID uuid.UUID) (GetTournamentCancellationAuditRow, error)
 	GetTournamentConfigurationEditAuthority(ctx context.Context, arg GetTournamentConfigurationEditAuthorityParams) (GetTournamentConfigurationEditAuthorityRow, error)
 	GetTournamentConfigurationEditCommand(ctx context.Context, arg GetTournamentConfigurationEditCommandParams) (TournamentConfigurationEditCommand, error)
@@ -574,9 +577,11 @@ type Querier interface {
 	GetTournamentSummary(ctx context.Context, id uuid.UUID) (GetTournamentSummaryRow, error)
 	GetWave(ctx context.Context, arg GetWaveParams) (Wave, error)
 	GetWaveReadinessHead(ctx context.Context, arg GetWaveReadinessHeadParams) (WaveReadiness, error)
+	HasConflictingParticipantReservation(ctx context.Context, arg HasConflictingParticipantReservationParams) (bool, error)
 	HasGoldenRuntimePlanSnapshot(ctx context.Context, arg HasGoldenRuntimePlanSnapshotParams) (bool, error)
 	HasWavePendingDrafts(ctx context.Context, waveID uuid.UUID) (bool, error)
 	InsertParticipantConnectionLease(ctx context.Context, arg InsertParticipantConnectionLeaseParams) (ParticipantConnectionLease, error)
+	InsertRegisteredParticipant(ctx context.Context, arg InsertRegisteredParticipantParams) (Participant, error)
 	InsertTournamentAdminRosterParticipant(ctx context.Context, arg InsertTournamentAdminRosterParticipantParams) (Participant, error)
 	InsertTournamentCreateReceipt(ctx context.Context, arg InsertTournamentCreateReceiptParams) (TournamentCreateCommandReceipt, error)
 	InsertTournamentParticipant(ctx context.Context, arg InsertTournamentParticipantParams) (Participant, error)
@@ -657,6 +662,7 @@ type Querier interface {
 	ListProjectionArtifactMembers(ctx context.Context, arg ListProjectionArtifactMembersParams) ([]ProjectionArtifactMember, error)
 	ListProjectionRevisionArtifacts(ctx context.Context, arg ListProjectionRevisionArtifactsParams) ([]ProjectionRevisionArtifact, error)
 	ListProjectionRevisions(ctx context.Context, arg ListProjectionRevisionsParams) ([]ProjectionRevision, error)
+	ListPublicTournamentCatalog(ctx context.Context, arg ListPublicTournamentCatalogParams) ([]ListPublicTournamentCatalogRow, error)
 	ListPublicTournamentReadDraftActions(ctx context.Context, draftID uuid.UUID) ([]ListPublicTournamentReadDraftActionsRow, error)
 	ListPublicTournamentReadResults(ctx context.Context, tournamentID uuid.UUID) ([]ListPublicTournamentReadResultsRow, error)
 	ListPublicTournamentReadSeries(ctx context.Context, tournamentID uuid.UUID) ([]ListPublicTournamentReadSeriesRow, error)
@@ -747,6 +753,7 @@ type Querier interface {
 	LoadGoldenRepositoryHead(ctx context.Context, scopeID uuid.UUID) (LoadGoldenRepositoryHeadRow, error)
 	LoadGoldenRepositoryScope(ctx context.Context, id uuid.UUID) (GoldenRepositoryScope, error)
 	LoadGoldenRuntimePlanRoster(ctx context.Context, tournamentID uuid.UUID) (LoadGoldenRuntimePlanRosterRow, error)
+	LockAdmissionPlayer(ctx context.Context, playerID uuid.UUID) (uuid.UUID, error)
 	LockAssignment(ctx context.Context, id uuid.UUID) (LockAssignmentRow, error)
 	LockAssignmentDraftChildScope(ctx context.Context, arg LockAssignmentDraftChildScopeParams) ([]LockAssignmentDraftChildScopeRow, error)
 	LockAssignmentPlan(ctx context.Context, id uuid.UUID) (LockAssignmentPlanRow, error)
@@ -974,6 +981,10 @@ type Querier interface {
 	LockTournamentAdminWaveGames(ctx context.Context, waveID uuid.UUID) ([]LockTournamentAdminWaveGamesRow, error)
 	LockTournamentAdminWaveMembers(ctx context.Context, waveID uuid.UUID) ([]LockTournamentAdminWaveMembersRow, error)
 	LockTournamentAdminWaveSeries(ctx context.Context, waveID uuid.UUID) ([]LockTournamentAdminWaveSeriesRow, error)
+	// Public admission uses the existing roster and participant records. The
+	// tournament/roster prefix is locked before capacity and attendance checks so
+	// concurrent public joins and admin roster mutations observe one order.
+	LockTournamentAdmissionScope(ctx context.Context, tournamentID uuid.UUID) (LockTournamentAdmissionScopeRow, error)
 	LockTournamentCancellationAuthority(ctx context.Context, tournamentID uuid.UUID) (LockTournamentCancellationAuthorityRow, error)
 	LockTournamentCancellationOutboxIdempotency(ctx context.Context, idempotencyKey string) error
 	LockTournamentConfigurationEditAuthority(ctx context.Context, arg LockTournamentConfigurationEditAuthorityParams) (LockTournamentConfigurationEditAuthorityRow, error)
@@ -1192,6 +1203,7 @@ type Querier interface {
 	// private participant delivery receipt.
 	RecordTaskPublicExposure(ctx context.Context, arg RecordTaskPublicExposureParams) (TaskPublicExposure, error)
 	RecordUnhealthyTaskVersionProbeAttestation(ctx context.Context, arg RecordUnhealthyTaskVersionProbeAttestationParams) (TaskVersionHealthAttestation, error)
+	RegisterInvitedParticipant(ctx context.Context, arg RegisterInvitedParticipantParams) (Participant, error)
 	ReleaseLosingExactDraftBranches(ctx context.Context, arg ReleaseLosingExactDraftBranchesParams) (int64, error)
 	ReleaseLosingExactDraftChildReservations(ctx context.Context, arg ReleaseLosingExactDraftChildReservationsParams) ([]uuid.UUID, error)
 	ReleaseLosingExactDraftChildren(ctx context.Context, arg ReleaseLosingExactDraftChildrenParams) ([]uuid.UUID, error)
@@ -1285,6 +1297,7 @@ type Querier interface {
 	// this predicate is the application-visible CAS result.
 	UpdateTournamentReconnectPresenceCAS(ctx context.Context, arg UpdateTournamentReconnectPresenceCASParams) (PresenceState, error)
 	UpsertPlayerLeaderboardOverride(ctx context.Context, arg UpsertPlayerLeaderboardOverrideParams) (PlayerLeaderboardOverride, error)
+	WithdrawAdmissionParticipant(ctx context.Context, arg WithdrawAdmissionParticipantParams) (Participant, error)
 }
 
 var _ Querier = (*Queries)(nil)

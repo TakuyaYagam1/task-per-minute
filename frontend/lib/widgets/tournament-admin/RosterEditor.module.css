@@ -29,7 +29,6 @@
   font-size: 0.9rem;
   transition:
     border-color var(--motion),
-    box-shadow var(--motion),
     background-color var(--motion);
 }
 
@@ -39,7 +38,8 @@
   outline: none;
   border-color: var(--accent);
   background: var(--panel);
-  box-shadow: 0 0 0 3px var(--accent-ring);
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .content {
@@ -327,7 +327,6 @@
   line-height: 1.4;
   transition:
     border-color var(--motion),
-    box-shadow var(--motion),
     background-color var(--motion);
 }
 
@@ -335,7 +334,8 @@
   outline: none;
   border-color: var(--accent);
   background: var(--panel);
-  box-shadow: 0 0 0 3px var(--accent-ring);
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .hint {

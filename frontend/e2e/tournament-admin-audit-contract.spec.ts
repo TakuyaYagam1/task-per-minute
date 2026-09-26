@@ -237,9 +237,10 @@ const loginAndOpenAudit = async (page: Page): Promise<void> => {
   await page.goto("/admin");
   await page.getByPlaceholder("Введите пароль...").fill("correct-password");
   await page.getByRole("button", { name: "Войти" }).click();
-  await page.getByRole("button", { name: "Турниры" }).click();
+  await page.getByRole("button", { name: "Журнал" }).click();
+  await expect(page.getByRole("heading", { name: "Журнал турнира" })).toBeVisible();
+  await page.locator("#tournament-journal-select").selectOption(tournamentId);
   await expect(page.getByRole("heading", { name: "Аудит и incident bundle" })).toBeVisible();
-  await page.getByRole("button", { name: "Открыть аудит" }).click();
   await expect(page.getByText("Страница 1, событий: 3")).toBeVisible();
 };
 
@@ -294,6 +295,21 @@ test("FE-037 filters result, replay and correction events and walks two server p
   expect(fullQuery?.get("occurred_from")).toBeTruthy();
   expect(fullQuery?.get("occurred_to")).toBeTruthy();
   expect(fullQuery?.get("page_size")).toBe("25");
+});
+
+test("сохраняет недоступный ID турнира в журнале и показывает явное состояние", async ({ page }) => {
+  const unavailableTournamentId = "10000000-0000-4000-8000-000000000099";
+  const auditQueries: URLSearchParams[] = [];
+  await installAdminRoutes(page, auditQueries);
+
+  await page.goto(`/admin?section=audit&tournament=${unavailableTournamentId}&view=audit`);
+  await page.getByPlaceholder("Введите пароль...").fill("correct-password");
+  await page.getByRole("button", { name: "Войти" }).click();
+
+  await expect(page.getByRole("heading", { name: "Журнал турнира" })).toBeVisible();
+  await expect(page).toHaveURL(new RegExp(`[?&]tournament=${unavailableTournamentId}(?:&|$)`));
+  await expect(page.getByRole("alert").filter({ hasText: "Турнир недоступен" })).toBeVisible();
+  await expect(page.getByText(unavailableTournamentId, { exact: true })).toBeVisible();
 });
 
 test("FE-037 downloads the permitted envelope without exposing closed content", async ({ page }) => {
@@ -357,7 +373,7 @@ test("FE-037 remains usable in both themes at mobile width", async ({ page }) =>
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
   await page.getByRole("button", { name: "Светлая тема" }).click();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
-  await expect(page.getByLabel("Турнир для аудита")).toBeVisible();
+  await expect(page.locator("#tournament-journal-select")).toHaveValue(tournamentId);
   await expect(page.getByRole("button", { name: "Скачать incident bundle" })).toBeEnabled();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 

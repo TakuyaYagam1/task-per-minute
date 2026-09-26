@@ -1533,6 +1533,183 @@ func (e TournamentActionRequestAction) Valid() bool {
 	}
 }
 
+// Defines values for TournamentAdmissionConflictReason.
+const (
+	TournamentAdmissionConflictReasonClosed                 TournamentAdmissionConflictReason = "closed"
+	TournamentAdmissionConflictReasonConflict               TournamentAdmissionConflictReason = "conflict"
+	TournamentAdmissionConflictReasonConflictingReservation TournamentAdmissionConflictReason = "conflicting_reservation"
+	TournamentAdmissionConflictReasonFull                   TournamentAdmissionConflictReason = "full"
+	TournamentAdmissionConflictReasonWithdrawn              TournamentAdmissionConflictReason = "withdrawn"
+)
+
+// Valid indicates whether the value is a known member of the TournamentAdmissionConflictReason enum.
+func (e TournamentAdmissionConflictReason) Valid() bool {
+	switch e {
+	case TournamentAdmissionConflictReasonClosed:
+		return true
+	case TournamentAdmissionConflictReasonConflict:
+		return true
+	case TournamentAdmissionConflictReasonConflictingReservation:
+		return true
+	case TournamentAdmissionConflictReasonFull:
+		return true
+	case TournamentAdmissionConflictReasonWithdrawn:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for TournamentAdmissionStatus.
+const (
+	TournamentAdmissionStatusCheckedIn     TournamentAdmissionStatus = "checked_in"
+	TournamentAdmissionStatusInvited       TournamentAdmissionStatus = "invited"
+	TournamentAdmissionStatusNotRegistered TournamentAdmissionStatus = "not_registered"
+	TournamentAdmissionStatusRegistered    TournamentAdmissionStatus = "registered"
+	TournamentAdmissionStatusWithdrawn     TournamentAdmissionStatus = "withdrawn"
+)
+
+// Valid indicates whether the value is a known member of the TournamentAdmissionStatus enum.
+func (e TournamentAdmissionStatus) Valid() bool {
+	switch e {
+	case TournamentAdmissionStatusCheckedIn:
+		return true
+	case TournamentAdmissionStatusInvited:
+		return true
+	case TournamentAdmissionStatusNotRegistered:
+		return true
+	case TournamentAdmissionStatusRegistered:
+		return true
+	case TournamentAdmissionStatusWithdrawn:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for TournamentAdmissionViewAttendance.
+const (
+	TournamentAdmissionViewAttendanceCheckedIn  TournamentAdmissionViewAttendance = "checked_in"
+	TournamentAdmissionViewAttendanceInvited    TournamentAdmissionViewAttendance = "invited"
+	TournamentAdmissionViewAttendanceRegistered TournamentAdmissionViewAttendance = "registered"
+	TournamentAdmissionViewAttendanceWithdrawn  TournamentAdmissionViewAttendance = "withdrawn"
+)
+
+// Valid indicates whether the value is a known member of the TournamentAdmissionViewAttendance enum.
+func (e TournamentAdmissionViewAttendance) Valid() bool {
+	switch e {
+	case TournamentAdmissionViewAttendanceCheckedIn:
+		return true
+	case TournamentAdmissionViewAttendanceInvited:
+		return true
+	case TournamentAdmissionViewAttendanceRegistered:
+		return true
+	case TournamentAdmissionViewAttendanceWithdrawn:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for TournamentCatalogFilterGroup.
+const (
+	TournamentCatalogFilterGroupAll       TournamentCatalogFilterGroup = "all"
+	TournamentCatalogFilterGroupCompleted TournamentCatalogFilterGroup = "completed"
+	TournamentCatalogFilterGroupLive      TournamentCatalogFilterGroup = "live"
+	TournamentCatalogFilterGroupUpcoming  TournamentCatalogFilterGroup = "upcoming"
+)
+
+// Valid indicates whether the value is a known member of the TournamentCatalogFilterGroup enum.
+func (e TournamentCatalogFilterGroup) Valid() bool {
+	switch e {
+	case TournamentCatalogFilterGroupAll:
+		return true
+	case TournamentCatalogFilterGroupCompleted:
+		return true
+	case TournamentCatalogFilterGroupLive:
+		return true
+	case TournamentCatalogFilterGroupUpcoming:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for TournamentCatalogGroup.
+const (
+	TournamentCatalogGroupCompleted TournamentCatalogGroup = "completed"
+	TournamentCatalogGroupLive      TournamentCatalogGroup = "live"
+	TournamentCatalogGroupUpcoming  TournamentCatalogGroup = "upcoming"
+)
+
+// Valid indicates whether the value is a known member of the TournamentCatalogGroup enum.
+func (e TournamentCatalogGroup) Valid() bool {
+	switch e {
+	case TournamentCatalogGroupCompleted:
+		return true
+	case TournamentCatalogGroupLive:
+		return true
+	case TournamentCatalogGroupUpcoming:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for TournamentCatalogSort.
+const (
+	TournamentCatalogSortActivity TournamentCatalogSort = "activity"
+	TournamentCatalogSortName     TournamentCatalogSort = "name"
+	TournamentCatalogSortNewest   TournamentCatalogSort = "newest"
+)
+
+// Valid indicates whether the value is a known member of the TournamentCatalogSort enum.
+func (e TournamentCatalogSort) Valid() bool {
+	switch e {
+	case TournamentCatalogSortActivity:
+		return true
+	case TournamentCatalogSortName:
+		return true
+	case TournamentCatalogSortNewest:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for TournamentCatalogStage.
+const (
+	TournamentCatalogStageCancelled    TournamentCatalogStage = "cancelled"
+	TournamentCatalogStageCompleted    TournamentCatalogStage = "completed"
+	TournamentCatalogStageGolden       TournamentCatalogStage = "golden"
+	TournamentCatalogStagePlayoffs     TournamentCatalogStage = "playoffs"
+	TournamentCatalogStageRegistration TournamentCatalogStage = "registration"
+	TournamentCatalogStageRosterLocked TournamentCatalogStage = "roster_locked"
+	TournamentCatalogStageSwiss        TournamentCatalogStage = "swiss"
+)
+
+// Valid indicates whether the value is a known member of the TournamentCatalogStage enum.
+func (e TournamentCatalogStage) Valid() bool {
+	switch e {
+	case TournamentCatalogStageCancelled:
+		return true
+	case TournamentCatalogStageCompleted:
+		return true
+	case TournamentCatalogStageGolden:
+		return true
+	case TournamentCatalogStagePlayoffs:
+		return true
+	case TournamentCatalogStageRegistration:
+		return true
+	case TournamentCatalogStageRosterLocked:
+		return true
+	case TournamentCatalogStageSwiss:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for TournamentConfigurationFinalDefaultMode.
 const (
 	TournamentConfigurationFinalDefaultModeDraft TournamentConfigurationFinalDefaultMode = "draft"
@@ -3228,6 +3405,31 @@ type PublicSwissRound struct {
 	State       WaveState       `json:"state"`
 }
 
+// PublicTournamentCatalogItem defines model for PublicTournamentCatalogItem.
+type PublicTournamentCatalogItem struct {
+	CreatedAt         time.Time              `json:"created_at"`
+	FinishedAt        *time.Time             `json:"finished_at"`
+	Group             TournamentCatalogGroup `json:"group"`
+	Name              string                 `json:"name"`
+	PlannedRosterSize int32                  `json:"planned_roster_size"`
+	Preset            TournamentPreset       `json:"preset"`
+	PublicId          string                 `json:"public_id"`
+	RosterSize        int32                  `json:"roster_size"`
+
+	// ScheduledAt Planned start time when the tournament has one. It is currently null when no schedule is stored.
+	ScheduledAt  *time.Time             `json:"scheduled_at"`
+	Stage        TournamentCatalogStage `json:"stage"`
+	StartedAt    *time.Time             `json:"started_at"`
+	State        TournamentState        `json:"state"`
+	TournamentId openapi_types.UUID     `json:"tournament_id"`
+}
+
+// PublicTournamentCatalogResponse defines model for PublicTournamentCatalogResponse.
+type PublicTournamentCatalogResponse struct {
+	Items      []PublicTournamentCatalogItem `json:"items"`
+	NextCursor *string                       `json:"next_cursor"`
+}
+
 // PublicTournamentResponse defines model for PublicTournamentResponse.
 type PublicTournamentResponse struct {
 	FinishedAt         *time.Time         `json:"finished_at"`
@@ -3540,6 +3742,80 @@ type TournamentActionRequest struct {
 
 // TournamentActionRequestAction defines model for TournamentActionRequest.Action.
 type TournamentActionRequestAction string
+
+// TournamentAdmissionConflictProblem Safe conflict response for a tournament admission command.
+type TournamentAdmissionConflictProblem struct {
+	// Detail Example: username must be 2..50 characters
+	Detail *string `json:"detail,omitempty"`
+
+	// Instance Example: /api/v1/players/join
+	Instance *string                           `json:"instance,omitempty"`
+	Reason   TournamentAdmissionConflictReason `json:"reason"`
+
+	// RequestId Example: 01HXC2K9F4ZG6YV1AAB7TBQ7AP
+	RequestId *string `json:"request_id,omitempty"`
+
+	// Status Example: 400
+	Status int32 `json:"status"`
+
+	// Title Example: Validation Failed
+	Title string `json:"title"`
+
+	// Type Example: about:blank
+	Type string `json:"type"`
+}
+
+// TournamentAdmissionConflictReason defines model for TournamentAdmissionConflictReason.
+type TournamentAdmissionConflictReason string
+
+// TournamentAdmissionMutation defines model for TournamentAdmissionMutation.
+type TournamentAdmissionMutation struct {
+	// Changed Whether this command changed durable registration state.
+	Changed bool `json:"changed"`
+
+	// View Registration state for the authenticated player in one tournament.
+	View TournamentAdmissionView `json:"view"`
+}
+
+// TournamentAdmissionStatus defines model for TournamentAdmissionStatus.
+type TournamentAdmissionStatus string
+
+// TournamentAdmissionView Registration state for the authenticated player in one tournament.
+type TournamentAdmissionView struct {
+	// Attendance Attendance state, or null before registration.
+	Attendance *TournamentAdmissionViewAttendance `json:"attendance"`
+
+	// ParticipantId Participant identity, or null before registration.
+	ParticipantId     *openapi_types.UUID `json:"participant_id"`
+	PlannedRosterSize int32               `json:"planned_roster_size"`
+
+	// PlayerId Authenticated player identity resolved by the server.
+	PlayerId       openapi_types.UUID `json:"player_id"`
+	RosterLocked   bool               `json:"roster_locked"`
+	RosterRevision int64              `json:"roster_revision"`
+	RosterSize     int32              `json:"roster_size"`
+
+	// Seed Assigned roster seed, or null before registration.
+	Seed            *int32                    `json:"seed"`
+	Status          TournamentAdmissionStatus `json:"status"`
+	TournamentId    openapi_types.UUID        `json:"tournament_id"`
+	TournamentState TournamentState           `json:"tournament_state"`
+}
+
+// TournamentAdmissionViewAttendance Attendance state, or null before registration.
+type TournamentAdmissionViewAttendance string
+
+// TournamentCatalogFilterGroup defines model for TournamentCatalogFilterGroup.
+type TournamentCatalogFilterGroup string
+
+// TournamentCatalogGroup defines model for TournamentCatalogGroup.
+type TournamentCatalogGroup string
+
+// TournamentCatalogSort defines model for TournamentCatalogSort.
+type TournamentCatalogSort string
+
+// TournamentCatalogStage defines model for TournamentCatalogStage.
+type TournamentCatalogStage string
 
 // TournamentConfiguration defines model for TournamentConfiguration.
 type TournamentConfiguration struct {
@@ -4155,6 +4431,15 @@ type LogoutPlayerParams struct {
 	XCSRFToken *PlayerCSRFToken `json:"X-CSRF-Token,omitempty"`
 }
 
+// ListPublicTournamentsParams defines parameters for ListPublicTournaments.
+type ListPublicTournamentsParams struct {
+	Q      *string                       `form:"q,omitempty" json:"q,omitempty"`
+	Group  *TournamentCatalogFilterGroup `form:"group,omitempty" json:"group,omitempty"`
+	Sort   *TournamentCatalogSort        `form:"sort,omitempty" json:"sort,omitempty"`
+	Limit  *int32                        `form:"limit,omitempty" json:"limit,omitempty"`
+	Cursor *string                       `form:"cursor,omitempty" json:"cursor,omitempty"`
+}
+
 // SetGoldenParticipantReadyParams defines parameters for SetGoldenParticipantReady.
 type SetGoldenParticipantReadyParams struct {
 	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
@@ -4165,6 +4450,22 @@ type SetGoldenParticipantReadyParams struct {
 
 // SubmitGoldenFlagParams defines parameters for SubmitGoldenFlag.
 type SubmitGoldenFlagParams struct {
+	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
+
+	// XCSRFToken Session-bound CSRF token required for this player mutation.
+	XCSRFToken RequiredPlayerCSRFToken `json:"X-CSRF-Token"`
+}
+
+// CancelTournamentAdmissionParams defines parameters for CancelTournamentAdmission.
+type CancelTournamentAdmissionParams struct {
+	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
+
+	// XCSRFToken Session-bound CSRF token required for this player mutation.
+	XCSRFToken RequiredPlayerCSRFToken `json:"X-CSRF-Token"`
+}
+
+// JoinTournamentAdmissionParams defines parameters for JoinTournamentAdmission.
+type JoinTournamentAdmissionParams struct {
 	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
 
 	// XCSRFToken Session-bound CSRF token required for this player mutation.

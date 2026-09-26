@@ -1,0 +1,59 @@
+.root {
+  display: grid;
+  width: min(100%, 1120px);
+  min-width: 0;
+  gap: 1rem;
+  margin: 0 auto;
+}
+
+.panel {
+  min-width: 0;
+}
+
+.toolbar {
+  display: flex;
+  min-width: 0;
+  align-items: end;
+  justify-content: space-between;
+  gap: 0.8rem;
+}
+
+.selector {
+  display: grid;
+  width: min(100%, 42rem);
+  gap: 0.35rem;
+}
+
+.selector label {
+  color: var(--text);
+  font-size: 0.8rem;
+  font-weight: 760;
+}
+
+.selector select {
+  width: 100%;
+  min-height: 42px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-small);
+  padding: 0.6rem 0.75rem;
+  background: var(--surface-muted);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.86rem;
+}
+
+.selector select:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+@media (max-width: 640px) {
+  .toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .toolbar button {
+    width: 100%;
+  }
+}

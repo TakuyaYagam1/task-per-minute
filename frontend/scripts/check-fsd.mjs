@@ -55,6 +55,7 @@ function runEslint(target, layersToRestrict, { synthetic = false } = {}) {
     ...(synthetic
       ? [
           "--no-eslintrc",
+          "--no-ignore",
           "--env",
           "es2021",
           "--parser-options",

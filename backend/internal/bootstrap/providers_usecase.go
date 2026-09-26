@@ -15,6 +15,7 @@ import (
 	assignmentrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/assignment"
 	draftrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/assignment/draft"
 	playoffrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/playoff"
+	admissionrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/admission"
 	catalogrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/catalog"
 	participantdraftrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/participant/draft"
 	participantpostseriesrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/participant/postseries"
@@ -52,12 +53,14 @@ import (
 	tournamentadminresult "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/result"
 	tournamentadminroster "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/roster"
 	tournamentadminsnapshot "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/snapshot"
+	admissionusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admission"
 	tournamentcancellation "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/cancellation"
 	catalogusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/catalog"
 	lifecycleusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/lifecycle"
 	tournamentparticipant "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/participant"
 	tournamentpause "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/pause"
 	tournamentprogression "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/progression"
+	publiccatalog "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/publiccatalog"
 )
 
 func provideAuthConfig(cfg *config.Config) authusecase.Config {
@@ -178,6 +181,19 @@ func provideTournamentCatalog(
 	clk catalogusecase.CatalogClock,
 ) *catalogusecase.TournamentUseCase {
 	return catalogusecase.NewTournamentUseCase(repository, clk)
+}
+
+func providePublicTournamentCatalog(
+	repository *catalogrepo.TournamentCatalogPostgres,
+) *publiccatalog.Service {
+	return publiccatalog.NewService(repository)
+}
+
+func provideTournamentAdmission(
+	repository *admissionrepo.TournamentAdmissionPostgres,
+	clk admissionusecase.Clock,
+) *admissionusecase.AdmissionUseCase {
+	return admissionusecase.NewAdmissionUseCase(repository, clk)
 }
 
 func provideTournamentApplication(

@@ -1,0 +1,107 @@
+TournamentAdmissionStatus:
+  type: string
+  enum: [not_registered, invited, registered, checked_in, withdrawn]
+  x-enum-varnames:
+    - TournamentAdmissionStatusNotRegistered
+    - TournamentAdmissionStatusInvited
+    - TournamentAdmissionStatusRegistered
+    - TournamentAdmissionStatusCheckedIn
+    - TournamentAdmissionStatusWithdrawn
+
+TournamentAdmissionConflictReason:
+  type: string
+  enum: [closed, full, withdrawn, conflicting_reservation, conflict]
+  x-enum-varnames:
+    - TournamentAdmissionConflictReasonClosed
+    - TournamentAdmissionConflictReasonFull
+    - TournamentAdmissionConflictReasonWithdrawn
+    - TournamentAdmissionConflictReasonConflictingReservation
+    - TournamentAdmissionConflictReasonConflict
+
+TournamentAdmissionView:
+  type: object
+  additionalProperties: false
+  description: Registration state for the authenticated player in one tournament.
+  required:
+    - tournament_id
+    - player_id
+    - participant_id
+    - seed
+    - status
+    - attendance
+    - tournament_state
+    - roster_locked
+    - roster_revision
+    - planned_roster_size
+    - roster_size
+  properties:
+    tournament_id:
+      type: string
+      format: uuid
+    player_id:
+      type: string
+      format: uuid
+      description: Authenticated player identity resolved by the server.
+    participant_id:
+      type: string
+      format: uuid
+      nullable: true
+      description: Participant identity, or null before registration.
+    seed:
+      type: integer
+      format: int32
+      minimum: 1
+      maximum: 16
+      nullable: true
+      description: Assigned roster seed, or null before registration.
+    status:
+      $ref: '#/TournamentAdmissionStatus'
+    attendance:
+      type: string
+      enum: [invited, registered, checked_in, withdrawn]
+      x-enum-varnames:
+        - TournamentAdmissionViewAttendanceInvited
+        - TournamentAdmissionViewAttendanceRegistered
+        - TournamentAdmissionViewAttendanceCheckedIn
+        - TournamentAdmissionViewAttendanceWithdrawn
+      nullable: true
+      description: Attendance state, or null before registration.
+    tournament_state:
+      $ref: '#/TournamentState'
+    roster_locked:
+      type: boolean
+    roster_revision:
+      type: integer
+      format: int64
+      minimum: 1
+    planned_roster_size:
+      type: integer
+      format: int32
+      minimum: 4
+      maximum: 16
+    roster_size:
+      type: integer
+      format: int32
+      minimum: 0
+      maximum: 16
+
+TournamentAdmissionMutation:
+  type: object
+  additionalProperties: false
+  required: [view, changed]
+  properties:
+    view:
+      $ref: '#/TournamentAdmissionView'
+    changed:
+      type: boolean
+      description: Whether this command changed durable registration state.
+
+TournamentAdmissionConflictProblem:
+  description: Safe conflict response for a tournament admission command.
+  allOf:
+    - $ref: '#/ProblemDetails'
+    - type: object
+      required: [reason]
+      properties:
+        reason:
+          $ref: '#/TournamentAdmissionConflictReason'

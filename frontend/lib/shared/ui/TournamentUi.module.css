@@ -41,7 +41,6 @@
 .panel[data-interactive="true"]:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 3px;
-  box-shadow: 0 0 0 5px var(--accent-ring);
 }
 
 .panelHeader,
@@ -312,7 +311,6 @@
 .dialogClose:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
-  box-shadow: 0 0 0 4px var(--accent-ring);
 }
 
 .tabs {
@@ -388,7 +386,6 @@
   z-index: 1;
   outline: 2px solid var(--accent);
   outline-offset: -3px;
-  box-shadow: 0 0 0 3px var(--accent-ring);
 }
 
 .tabPanel {
@@ -513,7 +510,6 @@
 
 .dialog::backdrop {
   background: var(--overlay-bg);
-  backdrop-filter: blur(2px);
 }
 
 .dialog[open] {

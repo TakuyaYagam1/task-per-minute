@@ -18,12 +18,23 @@ import {
   useTimedNotification,
 } from "../../shared/lib";
 import { ViewportPortal } from "../../shared/ui";
-import { TournamentAdminPanel } from "../../widgets/tournament-admin";
+import {
+  TournamentAdminPanel,
+  TournamentJournalSection,
+  TournamentTasksSection,
+  type TournamentAdminView,
+} from "../../widgets/tournament-admin";
+import {
+  AdminShell,
+  tournamentNavigation,
+  useAdminNavigation,
+} from "./admin/AdminShell";
+import { AdminLogin } from "./admin/AdminLogin";
+import type { AdminNavigation } from "./admin/navigation";
 import styles from "./admin.module.css";
 
 type Player = AdminPlayer;
 type PlayerAuditEvent = AdminPlayerAuditEvent;
-type AdminSection = "players" | "tournaments";
 type PlayerFormErrorField = "username" | "wins" | "averageMs" | "form";
 type PlayerFormErrors = Partial<Record<PlayerFormErrorField, string>>;
 
@@ -168,11 +179,11 @@ const apiErrorMessage = (error: unknown, fallback: string): string => {
 export default function AdminPage() {
   const [session, setSession] = useState<AdminSessionResponse | null>(null);
   const [sessionChecking, setSessionChecking] = useState(true);
-  const [activeSection, setActiveSection] = useState<AdminSection>("tournaments");
   const [password, setPassword] = useState("");
   const [loginFormError, setLoginFormError] = useState<string | null>(null);
   const [authLoading, setAuthLoading] = useState(false);
   const [logoutPending, setLogoutPending] = useState(false);
+  const [childDirty, setChildDirty] = useState(false);
   const [players, setPlayers] = useState<Player[]>([]);
   const [playersLoading, setPlayersLoading] = useState(false);
   const [editingPlayerId, setEditingPlayerId] = useState<string | null>(null);
@@ -203,6 +214,27 @@ export default function AdminPage() {
   const passwordInputRef = useRef<HTMLInputElement>(null);
   const { notification, showNotification: showTimedNotification } =
     useTimedNotification<Notification>();
+  const editingPlayer = editingPlayerId
+    ? players.find((player) => player.id === editingPlayerId)
+    : undefined;
+  const playerFormDirty = Boolean(
+    editingPlayer &&
+      (playerUsername !== editingPlayer.username ||
+        playerWins !== String(editingPlayer.wins) ||
+        playerAverageMs !== String(editingPlayer.average_solve_time_ms)),
+  );
+  const { navigation, navigate, setDirty } = useAdminNavigation({
+    enabled: Boolean(session),
+    dirty: playerFormDirty || childDirty,
+  });
+  const activeSection = navigation.section;
+  const handleChildDirtyChange = useCallback(
+    (dirty: boolean): void => {
+      setDirty(dirty || playerFormDirty);
+      setChildDirty(dirty);
+    },
+    [playerFormDirty, setDirty],
+  );
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -265,6 +297,12 @@ export default function AdminPage() {
     };
   }, []);
 
+  useEffect(() => {
+    if (activeSection !== "tasks" && activeSection !== "tournaments") {
+      setChildDirty(false);
+    }
+  }, [activeSection]);
+
   const showNotification = useCallback(
     (type: "success" | "error" | "warning", message: string) => {
       showTimedNotification({ type, message }, 4000);
@@ -325,7 +363,7 @@ export default function AdminPage() {
       clearAdminSession({ preserveCSRF: options.preserveAdminCSRF });
       sessionRef.current = null;
       setSession(null);
-      setActiveSection("tournaments");
+      setChildDirty(false);
       setPlayers([]);
       setPlayersLoading(false);
       setPlayerSubmitting(false);
@@ -416,6 +454,12 @@ export default function AdminPage() {
   };
 
   const handleLogout = async () => {
+    if (
+      (playerFormDirty || childDirty) &&
+      !window.confirm("Есть несохраненные изменения. Выйти без сохранения?")
+    ) {
+      return;
+    }
     const currentSession = session;
     const logoutSessionVersion = clearSession({ preserveAdminCSRF: true });
     if (!currentSession) {
@@ -664,15 +708,52 @@ export default function AdminPage() {
     session,
   ]);
 
-  const resetPlayerForm = useCallback(() => {
+  const resetPlayerForm = useCallback(
+    (options: { skipConfirm?: boolean } = {}): boolean => {
+      if (
+        playerFormDirty &&
+        !options.skipConfirm &&
+        !window.confirm("Есть несохраненные изменения. Отменить их?")
+      ) {
+        return false;
+      }
+      setEditingPlayerId(null);
+      setPlayerUsername("");
+      setPlayerWins("0");
+      setPlayerAverageMs("0");
+      setPlayerFormErrors({});
+      return true;
+    },
+    [playerFormDirty],
+  );
+
+  useEffect(() => {
+    if (activeSection === "players") {
+      return;
+    }
     setEditingPlayerId(null);
     setPlayerUsername("");
     setPlayerWins("0");
     setPlayerAverageMs("0");
     setPlayerFormErrors({});
-  }, []);
+    setAuditPlayer(null);
+    setPlayerAuditEvents([]);
+    setPlayerAuditLoading(false);
+    setPlayerAuditError(null);
+  }, [activeSection]);
 
   const startEditingPlayer = (player: Player) => {
+    if (editingPlayerId === player.id) {
+      return;
+    }
+    if (
+      editingPlayerId &&
+      editingPlayerId !== player.id &&
+      playerFormDirty &&
+      !window.confirm("Есть несохраненные изменения. Переключить игрока?")
+    ) {
+      return;
+    }
     setEditingPlayerId(player.id);
     setPlayerUsername(player.username);
     setPlayerWins(String(player.wins));
@@ -735,7 +816,7 @@ export default function AdminPage() {
       setPlayers((current) =>
         current.map((player) => (player.id === updated.id ? updated : player)),
       );
-      resetPlayerForm();
+      resetPlayerForm({ skipConfirm: true });
       showNotification("success", "Игрок обновлён");
     } catch (error) {
       if (
@@ -759,6 +840,13 @@ export default function AdminPage() {
   };
 
   const handleDeletePlayer = async (player: Player) => {
+    if (
+      editingPlayerId === player.id &&
+      playerFormDirty &&
+      !window.confirm("Есть несохраненные изменения. Продолжить удаление?")
+    ) {
+      return;
+    }
     if (!confirm(`Удалить игрока ${player.username}?`)) return;
     const sessionVersion = authSessionVersionRef.current;
     try {
@@ -774,7 +862,7 @@ export default function AdminPage() {
         );
       }
       if (editingPlayerId === player.id) {
-        resetPlayerForm();
+        resetPlayerForm({ skipConfirm: true });
       }
       showNotification("success", "Игрок удалён");
     } catch (error) {
@@ -842,13 +930,15 @@ export default function AdminPage() {
   const renderPlayersSection = () => (
     <>
       <div className={`${styles.card} motion-panel`}>
-        <h2 className={styles.cardTitle}>👥 Игроки</h2>
+        <h2 className={styles.cardTitle}>Игроки</h2>
         <form onSubmit={handlePlayerSubmit} className={styles.form} noValidate>
           <div className={styles.formRow}>
             <div className={styles.inputGroup}>
-              <label>Имя игрока</label>
+              <label htmlFor="admin-player-username">Имя игрока</label>
               <input
                 type="text"
+                id="admin-player-username"
+                name="username"
                 aria-label="Имя игрока"
                 value={playerUsername}
                 onChange={(e) => {
@@ -879,9 +969,11 @@ export default function AdminPage() {
               )}
             </div>
             <div className={styles.inputGroup}>
-              <label>Победы</label>
+              <label htmlFor="admin-player-wins">Победы</label>
               <input
                 type="number"
+                id="admin-player-wins"
+                name="wins"
                 aria-label="Победы игрока"
                 min="0"
                 value={playerWins}
@@ -910,9 +1002,11 @@ export default function AdminPage() {
           </div>
           <div className={styles.formRow}>
             <div className={styles.inputGroup}>
-              <label>Среднее время (мс)</label>
+              <label htmlFor="admin-player-average">Среднее время (мс)</label>
               <input
                 type="number"
+                id="admin-player-average"
+                name="average_solve_time_ms"
                 aria-label="Среднее время игрока"
                 min="0"
                 value={playerAverageMs}
@@ -968,13 +1062,15 @@ export default function AdminPage() {
                   Сохранение...
                 </>
               ) : (
-                "💾 Сохранить игрока"
+                "Сохранить игрока"
               )}
             </button>
             <button
               type="button"
               className={`${styles.btn} ${styles.btnSecondary} motion-button`}
-              onClick={resetPlayerForm}
+              onClick={() => {
+                resetPlayerForm();
+              }}
               disabled={!editingPlayerId || playerSubmitting}
             >
               Отменить
@@ -985,7 +1081,7 @@ export default function AdminPage() {
 
       <div className={styles.taskList}>
         <div className={styles.playerListHeader}>
-          <h2 className={styles.taskListTitle}>👥 Список игроков</h2>
+          <h2 className={styles.taskListTitle}>Список игроков</h2>
           <label className={styles.toggleRow}>
             <input
               type="checkbox"
@@ -999,13 +1095,13 @@ export default function AdminPage() {
         {playersLoading ? (
           <div className={styles.loading}>
             <div className={styles.spinner}></div>
-            <p style={{ color: "rgba(255,255,255,0.5)", fontSize: "0.9rem" }}>
+            <p className={styles.loadingText}>
               Загрузка игроков...
             </p>
           </div>
         ) : players.length === 0 ? (
           <div className={styles.empty}>
-            <div className={styles.emptyIcon}>👤</div>
+            <div className={styles.emptyIcon}>-</div>
             <p className={styles.emptyText}>Пока нет игроков</p>
           </div>
         ) : (
@@ -1049,7 +1145,7 @@ export default function AdminPage() {
                     aria-label={`История игрока ${player.username}`}
                     title="История изменений"
                   >
-                    🕘
+                    История
                   </button>
                   <button
                     className={`${styles.taskItemBtn} motion-button`}
@@ -1062,7 +1158,7 @@ export default function AdminPage() {
                     }
                     disabled={isDeleted}
                   >
-                    ✏️
+                    Изменить
                   </button>
                   <button
                     className={`${styles.taskItemBtn} ${styles.taskItemBtnDanger} motion-button`}
@@ -1071,7 +1167,7 @@ export default function AdminPage() {
                     title={isDeleted ? "Игрок уже удален" : "Удалить игрока"}
                     disabled={isDeleted}
                   >
-                    🗑️
+                    Удалить
                   </button>
                 </div>
               </div>
@@ -1116,7 +1212,7 @@ export default function AdminPage() {
           {playerAuditLoading ? (
             <div className={styles.loading}>
               <div className={styles.spinner}></div>
-              <p style={{ color: "rgba(255,255,255,0.5)", fontSize: "0.9rem" }}>
+              <p className={styles.loadingText}>
                 Загрузка истории...
               </p>
             </div>
@@ -1191,60 +1287,19 @@ export default function AdminPage() {
 
   if (!session) {
     return (
-      <main className={`${styles.container} motion-page gpu-optimized`}>
-        <div className={`${styles.header} motion-panel`}>
-          <div className={styles.headerTop}>
-            <h1 className={styles.title}>Admin</h1>
-          </div>
-          <p className={styles.subtitle}>Панель управления задачами</p>
-        </div>
-
-        <div className={`${styles.card} ${styles.loginCard} motion-panel`}>
-          <h2 className={styles.cardTitle}>Авторизация</h2>
-          <form onSubmit={handleLogin} className={styles.form} noValidate>
-            <div className={styles.inputGroup}>
-              <label>Пароль администратора</label>
-              <input
-                ref={passwordInputRef}
-                type="password"
-                required
-                value={password}
-                onChange={(e) => {
-                  setPassword(e.target.value);
-                  setLoginFormError(null);
-                }}
-                placeholder="Введите пароль..."
-                className={loginFormError ? styles.inputError : undefined}
-                aria-invalid={Boolean(loginFormError)}
-                aria-describedby={
-                  loginFormError ? "admin-password-error" : undefined
-                }
-              />
-              {loginFormError && (
-                <p id="admin-password-error" className={styles.fieldError}>
-                  {loginFormError}
-                </p>
-              )}
-            </div>
-            <button
-              type="submit"
-              className={`${styles.btn} ${styles.btnPrimary} motion-button`}
-              disabled={authLoading || logoutPending || !password.trim()}
-            >
-              {authLoading || logoutPending ? (
-                <>
-                  <div
-                    className={styles.spinner}
-                    style={{ width: 18, height: 18 }}
-                  ></div>
-                  {logoutPending ? "Выход..." : "Вход..."}
-                </>
-              ) : (
-                "Войти"
-              )}
-            </button>
-          </form>
-        </div>
+      <main className={`${styles.container} ${styles.loginLayout} motion-page gpu-optimized`}>
+        <AdminLogin
+          password={password}
+          error={loginFormError}
+          loading={authLoading}
+          logoutPending={logoutPending}
+          passwordInputRef={passwordInputRef}
+          onPasswordChange={(nextPassword) => {
+            setPassword(nextPassword);
+            setLoginFormError(null);
+          }}
+          onSubmit={handleLogin}
+        />
 
         {notification && (
           <ViewportPortal>
@@ -1264,8 +1319,56 @@ export default function AdminPage() {
       </main>
     );
   }
+
+  const renderAdminSection = (currentNavigation: AdminNavigation) => {
+    if (currentNavigation.section === "players") {
+      return renderPlayersSection();
+    }
+    if (currentNavigation.section === "tasks") {
+      return (
+        <TournamentTasksSection
+          onSessionExpired={clearSession}
+          onDirtyChange={handleChildDirtyChange}
+          runAdminRequest={runAdminRequest}
+        />
+      );
+    }
+    if (currentNavigation.section === "audit") {
+      return (
+        <TournamentJournalSection
+          selectedTournamentId={currentNavigation.tournamentId}
+          onSelectTournament={(tournamentId) =>
+            navigate({
+              section: "audit",
+              tournamentId,
+              view: "audit",
+            })
+          }
+          onSessionExpired={clearSession}
+        />
+      );
+    }
+    return (
+      <TournamentAdminPanel
+        selectedTournamentId={currentNavigation.tournamentId}
+        activeView={currentNavigation.view}
+        onNavigate={(tournamentId, view) =>
+          navigate(tournamentNavigation(tournamentId, view))
+        }
+        onDirtyChange={handleChildDirtyChange}
+        onSessionExpired={clearSession}
+        runAdminRequest={runAdminRequest}
+      />
+    );
+  };
+
   return (
-    <main className={`${styles.container} motion-page gpu-optimized`}>
+    <AdminShell
+      navigation={navigation}
+      onNavigate={navigate}
+      onLogout={() => void handleLogout()}
+      logoutPending={logoutPending}
+    >
       {notification && (
         <ViewportPortal>
           <div
@@ -1281,53 +1384,13 @@ export default function AdminPage() {
           </div>
         </ViewportPortal>
       )}
-      <div className={`${styles.header} motion-panel`}>
-        <button
-          type="button"
-          className={`${styles.btn} ${styles.btnSecondary} ${styles.logoutButton} motion-button`}
-          onClick={handleLogout}
-        >
-          Выйти
-        </button>
-        <div className={styles.headerTop}>
-          <h1 className={styles.title}>Admin</h1>
-        </div>
-        <p className={styles.subtitle}>
-          {activeSection === "players"
-            ? "Панель управления игроками"
-            : "Панель управления турнирами и контентом"}
-        </p>
-        <div className={styles.sectionTabs}>
-          <button
-            type="button"
-            className={`${styles.sectionTab} ${activeSection === "players" ? styles.sectionTabActive : ""} motion-button`}
-            onClick={() => setActiveSection("players")}
-          >
-            Игроки
-          </button>
-          <button
-            type="button"
-            className={`${styles.sectionTab} ${activeSection === "tournaments" ? styles.sectionTabActive : ""} motion-button`}
-            onClick={() => setActiveSection("tournaments")}
-          >
-            Турниры
-          </button>
-        </div>
-      </div>
       <div
-        key={activeSection}
+        key={`${navigation.section}:${navigation.tournamentId ?? "all"}:${navigation.view}`}
         className={`${styles.sectionPanel} ${styles.sectionPanelEnter}`}
       >
-        {activeSection === "players" ? (
-          renderPlayersSection()
-        ) : (
-          <TournamentAdminPanel
-            onSessionExpired={clearSession}
-            runAdminRequest={runAdminRequest}
-          />
-        )}
+        {renderAdminSection(navigation)}
       </div>
       {renderPlayerAuditModal()}
-    </main>
+    </AdminShell>
   );
 }

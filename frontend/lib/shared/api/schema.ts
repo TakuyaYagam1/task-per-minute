@@ -883,6 +883,36 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/tournaments/{tournament_id}/participant/queue": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tournament_id: components["parameters"]["TournamentId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Read the authenticated player's tournament admission status
+         * @description The player identity comes from the authenticated session. A known published tournament returns status not_registered when the player has not joined yet. Draft and unknown tournaments are hidden as not found.
+         */
+        get: operations["getTournamentAdmissionStatus"];
+        put?: never;
+        /**
+         * Join the authenticated player's tournament roster
+         * @description The request has no body. Identity comes from the player session and the idempotency key identifies the command. Retrying while the registration is still present returns the current roster state with changed false; command responses are not replayed from a stored receipt. Registration is accepted only while the tournament remains open and capacity is available.
+         */
+        post: operations["joinTournamentAdmission"];
+        /**
+         * Withdraw the authenticated player's tournament registration
+         * @description The request has no body. The idempotency key identifies the command. A repeated withdrawal returns the current status with changed false; command responses are not replayed from a stored receipt.
+         */
+        delete: operations["cancelTournamentAdmission"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/tournaments/{tournament_id}/participant/assignments/{assignment_id}": {
         parameters: {
             query?: never;
@@ -1118,6 +1148,48 @@ export interface paths {
         put?: never;
         /** Submit a flag for the authenticated Golden assignment */
         post: operations["submitGoldenFlag"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/public/tournaments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List publicly visible tournaments
+         * @description Returns a stable, redacted catalog of tournaments that have left draft state. Search is a literal case-insensitive substring match against the public name and public identifier. The cursor is bound to the search, group, and sort parameters used for the page that produced it.
+         */
+        get: operations["listPublicTournaments"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/public/tournaments/{public_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                public_id: string;
+            };
+            cookie?: never;
+        };
+        /**
+         * Read one publicly visible tournament
+         * @description Returns the same redacted tournament item used by the public catalog. Draft tournaments are never addressable through this path.
+         */
+        get: operations["getPublicTournamentByPublicID"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -2849,6 +2921,53 @@ export interface components {
             tournament_id: string;
         };
         /** @enum {string} */
+        TournamentAdmissionStatus: "not_registered" | "invited" | "registered" | "checked_in" | "withdrawn";
+        /** @description Registration state for the authenticated player in one tournament. */
+        TournamentAdmissionView: {
+            /**
+             * @description Attendance state, or null before registration.
+             * @enum {string|null}
+             */
+            attendance: "invited" | "registered" | "checked_in" | "withdrawn" | null;
+            /**
+             * Format: uuid
+             * @description Participant identity, or null before registration.
+             */
+            participant_id: string | null;
+            /** Format: int32 */
+            planned_roster_size: number;
+            /**
+             * Format: uuid
+             * @description Authenticated player identity resolved by the server.
+             */
+            player_id: string;
+            roster_locked: boolean;
+            /** Format: int64 */
+            roster_revision: number;
+            /** Format: int32 */
+            roster_size: number;
+            /**
+             * Format: int32
+             * @description Assigned roster seed, or null before registration.
+             */
+            seed: number | null;
+            status: components["schemas"]["TournamentAdmissionStatus"];
+            /** Format: uuid */
+            tournament_id: string;
+            tournament_state: components["schemas"]["TournamentState"];
+        };
+        TournamentAdmissionMutation: {
+            /** @description Whether this command changed durable registration state. */
+            changed: boolean;
+            view: components["schemas"]["TournamentAdmissionView"];
+        };
+        /** @enum {string} */
+        TournamentAdmissionConflictReason: "closed" | "full" | "withdrawn" | "conflicting_reservation" | "conflict";
+        /** @description Safe conflict response for a tournament admission command. */
+        TournamentAdmissionConflictProblem: components["schemas"]["ProblemDetails"] & {
+            reason: components["schemas"]["TournamentAdmissionConflictReason"];
+        };
+        /** @enum {string} */
         Difficulty: "easy" | "medium" | "hard";
         /** @description Participant-safe immutable task snapshot. Internal archive locations, flag material, and undisclosed reserves are excluded. */
         ParticipantTaskSnapshot: {
@@ -3231,6 +3350,43 @@ export interface components {
             ready_window_id: string;
             submitted_flag: string;
         };
+        /** @enum {string} */
+        TournamentCatalogFilterGroup: "all" | "live" | "upcoming" | "completed";
+        /** @enum {string} */
+        TournamentCatalogSort: "activity" | "name" | "newest";
+        /** @enum {string} */
+        TournamentCatalogGroup: "live" | "upcoming" | "completed";
+        /** @enum {string} */
+        TournamentCatalogStage: "registration" | "roster_locked" | "swiss" | "golden" | "playoffs" | "completed" | "cancelled";
+        PublicTournamentCatalogItem: {
+            /** Format: date-time */
+            readonly created_at: string;
+            /** Format: date-time */
+            readonly finished_at: string | null;
+            group: components["schemas"]["TournamentCatalogGroup"];
+            readonly name: string;
+            /** Format: int32 */
+            readonly planned_roster_size: number;
+            preset: components["schemas"]["TournamentPreset"];
+            readonly public_id: string;
+            /** Format: int32 */
+            readonly roster_size: number;
+            /**
+             * Format: date-time
+             * @description Planned start time when the tournament has one. It is currently null when no schedule is stored.
+             */
+            readonly scheduled_at: string | null;
+            stage: components["schemas"]["TournamentCatalogStage"];
+            /** Format: date-time */
+            readonly started_at: string | null;
+            state: components["schemas"]["TournamentState"];
+            /** Format: uuid */
+            readonly tournament_id: string;
+        };
+        PublicTournamentCatalogResponse: {
+            items: components["schemas"]["PublicTournamentCatalogItem"][];
+            next_cursor: string | null;
+        };
         PublicTournamentResponse: {
             /** Format: date-time */
             finished_at: string | null;
@@ -3506,7 +3662,7 @@ export interface components {
                 "application/problem+json": components["schemas"]["ProblemDetails"];
             };
         };
-        /** @description The expected tournament projection revision is stale. */
+        /** @description The tournament projection or participant draft state conflicts with the supplied state cursor. Draft runtime conflicts may report equal expected and current projection revisions. */
         ProjectionRevisionConflictProblem: {
             headers: {
                 [name: string]: unknown;
@@ -5714,6 +5870,115 @@ export interface operations {
             default: components["responses"]["UnexpectedServerProblem"];
         };
     };
+    getTournamentAdmissionStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tournament_id: components["parameters"]["TournamentId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Authenticated player admission status. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TournamentAdmissionView"];
+                };
+            };
+            401: components["responses"]["UnauthorizedProblem"];
+            403: components["responses"]["ForbiddenProblem"];
+            404: components["responses"]["NotFoundProblem"];
+            429: components["responses"]["RateLimitedProblem"];
+            default: components["responses"]["UnexpectedServerProblem"];
+        };
+    };
+    joinTournamentAdmission: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+                /** @description Session-bound CSRF token required for this player mutation. */
+                "X-CSRF-Token": components["parameters"]["RequiredPlayerCSRFToken"];
+            };
+            path: {
+                tournament_id: components["parameters"]["TournamentId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Current admission view after the idempotent join command. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TournamentAdmissionMutation"];
+                };
+            };
+            400: components["responses"]["InvalidRequestProblem"];
+            401: components["responses"]["UnauthorizedProblem"];
+            403: components["responses"]["ForbiddenProblem"];
+            404: components["responses"]["NotFoundProblem"];
+            /** @description The tournament is closed, full, withdrawn, or blocked by another reservation. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["TournamentAdmissionConflictProblem"];
+                };
+            };
+            429: components["responses"]["RateLimitedProblem"];
+            default: components["responses"]["UnexpectedServerProblem"];
+        };
+    };
+    cancelTournamentAdmission: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+                /** @description Session-bound CSRF token required for this player mutation. */
+                "X-CSRF-Token": components["parameters"]["RequiredPlayerCSRFToken"];
+            };
+            path: {
+                tournament_id: components["parameters"]["TournamentId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Current admission view after the idempotent withdrawal command. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TournamentAdmissionMutation"];
+                };
+            };
+            400: components["responses"]["InvalidRequestProblem"];
+            401: components["responses"]["UnauthorizedProblem"];
+            403: components["responses"]["ForbiddenProblem"];
+            404: components["responses"]["NotFoundProblem"];
+            /** @description The tournament is closed or the admission state cannot be withdrawn. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["TournamentAdmissionConflictProblem"];
+                };
+            };
+            429: components["responses"]["RateLimitedProblem"];
+            default: components["responses"]["UnexpectedServerProblem"];
+        };
+    };
     getParticipantAssignment: {
         parameters: {
             query?: never;
@@ -6097,6 +6362,60 @@ export interface operations {
             403: components["responses"]["ForbiddenProblem"];
             404: components["responses"]["NotFoundProblem"];
             409: components["responses"]["GoldenRuntimeConflictProblem"];
+            429: components["responses"]["RateLimitedProblem"];
+            default: components["responses"]["UnexpectedServerProblem"];
+        };
+    };
+    listPublicTournaments: {
+        parameters: {
+            query?: {
+                q?: string;
+                group?: components["schemas"]["TournamentCatalogFilterGroup"];
+                sort?: components["schemas"]["TournamentCatalogSort"];
+                limit?: number;
+                cursor?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Public tournament catalog page. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicTournamentCatalogResponse"];
+                };
+            };
+            400: components["responses"]["InvalidRequestProblem"];
+            429: components["responses"]["RateLimitedProblem"];
+            default: components["responses"]["UnexpectedServerProblem"];
+        };
+    };
+    getPublicTournamentByPublicID: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                public_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Public tournament catalog item. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicTournamentCatalogItem"];
+                };
+            };
+            404: components["responses"]["NotFoundProblem"];
             429: components["responses"]["RateLimitedProblem"];
             default: components["responses"]["UnexpectedServerProblem"];
         };

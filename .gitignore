@@ -68,6 +68,9 @@ frontend/preview/
 *engineering/
 *superpowers/
 *impeccable/
+/docs/*
+!/docs/en/
+!/docs/ru/
 *.worktrees/
 .cursor/
 .claude/
