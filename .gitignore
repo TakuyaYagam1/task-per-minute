@@ -10,8 +10,7 @@
 /coverage
 /frontend/test-results/
 /frontend/playwright-report/
-/.next/
-*/.next/
+.next/
 /out/
 */out/
 /build
@@ -65,6 +64,7 @@ Thumbs.db
 *tpm-tasks/
 vendor/
 PRD/
+frontend/preview/
 *engineering/
 *superpowers/
 *impeccable/
