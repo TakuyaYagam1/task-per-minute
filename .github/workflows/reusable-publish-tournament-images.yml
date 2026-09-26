@@ -50,9 +50,13 @@ jobs:
       SOURCE_REVISION: ${{ inputs.source_revision }}
       IMAGE_DIGEST: ${{ inputs.image_digest }}
       RELEASE_REPOSITORY: ${{ github.repository }}
-      ARTIFACT_DIR: ${{ runner.temp }}/frontend-image
-      TOOLS_DIR: ${{ runner.temp }}/frontend-release-tools
     steps:
+      - name: configure temporary paths
+        run: |
+          set -euo pipefail
+          printf 'ARTIFACT_DIR=%s/frontend-image\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
+          printf 'TOOLS_DIR=%s/frontend-release-tools\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
+
       - name: checkout trusted release code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:

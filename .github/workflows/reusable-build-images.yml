@@ -69,12 +69,15 @@ jobs:
     name: build and verify frontend image
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    env:
-      DOCKER_CONFIG: ${{ runner.temp }}/frontend-docker
     outputs:
       digest: ${{ steps.identity.outputs.digest }}
       source_revision: ${{ steps.identity.outputs.source_revision }}
     steps:
+      - name: configure temporary paths
+        run: |
+          set -euo pipefail
+          printf 'DOCKER_CONFIG=%s/frontend-docker\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
+
       - name: validate source revision
         env:
           TARGET_SHA: ${{ inputs.target_sha }}
