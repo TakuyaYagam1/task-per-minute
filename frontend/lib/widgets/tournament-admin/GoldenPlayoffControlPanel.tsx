@@ -405,15 +405,6 @@ export const GoldenPlayoffControlPanel = ({
           <Status tone={terminal ? "success" : currentState === "golden" || currentState === "playoffs" ? "live" : "info"}>
             {formatTournamentState(currentState)}
           </Status>
-          <Button
-            size="small"
-            variant="secondary"
-            onClick={refresh}
-            loading={goldenState === "loading"}
-            loadingLabel="Обновляем"
-          >
-            Обновить данные
-          </Button>
         </div>
       </div>
 
@@ -426,7 +417,7 @@ export const GoldenPlayoffControlPanel = ({
         <Message tone="error" title="Дополнительный отбор недоступен">
           {loadError ?? "Не удалось загрузить данные дополнительного отбора."}
           <button className={styles.linkButton} type="button" onClick={refresh}>
-            Обновить данные
+            Повторить загрузку
           </button>
         </Message>
       ) : null}
@@ -434,7 +425,7 @@ export const GoldenPlayoffControlPanel = ({
         <Message tone="error" title={stale ? "Состояние устарело" : "Команда не выполнена"}>
           {commandError}
           <button className={styles.linkButton} type="button" onClick={refresh}>
-            Обновить данные
+            Повторить загрузку
           </button>
         </Message>
       ) : null}
@@ -554,9 +545,9 @@ export const GoldenPlayoffControlPanel = ({
       ) : null}
       {bracket !== null && bracketMatches.length === 0 ? (
         <Message tone="error" title="Сетка недоступна">
-          Не удалось получить полуфиналы и финал. Попробуйте обновить данные.
+          Не удалось получить полуфиналы и финал. Повторите попытку.
           <button className={styles.linkButton} type="button" onClick={refresh}>
-            Обновить данные
+            Повторить загрузку
           </button>
         </Message>
       ) : null}

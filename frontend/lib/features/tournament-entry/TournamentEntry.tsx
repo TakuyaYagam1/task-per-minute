@@ -731,7 +731,7 @@ export const TournamentEntry = ({
               disabled={busyAction !== null && busyAction !== "refresh"}
               onClick={handleRefresh}
             >
-              Повторить проверку
+              Повторить загрузку
             </Button>
           ) : (
             <Button type="button" onClick={() => setNameFormOpen(true)}>
@@ -752,7 +752,7 @@ export const TournamentEntry = ({
               disabled={busyAction !== null && busyAction !== "refresh"}
               onClick={handleRefresh}
             >
-              Повторить проверку
+              Повторить загрузку
             </Button>
           )}
         </div>
@@ -855,15 +855,17 @@ export const TournamentEntry = ({
               Отменить регистрацию
             </Button>
           )}
-          <Button
-            type="button"
-            variant="ghost"
-            loading={busyAction === "refresh"}
-            disabled={busyAction !== null && busyAction !== "refresh"}
-            onClick={handleRefresh}
-          >
-            Обновить статус
-          </Button>
+          {phase === "error" && (
+            <Button
+              type="button"
+              variant="secondary"
+              loading={busyAction === "refresh"}
+              disabled={busyAction !== null && busyAction !== "refresh"}
+              onClick={handleRefresh}
+            >
+              Повторить загрузку
+            </Button>
+          )}
         </div>
       </div>
     );
@@ -901,15 +903,17 @@ export const TournamentEntry = ({
                   Участвовать
                 </Button>
               )}
-              <Button
-                type="button"
-                variant="secondary"
-                loading={busyAction === "refresh"}
-                disabled={busyAction !== null && busyAction !== "refresh"}
-                onClick={handleRefresh}
-              >
-                Обновить статус
-              </Button>
+              {phase === "error" && (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  loading={busyAction === "refresh"}
+                  disabled={busyAction !== null && busyAction !== "refresh"}
+                  onClick={handleRefresh}
+                >
+                  Повторить загрузку
+                </Button>
+              )}
             </div>
           </div>
         )}

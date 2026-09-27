@@ -73,6 +73,20 @@ const STATE_TONES: Readonly<Record<Tournament["state"], StatusTone>> = {
   cancelled: "error",
 };
 
+const TOURNAMENT_STATES = [
+  "draft",
+  "registration",
+  "roster_locked",
+  "swiss",
+  "golden",
+  "playoffs",
+  "technical_pause",
+  "completed",
+  "cancelled",
+] as const satisfies readonly Tournament["state"][];
+
+type TournamentStateFilter = Tournament["state"] | "";
+
 const CYRILLIC_TO_LATIN: Readonly<Record<string, string>> = {
   а: "a",
   б: "b",
@@ -186,6 +200,8 @@ export const TournamentAdminPanel = ({
   const [tournaments, setTournaments] = useState<Tournament[]>([]);
   const [tournamentsState, setTournamentsState] = useState<LoadState>("loading");
   const [tournamentsError, setTournamentsError] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [stateFilter, setStateFilter] = useState<TournamentStateFilter>("");
   const [content, setContent] = useState<TournamentContentSelection | null>(null);
   const [contentState, setContentState] = useState<LoadState>("loading");
   const [contentError, setContentError] = useState<string | null>(null);
@@ -216,6 +232,24 @@ export const TournamentAdminPanel = ({
       null,
     [selectedTournamentId, tournaments],
   );
+
+  const filteredTournaments = useMemo(() => {
+    const normalizedQuery = searchQuery.trim().toLocaleLowerCase("ru-RU");
+    return tournaments.filter((tournament) => {
+      const matchesName =
+        normalizedQuery.length === 0 ||
+        tournament.name.toLocaleLowerCase("ru-RU").includes(normalizedQuery);
+      const matchesState = stateFilter.length === 0 || tournament.state === stateFilter;
+      return matchesName && matchesState;
+    });
+  }, [searchQuery, stateFilter, tournaments]);
+
+  const hasTournamentFilters = searchQuery.trim().length > 0 || stateFilter.length > 0;
+
+  const resetFilters = useCallback((): void => {
+    setSearchQuery("");
+    setStateFilter("");
+  }, []);
 
   const createFormDirty =
     Boolean(name.trim()) || plannedRosterSize !== String(DEFAULT_ROSTER_SIZE);
@@ -588,7 +622,7 @@ export const TournamentAdminPanel = ({
                   disabled={creating}
                   onClick={() => void loadContent()}
                 >
-                  Обновить данные
+                  Повторить
                 </button>
               </Message>
             ) : null}
@@ -634,8 +668,8 @@ export const TournamentAdminPanel = ({
                 Список соревнований
               </h2>
               {tournamentsState === "ready" && (
-                <p className={styles.listDescription}>
-                  Всего: {tournaments.length}
+                <p className={styles.listDescription} aria-live="polite">
+                  Показано: {filteredTournaments.length} из {tournaments.length}
                 </p>
               )}
             </div>
@@ -645,18 +679,52 @@ export const TournamentAdminPanel = ({
           </div>
         }
         className={styles.listPanel}
-        footer={
-          <Button
-            variant="secondary"
-            size="small"
-            onClick={() => void loadTournaments()}
-            loading={tournamentsState === "loading"}
-            loadingLabel="Обновляем"
-          >
-            Обновить список
-          </Button>
-        }
       >
+        {tournamentsState === "ready" && tournaments.length > 0 ? (
+          <div className={styles.listToolbar} aria-label="Фильтры соревнований">
+            <div className={styles.filterField}>
+              <label htmlFor="admin-tournament-filter-search">Поиск по названию</label>
+              <input
+                id="admin-tournament-filter-search"
+                className={styles.filterInput}
+                type="search"
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.target.value)}
+                placeholder="Название соревнования"
+              />
+            </div>
+            <div className={styles.filterField}>
+              <label htmlFor="admin-tournament-filter-state">Статус</label>
+              <select
+                id="admin-tournament-filter-state"
+                className={styles.filterSelect}
+                value={stateFilter}
+                onChange={(event) =>
+                  setStateFilter(event.target.value as TournamentStateFilter)
+                }
+              >
+                <option value="">Все статусы</option>
+                {TOURNAMENT_STATES.map((state) => (
+                  <option key={state} value={state}>
+                    {formatTournamentState(state)}
+                  </option>
+                ))}
+              </select>
+            </div>
+            {hasTournamentFilters && (
+              <div className={styles.filterActions}>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="small"
+                  onClick={resetFilters}
+                >
+                  Сбросить фильтры
+                </Button>
+              </div>
+            )}
+          </div>
+        ) : null}
         {tournamentsState === "loading" && (
           <Message tone="loading" title="Загрузка соревнований">
             Загружаем актуальный список соревнований.
@@ -681,46 +749,52 @@ export const TournamentAdminPanel = ({
           </Message>
         )}
         {tournamentsState === "ready" && tournaments.length > 0 && (
-          <div className={styles.tournamentList} aria-label="Каталог соревнований">
-            {tournaments.map((tournament) => (
-              <article key={tournament.id} className={styles.tournamentCard}>
-                <div className={styles.tournamentCardHeader}>
-                  <div className={styles.tournamentCardTitle}>
-                    <h3 className={styles.tournamentName}>{tournament.name}</h3>
+          filteredTournaments.length === 0 ? (
+            <Message tone="empty" title="Ничего не найдено">
+              Измените условия поиска или сбросьте фильтры.
+            </Message>
+          ) : (
+            <div className={styles.tournamentList} aria-label="Каталог соревнований">
+              {filteredTournaments.map((tournament) => (
+                <article key={tournament.id} className={styles.tournamentCard}>
+                  <div className={styles.tournamentCardHeader}>
+                    <div className={styles.tournamentCardTitle}>
+                      <h3 className={styles.tournamentName}>{tournament.name}</h3>
+                    </div>
+                    <Status
+                      className={styles.tournamentStatus}
+                      tone={STATE_TONES[tournament.state]}
+                      size="small"
+                    >
+                      {formatTournamentState(tournament.state)}
+                    </Status>
                   </div>
-                  <Status
-                    className={styles.tournamentStatus}
-                    tone={STATE_TONES[tournament.state]}
-                    size="small"
-                  >
-                    {formatTournamentState(tournament.state)}
-                  </Status>
-                </div>
-                <dl className={styles.tournamentMeta}>
-                  <div className={styles.tournamentMetaItem}>
-                    <dt>Состав</dt>
-                    <dd>
-                      {tournament.roster_size} / {tournament.planned_roster_size}
-                    </dd>
+                  <dl className={styles.tournamentMeta}>
+                    <div className={styles.tournamentMetaItem}>
+                      <dt>Состав</dt>
+                      <dd>
+                        {tournament.roster_size} / {tournament.planned_roster_size}
+                      </dd>
+                    </div>
+                    <div className={styles.tournamentMetaItem}>
+                      <dt>Создано</dt>
+                      <dd>{formatDateTime(tournament.created_at)}</dd>
+                    </div>
+                  </dl>
+                  <div className={styles.tournamentCardActions}>
+                    <Button
+                      variant="secondary"
+                      size="small"
+                      aria-label={`Открыть соревнование ${tournament.name}`}
+                      onClick={() => onNavigate(tournament.id, "overview")}
+                    >
+                      Открыть
+                    </Button>
                   </div>
-                  <div className={styles.tournamentMetaItem}>
-                    <dt>Создано</dt>
-                    <dd>{formatDateTime(tournament.created_at)}</dd>
-                  </div>
-                </dl>
-                <div className={styles.tournamentCardActions}>
-                  <Button
-                    variant="secondary"
-                    size="small"
-                    aria-label={`Открыть соревнование ${tournament.name}`}
-                    onClick={() => onNavigate(tournament.id, "overview")}
-                  >
-                    Открыть
-                  </Button>
-                </div>
-              </article>
-            ))}
-          </div>
+                </article>
+              ))}
+            </div>
+          )
         )}
       </Panel>
     </>

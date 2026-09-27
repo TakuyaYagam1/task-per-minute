@@ -12,7 +12,6 @@
 
 .header,
 .taskHeader,
-.footer,
 .submitRow,
 .taskLinks {
   display: flex;
@@ -180,18 +179,9 @@
   line-height: 1;
 }
 
-.footer {
-  align-items: center;
-  border-top: 1px solid var(--border);
-  padding-top: 0.85rem;
-  color: var(--secondary);
-  font-size: 0.78rem;
-}
-
 @media (max-width: 720px) {
   .header,
   .taskHeader,
-  .footer,
   .submitRow {
     display: grid;
   }

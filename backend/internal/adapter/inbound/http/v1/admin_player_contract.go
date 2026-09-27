@@ -9,6 +9,7 @@ import (
 
 type AdminPlayerService interface {
 	ListPlayers(ctx context.Context, includeDeleted bool) ([]playerusecase.PlayerRecord, error)
+	CreatePlayer(ctx context.Context, username string, actor playerusecase.Actor) (*playerusecase.PlayerRecord, error)
 	ListPlayerAudit(ctx context.Context, id uuid.UUID, limit int32) ([]playerusecase.AuditEvent, error)
 	UpdatePlayer(
 		ctx context.Context,

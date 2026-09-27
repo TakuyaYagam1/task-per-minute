@@ -708,7 +708,7 @@ export const SeriesConfigurationEditor = ({
             type="button"
             onClick={handleReload}
           >
-            Перезагрузить данные
+            Повторить загрузку
           </button>
         </Message>
       )}
@@ -808,7 +808,7 @@ export const SeriesConfigurationEditor = ({
                     onClick={handleReload}
                     disabled={anySubmitting}
                   >
-                    Перезагрузить конфигурацию
+                    Повторить загрузку
                   </button>
                 </Message>
               )}
@@ -878,7 +878,7 @@ export const SeriesConfigurationEditor = ({
                         </ul>
                       ) : (
                         <span className={styles.planEmpty}>
-                          Официальный пул не найден. Перезагрузите данные.
+                          Официальный пул не найден. Данные пула недоступны.
                         </span>
                       )}
                     </div>
@@ -975,7 +975,7 @@ export const SeriesConfigurationEditor = ({
                           onClick={handleReload}
                           disabled={anySubmitting}
                         >
-                          Перезагрузить конфигурацию
+                          Повторить загрузку
                         </button>
                       </Message>
                     )}
@@ -1005,28 +1005,10 @@ export const SeriesConfigurationEditor = ({
                 );
               })}
                 </div>
-
-                <div className={styles.reloadAction}>
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    onClick={handleReload}
-                    disabled={anySubmitting}
-                  >
-                    Обновить конфигурацию
-                  </Button>
-                </div>
               </>
             ) : (
               <Message tone="empty" title="Серии не найдены">
                 Для выбранного соревнования нет серий.
-                <button
-                  className={styles.inlineAction}
-                  type="button"
-                  onClick={handleReload}
-                >
-                  Обновить конфигурацию
-                </button>
               </Message>
             )}
           </div>

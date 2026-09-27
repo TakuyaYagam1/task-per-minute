@@ -260,15 +260,6 @@ export const TournamentStartControls = ({
         <Status tone={stateTone(tournament.state)}>
           {stateLabel(tournament.state)}
         </Status>
-        {onReloadTournaments ? (
-          <Button
-            size="small"
-            variant="secondary"
-            onClick={refreshTournaments}
-          >
-            Обновить данные
-          </Button>
-        ) : null}
       </div>
 
       {commandError ? (
@@ -279,7 +270,7 @@ export const TournamentStartControls = ({
           {commandError}
           {onReloadTournaments ? (
             <button className={styles.inlineAction} type="button" onClick={refreshTournaments}>
-              Обновить данные
+              Повторить загрузку
             </button>
           ) : null}
         </Message>

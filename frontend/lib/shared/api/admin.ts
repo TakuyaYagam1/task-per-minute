@@ -28,6 +28,7 @@ export type AdminSessionResponse = components["schemas"]["AdminSessionResponse"]
 export type AdminPlayer = components["schemas"]["PlayerManagementView"];
 export type AdminPlayerAuditEvent = components["schemas"]["PlayerAuditEvent"];
 export type AdminTask = components["schemas"]["TaskDetails"];
+export type CreateAdminPlayerRequest = components["schemas"]["CreatePlayerRequest"];
 export type CreateTaskRequest = components["schemas"]["CreateTaskRequest"];
 export type UpdateAdminPlayerRequest = components["schemas"]["UpdatePlayerRequest"];
 export type UpdateTaskRequest = components["schemas"]["UpdateTaskRequest"];
@@ -236,6 +237,20 @@ export const adminApi = {
       }),
     );
     return assertApiResponse(data, isAdminPlayerArray, "admin/players list");
+  },
+
+  async createPlayer(
+    body: CreateAdminPlayerRequest,
+    signal?: AbortSignal,
+  ): Promise<AdminPlayer> {
+    const data = await unwrapApi(
+      await adminClient.POST("/api/v1/admin/players", {
+        params: { header: requiredCSRFHeader },
+        body,
+        signal,
+      }),
+    );
+    return assertApiResponse(data, isAdminPlayer, "admin/players create");
   },
 
   async listPlayerAudit(

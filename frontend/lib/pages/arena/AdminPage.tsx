@@ -1,5 +1,11 @@
 "use client";
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   ADMIN_PLAYERS_CHANGED_EVENT,
   activateAdminSession,
@@ -10,6 +16,7 @@ import {
   type AdminPlayer,
   type AdminPlayerAuditEvent,
   type AdminSessionResponse,
+  type CreateAdminPlayerRequest,
   type UpdateAdminPlayerRequest,
 } from "../../shared/api";
 import {
@@ -17,7 +24,7 @@ import {
   log,
   useTimedNotification,
 } from "../../shared/lib";
-import { TechnicalDetails, ViewportPortal } from "../../shared/ui";
+import { Dialog, TechnicalDetails, ViewportPortal } from "../../shared/ui";
 import { useSiteHeaderAuth } from "../../features/site-header";
 import {
   TournamentAdminPanel,
@@ -38,6 +45,15 @@ type Player = AdminPlayer;
 type PlayerAuditEvent = AdminPlayerAuditEvent;
 type PlayerFormErrorField = "username" | "wins" | "averageMs" | "form";
 type PlayerFormErrors = Partial<Record<PlayerFormErrorField, string>>;
+type PlayerStateFilter = "active" | "deleted" | "all";
+type PlayerWinsFilter = "all" | "with_wins" | "without_wins";
+type PlayerDialogMode = "create" | "edit";
+type PlayerEditSnapshot = {
+  id: string;
+  username: string;
+  wins: string;
+  averageMs: string;
+};
 
 interface Notification {
   type: "success" | "error" | "warning";
@@ -185,6 +201,8 @@ export default function AdminPage() {
   const [players, setPlayers] = useState<Player[]>([]);
   const [playersLoading, setPlayersLoading] = useState(false);
   const [editingPlayerId, setEditingPlayerId] = useState<string | null>(null);
+  const [playerDialogMode, setPlayerDialogMode] =
+    useState<PlayerDialogMode | null>(null);
   const [playerUsername, setPlayerUsername] = useState("");
   const [playerWins, setPlayerWins] = useState("0");
   const [playerAverageMs, setPlayerAverageMs] = useState("0");
@@ -192,7 +210,11 @@ export default function AdminPage() {
   const [playerFormErrors, setPlayerFormErrors] = useState<PlayerFormErrors>(
     {},
   );
-  const [showDeletedPlayers, setShowDeletedPlayers] = useState(false);
+  const [playerSearch, setPlayerSearch] = useState("");
+  const [playerStateFilter, setPlayerStateFilter] =
+    useState<PlayerStateFilter>("active");
+  const [playerWinsFilter, setPlayerWinsFilter] =
+    useState<PlayerWinsFilter>("all");
   const [auditPlayer, setAuditPlayer] = useState<Player | null>(null);
   const [playerAuditEvents, setPlayerAuditEvents] = useState<
     PlayerAuditEvent[]
@@ -209,17 +231,25 @@ export default function AdminPage() {
   const playersEventsRetryTimerRef = useRef<number | null>(null);
   const playersEventsFallbackPollTimerRef = useRef<number | null>(null);
   const playerAuditRequestIDRef = useRef(0);
+  const playerDialogInitialFocusRef = useRef<HTMLInputElement>(null);
+  const playerDialogReturnFocusRef = useRef<HTMLElement | null>(null);
+  const playerEditInitialRef = useRef<PlayerEditSnapshot | null>(null);
+  const createPlayerButtonRef = useRef<HTMLButtonElement>(null);
   const passwordInputRef = useRef<HTMLInputElement>(null);
   const { notification, showNotification: showTimedNotification } =
     useTimedNotification<Notification>();
-  const editingPlayer = editingPlayerId
-    ? players.find((player) => player.id === editingPlayerId)
-    : undefined;
+  const playerDialogDirty =
+    playerDialogMode === "create"
+      ? playerUsername.trim() !== ""
+      : Boolean(
+          playerEditInitialRef.current &&
+            playerEditInitialRef.current.id === editingPlayerId &&
+            (playerUsername !== playerEditInitialRef.current.username ||
+              playerWins !== playerEditInitialRef.current.wins ||
+              playerAverageMs !== playerEditInitialRef.current.averageMs),
+        );
   const playerFormDirty = Boolean(
-    editingPlayer &&
-      (playerUsername !== editingPlayer.username ||
-        playerWins !== String(editingPlayer.wins) ||
-        playerAverageMs !== String(editingPlayer.average_solve_time_ms)),
+    playerDialogDirty,
   );
   const { navigation, navigate, setDirty } = useAdminNavigation({
     enabled: Boolean(session),
@@ -366,7 +396,11 @@ export default function AdminPage() {
       setPlayersLoading(false);
       setPlayerSubmitting(false);
       setEditingPlayerId(null);
-      setShowDeletedPlayers(false);
+      setPlayerDialogMode(null);
+      playerEditInitialRef.current = null;
+      setPlayerSearch("");
+      setPlayerStateFilter("active");
+      setPlayerWinsFilter("all");
       setAuditPlayer(null);
       setPlayerAuditEvents([]);
       setPlayerAuditLoading(false);
@@ -510,7 +544,9 @@ export default function AdminPage() {
         setPlayersLoading(true);
       }
       try {
-        const data = await runAdminRequest(() => adminApi.listPlayers(showDeletedPlayers));
+        const data = await runAdminRequest(() =>
+          adminApi.listPlayers(playerStateFilter !== "active"),
+        );
         if (canApplyPlayersRequest()) {
           setPlayers(data);
         }
@@ -538,7 +574,7 @@ export default function AdminPage() {
     [
       isCurrentAuthSession,
       runAdminRequest,
-      showDeletedPlayers,
+      playerStateFilter,
       showNotification,
       session,
     ],
@@ -713,6 +749,9 @@ export default function AdminPage() {
 
   const resetPlayerForm = useCallback(
     (options: { skipConfirm?: boolean } = {}): boolean => {
+      if (playerSubmitting && !options.skipConfirm) {
+        return false;
+      }
       if (
         playerFormDirty &&
         !options.skipConfirm &&
@@ -720,21 +759,25 @@ export default function AdminPage() {
       ) {
         return false;
       }
+      playerEditInitialRef.current = null;
       setEditingPlayerId(null);
+      setPlayerDialogMode(null);
       setPlayerUsername("");
       setPlayerWins("0");
       setPlayerAverageMs("0");
       setPlayerFormErrors({});
       return true;
     },
-    [playerFormDirty],
+    [playerFormDirty, playerSubmitting],
   );
 
   useEffect(() => {
-    if (activeSection === "players") {
+    if (activeSection === "players" || playerSubmitting) {
       return;
     }
     setEditingPlayerId(null);
+    setPlayerDialogMode(null);
+    playerEditInitialRef.current = null;
     setPlayerUsername("");
     setPlayerWins("0");
     setPlayerAverageMs("0");
@@ -743,38 +786,121 @@ export default function AdminPage() {
     setPlayerAuditEvents([]);
     setPlayerAuditLoading(false);
     setPlayerAuditError(null);
-  }, [activeSection]);
+  }, [activeSection, playerSubmitting]);
 
-  const startEditingPlayer = (player: Player) => {
-    if (editingPlayerId === player.id) {
+  const openCreatePlayerDialog = (trigger?: HTMLElement | null): void => {
+    if (playerSubmitting) {
       return;
     }
-    if (
-      editingPlayerId &&
-      editingPlayerId !== player.id &&
-      playerFormDirty &&
-      !window.confirm("Есть несохраненные изменения. Переключить игрока?")
-    ) {
+    if (playerDialogMode && !resetPlayerForm()) {
       return;
     }
+    playerDialogReturnFocusRef.current =
+      trigger ?? createPlayerButtonRef.current;
+    playerEditInitialRef.current = null;
+    setEditingPlayerId(null);
+    setPlayerUsername("");
+    setPlayerWins("0");
+    setPlayerAverageMs("0");
+    setPlayerFormErrors({});
+    setPlayerDialogMode("create");
+  };
+
+  const startEditingPlayer = (
+    player: Player,
+    trigger?: HTMLElement | null,
+  ): void => {
+    if (playerSubmitting) {
+      return;
+    }
+    if (editingPlayerId === player.id && playerDialogMode === "edit") {
+      return;
+    }
+    if (playerDialogMode && !resetPlayerForm()) {
+      return;
+    }
+    playerDialogReturnFocusRef.current = trigger ?? null;
+    playerEditInitialRef.current = {
+      id: player.id,
+      username: player.username,
+      wins: String(player.wins),
+      averageMs: String(player.average_solve_time_ms),
+    };
     setEditingPlayerId(player.id);
     setPlayerUsername(player.username);
     setPlayerWins(String(player.wins));
     setPlayerAverageMs(String(player.average_solve_time_ms));
     setPlayerFormErrors({});
+    setPlayerDialogMode("edit");
   };
 
   const handlePlayerSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const nextErrors: PlayerFormErrors = {};
-    if (!editingPlayerId) {
-      setPlayerFormErrors({ form: "Сначала выберите игрока из списка ниже" });
+    if (playerSubmitting || !playerDialogMode) {
       return;
     }
+    const nextErrors: PlayerFormErrors = {};
     const username = playerUsername.trim();
     if (!USERNAME_RE.test(username)) {
       nextErrors.username =
         "Имя игрока: 2-50 символов, латиница, цифры, _ или -";
+    }
+    if (playerDialogMode === "create") {
+      if (Object.keys(nextErrors).length > 0) {
+        setPlayerFormErrors(nextErrors);
+        return;
+      }
+
+      setPlayerFormErrors({});
+      setPlayerSubmitting(true);
+      const sessionVersion = authSessionVersionRef.current;
+      try {
+        const body: CreateAdminPlayerRequest = { username };
+        const created = await runAdminRequest(() =>
+          adminApi.createPlayer(body),
+        );
+        if (!isCurrentAuthSession(sessionVersion)) {
+          return;
+        }
+        setPlayers((current) => [
+          created,
+          ...current.filter((player) => player.id !== created.id),
+        ]);
+        resetPlayerForm({ skipConfirm: true });
+        showNotification("success", "Игрок создан");
+      } catch (error) {
+        if (
+          !isCurrentAuthSession(sessionVersion) ||
+          (error instanceof Error && error.message === "Unauthorized")
+        ) {
+          return;
+        }
+        if (
+          error instanceof ApiError &&
+          (error.status === 409 || error.status === 422)
+        ) {
+          setPlayerFormErrors({
+            username:
+              error.status === 409
+                ? "Такое имя уже занято"
+                : "Имя игрока: 2-50 символов, латиница, цифры, _ или -",
+          });
+        } else {
+          setPlayerFormErrors({
+            form: apiErrorMessage(error, "Ошибка при создании игрока"),
+          });
+        }
+      } finally {
+        if (isCurrentAuthSession(sessionVersion)) {
+          setPlayerSubmitting(false);
+        }
+      }
+      return;
+    }
+
+    if (!editingPlayerId) {
+      setPlayerFormErrors({ form: "Сначала выберите игрока из списка" });
+      return;
     }
     const wins = parseNonNegativeInt32(playerWins);
     if (wins === null) {
@@ -830,6 +956,10 @@ export default function AdminPage() {
       }
       if (error instanceof ApiError && error.status === 409) {
         setPlayerFormErrors({ username: "Такое имя уже занято" });
+      } else if (error instanceof ApiError && error.status === 422) {
+        setPlayerFormErrors({
+          username: "Имя игрока: 2-50 символов, латиница, цифры, _ или -",
+        });
       } else {
         setPlayerFormErrors({
           form: apiErrorMessage(error, "Ошибка при обновлении игрока"),
@@ -857,7 +987,7 @@ export default function AdminPage() {
       if (!isCurrentAuthSession(sessionVersion)) {
         return;
       }
-      if (showDeletedPlayers) {
+      if (playerStateFilter !== "active") {
         fetchPlayers();
       } else {
         setPlayers((current) =>
@@ -930,169 +1060,297 @@ export default function AdminPage() {
     }
   };
 
+  const filteredPlayers = useMemo(() => {
+    const search = playerSearch.trim().toLocaleLowerCase("ru-RU");
+    return players.filter((player) => {
+      const isDeleted = Boolean(player.deleted_at);
+      if (playerStateFilter === "active" && isDeleted) {
+        return false;
+      }
+      if (playerStateFilter === "deleted" && !isDeleted) {
+        return false;
+      }
+      if (playerWinsFilter === "with_wins" && player.wins <= 0) {
+        return false;
+      }
+      if (playerWinsFilter === "without_wins" && player.wins > 0) {
+        return false;
+      }
+      return (
+        search === "" ||
+        player.username.toLocaleLowerCase("ru-RU").includes(search)
+      );
+    });
+  }, [playerSearch, playerStateFilter, playerWinsFilter, players]);
+
+  const playerFiltersActive =
+    playerSearch.trim() !== "" ||
+    playerStateFilter !== "active" ||
+    playerWinsFilter !== "all";
+
+  const resetPlayerFilters = (): void => {
+    setPlayerSearch("");
+    setPlayerStateFilter("active");
+    setPlayerWinsFilter("all");
+  };
+
+  const renderPlayerDialog = () => {
+    if (!playerDialogMode) {
+      return null;
+    }
+    const isCreate = playerDialogMode === "create";
+    return (
+      <Dialog
+        open
+        title={isCreate ? "Создать игрока" : "Редактировать игрока"}
+        size="small"
+        initialFocusRef={playerDialogInitialFocusRef}
+        returnFocusRef={playerDialogReturnFocusRef}
+        closeLabel={isCreate ? "Закрыть создание игрока" : "Закрыть редактирование игрока"}
+        closeOnEscape={!playerSubmitting}
+        closeOnBackdrop={false}
+        showCloseButton={!playerSubmitting}
+        onOpenChange={(open) => {
+          if (!open && !playerSubmitting) {
+            resetPlayerForm();
+          }
+        }}
+      >
+        <form
+          id="admin-player-form"
+          onSubmit={handlePlayerSubmit}
+          className={styles.form}
+          noValidate
+        >
+          <div className={styles.inputGroup}>
+            <label htmlFor="admin-player-username">Имя игрока</label>
+            <input
+              ref={playerDialogInitialFocusRef}
+              type="text"
+              id="admin-player-username"
+              name="username"
+              aria-label="Имя игрока"
+              value={playerUsername}
+              onChange={(event) => {
+                setPlayerUsername(event.target.value);
+                clearPlayerFormError("username");
+                clearPlayerFormError("form");
+              }}
+              placeholder="username"
+              maxLength={50}
+              disabled={playerSubmitting}
+              className={
+                playerFormErrors.username ? styles.inputError : undefined
+              }
+              aria-invalid={Boolean(playerFormErrors.username)}
+              aria-describedby={
+                playerFormErrors.username
+                  ? "admin-player-username-error"
+                  : undefined
+              }
+            />
+            {playerFormErrors.username && (
+              <p
+                id="admin-player-username-error"
+                className={styles.fieldError}
+              >
+                {playerFormErrors.username}
+              </p>
+            )}
+          </div>
+
+          {!isCreate && (
+            <>
+              <div className={styles.formRow}>
+                <div className={styles.inputGroup}>
+                  <label htmlFor="admin-player-wins">Победы</label>
+                  <input
+                    type="number"
+                    id="admin-player-wins"
+                    name="wins"
+                    aria-label="Победы игрока"
+                    min="0"
+                    value={playerWins}
+                    onChange={(event) => {
+                      setPlayerWins(event.target.value);
+                      clearPlayerFormError("wins");
+                      clearPlayerFormError("averageMs");
+                      clearPlayerFormError("form");
+                    }}
+                    placeholder="0"
+                    disabled={playerSubmitting}
+                    className={
+                      playerFormErrors.wins ? styles.inputError : undefined
+                    }
+                    aria-invalid={Boolean(playerFormErrors.wins)}
+                    aria-describedby={
+                      playerFormErrors.wins
+                        ? "admin-player-wins-error"
+                        : undefined
+                    }
+                  />
+                  {playerFormErrors.wins && (
+                    <p
+                      id="admin-player-wins-error"
+                      className={styles.fieldError}
+                    >
+                      {playerFormErrors.wins}
+                    </p>
+                  )}
+                </div>
+                <div className={styles.inputGroup}>
+                  <label htmlFor="admin-player-average">Среднее время (мс)</label>
+                  <input
+                    type="number"
+                    id="admin-player-average"
+                    name="average_solve_time_ms"
+                    aria-label="Среднее время игрока"
+                    min="0"
+                    value={playerAverageMs}
+                    onChange={(event) => {
+                      setPlayerAverageMs(event.target.value);
+                      clearPlayerFormError("averageMs");
+                      clearPlayerFormError("form");
+                    }}
+                    placeholder="0"
+                    disabled={playerSubmitting}
+                    className={
+                      playerFormErrors.averageMs
+                        ? styles.inputError
+                        : undefined
+                    }
+                    aria-invalid={Boolean(playerFormErrors.averageMs)}
+                    aria-describedby={
+                      playerFormErrors.averageMs
+                        ? "admin-player-average-error"
+                        : undefined
+                    }
+                  />
+                  {playerFormErrors.averageMs && (
+                    <p
+                      id="admin-player-average-error"
+                      className={styles.fieldError}
+                    >
+                      {playerFormErrors.averageMs}
+                    </p>
+                  )}
+                </div>
+              </div>
+              <p className={styles.playerFormHint}>
+                На табло: {formatMilliseconds(Number(playerAverageMs) || 0)}
+              </p>
+            </>
+          )}
+
+          {playerFormErrors.form && (
+            <p className={`${styles.fieldError} ${styles.formLevelError}`}>
+              {playerFormErrors.form}
+            </p>
+          )}
+        </form>
+        <div className={styles.btnGroup}>
+          <button
+            type="submit"
+            form="admin-player-form"
+            className={`${styles.btn} ${styles.btnPrimary} motion-button`}
+            disabled={playerSubmitting}
+          >
+            {playerSubmitting ? (
+              <>
+                <div
+                  className={styles.spinner}
+                  style={{ width: 18, height: 18 }}
+                ></div>
+                {isCreate ? "Создание..." : "Сохранение..."}
+              </>
+            ) : isCreate ? (
+              "Создать игрока"
+            ) : (
+              "Сохранить игрока"
+            )}
+          </button>
+          <button
+            type="button"
+            className={`${styles.btn} ${styles.btnSecondary} motion-button`}
+            onClick={() => resetPlayerForm()}
+            disabled={playerSubmitting}
+          >
+            Отменить
+          </button>
+        </div>
+      </Dialog>
+    );
+  };
+
   const renderPlayersSection = () => (
     <>
-      <div className={`${styles.card} motion-panel`}>
-        <h2 className={styles.cardTitle}>Игроки</h2>
-        <form onSubmit={handlePlayerSubmit} className={styles.form} noValidate>
-          <div className={styles.formRow}>
-            <div className={styles.inputGroup}>
-              <label htmlFor="admin-player-username">Имя игрока</label>
-              <input
-                type="text"
-                id="admin-player-username"
-                name="username"
-                aria-label="Имя игрока"
-                value={playerUsername}
-                onChange={(e) => {
-                  setPlayerUsername(e.target.value);
-                  clearPlayerFormError("username");
-                  clearPlayerFormError("form");
-                }}
-                placeholder="username"
-                maxLength={50}
-                disabled={!editingPlayerId}
-                className={
-                  playerFormErrors.username ? styles.inputError : undefined
-                }
-                aria-invalid={Boolean(playerFormErrors.username)}
-                aria-describedby={
-                  playerFormErrors.username
-                    ? "admin-player-username-error"
-                    : undefined
-                }
-              />
-              {playerFormErrors.username && (
-                <p
-                  id="admin-player-username-error"
-                  className={styles.fieldError}
-                >
-                  {playerFormErrors.username}
-                </p>
-              )}
-            </div>
-            <div className={styles.inputGroup}>
-              <label htmlFor="admin-player-wins">Победы</label>
-              <input
-                type="number"
-                id="admin-player-wins"
-                name="wins"
-                aria-label="Победы игрока"
-                min="0"
-                value={playerWins}
-                onChange={(e) => {
-                  setPlayerWins(e.target.value);
-                  clearPlayerFormError("wins");
-                  clearPlayerFormError("averageMs");
-                  clearPlayerFormError("form");
-                }}
-                placeholder="0"
-                disabled={!editingPlayerId}
-                className={
-                  playerFormErrors.wins ? styles.inputError : undefined
-                }
-                aria-invalid={Boolean(playerFormErrors.wins)}
-                aria-describedby={
-                  playerFormErrors.wins ? "admin-player-wins-error" : undefined
-                }
-              />
-              {playerFormErrors.wins && (
-                <p id="admin-player-wins-error" className={styles.fieldError}>
-                  {playerFormErrors.wins}
-                </p>
-              )}
-            </div>
+      <div className={styles.taskList}>
+        <div className={styles.playersHeader}>
+          <div>
+            <h2 className={styles.taskListTitle}>Список игроков</h2>
+            <p className={styles.playerCount} aria-live="polite">
+              Показано: {filteredPlayers.length} из {players.length}
+            </p>
           </div>
-          <div className={styles.formRow}>
-            <div className={styles.inputGroup}>
-              <label htmlFor="admin-player-average">Среднее время (мс)</label>
-              <input
-                type="number"
-                id="admin-player-average"
-                name="average_solve_time_ms"
-                aria-label="Среднее время игрока"
-                min="0"
-                value={playerAverageMs}
-                onChange={(e) => {
-                  setPlayerAverageMs(e.target.value);
-                  clearPlayerFormError("averageMs");
-                  clearPlayerFormError("form");
-                }}
-                placeholder="0"
-                disabled={!editingPlayerId}
-                className={
-                  playerFormErrors.averageMs ? styles.inputError : undefined
-                }
-                aria-invalid={Boolean(playerFormErrors.averageMs)}
-                aria-describedby={
-                  playerFormErrors.averageMs
-                    ? "admin-player-average-error"
-                    : undefined
-                }
-              />
-              {playerFormErrors.averageMs && (
-                <p
-                  id="admin-player-average-error"
-                  className={styles.fieldError}
-                >
-                  {playerFormErrors.averageMs}
-                </p>
-              )}
-            </div>
-            <div className={styles.playerFormHint}>
-              {editingPlayerId
-                ? `На табло: ${formatMilliseconds(Number(playerAverageMs) || 0)}`
-                : "Выберите игрока из списка ниже"}
-              {playerFormErrors.form && (
-                <p className={`${styles.fieldError} ${styles.formLevelError}`}>
-                  {playerFormErrors.form}
-                </p>
-              )}
-            </div>
+          <button
+            ref={createPlayerButtonRef}
+            type="button"
+            className={`${styles.btn} ${styles.btnPrimary} motion-button`}
+            onClick={(event) => openCreatePlayerDialog(event.currentTarget)}
+            disabled={playerSubmitting}
+          >
+            Создать игрока
+          </button>
+        </div>
+        <div className={styles.playerFilters}>
+          <div className={styles.inputGroup}>
+            <label htmlFor="admin-player-search">Поиск по имени</label>
+            <input
+              id="admin-player-search"
+              type="search"
+              value={playerSearch}
+              onChange={(event) => setPlayerSearch(event.target.value)}
+              placeholder="username"
+              autoComplete="off"
+            />
           </div>
-          <div className={styles.btnGroup}>
-            <button
-              type="submit"
-              className={`${styles.btn} ${styles.btnPrimary} motion-button`}
-              disabled={!editingPlayerId || playerSubmitting}
+          <div className={styles.inputGroup}>
+            <label htmlFor="admin-player-state">Состояние</label>
+            <select
+              id="admin-player-state"
+              value={playerStateFilter}
+              onChange={(event) =>
+                setPlayerStateFilter(event.target.value as PlayerStateFilter)
+              }
             >
-              {playerSubmitting ? (
-                <>
-                  <div
-                    className={styles.spinner}
-                    style={{ width: 18, height: 18 }}
-                  ></div>
-                  Сохранение...
-                </>
-              ) : (
-                "Сохранить игрока"
-              )}
-            </button>
+              <option value="active">Активные</option>
+              <option value="deleted">Удаленные</option>
+              <option value="all">Все</option>
+            </select>
+          </div>
+          <div className={styles.inputGroup}>
+            <label htmlFor="admin-player-wins-filter">Победы</label>
+            <select
+              id="admin-player-wins-filter"
+              value={playerWinsFilter}
+              onChange={(event) =>
+                setPlayerWinsFilter(event.target.value as PlayerWinsFilter)
+              }
+            >
+              <option value="all">Все</option>
+              <option value="with_wins">Есть победы</option>
+              <option value="without_wins">Без побед</option>
+            </select>
+          </div>
+          {playerFiltersActive && (
             <button
               type="button"
               className={`${styles.btn} ${styles.btnSecondary} motion-button`}
-              onClick={() => {
-                resetPlayerForm();
-              }}
-              disabled={!editingPlayerId || playerSubmitting}
+              onClick={resetPlayerFilters}
             >
-              Отменить
+              Сбросить фильтры
             </button>
-          </div>
-        </form>
-      </div>
-
-      <div className={styles.taskList}>
-        <div className={styles.playerListHeader}>
-          <h2 className={styles.taskListTitle}>Список игроков</h2>
-          <label className={styles.toggleRow}>
-            <input
-              type="checkbox"
-              checked={showDeletedPlayers}
-              onChange={(e) => setShowDeletedPlayers(e.target.checked)}
-            />
-            Показывать удаленных
-          </label>
+          )}
         </div>
 
         {playersLoading ? (
@@ -1107,75 +1365,86 @@ export default function AdminPage() {
             <div className={styles.emptyIcon}>-</div>
             <p className={styles.emptyText}>Пока нет игроков</p>
           </div>
+        ) : filteredPlayers.length === 0 ? (
+          <div className={styles.empty}>
+            <div className={styles.emptyIcon}>-</div>
+            <p className={styles.emptyText}>
+              По заданным фильтрам игроки не найдены
+            </p>
+          </div>
         ) : (
-          players.map((player) => {
-            const isDeleted = Boolean(player.deleted_at);
-            return (
-              <div
-                key={player.id}
-                className={`${styles.taskItem} ${editingPlayerId === player.id ? styles.playerItemActive : ""} ${isDeleted ? styles.playerItemDeleted : ""} motion-list-item`}
-              >
-                <div className={styles.taskItemInfo}>
-                  <div className={styles.taskItemTitle}>{player.username}</div>
-                  <div className={styles.taskItemMeta}>
-                    <span className={styles.taskBadge}>
-                      Победы: {player.wins}
-                    </span>
-                    <span className={styles.taskBadge}>
-                      Среднее:{" "}
-                      {formatMilliseconds(player.average_solve_time_ms)}
-                    </span>
-                    {player.stats_overridden && (
-                      <span
-                        className={`${styles.taskBadge} ${styles.taskBadgeOverride}`}
-                      >
-                        ручная правка
+          <div className={styles.playerGrid}>
+            {filteredPlayers.map((player) => {
+              const isDeleted = Boolean(player.deleted_at);
+              return (
+                <div
+                  key={player.id}
+                  className={`${styles.taskItem} ${editingPlayerId === player.id ? styles.playerItemActive : ""} ${isDeleted ? styles.playerItemDeleted : ""} motion-list-item`}
+                >
+                  <div className={styles.taskItemInfo}>
+                    <div className={styles.taskItemTitle}>{player.username}</div>
+                    <div className={styles.taskItemMeta}>
+                      <span className={styles.taskBadge}>
+                        Победы: {player.wins}
                       </span>
-                    )}
-                    {isDeleted && (
-                      <span
-                        className={`${styles.taskBadge} ${styles.taskBadgeDeleted}`}
-                      >
-                        удален: {formatDateTime(player.deleted_at)}
+                      <span className={styles.taskBadge}>
+                        Среднее:{" "}
+                        {formatMilliseconds(player.average_solve_time_ms)}
                       </span>
-                    )}
+                      {player.stats_overridden && (
+                        <span
+                          className={`${styles.taskBadge} ${styles.taskBadgeOverride}`}
+                        >
+                          ручная правка
+                        </span>
+                      )}
+                      {isDeleted && (
+                        <span
+                          className={`${styles.taskBadge} ${styles.taskBadgeDeleted}`}
+                        >
+                          удален: {formatDateTime(player.deleted_at)}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <div className={styles.taskItemActions}>
+                    <button
+                      className={`${styles.taskItemBtn} motion-button`}
+                      onClick={() => openPlayerAudit(player)}
+                      aria-label={`История игрока ${player.username}`}
+                      title="История изменений"
+                    >
+                      История
+                    </button>
+                    <button
+                      className={`${styles.taskItemBtn} motion-button`}
+                      onClick={(event) =>
+                        startEditingPlayer(player, event.currentTarget)
+                      }
+                      aria-label={`Редактировать игрока ${player.username}`}
+                      title={
+                        isDeleted
+                          ? "Удаленного игрока нельзя редактировать"
+                          : "Редактировать игрока"
+                      }
+                      disabled={isDeleted || playerSubmitting}
+                    >
+                      Изменить
+                    </button>
+                    <button
+                      className={`${styles.taskItemBtn} ${styles.taskItemBtnDanger} motion-button`}
+                      onClick={() => handleDeletePlayer(player)}
+                      aria-label={`Удалить игрока ${player.username}`}
+                      title={isDeleted ? "Игрок уже удален" : "Удалить игрока"}
+                      disabled={isDeleted}
+                    >
+                      Удалить
+                    </button>
                   </div>
                 </div>
-                <div className={styles.taskItemActions}>
-                  <button
-                    className={`${styles.taskItemBtn} motion-button`}
-                    onClick={() => openPlayerAudit(player)}
-                    aria-label={`История игрока ${player.username}`}
-                    title="История изменений"
-                  >
-                    История
-                  </button>
-                  <button
-                    className={`${styles.taskItemBtn} motion-button`}
-                    onClick={() => startEditingPlayer(player)}
-                    aria-label={`Редактировать игрока ${player.username}`}
-                    title={
-                      isDeleted
-                        ? "Удаленного игрока нельзя редактировать"
-                        : "Редактировать игрока"
-                    }
-                    disabled={isDeleted}
-                  >
-                    Изменить
-                  </button>
-                  <button
-                    className={`${styles.taskItemBtn} ${styles.taskItemBtnDanger} motion-button`}
-                    onClick={() => handleDeletePlayer(player)}
-                    aria-label={`Удалить игрока ${player.username}`}
-                    title={isDeleted ? "Игрок уже удален" : "Удалить игрока"}
-                    disabled={isDeleted}
-                  >
-                    Удалить
-                  </button>
-                </div>
-              </div>
-            );
-          })
+              );
+            })}
+          </div>
         )}
       </div>
     </>
@@ -1391,6 +1660,7 @@ export default function AdminPage() {
       >
         {renderAdminSection(navigation)}
       </div>
+      {renderPlayerDialog()}
       {renderPlayerAuditModal()}
     </AdminShell>
   );

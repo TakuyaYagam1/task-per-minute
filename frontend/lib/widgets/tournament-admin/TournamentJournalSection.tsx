@@ -140,15 +140,6 @@ export const TournamentJournalSection = ({
               ))}
             </select>
           </div>
-          <Button
-            variant="secondary"
-            size="small"
-            onClick={() => void loadTournaments()}
-            loading={loadState === "loading"}
-            loadingLabel="Обновляем"
-          >
-            Обновить список
-          </Button>
         </div>
 
         {loadState === "error" ? (
@@ -159,7 +150,7 @@ export const TournamentJournalSection = ({
               size="small"
               onClick={() => void loadTournaments()}
             >
-              Повторить
+              Повторить загрузку
             </Button>
           </Message>
         ) : null}
@@ -170,7 +161,7 @@ export const TournamentJournalSection = ({
           >
             {selectedTournamentId ? (
               <>
-                Выбранное соревнование не найдено. Обновите список или выберите другое соревнование.
+                Выбранное соревнование не найдено. Выберите другое соревнование.
               </>
             ) : tournaments.length === 0 ? (
               "Журнал появится после создания соревнования."

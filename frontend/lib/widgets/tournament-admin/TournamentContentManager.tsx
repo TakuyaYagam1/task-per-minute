@@ -33,6 +33,9 @@ type Task = AdminTask;
 type TaskCategory = Task["category"];
 type TaskDifficulty = Task["difficulty"];
 type TaskKind = Task["kind"];
+type TaskCategoryFilter = TaskCategory | "all";
+type TaskDifficultyFilter = TaskDifficulty | "all";
+type TaskKindFilter = TaskKind | "all";
 type LoadState = "loading" | "ready" | "error";
 
 export type AdminRequestRunner = <T>(request: () => Promise<T>) => Promise<T>;
@@ -287,6 +290,12 @@ export const TournamentContentManager = ({
   const [tasks, setTasks] = useState<Task[]>([]);
   const [tasksState, setTasksState] = useState<LoadState>("loading");
   const [tasksError, setTasksError] = useState<string | null>(null);
+  const [taskSearch, setTaskSearch] = useState("");
+  const [taskCategoryFilter, setTaskCategoryFilter] =
+    useState<TaskCategoryFilter>("all");
+  const [taskDifficultyFilter, setTaskDifficultyFilter] =
+    useState<TaskDifficultyFilter>("all");
+  const [taskKindFilter, setTaskKindFilter] = useState<TaskKindFilter>("all");
   const tasksControllerRef = useRef<AbortController | null>(null);
   const tasksRequestIDRef = useRef(0);
   const operationControllerRef = useRef<AbortController | null>(null);
@@ -317,6 +326,30 @@ export const TournamentContentManager = ({
   };
   const formDirty =
     JSON.stringify(formSnapshot) !== JSON.stringify(formBaselineRef.current);
+  const normalizedTaskSearch = taskSearch.trim().toLowerCase();
+  const hasTaskFilters =
+    normalizedTaskSearch.length > 0 ||
+    taskCategoryFilter !== "all" ||
+    taskDifficultyFilter !== "all" ||
+    taskKindFilter !== "all";
+  const filteredTasks = tasks.filter((task) => {
+    const matchesSearch =
+      normalizedTaskSearch.length === 0 ||
+      task.title.toLowerCase().includes(normalizedTaskSearch);
+    const matchesCategory =
+      taskCategoryFilter === "all" || task.category === taskCategoryFilter;
+    const matchesDifficulty =
+      taskDifficultyFilter === "all" || task.difficulty === taskDifficultyFilter;
+    const matchesKind = taskKindFilter === "all" || task.kind === taskKindFilter;
+    return matchesSearch && matchesCategory && matchesDifficulty && matchesKind;
+  });
+
+  const resetTaskFilters = useCallback(() => {
+    setTaskSearch("");
+    setTaskCategoryFilter("all");
+    setTaskDifficultyFilter("all");
+    setTaskKindFilter("all");
+  }, []);
 
   useEffect(() => {
     onDirtyChange?.(formDirty);
@@ -804,7 +837,7 @@ export const TournamentContentManager = ({
             className={styles.inlineButton}
             onClick={onReloadContent}
           >
-            Повторить загрузку
+            Повторить
           </Button>
         </Message>
       )}
@@ -1123,8 +1156,8 @@ export const TournamentContentManager = ({
                 Список задач
               </h2>
               {tasksState === "ready" && (
-                <p className={styles.listDescription}>
-                  Всего: {tasks.length}
+                <p className={styles.listDescription} aria-live="polite">
+                  Показано: {filteredTasks.length} из {tasks.length}
                 </p>
               )}
             </div>
@@ -1134,17 +1167,6 @@ export const TournamentContentManager = ({
           </div>
         }
         className={styles.listPanel}
-        footer={
-          <Button
-            variant="secondary"
-            size="small"
-            onClick={() => void loadTasks()}
-            loading={tasksState === "loading"}
-            loadingLabel="Обновляем"
-          >
-            Обновить список
-          </Button>
-        }
       >
         {lastUploadedSource && (
           <div className={styles.sourceDownloadNotice} role="status">
@@ -1177,8 +1199,90 @@ export const TournamentContentManager = ({
           </Message>
         )}
         {tasksState === "ready" && tasks.length > 0 && (
+          <div className={styles.taskFilters} aria-label="Фильтры списка задач">
+            <div className={styles.taskFilterField}>
+              <label htmlFor="admin-task-filter-search">Поиск по названию</label>
+              <input
+                id="admin-task-filter-search"
+                type="search"
+                value={taskSearch}
+                onChange={(event) => setTaskSearch(event.target.value)}
+                placeholder="Название задачи"
+              />
+            </div>
+            <div className={styles.taskFilterField}>
+              <label htmlFor="admin-task-filter-category">Категория</label>
+              <select
+                id="admin-task-filter-category"
+                value={taskCategoryFilter}
+                onChange={(event) =>
+                  setTaskCategoryFilter(event.target.value as TaskCategoryFilter)
+                }
+              >
+                <option value="all">Все категории</option>
+                {Object.entries(CATEGORY_CONFIG).map(([value, config]) => (
+                  <option key={value} value={value}>
+                    {config.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className={styles.taskFilterField}>
+              <label htmlFor="admin-task-filter-difficulty">Сложность</label>
+              <select
+                id="admin-task-filter-difficulty"
+                value={taskDifficultyFilter}
+                onChange={(event) =>
+                  setTaskDifficultyFilter(event.target.value as TaskDifficultyFilter)
+                }
+              >
+                <option value="all">Все уровни</option>
+                {Object.entries(DIFFICULTY_CONFIG).map(([value, config]) => (
+                  <option key={value} value={value}>
+                    {config.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className={styles.taskFilterField}>
+              <label htmlFor="admin-task-filter-kind">Пул задания</label>
+              <select
+                id="admin-task-filter-kind"
+                value={taskKindFilter}
+                onChange={(event) =>
+                  setTaskKindFilter(event.target.value as TaskKindFilter)
+                }
+              >
+                <option value="all">Все пулы</option>
+                {Object.entries(KIND_CONFIG).map(([value, config]) => (
+                  <option key={value} value={value}>
+                    {config.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            {hasTaskFilters && (
+              <div className={styles.taskFilterActions}>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="small"
+                  onClick={resetTaskFilters}
+                >
+                  Сбросить фильтры
+                </Button>
+              </div>
+            )}
+          </div>
+        )}
+        {tasksState === "ready" && tasks.length > 0 && filteredTasks.length === 0 && (
+          <Message tone="empty" title="Задачи не найдены">
+            Измените условия поиска или сбросьте фильтры.
+          </Message>
+        )}
+        {tasksState === "ready" && filteredTasks.length > 0 && (
           <div className={styles.taskList} aria-label="Каталог задач">
-            {tasks.map((task) => {
+            {filteredTasks.map((task) => {
               const categoryInfo = CATEGORY_CONFIG[task.category];
               const difficultyInfo = DIFFICULTY_CONFIG[task.difficulty];
               return (

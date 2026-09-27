@@ -244,7 +244,7 @@ const pairingLifecycleMessage = (
       return {
         statusLabel: "Действие недоступно",
         title: "Состояние соревнования изменилось",
-        detail: "Обновите состояние соревнования перед формированием пар.",
+        detail: "Состояние соревнования изменилось. Повторите попытку.",
       };
   }
 };
@@ -856,7 +856,7 @@ export const SwissPairingEditor = ({
                   onClick={handleReload}
                   disabled={submitting}
                 >
-                  Перезагрузить данные
+                  Повторить загрузку
                 </button>
               </Message>
             )}
@@ -885,14 +885,6 @@ export const SwissPairingEditor = ({
                 disabled={pairingFormDisabled || eligibleParticipants.length < 2}
               >
                 Сформировать пары
-              </Button>
-              <Button
-                type="button"
-                variant="secondary"
-                onClick={handleReload}
-                disabled={submitting}
-              >
-                Обновить состояние
               </Button>
             </div>
           </section>

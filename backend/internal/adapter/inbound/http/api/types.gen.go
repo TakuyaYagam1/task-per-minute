@@ -2122,6 +2122,12 @@ type CorrectionUnlockIntent struct {
 	TournamentId      openapi_types.UUID `json:"tournament_id"`
 }
 
+// CreatePlayerRequest defines model for CreatePlayerRequest.
+type CreatePlayerRequest struct {
+	// Username Example: takuya
+	Username string `json:"username"`
+}
+
 // CreateTaskRequest defines model for CreateTaskRequest.
 type CreateTaskRequest struct {
 	Category    TaskCategory   `json:"category"`
@@ -4196,6 +4202,12 @@ type ListPlayersParams struct {
 	IncludeDeleted *bool `form:"include_deleted,omitempty" json:"include_deleted,omitempty"`
 }
 
+// CreatePlayerParams defines parameters for CreatePlayer.
+type CreatePlayerParams struct {
+	// XCSRFToken Cookie-bound CSRF token required for this admin mutation.
+	XCSRFToken AdminCSRFToken `json:"X-CSRF-Token"`
+}
+
 // DeletePlayerParams defines parameters for DeletePlayer.
 type DeletePlayerParams struct {
 	// XCSRFToken Cookie-bound CSRF token required for this admin mutation.
@@ -4528,6 +4540,9 @@ type GetPublicSnapshotParams struct {
 
 // LoginAdminJSONRequestBody defines body for LoginAdmin for application/json ContentType.
 type LoginAdminJSONRequestBody = AdminLoginRequest
+
+// CreatePlayerJSONRequestBody defines body for CreatePlayer for application/json ContentType.
+type CreatePlayerJSONRequestBody = CreatePlayerRequest
 
 // UpdatePlayerJSONRequestBody defines body for UpdatePlayer for application/json ContentType.
 type UpdatePlayerJSONRequestBody = UpdatePlayerRequest

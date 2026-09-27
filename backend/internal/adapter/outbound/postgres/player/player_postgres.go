@@ -46,6 +46,24 @@ func (r *PlayerPostgres) Create(ctx context.Context, username string) (*domain.P
 	return playerToDomain(row), nil
 }
 
+func (r *PlayerPostgres) CreatePlayer(ctx context.Context, username string) (*playerusecase.PlayerRecord, error) {
+	player, err := r.Create(ctx, username)
+	if err != nil {
+		return nil, fmt.Errorf("PlayerPostgres - CreatePlayer - Create: %w", err)
+	}
+
+	created := adminPlayerRecord(
+		player.ID,
+		player.Username,
+		player.CreatedAt,
+		nil,
+		0,
+		0,
+		false,
+	)
+	return &created, nil
+}
+
 func (r *PlayerPostgres) JoinByUsername(
 	ctx context.Context,
 	username string,

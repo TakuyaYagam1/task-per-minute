@@ -235,7 +235,6 @@
 }
 
 .inputGroup label,
-.toggleRow,
 .selector label {
   color: var(--admin-muted);
   font-size: 0.8rem;
@@ -337,23 +336,59 @@
   right: 22px;
 }
 
-.toggleRow {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  cursor: pointer;
-}
-
-.toggleRow input {
-  accent-color: var(--admin-accent);
-}
-
-.playerListHeader {
+.playersHeader {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
-  gap: 16px;
-  margin-bottom: 16px;
+  gap: 18px;
+}
+
+.playerFilters {
+  display: grid;
+  grid-template-columns: minmax(220px, 1.5fr) repeat(2, minmax(160px, 1fr)) auto;
+  align-items: end;
+  gap: 12px;
+  margin-top: 18px;
+  padding: 14px;
+  border: 1px solid var(--admin-border);
+  border-radius: 5px;
+  background: var(--admin-surface-raised);
+}
+
+.playerFilters .inputGroup input,
+.playerFilters .inputGroup select {
+  min-height: 40px;
+}
+
+.playerCount {
+  margin: 4px 0 0;
+  color: var(--admin-muted);
+  font-size: 0.8rem;
+}
+
+.playerGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+@media (max-width: 900px) {
+  .playerFilters {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .playerFilters .inputGroup:first-child {
+    grid-column: 1 / -1;
+  }
+
+  .playerGrid .taskItem {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .playerGrid .taskItemActions {
+    justify-content: flex-start;
+  }
 }
 
 .taskList {
@@ -728,10 +763,22 @@
     grid-template-columns: 1fr;
   }
 
-  .playerListHeader,
+  .playersHeader,
   .taskItem {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .playerFilters {
+    grid-template-columns: 1fr;
+  }
+
+  .playerFilters .inputGroup:first-child {
+    grid-column: auto;
+  }
+
+  .playerGrid {
+    grid-template-columns: 1fr;
   }
 
   .taskItemActions {

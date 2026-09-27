@@ -145,7 +145,14 @@ export const ParticipantGoldenPanel = ({
         {golden.loadMessage !== null && (
           <Message tone="error" title="Дополнительный отбор недоступен">
             <p>{golden.loadMessage}</p>
-            <Button onClick={golden.refresh} type="button" variant="secondary">Повторить</Button>
+            <Button
+              disabled={golden.actionStatus === "pending"}
+              onClick={golden.refresh}
+              type="button"
+              variant="secondary"
+            >
+              Повторить загрузку
+            </Button>
           </Message>
         )}
       </section>
@@ -189,6 +196,20 @@ export const ParticipantGoldenPanel = ({
         </div>
         <Status tone={stateTone(snapshot.state)}>{formatGoldenState(snapshot.state)}</Status>
       </div>
+
+      {golden.loadStatus === "error" && golden.loadMessage !== null && (
+        <Message tone="error" title="Дополнительный отбор недоступен">
+          <p>{golden.loadMessage}</p>
+          <Button
+            disabled={golden.actionStatus === "pending"}
+            onClick={golden.refresh}
+            type="button"
+            variant="secondary"
+          >
+            Повторить загрузку
+          </Button>
+        </Message>
+      )}
 
       <dl className={styles.facts} aria-label="Группа дополнительного отбора">
         <div>
@@ -341,16 +362,6 @@ export const ParticipantGoldenPanel = ({
         </Message>
       )}
 
-      <div className={styles.footer}>
-        <Button
-          disabled={golden.actionStatus === "pending"}
-          onClick={golden.refresh}
-          type="button"
-          variant="ghost"
-        >
-          Обновить данные
-        </Button>
-      </div>
     </section>
   );
 };

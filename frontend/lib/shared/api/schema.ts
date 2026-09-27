@@ -176,7 +176,8 @@ export interface paths {
         /** List players with effective leaderboard stats */
         get: operations["listPlayers"];
         put?: never;
-        post?: never;
+        /** Create a player without starting a player session */
+        post: operations["createPlayer"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1399,6 +1400,10 @@ export interface components {
             username: string;
             /** Format: int32 */
             wins: number;
+        };
+        CreatePlayerRequest: {
+            /** @example takuya */
+            username: string;
         };
         /** @enum {string} */
         PlayerAuditAction: "update" | "delete";
@@ -4175,6 +4180,88 @@ export interface operations {
             };
             /** @description Missing or invalid admin session. */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            default: components["responses"]["UnexpectedServerProblem"];
+        };
+    };
+    createPlayer: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Cookie-bound CSRF token required for this admin mutation. */
+                "X-CSRF-Token": components["parameters"]["AdminCSRFToken"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreatePlayerRequest"];
+            };
+        };
+        responses: {
+            /** @description Created player with zero leaderboard stats. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlayerManagementView"];
+                };
+            };
+            /** @description Validation error, including a malformed body or invalid username. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Missing or invalid admin session. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description CSRF token does not match the admin access session, or the request origin or referer is not allowed. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Username is already taken. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Request body exceeds the JSON size limit. */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Request content type must be application/json. */
+            415: {
                 headers: {
                     [name: string]: unknown;
                 };

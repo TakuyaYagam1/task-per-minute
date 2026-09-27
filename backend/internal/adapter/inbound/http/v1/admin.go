@@ -141,6 +141,41 @@ func (s *Server) ListPlayers(w http.ResponseWriter, r *http.Request, params api.
 	response.WriteJSON(w, http.StatusOK, response.PlayerManagementList(players))
 }
 
+// (POST /api/v1/admin/players).
+func (s *Server) CreatePlayer(w http.ResponseWriter, r *http.Request, _ api.CreatePlayerParams) {
+	actor, actorOK := adminActorFromRequest(r)
+	if !requireAdmin(w, r) {
+		s.logSecurityEvent(r, "admin.player.create", securityOutcomeFailure, adminSecurityFields(actor, domain.ErrorCodeInvalidCredentials))
+		return
+	}
+	if !actorOK {
+		s.logSecurityEvent(r, "admin.player.create", securityOutcomeFailure, adminSecurityFields(actor, domain.ErrorCodeInvalidCredentials))
+		errmap.HandleError(w, r, domain.ErrInvalidCredentials)
+		return
+	}
+	if s.adminPlayers == nil {
+		s.logSecurityEvent(r, "admin.player.create", securityOutcomeFailure, adminSecurityFields(actor, domain.ErrorCodeInternal))
+		errmap.HandleError(w, r, domain.ErrInternal)
+		return
+	}
+
+	var body api.CreatePlayerRequest
+	if !decodeJSONBody(w, r, &body, domain.ErrValidation) {
+		s.logSecurityEvent(r, "admin.player.create", securityOutcomeFailure, adminSecurityFields(actor, domain.ErrorCodeValidation))
+		return
+	}
+
+	player, err := s.adminPlayers.CreatePlayer(r.Context(), body.Username, actor)
+	if err != nil {
+		s.logSecurityEvent(r, "admin.player.create", securityOutcomeFailure, adminSecurityFields(actor, securityErrorCode(err)))
+		errmap.HandleError(w, r, err)
+		return
+	}
+
+	s.logSecurityEvent(r, "admin.player.create", securityOutcomeSuccess, adminSecurityFields(actor, ""))
+	response.WriteJSON(w, http.StatusCreated, response.PlayerManagement(*player))
+}
+
 // (GET /api/v1/admin/players/{id}/audit).
 func (s *Server) ListPlayerAuditEvents(
 	w http.ResponseWriter,

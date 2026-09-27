@@ -566,17 +566,6 @@ export const WaveControlPanel = ({
           <Status tone={realtime.status === "connected" ? "success" : "warning"}>
             {realtime.status === "connected" ? "Обновляется автоматически" : "Автообновление недоступно"}
           </Status>
-          <Button
-            size="small"
-            variant="secondary"
-            onClick={() => {
-              setStale(false);
-              setCommandError(null);
-              refresh();
-            }}
-          >
-            Обновить матчи
-          </Button>
         </div>
       </div>
 
@@ -585,16 +574,16 @@ export const WaveControlPanel = ({
           Получаем актуальные данные соревнования.
         </Message>
       ) : null}
-      {status === "stale" && !snapshot ? (
+      {(status === "stale" || status === "rejected") && !commandError ? (
         <Message tone="error" title="Данные соревнования недоступны">
-          <button className={styles.linkButton} type="button" onClick={refresh}>Обновить данные</button>
+          <button className={styles.linkButton} type="button" onClick={refresh}>Повторить загрузку</button>
         </Message>
       ) : null}
       {commandError ? (
         <Message tone="error" title={stale ? "Состояние изменилось" : "Действие не выполнено"}>
           {commandError}
           <button className={styles.linkButton} type="button" onClick={() => { setStale(false); setCommandError(null); refresh(); }}>
-            Обновить данные
+            Повторить загрузку
           </button>
         </Message>
       ) : null}

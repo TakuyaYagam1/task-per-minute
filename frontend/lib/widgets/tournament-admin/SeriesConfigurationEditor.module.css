@@ -291,8 +291,7 @@
   font-size: 0.74rem;
 }
 
-.actions,
-.reloadAction {
+.actions {
   display: flex;
   min-width: 0;
   flex-wrap: wrap;
@@ -362,15 +361,13 @@
   }
 
   .reserveActions,
-  .actions,
-  .reloadAction {
+  .actions {
     align-items: stretch;
     flex-direction: column;
   }
 
   .reserveActions button,
-  .actions button,
-  .reloadAction button {
+  .actions button {
     width: 100%;
   }
 }

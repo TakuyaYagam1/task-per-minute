@@ -73,6 +73,8 @@ export const TournamentLivePanel = ({
 }: TournamentLivePanelProps) => {
   const displayStatus = effectiveStatus(status, countdown);
   const commandsEnabled = displayStatus === "live" && (countdown?.commandsEnabled ?? true);
+  const retryAvailable =
+    onRetry !== undefined && (displayStatus === "stale" || displayStatus === "rejected");
   const panelTitle = title ?? (role === "public" ? "Трансляция соревнования" : "Состояние соревнования");
   const panelRole = role === "public" ? "Трансляция" : roleLabels[role];
 
@@ -112,7 +114,7 @@ export const TournamentLivePanel = ({
 
       {children}
 
-      {(actions.length > 0 || onRetry !== undefined) && (
+      {(actions.length > 0 || retryAvailable) && (
         <div className={styles.actions}>
           {actions.map((action) => (
             <button
@@ -125,9 +127,9 @@ export const TournamentLivePanel = ({
               {action.label}
             </button>
           ))}
-          {onRetry !== undefined && (
+          {retryAvailable && (
             <button className={styles.action} onClick={onRetry} type="button">
-              {role === "public" ? "Обновить трансляцию" : "Повторить"}
+              Повторить
             </button>
           )}
         </div>

@@ -1,4 +1,63 @@
 /api/v1/admin/players:
+  post:
+    operationId: createPlayer
+    tags: [player]
+    summary: Create a player without starting a player session
+    security:
+      - AdminSessionAuth: []
+    parameters:
+      - $ref: '../components/parameters.yml#/AdminCSRFToken'
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '../components/schemas.yml#/CreatePlayerRequest'
+    responses:
+      '201':
+        description: Created player with zero leaderboard stats.
+        content:
+          application/json:
+            schema:
+              $ref: '../components/schemas.yml#/PlayerManagementView'
+      '400':
+        description: Validation error, including a malformed body or invalid username.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '401':
+        description: Missing or invalid admin session.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '403':
+        description: CSRF token does not match the admin access session, or the request origin or referer is not allowed.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '409':
+        description: Username is already taken.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '413':
+        description: Request body exceeds the JSON size limit.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '415':
+        description: Request content type must be application/json.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      default:
+        $ref: '../components/responses.yml#/UnexpectedServerProblem'
   get:
     operationId: listPlayers
     tags: [player]

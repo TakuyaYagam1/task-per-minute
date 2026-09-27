@@ -47,6 +47,33 @@ func (u *ManagementUseCase) ListPlayers(ctx context.Context, includeDeleted bool
 	return players, nil
 }
 
+func (u *ManagementUseCase) CreatePlayer(
+	ctx context.Context,
+	username string,
+	actor Actor,
+) (*PlayerRecord, error) {
+	if err := validateUsername(username); err != nil {
+		return nil, err
+	}
+	if err := validateActor(actor); err != nil {
+		return nil, err
+	}
+
+	var created *PlayerRecord
+	if err := u.tx.Do(ctx, func(txCtx context.Context) error {
+		player, err := u.players.CreatePlayer(txCtx, username)
+		if err != nil {
+			return fmt.Errorf("PlayerManagement - CreatePlayer - Repository.CreatePlayer: %w", err)
+		}
+		created = player
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+
+	return created, nil
+}
+
 func (u *ManagementUseCase) ListPlayerAudit(
 	ctx context.Context,
 	id uuid.UUID,
@@ -183,8 +210,8 @@ func (u *ManagementUseCase) invalidateLeaderboard() {
 }
 
 func validatePlayerInput(in PlayerInput) error {
-	if !managementUsernameRE.MatchString(in.Username) {
-		return domain.ErrUsernameInvalid
+	if err := validateUsername(in.Username); err != nil {
+		return err
 	}
 	if in.Wins < 0 || in.Wins > math.MaxInt32 {
 		return domain.ErrValidation
@@ -197,6 +224,13 @@ func validatePlayerInput(in PlayerInput) error {
 	}
 	if in.Wins > 0 && in.AverageSolveTimeMs == 0 {
 		return domain.ErrValidation
+	}
+	return nil
+}
+
+func validateUsername(username string) error {
+	if !managementUsernameRE.MatchString(username) {
+		return domain.ErrUsernameInvalid
 	}
 	return nil
 }

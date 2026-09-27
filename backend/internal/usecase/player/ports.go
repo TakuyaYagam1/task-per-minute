@@ -18,6 +18,7 @@ type LeaderboardInvalidator interface {
 
 type PlayerRepository interface {
 	ListPlayers(ctx context.Context, includeDeleted bool) ([]PlayerRecord, error)
+	CreatePlayer(ctx context.Context, username string) (*PlayerRecord, error)
 	GetPlayer(ctx context.Context, id uuid.UUID) (*PlayerRecord, error)
 	GetPlayerIncludingDeleted(ctx context.Context, id uuid.UUID) (*PlayerRecord, error)
 	UpdateUsername(ctx context.Context, id uuid.UUID, username string) error

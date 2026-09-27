@@ -826,7 +826,7 @@ export const RosterEditor = ({
                 onClick={handleReloadRoster}
                 disabled={savingRoster || lockingRoster || unlockingRoster}
               >
-                Перезагрузить данные
+                Повторить загрузку
               </button>
             </Message>
           )}
@@ -840,7 +840,7 @@ export const RosterEditor = ({
                 onClick={handleReloadRoster}
                 disabled={savingRoster}
               >
-                Перезагрузить данные
+                Повторить загрузку
               </button>
             </Message>
           )}
@@ -915,7 +915,7 @@ export const RosterEditor = ({
                   onClick={handleReloadRoster}
                   disabled={savingRoster || lockingRoster || unlockingRoster}
                 >
-                  Перезагрузить данные
+                  Повторить загрузку
                 </button>
               </Message>
             )}
