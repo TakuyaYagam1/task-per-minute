@@ -33,6 +33,7 @@ WORKDIR /app
 COPY --from=builder --chown=appuser:appgroup /out/server /app/server
 COPY --from=builder --chown=appuser:appgroup /out/migrate /app/migrate
 COPY --from=builder --chown=appuser:appgroup /src/db/migrations /app/migrations
+COPY --from=builder --chown=appuser:appgroup /src/db/seeds /app/seeds
 
 USER appuser
 ENV HTTP_PORT=${BACKEND_PORT}

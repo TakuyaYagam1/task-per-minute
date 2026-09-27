@@ -66,8 +66,6 @@ export const TournamentLivePanel = ({
   role,
   status,
   title = "Состояние турнира",
-  tournamentId,
-  revision,
   countdown,
   actions = [],
   onRetry,
@@ -109,13 +107,6 @@ export const TournamentLivePanel = ({
         </div>
       )}
 
-      {(tournamentId !== undefined || revision !== undefined) && (
-        <p className={styles.statusMessage}>
-          {tournamentId !== undefined ? `Турнир: ${tournamentId}` : ""}
-          {tournamentId !== undefined && revision !== undefined ? " | " : ""}
-          {revision !== undefined ? `Ревизия сервера: ${revision}` : ""}
-        </p>
-      )}
 
       {children}
 

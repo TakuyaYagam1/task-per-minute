@@ -23,7 +23,7 @@ func run() int {
 		command = os.Args[1]
 	}
 	if len(os.Args) > 2 {
-		log.Fatalf("Usage: migrate [up|down|status]")
+		log.Fatalf("Usage: migrate [up|down|status|seed-up|seed-status]")
 	}
 
 	cfg, err := config.LoadMigration()
@@ -45,7 +45,11 @@ func run() int {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	if err := bootstrap.RunMigrationsDSN(ctx, cfg.DB.DSN, l, command); err != nil {
+	runMigrations := bootstrap.RunMigrationsDSN
+	if command == "seed-up" || command == "seed-status" {
+		runMigrations = bootstrap.RunSeedsDSN
+	}
+	if err := runMigrations(ctx, cfg.DB.DSN, l, command); err != nil {
 		l.WithError(err).Error("migration failed")
 		return 1
 	}

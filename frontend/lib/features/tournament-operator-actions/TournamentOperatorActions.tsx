@@ -1,9 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { useParticipantNames } from "../../entities/tournament";
 
 import {
   ApiError,
+  adminApi,
   createOperatorCommandIntent,
   operatorApi,
   type OperatorForfeitGameExpectation,
@@ -15,6 +17,7 @@ import {
   type TournamentActionRequest,
   type WaveControlRequest,
 } from "../../shared/api";
+import { formatCategory, formatGameState, formatResultReason, formatSeriesState } from "../../shared/lib";
 import { Button, Dialog, Message, Panel, Status } from "../../shared/ui";
 
 import styles from "./TournamentOperatorActions.module.css";
@@ -93,7 +96,7 @@ const recoveryReasonLabel = (value: string | null): string => {
     case "platform":
       return "Сбой платформы";
     case "execution_epoch":
-      return "Смена execution epoch";
+      return "Перезапуск игрового сервиса";
     default:
       return "Причина не указана";
   }
@@ -102,24 +105,24 @@ const recoveryReasonLabel = (value: string | null): string => {
 const gameReasonLabel = (value: string | null): string => {
   switch (value) {
     case "no_solve":
-      return "no-solve - нет решения";
+      return "Никто не решил задачу";
     case "task_failure":
-      return "failure - ошибка задания";
+      return "Ошибка задания";
     case "common_platform_failure":
-      return "failure - сбой платформы";
+      return "Сбой платформы";
     case "disconnect":
-      return "failure - разрыв соединения";
+      return "Потеря соединения";
     case "execution_epoch_break":
-      return "failure - смена execution epoch";
+      return "Перезапуск игрового сервиса";
     case null:
       return "Причина еще не зафиксирована";
     default:
-      return value;
+      return formatResultReason(value);
   }
 };
 
 const recoveryKindLabel = (kind: RecoveryControl["kind"]): string =>
-  kind === "replay" ? "Replay игры" : "Резерв исчерпан";
+  kind === "replay" ? "Переиграть" : "Заменить задачу";
 
 const errorText = (error: unknown): string => {
   if (error instanceof ApiError) {
@@ -245,7 +248,7 @@ const actionLabel = (action: OperatorAction): string => {
     case "no-show":
       return "Неявка пары";
     case "operator-forfeit":
-      return "Операторский форфейт";
+      return "Техническое поражение";
   }
 };
 
@@ -290,6 +293,21 @@ export const TournamentOperatorActions = ({
   tournamentId,
 }: TournamentOperatorActionsProps) => {
   const [snapshot, setSnapshot] = useState<OperatorRecoverySnapshot | null>(null);
+  const { participantName, matchName } = useParticipantNames(tournamentId, snapshot?.roster ?? null);
+  const [taskNames, setTaskNames] = useState<ReadonlyMap<string, string>>(new Map());
+  const hasReserveChoices = snapshot?.recovery_controls.some((control) =>
+    (control.reserve_exhausted?.candidates.length ?? 0) > 0) ?? false;
+
+  useEffect(() => {
+    if (!hasReserveChoices) return;
+    const controller = new AbortController();
+    void adminApi.listTasks(controller.signal).then((tasks) => {
+      if (!controller.signal.aborted) setTaskNames(new Map(tasks.map((task) => [task.id, task.title])));
+    }).catch(() => {
+      if (!controller.signal.aborted) setTaskNames(new Map());
+    });
+    return () => controller.abort();
+  }, [hasReserveChoices, tournamentId]);
   const [snapshotLoading, setSnapshotLoading] = useState(true);
   const [snapshotError, setSnapshotError] = useState<string | null>(null);
   const [action, setAction] = useState<OperatorAction>("pause");
@@ -455,7 +473,7 @@ export const TournamentOperatorActions = ({
           setActionMessage({
             tone: "warning",
             title: "Replay недоступен",
-            body: "Серверный снимок больше не разрешает replay для этой попытки.",
+            body: "Переигровка этой попытки больше недоступна. Обновите данные.",
           });
           return;
         }
@@ -658,7 +676,7 @@ export const TournamentOperatorActions = ({
       setActionMessage({
         tone: "success",
         title: "Команда подтверждена",
-        body: `${actionLabel(action)} выполнено. Отображается новый авторитетный снимок.`,
+        body: "Действие выполнено. Данные турнира обновлены.",
       });
       setConfirmed(false);
     } catch (error) {
@@ -696,10 +714,10 @@ export const TournamentOperatorActions = ({
 
   if (snapshotLoading && snapshot === null) {
     return (
-      <Panel title="Управление турниром" description="Получаем авторитетный снимок перед показом команд.">
+      <Panel title="Управление турниром" description="Загружаем состояние турнира.">
         <div className={styles.loadingState} role="status" aria-live="polite">
-          <Status tone="loading">Загружаем снимок оператора</Status>
-          <p className={styles.errorText}>Команды появятся после проверки ревизии сервера.</p>
+          <Status tone="loading">Загружаем данные</Status>
+          <p className={styles.errorText}>Доступные действия появятся после загрузки.</p>
         </div>
       </Panel>
     );
@@ -707,11 +725,11 @@ export const TournamentOperatorActions = ({
 
   if (snapshot === null) {
     return (
-      <Panel title="Управление турниром" description="Команды доступны только после авторитетной синхронизации.">
-        <Message tone="error" title="Снимок недоступен">
+      <Panel title="Управление турниром" description="Для управления нужны актуальные данные турнира.">
+        <Message tone="error" title="Не удалось загрузить турнир">
           <p className={styles.errorText}>{snapshotError ?? "Не удалось получить состояние турнира."}</p>
           <Button size="small" variant="secondary" onClick={() => void loadSnapshot()}>
-            Повторить синхронизацию
+            Загрузить еще раз
           </Button>
         </Message>
       </Panel>
@@ -719,38 +737,30 @@ export const TournamentOperatorActions = ({
   }
 
   const actionHint = action === "operator-forfeit"
-    ? "Операторский форфейт фиксирует нарушение правила и официальный результат. Это не действие участника."
+    ? "Засчитайте игроку техническое поражение за нарушение. Укажите правило и подтверждающие записи."
     : action === "no-show"
-      ? "Неявка появляется после дедлайна открытого окна для каждой связанной пары, если готовы не оба участника."
-      : "Команда использует текущую ревизию снимка и применяется только при допустимом состоянии турнира.";
+      ? "Неявку можно зафиксировать, когда время подтверждения готовности истекло и хотя бы один игрок не готов."
+      : "Выберите действие и укажите причину. Она сохранится в истории турнира.";
 
   return (
     <Panel
       title="Управление турниром"
-      description="Команды отправляются на сервер с ревизией авторитетного снимка."
+      description="Приостановите турнир, продолжите его или разберите спорную ситуацию."
       className={styles.panel}
     >
       <div className={styles.header}>
         <p className={styles.intro}>
-          После каждой успешной команды состояние перечитывается с сервера. Данные ниже не являются локальным прогнозом.
+          {snapshot.tournament.name}
         </p>
         <Status tone={snapshotLoading ? "loading" : "live"}>
-          {snapshotLoading ? "Обновляем" : "Снимок подтвержден"}
+          {snapshotLoading ? "Обновляем" : "Данные обновлены"}
         </Status>
       </div>
 
-      <dl className={styles.snapshot} aria-label="Авторитетный снимок оператора">
+      <dl className={styles.snapshot} aria-label="Состояние турнира">
         <div className={styles.snapshotItem}>
           <dt className={styles.snapshotLabel}>Состояние</dt>
           <dd className={styles.snapshotValue}>{stateLabel(snapshot.tournament.state)}</dd>
-        </div>
-        <div className={styles.snapshotItem}>
-          <dt className={styles.snapshotLabel}>Ревизия проекции</dt>
-          <dd className={styles.snapshotValue}>{snapshot.next_cursor.projection_revision}</dd>
-        </div>
-        <div className={styles.snapshotItem}>
-          <dt className={styles.snapshotLabel}>Ревизия authority</dt>
-          <dd className={styles.snapshotValue}>{snapshot.next_cursor.authority_revision}</dd>
         </div>
       </dl>
 
@@ -769,7 +779,7 @@ export const TournamentOperatorActions = ({
         <div className={styles.formGrid}>
           <div className={`${styles.field} ${styles.fieldWide}`}>
             <label className={styles.label} htmlFor="operator-action">
-              Команда оператора
+              Действие
             </label>
             <select
               className={styles.select}
@@ -794,7 +804,7 @@ export const TournamentOperatorActions = ({
           {action === "no-show" && (
             <div className={`${styles.field} ${styles.fieldWide}`}>
               <label className={styles.label} htmlFor="operator-no-show-wave">
-                Открытое окно неявки
+                Матч с неявкой
               </label>
               <select
                 className={styles.select}
@@ -805,7 +815,7 @@ export const TournamentOperatorActions = ({
               >
                 {noShowCandidates.map((candidate) => (
                   <option key={noShowCandidateKey(candidate)} value={noShowCandidateKey(candidate)}>
-                    Волна {candidate.wave.id} - серия {candidate.series.id}
+                    {matchName(candidate.series)} - волна {snapshot.waves.findIndex((wave) => wave.id === candidate.wave.id) + 1}
                   </option>
                 ))}
               </select>
@@ -819,7 +829,7 @@ export const TournamentOperatorActions = ({
             <>
               <div className={styles.field}>
                 <label className={styles.label} htmlFor="operator-forfeit-series">
-                  Активная серия
+                  Матч
                 </label>
                 <select
                   className={styles.select}
@@ -830,14 +840,14 @@ export const TournamentOperatorActions = ({
                 >
                   {forfeitSeries.map((series) => (
                     <option key={series.id} value={series.id}>
-                      Серия {series.id} ({series.state})
+                      {matchName(series)} ({formatSeriesState(series.state)})
                     </option>
                   ))}
                 </select>
               </div>
               <div className={styles.field}>
                 <label className={styles.label} htmlFor="operator-forfeit-participant">
-                  Участник, которому засчитать форфейт
+                  Кому засчитать поражение
                 </label>
                 <select
                   className={styles.select}
@@ -849,15 +859,15 @@ export const TournamentOperatorActions = ({
                   {[selectedForfeitSeries?.first_participant_id, selectedForfeitSeries?.second_participant_id]
                     .filter((value): value is string => value !== undefined)
                     .map((participantId) => (
-                      <option key={participantId} value={participantId}>{participantId}</option>
+                      <option key={participantId} value={participantId}>{participantName(participantId)}</option>
                     ))}
                 </select>
                 <p className={styles.hint}>
-                  Текущая попытка: {selectedForfeitAttempt?.id ?? "не найдена"} ({selectedForfeitAttempt?.state ?? "нет"}).
+                  {selectedForfeitAttempt ? `Попытка ${selectedForfeitAttempt.attempt_no}: ${formatGameState(selectedForfeitAttempt.state)}.` : "Активная попытка не найдена."}
                 </p>
               </div>
               <div className={styles.field}>
-                <label className={styles.label} htmlFor="operator-rule-id">rule_id</label>
+                <label className={styles.label} htmlFor="operator-rule-id">Нарушенное правило</label>
                 <input
                   className={styles.input}
                   id="operator-rule-id"
@@ -870,7 +880,7 @@ export const TournamentOperatorActions = ({
               </div>
               <div className={styles.field}>
                 <label className={styles.label} htmlFor="operator-evidence-ids">
-                  Evidence IDs
+                  ID подтверждающих записей из журнала
                 </label>
                 <textarea
                   className={styles.textarea}
@@ -906,8 +916,8 @@ export const TournamentOperatorActions = ({
           {action === "no-show"
             ? "Это запись неявки пары, а не сдача участника."
             : action === "operator-forfeit"
-              ? "Это операторский форфейт по правилу турнира, а не surrender участника."
-              : "Проверьте состояние, ревизию и причину перед подтверждением."}
+              ? "Игроку будет засчитано техническое поражение. Проверьте выбранного игрока и причину."
+              : "Проверьте выбранное действие и причину перед подтверждением."}
         </p>
 
         <label className={styles.checkRow} htmlFor="operator-action-confirmed">
@@ -933,12 +943,14 @@ export const TournamentOperatorActions = ({
             Выполнить: {actionLabel(action)}
           </Button>
           <p className={styles.submitHint}>
-            {selectedActionAvailable ? "Сервер проверит ревизию повторно." : "Команда недоступна в текущем состоянии."}
+            {selectedActionAvailable ? "Действие сохранится в истории турнира." : "Действие сейчас недоступно."}
           </p>
         </div>
       </form>
 
       <TournamentResultCorrection
+        participantName={participantName}
+        matchName={matchName}
         snapshot={snapshot}
         snapshotLoading={snapshotLoading}
         onAccepted={loadSnapshot}
@@ -951,12 +963,12 @@ export const TournamentOperatorActions = ({
               Восстановление игр
             </h3>
             <p className={styles.hint}>
-              Путь восстановления и доказательства выбирает серверный снимок. Обычная жеребьевка не создает replay.
+              Переиграйте матч после сбоя или выберите резервную задачу. Здесь показаны доступные для текущей ситуации действия.
             </p>
           </div>
           {recoveryControls.length > 0 && (
             <Status tone={snapshotLoading ? "loading" : "warning"}>
-              {snapshotLoading ? "Обновляем" : `Пути: ${recoveryControls.length}`}
+              {snapshotLoading ? "Обновляем" : `Доступно действий: ${recoveryControls.length}`}
             </Status>
           )}
         </div>
@@ -964,7 +976,7 @@ export const TournamentOperatorActions = ({
         {recoveryControls.length === 0 ? (
           <Message tone="info" title="Восстановление не требуется">
             <p className={styles.errorText}>
-              Сервер не сообщил ни одного no-solve или failure, доступного для восстановления.
+              Сейчас нет игр, которым нужна переигровка или замена задачи.
             </p>
           </Message>
         ) : (
@@ -976,7 +988,7 @@ export const TournamentOperatorActions = ({
             }}
           >
             <fieldset className={styles.recoveryChoices}>
-              <legend className={styles.label}>Серверные пути восстановления</legend>
+              <legend className={styles.label}>Доступные действия</legend>
               <div className={styles.recoveryChoiceList}>
                 {recoveryControls.map((control) => {
                   const controlKey = recoveryControlKey(control);
@@ -994,7 +1006,11 @@ export const TournamentOperatorActions = ({
                       <span>
                         <strong>{recoveryKindLabel(control.kind)}</strong>
                         <span className={styles.recoveryChoiceMeta}>
-                          {control.category} - {control.series_id} - {control.slot_id}
+                          {formatCategory(control.category)} - {(() => {
+                            const series = snapshot.series.find((item) => item.id === control.series_id);
+                            const slot = series?.slots.find((item) => item.id === control.slot_id);
+                            return series ? `${matchName(series)}${slot ? `, игра ${slot.position}` : ""}` : "Матч недоступен";
+                          })()}
                         </span>
                       </span>
                     </label>
@@ -1008,21 +1024,17 @@ export const TournamentOperatorActions = ({
                 <dl className={styles.recoveryMeta} aria-label="Доказательства восстановления">
                   <div className={styles.recoveryMetaItem}>
                     <dt className={styles.snapshotLabel}>Причина остановки</dt>
-                    <dd className={styles.snapshotValue}>{selectedRecoveryControl.reason}</dd>
+                    <dd className={styles.snapshotValue}>{gameReasonLabel(selectedRecoveryControl.reason)}</dd>
                   </div>
                   {selectedRecoveryControl.pause_reason !== null && (
                     <div className={styles.recoveryMetaItem}>
-                      <dt className={styles.snapshotLabel}>Тип pause</dt>
+                      <dt className={styles.snapshotLabel}>Причина паузы</dt>
                       <dd className={styles.snapshotValue}>{recoveryReasonLabel(selectedRecoveryControl.pause_reason)}</dd>
                     </div>
                   )}
                   <div className={styles.recoveryMetaItem}>
                     <dt className={styles.snapshotLabel}>Категория</dt>
-                    <dd className={styles.snapshotValue}>{selectedRecoveryControl.category}</dd>
-                  </div>
-                  <div className={styles.recoveryMetaItem}>
-                    <dt className={styles.snapshotLabel}>Ревизия authority</dt>
-                    <dd className={styles.snapshotValue}>{selectedRecoveryControl.expected_authority_revision}</dd>
+                    <dd className={styles.snapshotValue}>{formatCategory(selectedRecoveryControl.category)}</dd>
                   </div>
                 </dl>
 
@@ -1033,17 +1045,16 @@ export const TournamentOperatorActions = ({
                       <li className={styles.attemptItem} key={attempt.id}>
                         <span className={styles.attemptNumber}>Попытка {attempt.attempt_no}</span>
                         <span>{gameReasonLabel(attempt.result_reason)}</span>
-                        <span className={styles.attemptState}>{attempt.state}</span>
-                        <code>{attempt.id}</code>
+                        <span className={styles.attemptState}>{formatGameState(attempt.state)}</span>
                       </li>
                     ))}
                   </ol>
                 </div>
 
                 {selectedRecoveryControl.kind === "replay" && selectedRecoveryControl.replay?.available !== true && (
-                  <Message tone="warning" title="Replay недоступен">
+                  <Message tone="warning" title="Переигровка недоступна">
                     <p className={styles.errorText}>
-                      Серверная closure revision больше не разрешает повтор этой игры. Открытая команда не предлагается.
+                      Состояние игры изменилось. Обновите данные, чтобы увидеть доступные действия.
                     </p>
                   </Message>
                 )}
@@ -1058,7 +1069,7 @@ export const TournamentOperatorActions = ({
                   ) : (
                     <div className={styles.field}>
                       <label className={styles.label} htmlFor="operator-recovery-candidate">
-                        Кандидат из серверного резерва
+                        Задача для замены
                       </label>
                       <select
                         className={styles.select}
@@ -1067,14 +1078,14 @@ export const TournamentOperatorActions = ({
                         onChange={(event) => setSelectedReserveCandidateKey(event.target.value)}
                         disabled={submitting}
                       >
-                        {reserveCandidates.map((candidate) => (
+                        {reserveCandidates.map((candidate, index) => (
                           <option key={recoveryCandidateKey(candidate)} value={recoveryCandidateKey(candidate)}>
-                            Задача {candidate.task_id}, версия {candidate.version}
+                            {taskNames.get(candidate.task_id) ?? `Резервная задача ${index + 1}`} (версия {candidate.version})
                           </option>
                         ))}
                       </select>
                       <p className={styles.hint}>
-                        Отправляется только выбранный сервером task/version. Новый snapshot ID создается для команды. Категория остается {selectedRecoveryControl.category}.
+                        Можно выбрать только доступную резервную задачу. Категория: {formatCategory(selectedRecoveryControl.category)}.
                       </p>
                     </div>
                   )
@@ -1105,7 +1116,7 @@ export const TournamentOperatorActions = ({
                     onChange={(event) => setRecoveryConfirmed(event.target.checked)}
                     disabled={submitting}
                   />
-                  <span>Подтверждаю путь восстановления и доказательства из текущего серверного снимка.</span>
+                  <span>Я проверил причину остановки и подтверждаю выбранное действие.</span>
                 </label>
 
                 <div className={styles.submitRow}>
@@ -1120,8 +1131,8 @@ export const TournamentOperatorActions = ({
                   </Button>
                   <p className={styles.submitHint}>
                     {recoveryActionAvailable
-                      ? "После ответа серверный снимок будет загружен заново."
-                      : "Команда недоступна по текущему серверному снимку."}
+                      ? "Результат появится после выполнения действия."
+                      : "Действие сейчас недоступно. Обновите данные."}
                   </p>
                 </div>
               </div>
@@ -1133,7 +1144,7 @@ export const TournamentOperatorActions = ({
       <Dialog
         open={cancelDialogOpen}
         title="Подтвердить отмену турнира"
-        description="Отмена завершит турнир для всех экранов. Сервер повторно проверит текущую ревизию."
+        description="Отмена завершит турнир для всех игроков. Продолжить отмененный турнир нельзя."
         closeLabel="Закрыть подтверждение отмены"
         onOpenChange={setCancelDialogOpen}
         footer={

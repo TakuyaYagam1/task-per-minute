@@ -22,4 +22,5 @@ export type {
 export { Tabs } from "./Tabs";
 export type { TabItem, TabsOrientation, TabsProps, TabsValue } from "./Tabs";
 export { ThemeToggle } from "./ThemeToggle";
+export { TechnicalDetails } from "./TechnicalDetails";
 export { ViewportPortal } from "./ViewportPortal";

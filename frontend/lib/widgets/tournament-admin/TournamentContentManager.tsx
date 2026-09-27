@@ -23,6 +23,7 @@ import {
   Message,
   Panel,
   Status,
+  TechnicalDetails,
   ViewportPortal,
 } from "../../shared/ui";
 
@@ -253,7 +254,6 @@ const apiErrorMessage = (error: unknown, fallback: string): string => {
   return error.problem?.detail || error.message || fallback;
 };
 
-const formatRevisionID = (value: string): string => value;
 
 export const TournamentContentManager = ({
   content,
@@ -758,28 +758,28 @@ export const TournamentContentManager = ({
       )}
 
       <Panel
-        title="Каталог контента"
-        description="Управляйте задачами и исходниками. Публикация и состав пулов обновляются отдельно."
+        title="Задачи"
+        description="Создавайте задачи, редактируйте условия и добавляйте файлы."
         className={styles.catalogPanel}
       >
         <div className={styles.contentSummary}>
           <div className={styles.summaryHeading}>
             <div>
               <h2 id="tournament-content-title" className={styles.sectionTitle}>
-                Текущая публикация
+                Задачи для турниров
               </h2>
               <p className={styles.summaryDescription}>
-                Идентификаторы получены с сервера и доступны только для чтения.
+                Опубликованный набор используется при создании турнира.
               </p>
             </div>
             {contentState === "ready" && content ? (
-              <Status tone="info">Ревизия {content.content_revision}</Status>
+              <Status tone="success">Опубликовано</Status>
             ) : null}
           </div>
 
           {contentState === "loading" && (
             <Message tone="loading" title="Загружаем публикацию">
-              Проверяем актуальную ревизию контента.
+              Получаем опубликованный набор задач.
             </Message>
           )}
           {contentState === "error" && (
@@ -787,42 +787,38 @@ export const TournamentContentManager = ({
               tone={contentEmpty ? "empty" : "error"}
               title={contentEmpty ? "Публикации пока нет" : "Контент недоступен"}
             >
-              {contentError || "Не удалось получить доступную ревизию контента"}
+              {contentError || "Не удалось загрузить опубликованные задачи"}
               <Button
                 variant="secondary"
                 size="small"
                 className={styles.inlineButton}
                 onClick={onReloadContent}
               >
-                Обновить публикацию
+                Повторить загрузку
               </Button>
             </Message>
           )}
           {contentState === "ready" && content && (
-            <dl className={styles.revisionGrid} aria-label="Текущая ревизия контента">
-              <div>
-                <dt>Ревизия контента</dt>
-                <dd>{content.content_revision}</dd>
-              </div>
-              <div>
-                <dt>Публикация</dt>
-                <dd>
-                  <code>{formatRevisionID(content.publication_id)}</code>
-                </dd>
-              </div>
-              <div>
-                <dt>Нормальный пул</dt>
-                <dd>
-                  <code>{formatRevisionID(content.normal_pool_revision_id)}</code>
-                </dd>
-              </div>
-              <div>
-                <dt>Золотой пул</dt>
-                <dd>
-                  <code>{formatRevisionID(content.golden_pool_revision_id)}</code>
-                </dd>
-              </div>
-            </dl>
+            <TechnicalDetails>
+              <dl className={styles.revisionGrid} aria-label="Данные публикации">
+                <div>
+                  <dt>Версия набора</dt>
+                  <dd>{content.content_revision}</dd>
+                </div>
+                <div>
+                  <dt>Публикация</dt>
+                  <dd><code>{content.publication_id}</code></dd>
+                </div>
+                <div>
+                  <dt>Набор обычных задач</dt>
+                  <dd><code>{content.normal_pool_revision_id}</code></dd>
+                </div>
+                <div>
+                  <dt>Набор золотых задач</dt>
+                  <dd><code>{content.golden_pool_revision_id}</code></dd>
+                </div>
+              </dl>
+            </TechnicalDetails>
           )}
         </div>
 
@@ -830,7 +826,7 @@ export const TournamentContentManager = ({
           <Panel
             as="article"
             title={editingTaskId ? "Редактировать задачу" : "Создать задачу"}
-            description="Изменения сразу сохраняются через административный API."
+            description="Заполните условия задачи и нажмите кнопку сохранения."
             className={styles.formPanel}
           >
             <form ref={formRef} onSubmit={(event) => void handleSubmit(event)} className={styles.form} noValidate>

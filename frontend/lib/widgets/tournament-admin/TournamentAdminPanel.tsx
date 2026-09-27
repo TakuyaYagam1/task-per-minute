@@ -367,7 +367,6 @@ export const TournamentAdminPanel = ({
     };
   }, [loadContent, loadTournaments]);
 
-  const publicIdPreview = useMemo(() => publicIdSlugFromName(name), [name]);
 
   const handleTournamentUpdated = useCallback((updatedTournament: Tournament): void => {
     setTournaments((current) =>
@@ -473,7 +472,6 @@ export const TournamentAdminPanel = ({
         cell: (tournament) => (
           <div className={styles.tournamentNameCell}>
             <strong>{tournament.name}</strong>
-            <span className={styles.publicId}>{tournament.public_id}</span>
           </div>
         ),
       },
@@ -570,12 +568,12 @@ export const TournamentAdminPanel = ({
           <div className={styles.revisionHeading}>
             <span>Текущая публикация</span>
             {contentState === "ready" && content ? (
-              <Status tone="info">Ревизия {content.content_revision}</Status>
+              <Status tone="success">Задачи опубликованы</Status>
             ) : null}
           </div>
           {contentState === "loading" ? (
             <Message tone="loading" title="Проверяем публикацию">
-              Получаем доступную ревизию контента.
+              Получаем опубликованные задачи.
             </Message>
           ) : null}
           {contentState === "error" ? (
@@ -599,9 +597,6 @@ export const TournamentAdminPanel = ({
             </p>
           ) : null}
         </div>
-        <p className={styles.publicIdHint}>
-          Публичный идентификатор будет создан автоматически: <code>{publicIdPreview}</code>
-        </p>
         {formError ? (
           <Message id="tournament-form-error" tone="error" title="Не удалось создать турнир">
             {formError}
@@ -680,7 +675,6 @@ export const TournamentAdminPanel = ({
             </button>
             <p className={styles.breadcrumb}>Турниры / рабочая область</p>
             <h2 id="tournament-detail-title">Турнир недоступен</h2>
-            <p className={styles.detailMeta}>Идентификатор: {selectedTournamentId}</p>
           </div>
           {tournamentsState === "loading" ? (
             <Message tone="loading" title="Загружаем турнир">
@@ -709,7 +703,7 @@ export const TournamentAdminPanel = ({
           <p className={styles.breadcrumb}>Турниры / рабочая область</p>
           <h2 id="tournament-detail-title">{selectedTournament.name}</h2>
           <p className={styles.detailMeta}>
-            {selectedTournament.public_id} - {formatTournamentState(selectedTournament.state)}
+            {formatTournamentState(selectedTournament.state)}
           </p>
         </div>
         <nav className={styles.viewNav} aria-label="Разделы турнира">

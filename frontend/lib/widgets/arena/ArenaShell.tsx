@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 import type { ReactNode } from "react";
 
@@ -16,6 +17,7 @@ export type { ArenaAccessMessage, ArenaAccessStatus, ArenaRole, ArenaRoleSummary
 type ArenaShellProps = Readonly<{
   role?: ArenaRole;
   tournamentId?: string;
+  tournamentName?: string;
   tournamentStateLabel?: string;
   accessStatus: ArenaAccessStatus;
   accessMessage?: ArenaAccessMessage;
@@ -76,6 +78,7 @@ export const ArenaShell = ({
   role,
   summary,
   tournamentId,
+  tournamentName,
   tournamentStateLabel,
 }: ArenaShellProps) => {
   const hasTournamentContext = Boolean(tournamentId);
@@ -86,13 +89,18 @@ export const ArenaShell = ({
         <header>
           <div className={styles.topbar}>
             <div className={styles.brandBlock}>
-              <Link href="/arena" className={styles.brand}>
-                <span className={styles.brandMark} aria-hidden="true">TPM</span>
+              <Link href="/" className={styles.brand} title="На главную">
+                <Image
+                  src="/task.png"
+                  alt=""
+                  width={64}
+                  height={40}
+                  className={styles.brandLogo}
+                />
                 <span>Arena</span>
               </Link>
             </div>
             <nav className={styles.utilityNav} aria-label="Основная навигация">
-              <Link href="/" className={styles.utilityLink}>Главная</Link>
               <Link href="/leaderboard" className={styles.utilityLink}>Общий рейтинг</Link>
             </nav>
           </div>
@@ -101,13 +109,7 @@ export const ArenaShell = ({
             <>
               <section className={styles.context} aria-label="Контекст турнира">
                 <div className={styles.contextDetails}>
-                  <code
-                    className={styles.contextId}
-                    data-testid="arena-tournament-id"
-                    aria-label="Идентификатор турнира"
-                  >
-                    {tournamentId}
-                  </code>
+                  <strong>{tournamentName || "Турнир"}</strong>
                 </div>
                 <div className={styles.contextAside}>
                   {role && <span className={styles.roleName}>{ROLE_LABELS[role]}</span>}

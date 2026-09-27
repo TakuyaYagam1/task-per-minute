@@ -192,18 +192,6 @@ export const ParticipantGoldenPanel = ({
 
       <dl className={styles.facts} aria-label="Состояние Golden группы">
         <div>
-          <dt>Группа</dt>
-          <dd>{snapshot.group_id.slice(0, 8)}</dd>
-        </div>
-        <div>
-          <dt>Попытка</dt>
-          <dd>{snapshot.attempt_id.slice(0, 8)}</dd>
-        </div>
-        <div>
-          <dt>Ревизия runtime</dt>
-          <dd>{snapshot.runtime_revision}</dd>
-        </div>
-        <div>
           <dt>Таймер</dt>
           <dd data-testid="participant-golden-timer">
             {timerLabel(snapshot.deadline, now, paused)}
@@ -355,14 +343,13 @@ export const ParticipantGoldenPanel = ({
       )}
 
       <div className={styles.footer}>
-        <span>Ревизия группы: {snapshot.group_revision_id.slice(0, 8)}</span>
         <Button
           disabled={golden.actionStatus === "pending"}
           onClick={golden.refresh}
           type="button"
           variant="ghost"
         >
-          Обновить Golden
+          Обновить данные
         </Button>
       </div>
     </section>

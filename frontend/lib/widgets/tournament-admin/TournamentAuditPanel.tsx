@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useParticipantNames } from "../../entities/tournament";
 
 import {
   ApiError,
@@ -11,10 +12,12 @@ import {
   type AuditEvent,
   type AuditPage,
   type IncidentBundle,
+  type OperatorRecoverySnapshot,
   type Tournament,
   type TournamentAuditQuery,
 } from "../../shared/api";
-import { Button, Message, Panel, Status } from "../../shared/ui";
+import { formatGameState, formatResultReason, formatTournamentState, RESULT_REASON_LABELS } from "../../shared/lib";
+import { Button, Message, Panel, Status, TechnicalDetails } from "../../shared/ui";
 
 import styles from "./TournamentAuditPanel.module.css";
 
@@ -92,10 +95,10 @@ const toServerTime = (value: string): string | undefined => {
 
 const validateFilters = (filters: AuditFilters): string | null => {
   if (filters.entityId && !UUID_PATTERN.test(filters.entityId.trim())) {
-    return "Entity ID должен быть UUID.";
+    return "Проверьте ID записи в технических фильтрах. Нужен полный UUID из журнала.";
   }
   if (filters.actorId && !UUID_PATTERN.test(filters.actorId.trim())) {
-    return "Actor ID должен быть UUID.";
+    return "Проверьте ID администратора в технических фильтрах. Нужен полный UUID из журнала.";
   }
   const occurredFrom = toServerTime(filters.occurredFrom);
   const occurredTo = toServerTime(filters.occurredTo);
@@ -127,33 +130,34 @@ const queryFromFilters = (filters: AuditFilters): AppliedAuditQuery => ({
     : {}),
 });
 
-const eventTypeLabel = (eventType: string): string => {
-  const known: Readonly<Record<string, string>> = {
-    result_recorded: "Результат записан",
-    result_corrected: "Результат исправлен",
-    replay_requested: "Запрошен replay",
-    correction_committed: "Коррекция подтверждена",
-  };
-  return known[eventType] ?? eventType.replaceAll("_", " ").replaceAll(".", " ");
+const EVENT_LABELS: Readonly<Record<string, string>> = {
+  result_recorded: "Результат записан",
+  result_corrected: "Результат исправлен",
+  result_superseded: "Результат заменен",
+  "tournament.result.settled": "Результат подтвержден",
+  replay_requested: "Запрошена переигровка",
+  correction_committed: "Исправление подтверждено",
 };
 
+const eventTypeLabel = (eventType: string): string =>
+  EVENT_LABELS[eventType] ?? "Другое событие";
+
 const actorLabel = (event: AuditEvent): string => {
-  const actor = event.actor_kind === "operator" ? "Оператор" : "Сервер";
-  return event.actor_id ? `${actor}: ${event.actor_id}` : actor;
+  return event.actor_kind === "operator" ? "Администратор" : "Система";
 };
 
 const payloadLabel = (key: string): string => {
   const labels: Readonly<Record<string, string>> = {
-    attempt_id: "Attempt",
-    entity_id: "Entity",
-    entity_kind: "Тип entity",
-    previous_revision_id: "Предыдущая revision",
-    projection_revision_id: "Projection revision",
+    attempt_id: "ID попытки",
+    entity_id: "ID записи",
+    entity_kind: "Тип записи",
+    previous_revision_id: "Предыдущая версия",
+    projection_revision_id: "Версия данных",
     reason: "Обоснование",
     result_reason: "Причина результата",
-    revision_number: "Номер revision",
-    series_id: "Series",
-    source_projection_revision_id: "Исходная projection",
+    revision_number: "Номер версии",
+    series_id: "ID матча",
+    source_projection_revision_id: "Исходная версия данных",
     state: "Состояние",
     tournament_id: "Турнир",
     winner_id: "Победитель",
@@ -161,12 +165,13 @@ const payloadLabel = (key: string): string => {
   return labels[key] ?? key;
 };
 
-const downloadBundle = (bundle: IncidentBundle): void => {
+const downloadBundle = (bundle: IncidentBundle, tournamentName: string): void => {
   const payload = JSON.stringify(bundle, null, 2);
   const url = URL.createObjectURL(new Blob([payload], { type: "application/json" }));
   const link = document.createElement("a");
   link.href = url;
-  link.download = `incident-${bundle.tournament_id}-r${bundle.projection_revision}.json`;
+  const filename = tournamentName.replace(/[^\p{L}\p{N}._ -]/gu, "").trim().slice(0, 80) || "Турнир";
+  link.download = `Отчет - ${filename} - ${bundle.generated_at.slice(0, 10)}.json`;
   document.body.append(link);
   link.click();
   link.remove();
@@ -190,6 +195,30 @@ export const TournamentAuditPanel = ({
   const [bundleState, setBundleState] = useState<LoadState>("idle");
   const [bundleError, setBundleError] = useState<string | null>(null);
   const [bundle, setBundle] = useState<BundleReceipt | null>(null);
+  const [snapshot, setSnapshot] = useState<OperatorRecoverySnapshot | null>(null);
+  const currentSnapshot = snapshot?.tournament.id === selectedTournamentId ? snapshot : null;
+  const { matchName } = useParticipantNames(selectedTournamentId, currentSnapshot?.roster ?? null);
+
+  useEffect(() => {
+    if (!selectedTournamentId) return;
+    const controller = new AbortController();
+    void operatorApi.getSnapshot(selectedTournamentId, undefined, controller.signal).then((next) => {
+      if (!controller.signal.aborted) setSnapshot(next);
+    }).catch(() => {
+      if (!controller.signal.aborted) setSnapshot(null);
+    });
+    return () => controller.abort();
+  }, [selectedTournamentId]);
+
+  const eventSubject = (event: AuditEvent): string => {
+    const series = currentSnapshot?.series.find((item) =>
+      (event.entity_kind === "series" && item.id === event.entity_id) ||
+      item.id === event.redacted_payload.series_id ||
+      item.slots.some((slot) => slot.attempts.some((attempt) => attempt.id === event.entity_id)),
+    );
+    if (!series) return event.entity_kind === "series" ? "Матч" : "Попытка решения";
+    return matchName(series);
+  };
   const auditControllerRef = useRef<AbortController | null>(null);
   const bundleControllerRef = useRef<AbortController | null>(null);
 
@@ -227,7 +256,7 @@ export const TournamentAuditPanel = ({
         onSessionExpired?.();
       }
       setLoadState("error");
-      setLoadError(problemMessage(error, "Не удалось загрузить аудит турнира."));
+      setLoadError(problemMessage(error, "Не удалось загрузить историю турнира."));
       return null;
     } finally {
       if (auditControllerRef.current === controller) {
@@ -336,7 +365,7 @@ export const TournamentAuditPanel = ({
       if (controller.signal.aborted) {
         return;
       }
-      downloadBundle(nextBundle);
+      downloadBundle(nextBundle, selectedTournament?.name ?? "Турнир");
       setBundle({
         generated_at: nextBundle.generated_at,
         projection_revision: nextBundle.projection_revision,
@@ -352,7 +381,7 @@ export const TournamentAuditPanel = ({
         onSessionExpired?.();
       }
       setBundleState("error");
-      setBundleError(problemMessage(error, "Не удалось скачать incident bundle."));
+      setBundleError(problemMessage(error, "Не удалось скачать отчет. Попробуйте еще раз."));
     } finally {
       if (bundleControllerRef.current === controller) {
         bundleControllerRef.current = null;
@@ -362,14 +391,14 @@ export const TournamentAuditPanel = ({
 
   return (
     <Panel
-      title="Аудит и incident bundle"
-      description="Ищите только redacted события сервера и сохраняйте подписанный снимок инцидента."
+      title="История турнира"
+      description="Просматривайте результаты и действия администраторов. Отчет поможет разобрать ошибку или спорный результат."
       className={styles.panel}
     >
       <div className={styles.toolbar}>
         {showTournamentChooser ? (
           <div className={styles.fieldWide}>
-            <label htmlFor="audit-tournament">Турнир для аудита</label>
+            <label htmlFor="audit-tournament">Турнир</label>
             <select
               id="audit-tournament"
               value={selectedTournamentId}
@@ -378,7 +407,7 @@ export const TournamentAuditPanel = ({
               <option value="">Выберите турнир</option>
               {tournaments.map((tournament) => (
                 <option key={tournament.id} value={tournament.id}>
-                  {tournament.name} - {tournament.state}
+                  {tournament.name} - {formatTournamentState(tournament.state)}
                 </option>
               ))}
             </select>
@@ -390,17 +419,17 @@ export const TournamentAuditPanel = ({
             variant="secondary"
             disabled={!selectedTournamentId}
             loading={bundleState === "loading"}
-            loadingLabel="Готовим bundle"
+            loadingLabel="Готовим отчет"
             onClick={() => void exportIncident()}
           >
-            Скачать incident bundle
+            Скачать отчет
           </Button>
-          <span>JSON envelope сохраняется целиком, содержимое не открывается в браузере.</span>
+          <span>Сохранить историю и результаты турнира в файл.</span>
         </div>
       </div>
 
       {bundleError ? (
-        <Message tone="error" title="Incident bundle недоступен">
+        <Message tone="error" title="Не удалось скачать отчет">
           {bundleError}
         </Message>
       ) : null}
@@ -408,19 +437,19 @@ export const TournamentAuditPanel = ({
         <div className={styles.bundleReceipt} aria-live="polite">
           <div>
             <span>Турнир</span>
-            <code>{bundle.tournament_id}</code>
+            <strong>{selectedTournament?.name ?? "Выбранный турнир"}</strong>
           </div>
           <div>
-            <span>Projection revision</span>
-            <strong>{bundle.projection_revision}</strong>
-          </div>
-          <div>
-            <span>Сформирован сервером</span>
+            <span>Отчет готов</span>
             <strong>{formatDateTime(bundle.generated_at)} UTC</strong>
           </div>
           <div className={styles.bundleHash}>
-            <span>SHA-256</span>
-            <code>{bundle.sha256}</code>
+            <TechnicalDetails>
+              <p>ID турнира: <code>{bundle.tournament_id}</code></p>
+              <p>Версия данных: {bundle.projection_revision}</p>
+              <span>SHA-256</span>
+              <code>{bundle.sha256}</code>
+            </TechnicalDetails>
           </div>
         </div>
       ) : null}
@@ -434,7 +463,7 @@ export const TournamentAuditPanel = ({
         noValidate
       >
         <div className={styles.field}>
-          <label htmlFor="audit-entity-kind">Тип entity</label>
+          <label htmlFor="audit-entity-kind">Что изменилось</label>
           <select
             id="audit-entity-kind"
             value={filters.entityKind}
@@ -444,32 +473,28 @@ export const TournamentAuditPanel = ({
             }))}
           >
             <option value="">Все</option>
-            <option value="series">Series</option>
-            <option value="game_attempt">Game attempt</option>
+            <option value="series">Матч</option>
+            <option value="game_attempt">Попытка решения</option>
           </select>
         </div>
         <div className={styles.field}>
-          <label htmlFor="audit-entity-id">Entity ID</label>
-          <input
-            id="audit-entity-id"
-            value={filters.entityId}
-            onChange={(event) => setFilters((current) => ({ ...current, entityId: event.target.value }))}
-            placeholder="UUID entity"
-            autoComplete="off"
-          />
-        </div>
-        <div className={styles.field}>
           <label htmlFor="audit-event-type">Событие</label>
-          <input
+          <select
             id="audit-event-type"
             value={filters.eventType}
             onChange={(event) => setFilters((current) => ({ ...current, eventType: event.target.value }))}
-            placeholder="result_recorded"
-            autoComplete="off"
-          />
+          >
+            <option value="">Все события</option>
+            {Object.entries(EVENT_LABELS).map(([value, label]) => (
+              <option key={value} value={value}>{label}</option>
+            ))}
+            {filters.eventType && !EVENT_LABELS[filters.eventType] ? (
+              <option value={filters.eventType}>Событие из технических фильтров</option>
+            ) : null}
+          </select>
         </div>
         <div className={styles.field}>
-          <label htmlFor="audit-actor-kind">Actor</label>
+          <label htmlFor="audit-actor-kind">Кто выполнил</label>
           <select
             id="audit-actor-kind"
             value={filters.actorKind}
@@ -479,32 +504,28 @@ export const TournamentAuditPanel = ({
             }))}
           >
             <option value="">Все</option>
-            <option value="server">Сервер</option>
-            <option value="operator">Оператор</option>
+            <option value="server">Система</option>
+            <option value="operator">Администратор</option>
           </select>
         </div>
         <div className={styles.field}>
-          <label htmlFor="audit-actor-id">Actor ID</label>
-          <input
-            id="audit-actor-id"
-            value={filters.actorId}
-            onChange={(event) => setFilters((current) => ({ ...current, actorId: event.target.value }))}
-            placeholder="UUID оператора"
-            autoComplete="off"
-          />
-        </div>
-        <div className={styles.field}>
           <label htmlFor="audit-result-reason">Причина результата</label>
-          <input
+          <select
             id="audit-result-reason"
             value={filters.resultReason}
             onChange={(event) => setFilters((current) => ({ ...current, resultReason: event.target.value }))}
-            placeholder="score_complete"
-            autoComplete="off"
-          />
+          >
+            <option value="">Все причины</option>
+            {Object.entries(RESULT_REASON_LABELS).map(([value, label]) => (
+              <option key={value} value={value}>{label}</option>
+            ))}
+            {filters.resultReason && !Object.hasOwn(RESULT_REASON_LABELS, filters.resultReason) ? (
+              <option value={filters.resultReason}>Причина из технических фильтров</option>
+            ) : null}
+          </select>
         </div>
         <div className={styles.field}>
-          <label htmlFor="audit-occurred-from">От, серверное время</label>
+          <label htmlFor="audit-occurred-from">С даты, ваше время</label>
           <input
             id="audit-occurred-from"
             type="datetime-local"
@@ -513,13 +534,40 @@ export const TournamentAuditPanel = ({
           />
         </div>
         <div className={styles.field}>
-          <label htmlFor="audit-occurred-to">До, серверное время</label>
+          <label htmlFor="audit-occurred-to">По дату, ваше время</label>
           <input
             id="audit-occurred-to"
             type="datetime-local"
             value={filters.occurredTo}
             onChange={(event) => setFilters((current) => ({ ...current, occurredTo: event.target.value }))}
           />
+        </div>
+        <div className={styles.advancedFilters}>
+          <TechnicalDetails summary={`Технические фильтры${filters.entityId || filters.actorId ? " (заданы ID)" : ""}`}>
+            <p>Для поиска конкретной записи при разборе ошибки. Обычно эти поля можно оставить пустыми.</p>
+            <div className={styles.advancedFields}>
+              <div className={styles.field}>
+                <label htmlFor="audit-entity-id">ID записи</label>
+                <input id="audit-entity-id" value={filters.entityId} autoComplete="off"
+                  onChange={(event) => setFilters((current) => ({ ...current, entityId: event.target.value }))} />
+              </div>
+              <div className={styles.field}>
+                <label htmlFor="audit-actor-id">ID администратора</label>
+                <input id="audit-actor-id" value={filters.actorId} autoComplete="off"
+                  onChange={(event) => setFilters((current) => ({ ...current, actorId: event.target.value }))} />
+              </div>
+              <div className={styles.field}>
+                <label htmlFor="audit-event-code">Код события</label>
+                <input id="audit-event-code" value={filters.eventType} autoComplete="off"
+                  onChange={(event) => setFilters((current) => ({ ...current, eventType: event.target.value }))} />
+              </div>
+              <div className={styles.field}>
+                <label htmlFor="audit-reason-code">Код причины</label>
+                <input id="audit-reason-code" value={filters.resultReason} autoComplete="off"
+                  onChange={(event) => setFilters((current) => ({ ...current, resultReason: event.target.value }))} />
+              </div>
+            </div>
+          </TechnicalDetails>
         </div>
         <div className={styles.filterActions}>
           <Button type="submit" disabled={!selectedTournamentId} loading={loadState === "loading"}>
@@ -542,7 +590,7 @@ export const TournamentAuditPanel = ({
         </Message>
       ) : null}
       {loadError ? (
-        <Message tone="error" title="Аудит недоступен">
+        <Message tone="error" title="История недоступна">
           {loadError}
         </Message>
       ) : null}
@@ -552,8 +600,8 @@ export const TournamentAuditPanel = ({
         </Message>
       ) : null}
       {selectedTournamentId && loadState === "loading" && !currentPage ? (
-        <Message tone="loading" title="Загружаем аудит">
-          Читаем redacted projection с сервера.
+        <Message tone="loading" title="Загружаем историю">
+          Получаем события выбранного турнира.
         </Message>
       ) : null}
       {selectedTournamentId && loadState === "ready" && currentPage?.events.length === 0 ? (
@@ -574,55 +622,43 @@ export const TournamentAuditPanel = ({
           <ol className={styles.eventList} aria-label="События аудита">
             {currentPage.events.map((event) => {
               const payloadEntries = Object.entries(event.redacted_payload);
-              const lineage = event.redacted_payload.previous_revision_id;
               return (
                 <li key={event.audit_event_id}>
                   <article className={styles.event}>
                     <header className={styles.eventHeader}>
                       <div>
                         <strong>{eventTypeLabel(event.event_type)}</strong>
-                        <code>{event.event_type}</code>
                       </div>
                       <Status tone={event.is_current ? "success" : "warning"}>
-                        {event.is_current ? "Текущая revision" : "Заменена"}
+                        {event.is_current ? "Действует" : "Исправлено"}
                       </Status>
                     </header>
                     <dl className={styles.eventFacts}>
                       <div>
-                        <dt>Server time</dt>
+                        <dt>Время</dt>
                         <dd>{formatDateTime(event.occurred_at)} UTC</dd>
                       </div>
                       <div>
-                        <dt>Entity</dt>
-                        <dd><code>{event.entity_kind}: {event.entity_id}</code></dd>
+                        <dt>Что изменилось</dt>
+                        <dd>{eventSubject(event)}</dd>
                       </div>
                       <div>
-                        <dt>Actor</dt>
+                        <dt>Кто выполнил</dt>
                         <dd>{actorLabel(event)}</dd>
                       </div>
                       <div>
                         <dt>Результат</dt>
-                        <dd>{event.result_state} / {event.result_reason}</dd>
+                        <dd>{formatGameState(event.result_state)}. {formatResultReason(event.result_reason)}</dd>
                       </div>
-                      <div>
-                        <dt>Official revision</dt>
-                        <dd><code>{event.official_result_revision_id}</code></dd>
-                      </div>
-                      <div>
-                        <dt>Номер revision</dt>
-                        <dd>{event.revision_number}</dd>
-                      </div>
-                      {lineage ? (
-                        <div className={styles.lineage}>
-                          <dt>Предыдущая revision</dt>
-                          <dd><code>{lineage}</code></dd>
-                        </div>
-                      ) : null}
                     </dl>
-                    {payloadEntries.length ? (
-                      <details className={styles.payload}>
-                        <summary>Redacted payload</summary>
+                    <div className={styles.payload}>
+                      <TechnicalDetails>
                         <dl>
+                          <div><dt>ID записи</dt><dd><code>{event.entity_id}</code></dd></div>
+                          <div><dt>Код события</dt><dd><code>{event.event_type}</code></dd></div>
+                          <div><dt>ID администратора</dt><dd><code>{event.actor_id || "Не указан"}</code></dd></div>
+                          <div><dt>ID результата</dt><dd><code>{event.official_result_revision_id}</code></dd></div>
+                          <div><dt>Версия результата</dt><dd>{event.revision_number}</dd></div>
                           {payloadEntries.map(([key, value]) => (
                             <div key={key}>
                               <dt>{payloadLabel(key)}</dt>
@@ -630,8 +666,8 @@ export const TournamentAuditPanel = ({
                             </div>
                           ))}
                         </dl>
-                      </details>
-                    ) : null}
+                      </TechnicalDetails>
+                    </div>
                   </article>
                 </li>
               );

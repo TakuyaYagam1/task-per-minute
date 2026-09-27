@@ -411,7 +411,6 @@ export const ArenaPublicTournamentPage = ({
               <div className={styles.heading}>
                 <p className={styles.eyebrow}>Публичный просмотр</p>
                 <h1 className={styles.title}>{loadState.item.name}</h1>
-                <p className={styles.publicId}>{loadState.item.publicId}</p>
               </div>
               <Status tone={loadState.item.group === "live" ? "live" : "info"}>
                 {catalogGroupLabel(loadState.item.group)}

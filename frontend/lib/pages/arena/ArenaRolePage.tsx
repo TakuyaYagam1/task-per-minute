@@ -100,12 +100,11 @@ const summaryFor = (
   title: `${tournamentName?.trim() || "Турнир"} - ${ROLE_LABELS[role]}: ${tournamentStateLabel(tournament.state)}`,
   description:
     role === "spectator"
-      ? "Публичный контур турнира доступен для просмотра."
-      : "Доступ подтвержден. В этом контуре пока доступен только статус турнира.",
+      ? "Следите за матчами и результатами турнира."
+      : "Состояние и доступные действия в турнире.",
   metrics: [
     { label: "Состояние", value: tournamentStateLabel(tournament.state) },
     { label: "Размер состава", value: String(tournament.roster_size) },
-    { label: "Ревизия", value: String(tournament.projection_revision) },
   ],
   readOnly: tournament.state === "completed",
 });
@@ -457,6 +456,7 @@ export const ArenaRolePage = ({ returnPath, role, tournamentId }: ArenaRolePageP
     <ArenaShell
       role={role}
       tournamentId={tournamentId}
+      tournamentName={state.tournamentName}
       accessStatus={state.accessStatus}
       accessMessage={accessMessage}
       summary={summary}

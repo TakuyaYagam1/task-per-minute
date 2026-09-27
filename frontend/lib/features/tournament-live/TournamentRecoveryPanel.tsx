@@ -325,10 +325,6 @@ export const TournamentRecoveryPanel = ({
         <dt>Пауза</dt>
         <dd>{operatorRealtime.paused ? "Да" : "Нет"}</dd>
       </div>
-      <div>
-        <dt>Ревизия</dt>
-        <dd>{operatorRealtime.state?.projectionRevision ?? recovery?.cursor.projection_revision ?? "-"}</dd>
-      </div>
     </dl>
   ) : null;
   const publicState = liveRole === "public" ? (
@@ -352,10 +348,6 @@ export const TournamentRecoveryPanel = ({
       <div>
         <dt>Результаты</dt>
         <dd>{publicBroadcastState?.display.officialResults.length ?? 0}</dd>
-      </div>
-      <div>
-        <dt>Ревизия</dt>
-        <dd>{publicBroadcastState?.cursor.projection_revision ?? recovery?.cursor.projection_revision ?? "-"}</dd>
       </div>
       {publicRealtime.refreshing && (
         <div>

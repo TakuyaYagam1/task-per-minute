@@ -494,7 +494,7 @@ export const SwissPairingEditor = ({
           <option value="">Выберите турнир</option>
           {tournaments.map((tournament) => (
             <option key={tournament.id} value={tournament.id}>
-              {tournament.name} - {tournament.public_id}
+              {tournament.name}
             </option>
           ))}
         </select>
@@ -508,7 +508,7 @@ export const SwissPairingEditor = ({
 
       {selectedTournament && loadState === "loading" && (
         <Message tone="loading" title="Загружаем состояние Swiss">
-          Получаем состав, активных игроков, конфигурацию и серверный snapshot.
+          Получаем состав участников и настройки раунда.
         </Message>
       )}
 
@@ -541,16 +541,8 @@ export const SwissPairingEditor = ({
                 <dd>{roundNumber}</dd>
               </div>
               <div>
-                <dt>Текущая ревизия</dt>
-                <dd>{snapshot.next_cursor.projection_revision}</dd>
-              </div>
-              <div>
                 <dt>Присутствуют</dt>
                 <dd>{eligibleParticipants.length}</dd>
-              </div>
-              <div>
-                <dt>Конфигурация</dt>
-                <dd>{configuration.configuration_revision}</dd>
               </div>
             </dl>
           </div>
@@ -789,10 +781,6 @@ export const SwissPairingEditor = ({
                 </Status>
               </div>
               <dl className={styles.resultMeta}>
-                <div>
-                  <dt>Ревизия раунда</dt>
-                  <dd>{savedRound.revision}</dd>
-                </div>
                 <div>
                   <dt>Статус блокировки</dt>
                   <dd>{savedRound.locked ? "Да" : "Нет"}</dd>

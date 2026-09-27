@@ -14,7 +14,7 @@
 .topbar {
   display: flex;
   min-width: 0;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 1rem;
   border-bottom: 1px solid var(--border);
@@ -49,18 +49,13 @@
   outline-offset: 4px;
 }
 
-.brandMark {
-  display: inline-grid;
-  width: 2rem;
-  height: 2rem;
+.brandLogo {
+  display: block;
+  width: 4rem;
+  height: 2.5rem;
   flex: 0 0 auto;
-  place-items: center;
-  border: 1px solid var(--accent);
-  border-radius: 0.6rem;
-  background: var(--accent-soft);
-  color: var(--accent-strong);
-  font-size: 0.7rem;
-  letter-spacing: 0.08em;
+  border-radius: var(--radius-small);
+  object-fit: contain;
 }
 
 .utilityNav {

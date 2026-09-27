@@ -14,7 +14,7 @@ import {
   type Tournament,
 } from "../../shared/api";
 import { formatTournamentState } from "../../shared/lib";
-import { Button, Message, Panel, Status } from "../../shared/ui";
+import { Button, Message, Panel, Status, TechnicalDetails } from "../../shared/ui";
 
 import styles from "./RosterEditor.module.css";
 
@@ -413,7 +413,7 @@ export const RosterEditor = ({
       setDraftParticipants(draftFromRoster(savedRoster));
       resetPreflight();
       await onReloadTournaments();
-      setRosterNotice("Состав сохранен. Серверный порядок и идентификаторы обновлены.");
+      setRosterNotice("Состав сохранен.");
     } catch (error) {
       if (error instanceof ApiError && error.status === 401) {
         onSessionExpired?.();
@@ -524,7 +524,7 @@ export const RosterEditor = ({
       setPreflightError(
         error instanceof ApiError && error.status === 409
           ? `${rosterErrorMessage(error, "Серверное состояние изменилось.")} Обновите данные и повторите проверку.`
-          : rosterErrorMessage(error, "Не удалось выполнить предполетную проверку состава"),
+          : rosterErrorMessage(error, "Не удалось проверить готовность к старту"),
       );
     } finally {
       if (preflightControllerRef.current === controller) {
@@ -662,7 +662,7 @@ export const RosterEditor = ({
           <option value="">Выберите турнир</option>
           {tournaments.map((tournament) => (
             <option key={tournament.id} value={tournament.id}>
-              {tournament.name} - {tournament.public_id}
+              {tournament.name} - {formatTournamentState(tournament.state)}
             </option>
           ))}
         </select>
@@ -700,7 +700,7 @@ export const RosterEditor = ({
               <div>
                 <h3 className={styles.title}>{selectedTournament.name}</h3>
                 <p className={styles.subtitle}>
-                  {selectedTournament.public_id} | {formatTournamentState(selectedTournament.state)}
+                  {formatTournamentState(selectedTournament.state)}
                 </p>
               </div>
               <Status tone={rosterEditingLocked ? "disabled" : "success"}>
@@ -708,14 +708,6 @@ export const RosterEditor = ({
               </Status>
             </div>
             <dl className={styles.meta}>
-              <div>
-                <dt>Ревизия турнира</dt>
-                <dd>{selectedTournament.revision}</dd>
-              </div>
-              <div>
-                <dt>Ревизия состава</dt>
-                <dd>{roster.revision}</dd>
-              </div>
               <div>
                 <dt>Участников</dt>
                 <dd>{draftParticipants.length} / 16</dd>
@@ -725,11 +717,11 @@ export const RosterEditor = ({
                 <dd>{selectedTournament.planned_roster_size}</dd>
               </div>
               <div>
-                <dt>Серверная блокировка</dt>
+                <dt>Состав зафиксирован</dt>
                 <dd>{roster.locked ? "Да" : "Нет"}</dd>
               </div>
               <div>
-                <dt>Исполнение началось</dt>
+                <dt>Турнир начался</dt>
                 <dd>{roster.execution_started ? "Да" : "Нет"}</dd>
               </div>
             </dl>
@@ -861,7 +853,7 @@ export const RosterEditor = ({
               Сохранить состав
             </Button>
             <span className={styles.hint}>
-              Максимум 16 участников. Сохранение отправляет весь состав целиком.
+              Максимум 16 участников. После изменений сохраните состав.
             </span>
           </div>
 
@@ -872,10 +864,10 @@ export const RosterEditor = ({
             <div className={styles.preflightHeader}>
               <div>
                 <h4 id="roster-preflight-title" className={styles.sectionTitle}>
-                  Предполетная проверка
+                  Проверка перед стартом
                 </h4>
                 <p className={styles.sectionDescription}>
-                  Сервер проверит состав, задачи, категории, ресурсы и доступную емкость перед блокировкой.
+                  Проверьте, что состав и задачи готовы к запуску турнира.
                 </p>
               </div>
               <Button
@@ -903,7 +895,7 @@ export const RosterEditor = ({
             )}
 
             {preflightState === "error" && (
-              <Message tone="error" title="Предполетная проверка не выполнена">
+              <Message tone="error" title="Проверка не выполнена">
                 {preflightError || "Сервер не вернул отчет проверки."}
                 <button
                   className={styles.inlineAction}
@@ -919,7 +911,7 @@ export const RosterEditor = ({
             {preflightState === "ready" && preflightReport && (
               <div
                 className={styles.preflightReport}
-                aria-label="Результат предполетной проверки"
+                aria-label="Результат проверки перед стартом"
               >
                 <div className={styles.preflightSummary}>
                   <div>
@@ -933,10 +925,6 @@ export const RosterEditor = ({
                         : "Проверка не пройдена"}
                     </Status>
                   </div>
-                  <div>
-                    <span className={styles.preflightLabel}>Идентификатор отчета</span>
-                    <code className={styles.preflightReportId}>{preflightReport.id}</code>
-                  </div>
                 </div>
                 <ol className={styles.preflightChecks}>
                   {preflightReport.checks.map((check, index) => (
@@ -948,24 +936,27 @@ export const RosterEditor = ({
                         <Status tone={check.passed ? "success" : "error"} size="small">
                           {check.passed ? "Пройдено" : "Ошибка"}
                         </Status>
-                        <code>{check.code}</code>
+                        <span>Проверка {index + 1}</span>
                       </div>
                       <p className={styles.preflightExplanation}>{check.explanation}</p>
                       {check.evidence.length > 0 && (
-                        <ul className={styles.preflightEvidence}>
-                          {check.evidence.map((evidence, evidenceIndex) => (
-                            <li key={`${check.code}-evidence-${evidenceIndex}`}>
-                              {evidence}
-                            </li>
-                          ))}
-                        </ul>
+                        <TechnicalDetails>
+                          <p>Код проверки: <code>{check.code}</code></p>
+                          <ul className={styles.preflightEvidence}>
+                            {check.evidence.map((evidence, evidenceIndex) => (
+                              <li key={`${check.code}-evidence-${evidenceIndex}`}>
+                                {evidence}
+                              </li>
+                            ))}
+                          </ul>
+                        </TechnicalDetails>
                       )}
                     </li>
                   ))}
                 </ol>
                 {!preflightReport.passed && (
                   <Message tone="warning" title="Блокировка недоступна">
-                    Исправьте указанные проблемы и запустите предполетную проверку повторно.
+                    Исправьте указанные проблемы и запустите проверку повторно.
                   </Message>
                 )}
               </div>
@@ -1008,17 +999,7 @@ export const RosterEditor = ({
                     key={participant.id}
                     disabled={rosterEditingLocked || savingRoster}
                   >
-                    <legend>Участник {index + 1}</legend>
-                    <div className={styles.rowDetails}>
-                      <div className={styles.serverOrder}>
-                        <span>Порядок на сервере</span>
-                        <strong>{index + 1}</strong>
-                      </div>
-                      <div className={styles.identity}>
-                        <span>Идентификатор участника</span>
-                        <code>{participant.participantId || "Будет присвоен сервером"}</code>
-                      </div>
-                    </div>
+                    <legend>{player?.username || `Участник ${index + 1}`}</legend>
                     <div className={styles.fields}>
                       <div className={styles.field}>
                         <label htmlFor={`roster-player-${participant.id}`}>
@@ -1026,6 +1007,7 @@ export const RosterEditor = ({
                         </label>
                         <select
                           id={`roster-player-${participant.id}`}
+                          aria-describedby={unknownPlayer ? `roster-player-hint-${participant.id}` : undefined}
                           value={participant.playerId}
                           onChange={(event) =>
                             updateDraftPlayer(participant.id, event.target.value)
@@ -1034,26 +1016,19 @@ export const RosterEditor = ({
                           <option value="">Выберите игрока</option>
                           {unknownPlayer && (
                             <option value={unknownPlayer.id}>
-                              {unknownPlayer.username} - {unknownPlayer.id}
+                              {unknownPlayer.username}
                             </option>
                           )}
                           {players.map((activePlayer) => (
                             <option key={activePlayer.id} value={activePlayer.id}>
-                              {activePlayer.username} - {activePlayer.id}
+                              {activePlayer.username}
                             </option>
                           ))}
                         </select>
-                        <span className={styles.fieldHint}>
-                          {player
-                            ? `Имя: ${player.username} | ID игрока: ${player.id}`
-                            : participant.playerId
-                              ? `Игрок больше не входит в список активных | ID игрока: ${participant.playerId}`
-                              : "Выберите активного игрока"}
-                        </span>
                       </div>
                       <div className={styles.field}>
                         <label htmlFor={`roster-seed-${participant.id}`}>
-                          Seed / позиция
+                          Позиция
                         </label>
                         <input
                           id={`roster-seed-${participant.id}`}
@@ -1071,7 +1046,7 @@ export const RosterEditor = ({
                       </div>
                       <div className={styles.field}>
                         <label htmlFor={`roster-attendance-${participant.id}`}>
-                          Посещаемость
+                          Участие
                         </label>
                         <select
                           id={`roster-attendance-${participant.id}`}
@@ -1093,12 +1068,18 @@ export const RosterEditor = ({
                         type="button"
                         variant="danger"
                         size="small"
+                        aria-label={`Удалить из состава: ${player?.username || `участник ${index + 1}`}`}
                         onClick={() => handleRemoveParticipant(participant.id)}
                         disabled={rosterEditingLocked || savingRoster}
                       >
                         Удалить
                       </Button>
                     </div>
+                    {unknownPlayer ? (
+                      <p className={styles.fieldHint} id={`roster-player-hint-${participant.id}`}>
+                        Этот игрок больше не входит в список активных. Выберите другого игрока или удалите его из состава.
+                      </p>
+                    ) : null}
                   </fieldset>
                 );
               })}

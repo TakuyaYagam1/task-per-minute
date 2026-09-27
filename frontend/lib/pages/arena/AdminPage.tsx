@@ -17,7 +17,7 @@ import {
   log,
   useTimedNotification,
 } from "../../shared/lib";
-import { ViewportPortal } from "../../shared/ui";
+import { TechnicalDetails, ViewportPortal } from "../../shared/ui";
 import {
   TournamentAdminPanel,
   TournamentJournalSection,
@@ -111,9 +111,6 @@ const formatDateTime = (value: string | null | undefined): string => {
     timeStyle: "medium",
   }).format(parsed);
 };
-
-const shortJTI = (value: string): string =>
-  value.length > 12 ? `${value.slice(0, 8)}…${value.slice(-4)}` : value;
 
 const auditActionLabel = (action: PlayerAuditEvent["action"]): string =>
   action === "delete" ? "Удаление" : "Обновление";
@@ -1237,10 +1234,10 @@ export default function AdminPage() {
                         {formatDateTime(event.created_at)}
                       </span>
                     </div>
-                    <div className={styles.auditMeta}>
-                      actor: {event.actor_subject} · jti:{" "}
-                      {shortJTI(event.actor_jti)}
-                    </div>
+                    <TechnicalDetails>
+                      <p>Учетная запись: {event.actor_subject}</p>
+                      <p>ID сессии: <code>{event.actor_jti}</code></p>
+                    </TechnicalDetails>
                     <div className={styles.auditDiffs}>
                       {diffs.length === 0 ? (
                         <div className={styles.auditDiff}>

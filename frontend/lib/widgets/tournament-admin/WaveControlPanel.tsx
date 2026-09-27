@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useMemo, useRef, useState } from "react";
+import { useParticipantNames } from "../../entities/tournament";
 
 import {
   ApiError,
@@ -20,6 +21,7 @@ import {
   CATEGORY_LABELS,
   WAVE_STATE_LABELS,
   formatSeriesState,
+  formatReadyWindowState,
 } from "../../shared/lib";
 import { Button, Message, Panel, Status } from "../../shared/ui";
 
@@ -275,6 +277,9 @@ type WaveCardProps = Readonly<{
   seriesById: ReadonlyMap<string, OperatorRecoverySnapshot["series"][number]>;
   stale: boolean;
   wave: Wave;
+  waveNumber: number;
+  participantName: (id: string) => string;
+  matchName: (series: OperatorRecoverySnapshot["series"][number]) => string;
 }>;
 
 const WaveCard = ({
@@ -286,6 +291,9 @@ const WaveCard = ({
   seriesById,
   stale,
   wave,
+  waveNumber,
+  participantName,
+  matchName,
 }: WaveCardProps) => {
   const seriesList = seriesForWave(wave, seriesById);
   const allReady = wave.members.length > 0 && wave.members.every((member) => member.ready);
@@ -297,7 +305,7 @@ const WaveCard = ({
     <article className={styles.waveCard} data-testid="operator-wave" data-wave-id={wave.id}>
       <div className={styles.waveHeader}>
         <div>
-          <h3>Волна {wave.id}</h3>
+          <h3>Волна {waveNumber}</h3>
         </div>
         <Status
           tone={wave.state === "active" ? "live" : wave.state === "completed" ? "success" : "neutral"}
@@ -307,15 +315,14 @@ const WaveCard = ({
       </div>
 
       <div className={styles.waveMeta}>
-        <span>Ревизия {wave.revision}</span>
-        <span>Серий: {seriesList.length}</span>
+        <span>Матчей: {seriesList.length}</span>
       </div>
 
       <div className={styles.matches}>
         {seriesList.map((series) => (
           <article className={styles.match} data-testid="operator-match" data-series-id={series.id} key={series.id}>
             <div className={styles.matchHeading}>
-              <strong>Series ID: {series.id}</strong>
+              <strong>{matchName(series)}</strong>
               <Status tone={series.state === "active" ? "live" : "neutral"}>
                 {formatSeriesState(series.state)}
               </Status>
@@ -329,7 +336,7 @@ const WaveCard = ({
                   recovery={recovery}
                 />
               ) : (
-                <span>{readyWindow?.state ?? "не открыто"}</span>
+                <span>{readyWindow ? formatReadyWindowState(readyWindow.state) : "Не открыто"}</span>
               )}
             </div>
             <div className={styles.members} data-testid="operator-match-members">
@@ -339,7 +346,7 @@ const WaveCard = ({
                   <div className={styles.member} key={`${series.id}-${member.participant_id}`}>
                     <div className={styles.memberIdentity}>
                       <span>Участник</span>
-                      <code>{member.participant_id}</code>
+                      <strong>{participantName(member.participant_id)}</strong>
                     </div>
                     <div className={styles.memberSignals}>
                       <Status tone={member.ready ? "success" : "warning"}>
@@ -351,7 +358,7 @@ const WaveCard = ({
                 );
               })}
             </div>
-            <div className={styles.score} aria-label={`Счет серии ${series.id}`}>
+            <div className={styles.score} aria-label={`Счет матча: ${matchName(series)}`}>
               <span>{series.score.first_participant_wins}</span>
               <small>:</small>
               <span>{series.score.second_participant_wins}</span>
@@ -418,6 +425,7 @@ export const WaveControlPanel = ({
   });
   const operatorRecovery = operatorRecoveryFrom(recovery);
   const snapshot = operatorRecovery?.snapshot ?? null;
+  const { participantName, matchName } = useParticipantNames(tournamentId, snapshot?.roster ?? null);
 
   const realtimeWaves = useMemo(() => {
     const waves = realtime.state?.operator.waves ?? [];
@@ -521,20 +529,19 @@ export const WaveControlPanel = ({
   return (
     <Panel
       title="Волны и матчи"
-      description="Все параллельные матчи выбранного турнира из серверного снимка и realtime."
+      description="Следите за готовностью игроков, запускайте матчи и просматривайте счет."
       className={styles.root}
       data-testid="operator-wave-control-panel"
     >
       <div className={styles.toolbar}>
         <div>
           <strong>Турнир</strong>
-          <code>{tournamentId}</code>
+          <strong>{snapshot?.tournament.name || "Загружаем турнир"}</strong>
         </div>
         <div className={styles.connection} data-testid="operator-wave-connection">
           <Status tone={realtime.status === "connected" ? "success" : "warning"}>
-            {realtime.status === "connected" ? "Realtime на связи" : `Realtime: ${realtime.status}`}
+            {realtime.status === "connected" ? "Обновляется автоматически" : "Автообновление недоступно"}
           </Status>
-          <span>Ревизия {realtime.state?.projectionRevision ?? recovery?.cursor.projection_revision ?? "-"}</span>
           <Button
             size="small"
             variant="secondary"
@@ -571,7 +578,7 @@ export const WaveControlPanel = ({
       {operatorRecovery ? (
         <>
           <div className={styles.board} data-testid="operator-wave-board">
-            {waves.map((wave) => (
+            {waves.map((wave, index) => (
               <WaveCard
                 busyAction={busyAction}
                 connectionByParticipant={connectionByParticipant}
@@ -582,6 +589,9 @@ export const WaveControlPanel = ({
                 seriesById={seriesById}
                 stale={stale}
                 wave={wave}
+                waveNumber={index + 1}
+                participantName={participantName}
+                matchName={matchName}
               />
             ))}
           </div>
@@ -590,7 +600,7 @@ export const WaveControlPanel = ({
               <h3>Матчи без активной волны</h3>
               {unassignedSeries.map((series) => (
                 <div className={styles.unassignedRow} key={series.id}>
-                  <code>Series ID: {series.id}</code>
+                  <strong>{matchName(series)}</strong>
                   <span>{series.score.first_participant_wins}:{series.score.second_participant_wins}</span>
                   <span>{series.slots.map((slot) => CATEGORY_LABELS[slot.category] ?? slot.category).join(", ")}</span>
                 </div>

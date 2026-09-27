@@ -682,7 +682,7 @@ export const SeriesConfigurationEditor = ({
           <option value="">Выберите турнир</option>
           {tournaments.map((tournament) => (
             <option key={tournament.id} value={tournament.id}>
-              {tournament.name} - {tournament.public_id}
+              {tournament.name}
             </option>
           ))}
         </select>
@@ -722,24 +722,16 @@ export const SeriesConfigurationEditor = ({
               <div>
                 <h3 className={styles.title}>{selectedTournament.name}</h3>
                 <p className={styles.subtitle}>
-                  Каждая серия сохраняется отдельным запросом с собственной ревизией.
+                  Настройте формат и категории задач. Сохраните изменения для каждого матча.
                 </p>
               </div>
               <dl className={styles.meta}>
                 <div>
-                  <dt>Серий</dt>
+                  <dt>Матчей</dt>
                   <dd>{configuration.series.length}</dd>
                 </div>
                 <div>
-                  <dt>Ревизия проекции</dt>
-                  <dd>{configuration.projection_revision}</dd>
-                </div>
-                <div>
-                  <dt>Ревизия конфигурации</dt>
-                  <dd>{configuration.configuration_revision}</dd>
-                </div>
-                <div>
-                  <dt>Резерв normal + Golden</dt>
+                  <dt>Резерв обычных и золотых задач</dt>
                   <dd>{configuration.reserve_count}</dd>
                 </div>
               </dl>
@@ -863,7 +855,7 @@ export const SeriesConfigurationEditor = ({
                           {pool ? ` (${formatSeriesFormat(pool.format)})` : ""}
                         </h4>
                         <p className={styles.seriesSubtitle}>
-                          Ревизия {series.revision}, ревизия пула {series.category_pool_revision}
+                          Выберите категории задач и формат матча.
                         </p>
                       </div>
                       <Status

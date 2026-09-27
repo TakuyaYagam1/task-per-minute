@@ -10,7 +10,7 @@ import {
   type OperatorCorrectionDraftRequest,
   type OperatorRecoverySnapshot,
 } from "../../shared/api";
-import { Button, Message, Status } from "../../shared/ui";
+import { Button, Message, Status, TechnicalDetails } from "../../shared/ui";
 
 import styles from "./TournamentResultCorrection.module.css";
 
@@ -30,6 +30,8 @@ type TournamentResultCorrectionProps = Readonly<{
   snapshot: OperatorRecoverySnapshot;
   snapshotLoading: boolean;
   onAccepted: () => Promise<OperatorRecoverySnapshot>;
+  participantName: (id: string) => string;
+  matchName: (series: OperatorRecoverySnapshot["series"][number]) => string;
 }>;
 
 type GameResultReason = OperatorCorrectionDraftRequest["patch"]["reason"];
@@ -89,16 +91,16 @@ const resultReasonLabel = (reason: GameResultReason): string => {
   switch (reason) {
     case "solved": return "Решение принято";
     case "surrender": return "Сдача участника";
-    case "operator_forfeit": return "Операторский форфейт";
+    case "operator_forfeit": return "Техническое поражение";
     case "no_solve": return "Решение не найдено";
     case "task_failure": return "Ошибка задания";
     case "common_platform_failure": return "Сбой платформы";
     case "disconnect": return "Разрыв соединения";
-    case "execution_epoch_break": return "Смена execution epoch";
+    case "execution_epoch_break": return "Перезапуск игрового сервиса";
     case "no_show": return "Неявка";
     case "series_cancelled": return "Серия отменена";
     case "tournament_cancelled": return "Турнир отменен";
-    case "derived_revision_superseded": return "Проекция заменена";
+    case "derived_revision_superseded": return "Результат заменен";
   }
 };
 
@@ -118,27 +120,27 @@ const rejectionCode = (error: ApiError): string | null => {
 const rejectionText = (code: string | null, status: number): string => {
   switch (code) {
     case "stale_projection":
-      return "Проекция изменилась. Снимок обновлен, соберите подтверждение заново.";
+      return "Данные изменились. Проверьте обновленный результат и подтвердите исправление еще раз.";
     case "stale_result":
-      return "Выбранная ревизия результата уже заменена. Снимок обновлен.";
+      return "Этот результат уже исправлен. Показаны актуальные данные.";
     case "incomplete_projection":
-      return "Набор зависимых проекций неполный. Сервер не применил ни одного изменения.";
+      return "Не удалось получить все связанные результаты. Изменения не сохранены. Обновите данные.";
     case "incomplete_unlock":
-      return "Набор unlock intents неполный. Сервер сохранил прежний результат.";
+      return "Не удалось подготовить связанные матчи к исправлению. Прежний результат сохранен.";
     case "cutoff_wave_started":
-      return "Коррекция закрыта после старта зависимой волны. Доступны pause, audit, resume и cancel.";
+      return "Следующие матчи уже начались. Исправление недоступно. Приостановите турнир и изучите историю.";
     case "cutoff_task_delivered":
-      return "Коррекция закрыта после выдачи зависимого задания. Доступны pause, audit, resume и cancel.";
+      return "Следующая задача уже выдана. Исправление недоступно. Приостановите турнир и изучите историю.";
     case "cutoff_no_show_recorded":
-      return "Коррекция закрыта после no-show. Доступны pause, audit, resume и cancel.";
+      return "Неявка уже зафиксирована. Исправление недоступно. Подробности есть в истории турнира.";
     case "cutoff_forfeit_recorded":
-      return "Коррекция закрыта после форфейта. Доступны pause, audit, resume и cancel.";
+      return "Техническое поражение уже зафиксировано. Исправление недоступно. Подробности есть в истории турнира.";
     case "cutoff_golden_direct_allocated":
-      return "Коррекция закрыта после прямого распределения Golden. Доступны pause, audit, resume и cancel.";
+      return "Места золотого этапа уже распределены. Исправление недоступно. Подробности есть в истории турнира.";
     case "cutoff":
-      return "Коррекция закрыта после необратимого зависимого события. Доступны pause, audit, resume и cancel.";
+      return "Турнир уже перешел к следующим действиям. Исправление недоступно. Изучите историю турнира.";
     case "tournament_terminal":
-      return "Завершенный или отмененный турнир нельзя корректировать. Доступен аудит.";
+      return "Завершенный или отмененный турнир нельзя исправить. История остается доступна.";
     default:
       return status === 409
         ? "Команда конфликтует с текущим состоянием. Сервер не применил частичных изменений."
@@ -169,6 +171,8 @@ export const TournamentResultCorrection = ({
   snapshot,
   snapshotLoading,
   onAccepted,
+  participantName,
+  matchName,
 }: TournamentResultCorrectionProps) => {
   const candidates = useMemo(() => correctionCandidates(snapshot), [snapshot]);
   const [selectedKey, setSelectedKey] = useState("");
@@ -301,9 +305,9 @@ export const TournamentResultCorrection = ({
     <section className={styles.section} aria-labelledby="operator-correction-heading">
       <div className={styles.header}>
         <div>
-          <h3 className={styles.title} id="operator-correction-heading">Коррекция результата</h3>
+          <h3 className={styles.title} id="operator-correction-heading">Исправить результат</h3>
           <p className={styles.hint}>
-            Сервер сначала связывает одну команду с текущим результатом, проекцией и полным набором unlock intents.
+            Выберите матч, укажите правильный результат и объясните причину. Исправление сохранится в истории турнира.
           </p>
         </div>
         {candidates.length > 0 && (
@@ -345,7 +349,7 @@ export const TournamentResultCorrection = ({
               >
                 {candidates.map((candidate) => (
                   <option key={candidateKey(candidate)} value={candidateKey(candidate)}>
-                    Серия {candidate.series.id} - слот {candidate.slotPosition} - попытка {candidate.game.attempt_no}
+                    {matchName(candidate.series)} - игра {candidate.slotPosition}, попытка {candidate.game.attempt_no}
                   </option>
                 ))}
               </select>
@@ -362,7 +366,7 @@ export const TournamentResultCorrection = ({
               >
                 {selected.game.state !== "completed" && <option value="">Победителя нет</option>}
                 {[selected.series.first_participant_id, selected.series.second_participant_id].map((participantId) => (
-                  <option key={participantId} value={participantId}>{participantId}</option>
+                  <option key={participantId} value={participantId}>{participantName(participantId)}</option>
                 ))}
               </select>
             </div>
@@ -426,7 +430,7 @@ export const TournamentResultCorrection = ({
                   />
                 </div>
                 <div className={styles.field}>
-                  <label className={styles.label} htmlFor="operator-correction-submission">Submission ID</label>
+                  <label className={styles.label} htmlFor="operator-correction-submission">ID подтвержденной отправки из журнала</label>
                   <input
                     className={styles.input}
                     id="operator-correction-submission"
@@ -434,7 +438,7 @@ export const TournamentResultCorrection = ({
                     onChange={(event) => { setSubmissionId(event.target.value.trim()); clearTransientBlock(); }}
                     disabled={submitting}
                     required
-                    placeholder="UUID подтвержденной отправки"
+                    placeholder="Скопируйте из технических данных записи"
                   />
                 </div>
                 <div className={`${styles.field} ${styles.wide}`}>
@@ -448,27 +452,29 @@ export const TournamentResultCorrection = ({
                     minLength={64}
                     maxLength={64}
                     required
-                    placeholder="64 hex символа"
+                    placeholder="Контрольная сумма из записи, 64 символа"
                   />
                 </div>
               </>
             )}
           </div>
 
-          <dl className={styles.evidence} aria-label="CAS коррекции">
-            <div className={styles.evidenceItem}>
-              <dt className={styles.evidenceLabel}>Source result revision</dt>
-              <dd className={styles.evidenceValue}>{selected.game.result_revision_id}</dd>
-            </div>
-            <div className={styles.evidenceItem}>
-              <dt className={styles.evidenceLabel}>Expected projection</dt>
-              <dd className={styles.evidenceValue}>{snapshot.next_cursor.projection_revision}</dd>
-            </div>
-            <div className={styles.evidenceItem}>
-              <dt className={styles.evidenceLabel}>Изменяемые поля</dt>
-              <dd className={styles.evidenceValue}>{fields.join(", ") || "Нет изменений"}</dd>
-            </div>
-          </dl>
+          <TechnicalDetails>
+            <dl className={styles.evidence} aria-label="Данные исправляемого результата">
+              <div className={styles.evidenceItem}>
+                <dt className={styles.evidenceLabel}>ID исходного результата</dt>
+                <dd className={styles.evidenceValue}>{selected.game.result_revision_id}</dd>
+              </div>
+              <div className={styles.evidenceItem}>
+                <dt className={styles.evidenceLabel}>Версия данных</dt>
+                <dd className={styles.evidenceValue}>{snapshot.next_cursor.projection_revision}</dd>
+              </div>
+              <div className={styles.evidenceItem}>
+                <dt className={styles.evidenceLabel}>Изменяемые поля</dt>
+                <dd className={styles.evidenceValue}>{fields.join(", ") || "Нет изменений"}</dd>
+              </div>
+            </dl>
+          </TechnicalDetails>
 
           <label className={styles.checkRow} htmlFor="operator-correction-confirmed">
             <input

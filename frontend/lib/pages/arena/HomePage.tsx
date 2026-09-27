@@ -169,12 +169,10 @@ export default function HomePage() {
 
               {!currentPlayer ? (
                 <form onSubmit={handleJoin} className={styles.form}>
-                  <label className={styles.label} htmlFor="nickname">
-                    Никнейм
-                  </label>
                   <input
                     id="nickname"
                     type="text"
+                    aria-label="Никнейм"
                     value={nickname}
                     onChange={(event) => setNickname(event.target.value)}
                     placeholder="Введите никнейм..."

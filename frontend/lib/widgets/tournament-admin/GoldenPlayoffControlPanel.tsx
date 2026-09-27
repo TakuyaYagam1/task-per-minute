@@ -15,7 +15,8 @@ import {
   type PublicTournamentResponse,
   type Tournament,
 } from "../../shared/api";
-import { GOLDEN_STATE_LABELS, formatTournamentState } from "../../shared/lib";
+import { GOLDEN_STATE_LABELS, formatSeriesState, formatTournamentState } from "../../shared/lib";
+import { useParticipantNames } from "../../entities/tournament";
 import { Button, Message, Panel, Status, type StatusTone } from "../../shared/ui";
 
 import styles from "./GoldenPlayoffControlPanel.module.css";
@@ -129,6 +130,7 @@ export const GoldenPlayoffControlPanel = ({
   onTournamentUpdated,
   tournament,
 }: GoldenPlayoffControlPanelProps) => {
+  const { participantName } = useParticipantNames(tournament?.id ?? "");
   const [golden, setGolden] = useState<GoldenOperatorResponse | null>(null);
   const [goldenState, setGoldenState] = useState<LoadState>("loading");
   const [publicTournament, setPublicTournament] = useState<PublicTournamentResponse | null>(null);
@@ -201,7 +203,7 @@ export const GoldenPlayoffControlPanel = ({
       }
       if (requestGeneration === requestGenerationRef.current) {
         setGoldenState("error");
-        setLoadError(problemMessage(error, "Не удалось загрузить состояние Golden"));
+        setLoadError(problemMessage(error, "Не удалось загрузить золотой этап"));
       }
     } finally {
       if (controllerRef.current === controller) {
@@ -329,9 +331,9 @@ export const GoldenPlayoffControlPanel = ({
       if (error instanceof ApiError && error.status === 409) {
         await loadState();
         setStale(true);
-        setCommandError("Состояние Golden устарело. Обновите данные перед повтором.");
+        setCommandError("Состояние золотого этапа изменилось. Обновите данные перед повтором.");
       } else {
-        setCommandError(problemMessage(error, "Не удалось открыть Golden runtime"));
+        setCommandError(problemMessage(error, "Не удалось открыть подготовку к золотому этапу"));
       }
     } finally {
       commandInFlightRef.current = false;
@@ -374,9 +376,9 @@ export const GoldenPlayoffControlPanel = ({
       if (error instanceof ApiError && error.status === 409) {
         await loadState();
         setStale(true);
-        setCommandError("Попытка Golden изменилась на сервере. Обновите данные перед повтором.");
+        setCommandError("Игра золотого этапа изменилась. Обновите данные перед повтором.");
       } else {
-        setCommandError(problemMessage(error, "Не удалось начать попытку Golden"));
+        setCommandError(problemMessage(error, "Не удалось начать игру золотого этапа"));
       }
     } finally {
       commandInFlightRef.current = false;
@@ -390,21 +392,19 @@ export const GoldenPlayoffControlPanel = ({
 
   return (
     <Panel
-      title="Golden и плей-офф"
-      description="Серверное состояние Golden, готовность групп и официальный bracket."
+      title="Золотой этап и плей-офф"
+      description="Проверяйте готовность игроков, запускайте дополнительные игры и следите за сеткой плей-офф."
       className={styles.root}
       data-testid="operator-golden-playoff-control-panel"
     >
       <div className={styles.toolbar}>
         <div className={styles.identity}>
           <strong>{tournament.name}</strong>
-          <code>{tournament.id}</code>
         </div>
         <div className={styles.serverState}>
           <Status tone={terminal ? "success" : currentState === "golden" || currentState === "playoffs" ? "live" : "info"}>
             {formatTournamentState(currentState)}
           </Status>
-          <span>Ревизия {projectionRevision || "-"}</span>
           <Button
             size="small"
             variant="secondary"
@@ -412,19 +412,19 @@ export const GoldenPlayoffControlPanel = ({
             loading={goldenState === "loading"}
             loadingLabel="Обновляем"
           >
-            Обновить Golden
+            Обновить данные
           </Button>
         </div>
       </div>
 
       {goldenState === "loading" && golden === null ? (
-        <Message tone="loading" title="Загружаем Golden">
-          Получаем группы, диапазоны допуска и текущую ревизию runtime.
+        <Message tone="loading" title="Загружаем золотой этап">
+          Получаем группы участников и готовность к играм.
         </Message>
       ) : null}
       {goldenState === "error" ? (
-        <Message tone="error" title="Golden недоступен">
-          {loadError ?? "Не удалось загрузить данные Golden."}
+        <Message tone="error" title="Золотой этап недоступен">
+          {loadError ?? "Не удалось загрузить данные золотого этапа."}
           <button className={styles.linkButton} type="button" onClick={refresh}>
             Обновить данные
           </button>
@@ -439,8 +439,8 @@ export const GoldenPlayoffControlPanel = ({
         </Message>
       ) : null}
       {goldenState === "ready" && golden === null && !GOLDEN_CONTROL_STATES.has(currentState) ? (
-        <Message tone="empty" title="Golden пока недоступен">
-          Управление Golden появится после завершения швейцарского этапа.
+        <Message tone="empty" title="Золотой этап пока недоступен">
+          Управление появится после завершения швейцарского этапа.
         </Message>
       ) : null}
 
@@ -452,7 +452,7 @@ export const GoldenPlayoffControlPanel = ({
               data-testid="golden-start-lifecycle"
               disabled={!canStartGolden || terminal || busyAction !== null}
               loading={busyAction === "start_golden"}
-              loadingLabel="Запускаем Golden"
+              loadingLabel="Запускаем этап"
               onClick={() => void handleLifecycleAction("start_golden")}
             >
               Начать золотой этап
@@ -462,10 +462,10 @@ export const GoldenPlayoffControlPanel = ({
               data-testid="golden-open-runtime"
               disabled={!canOpenRuntime || busyAction !== null}
               loading={busyAction === "open"}
-              loadingLabel="Открываем runtime"
+              loadingLabel="Готовим группы"
               onClick={() => void handleOpenRuntime()}
             >
-              Открыть Golden runtime
+              Подготовить группы
             </Button>
             <Button
               variant="success"
@@ -475,12 +475,12 @@ export const GoldenPlayoffControlPanel = ({
               loadingLabel="Запускаем плей-офф"
               onClick={() => void handleLifecycleAction("start_playoffs")}
             >
-              Подтвердить Top 4 и начать плей-офф
+              Подтвердить четверку и начать плей-офф
             </Button>
           </div>
           {currentState === "golden" && !completeGolden ? (
             <p className={styles.blockingHint}>
-              Плей-офф станет доступен после завершения всех Golden групп.
+              Плей-офф станет доступен после завершения всех групп золотого этапа.
             </p>
           ) : null}
           <div className={styles.groups} data-testid="golden-groups">
@@ -491,24 +491,21 @@ export const GoldenPlayoffControlPanel = ({
                 <article className={styles.groupCard} data-testid="golden-group" data-group-id={group.group_id} key={group.group_id}>
                   <div className={styles.groupHeading}>
                     <div>
-                      <h3>Golden группа</h3>
-                      <code>{group.group_id}</code>
+                      <h3>Группа за места {group.position_from}-{group.position_to}</h3>
                     </div>
                     <Status tone={stateTone(group.state)}>
                       {GOLDEN_STATE_LABELS[group.state] ?? group.state}
                     </Status>
                   </div>
                   <div className={styles.groupMeta}>
-                    <span>Диапазон допуска: позиции {group.position_from}-{group.position_to}</span>
-                    <span>Runtime ревизия: {group.runtime_revision}</span>
-                    <span>Окно готовности: {group.ready_window_id}</span>
+                    <span>Участников: {group.members.length}</span>
                   </div>
-                  <div className={styles.memberList} aria-label={`Участники Golden группы ${group.group_id}`}>
+                  <div className={styles.memberList} aria-label={`Участники группы за места ${group.position_from}-${group.position_to}`}>
                     {group.members.map((member) => (
                       <div className={styles.memberRow} data-testid="golden-member" key={member.participant_id}>
                         <div className={styles.memberIdentity}>
                           <span>Участник</span>
-                          <code>{member.participant_id}</code>
+                          <strong>{participantName(member.participant_id)}</strong>
                           <small>{member.position ? `Позиция ${member.position}` : "Позиция не определена"}</small>
                         </div>
                         <div className={styles.memberSignals}>
@@ -533,7 +530,7 @@ export const GoldenPlayoffControlPanel = ({
                       loadingLabel="Запускаем"
                       onClick={() => void handleStartAttempt(group)}
                     >
-                      Начать готовую попытку
+                      Начать игру
                     </Button>
                   </div>
                 </article>
@@ -541,9 +538,9 @@ export const GoldenPlayoffControlPanel = ({
             })}
           </div>
           {groups.length === 0 ? (
-            <Message tone="empty" title="Golden группы не сформированы">
+            <Message tone="empty" title="Группы еще не сформированы">
               {currentState === "golden"
-                ? "Golden runtime еще не открыт. Откройте его, чтобы сервер сформировал группы."
+                ? "Нажмите кнопку подготовки групп, чтобы распределить участников."
                 : "Сервер еще не вернул группы для выбранного турнира."}
             </Message>
           ) : null}
@@ -551,23 +548,22 @@ export const GoldenPlayoffControlPanel = ({
       ) : null}
 
       {(currentState === "playoffs" || currentState === "completed") && bracket === null && goldenState === "ready" ? (
-        <Message tone="loading" title="Загружаем bracket">
+        <Message tone="loading" title="Загружаем сетку">
           Получаем официальные полуфиналы и финал.
         </Message>
       ) : null}
       {bracket !== null && bracketMatches.length === 0 ? (
-        <Message tone="error" title="Bracket недоступен">
-          Сервер должен вернуть ровно два полуфинала и не более одного финала.
+        <Message tone="error" title="Сетка недоступна">
+          Не удалось получить полуфиналы и финал. Попробуйте обновить данные.
           <button className={styles.linkButton} type="button" onClick={refresh}>
             Обновить данные
           </button>
         </Message>
       ) : null}
       {(currentState === "playoffs" || currentState === "completed") && scoreboard !== null ? (
-        <section className={styles.seeds} data-testid="server-top-four" aria-label="Top 4 посева">
+        <section className={styles.seeds} data-testid="server-top-four" aria-label="Участники плей-офф">
           <div className={styles.sectionHeading}>
-            <h3>Top 4 посева</h3>
-            <span>Источник: server scoreboard</span>
+            <h3>Участники плей-офф</h3>
           </div>
           {topSeeds.length > 0 ? (
             <div className={styles.seedList}>
@@ -580,15 +576,14 @@ export const GoldenPlayoffControlPanel = ({
               ))}
             </div>
           ) : (
-            <p className={styles.seedEmpty}>Server scoreboard пока не содержит посевов.</p>
+            <p className={styles.seedEmpty}>Четверка участников еще не определена.</p>
           )}
         </section>
       ) : null}
       {bracketMatches.length > 0 ? (
-        <section className={styles.bracket} data-testid="server-playoff-bracket" aria-label="Официальный bracket плей-офф">
+        <section className={styles.bracket} data-testid="server-playoff-bracket" aria-label="Сетка плей-офф">
           <div className={styles.sectionHeading}>
-            <h3>Официальный bracket</h3>
-            <span>Ревизия {bracket?.projection_revision ?? "-"}</span>
+            <h3>Сетка плей-офф</h3>
           </div>
           <div className={styles.bracketGrid}>
             {bracketMatches.map((match) => (
@@ -600,7 +595,7 @@ export const GoldenPlayoffControlPanel = ({
                       : "Финал - BO3"}
                   </strong>
                   <Status tone={match.state === "completed" ? "success" : match.state === "active" ? "live" : "neutral"}>
-                    {match.state}
+                    {formatSeriesState(match.state)}
                   </Status>
                 </div>
                 <div className={styles.teams}>

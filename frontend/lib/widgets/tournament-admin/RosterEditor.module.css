@@ -368,42 +368,11 @@
 
 .row legend {
   max-width: 100%;
+  overflow-wrap: anywhere;
   padding: 0 0.3rem;
   color: var(--text);
   font-size: 0.86rem;
   font-weight: 780;
-}
-
-.rowDetails {
-  display: grid;
-  min-width: 0;
-  grid-template-columns: minmax(9rem, 0.35fr) minmax(0, 1fr);
-  gap: 1rem;
-}
-
-.serverOrder,
-.identity {
-  display: grid;
-  min-width: 0;
-  gap: 0.2rem;
-}
-
-.serverOrder span,
-.identity span {
-  color: var(--secondary);
-  font-size: 0.72rem;
-}
-
-.serverOrder strong {
-  color: var(--accent-strong);
-  font-size: 1.05rem;
-}
-
-.identity code {
-  overflow-wrap: anywhere;
-  color: var(--text);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: 0.72rem;
 }
 
 .fields {
@@ -415,7 +384,19 @@
 }
 
 .fields .field {
+  display: grid;
   min-width: 0;
+  gap: 0.5rem;
+}
+
+.fields .field label {
+  margin: 0;
+  line-height: 1.4;
+}
+
+.fields input,
+.fields select {
+  height: 44px;
 }
 
 .fieldHint {
@@ -457,7 +438,6 @@
   }
 
   .meta,
-  .rowDetails,
   .fields,
   .preflightSummary {
     grid-template-columns: 1fr;

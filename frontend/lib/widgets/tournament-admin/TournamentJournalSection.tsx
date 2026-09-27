@@ -170,8 +170,7 @@ export const TournamentJournalSection = ({
           >
             {selectedTournamentId ? (
               <>
-                Идентификатор <code>{selectedTournamentId}</code> отсутствует в загруженном списке.
-                Обновите список или выберите другой турнир.
+                Выбранный турнир не найден. Обновите список или выберите другой турнир.
               </>
             ) : tournaments.length === 0 ? (
               "Журнал появится после создания турнира."

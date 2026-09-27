@@ -1,0 +1,26 @@
+.details {
+  min-width: 0;
+  color: var(--secondary);
+  font-size: 0.85rem;
+}
+
+.details summary {
+  width: fit-content;
+  padding: 0.5rem 0;
+  cursor: pointer;
+}
+
+.details summary:hover {
+  color: var(--text);
+}
+
+.details summary:focus-visible {
+  outline: 2px solid var(--text);
+  outline-offset: 3px;
+}
+
+.content {
+  min-width: 0;
+  padding-block: 0.5rem;
+  overflow-wrap: anywhere;
+}

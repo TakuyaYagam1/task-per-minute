@@ -37,6 +37,7 @@
 }
 
 .identity strong,
+.memberIdentity strong,
 .groupHeading h3,
 .sectionHeading h3,
 .matchHeading strong {
@@ -44,15 +45,7 @@
   color: var(--text);
   font-size: 0.92rem;
   font-weight: 760;
-}
-
-.identity code,
-.groupHeading code,
-.memberIdentity code {
   overflow-wrap: anywhere;
-  color: var(--secondary);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: 0.72rem;
 }
 
 .serverState {

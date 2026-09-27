@@ -331,7 +331,6 @@ const seriesResultTone = (
   }
 };
 
-const resultRevisionLabel = (value: string | null): string => value ?? "Не опубликована";
 
 export const TournamentPlayerPanel = ({
   onDraft,
@@ -576,10 +575,6 @@ export const TournamentPlayerPanel = ({
                     )}
                   </dd>
                 </div>
-                <div>
-                  <dt>Ревизия результата</dt>
-                  <dd>{view.officialOutcome.revisionId}</dd>
-                </div>
               </dl>
             </div>
           )}
@@ -615,7 +610,7 @@ export const TournamentPlayerPanel = ({
             <span>{view.opponentName ?? "Соперник"}</span>
           </div>
 
-          <dl className={styles.seriesFacts} aria-label="Ревизии официального результата">
+          <dl className={styles.seriesFacts} aria-label="Официальный результат">
             <div>
               <dt>Победитель</dt>
               <dd>
@@ -623,14 +618,6 @@ export const TournamentPlayerPanel = ({
                   ? "Не опубликован"
                   : participantLabelFor(view.seriesResult.winnerId, view)}
               </dd>
-            </div>
-            <div>
-              <dt>Ревизия счета</dt>
-              <dd>{resultRevisionLabel(view.seriesResult.currentScoreRevisionId)}</dd>
-            </div>
-            <div>
-              <dt>Ревизия результата</dt>
-              <dd>{resultRevisionLabel(view.seriesResult.currentResultRevisionId)}</dd>
             </div>
             <div>
               <dt>Следующий этап</dt>
@@ -676,10 +663,6 @@ export const TournamentPlayerPanel = ({
                       <div>
                         <dt>Причина</dt>
                         <dd>{game.reason === null ? "Не опубликована" : formatResultReason(game.reason)}</dd>
-                      </div>
-                      <div>
-                        <dt>Ревизия</dt>
-                        <dd>{resultRevisionLabel(game.resultRevisionId)}</dd>
                       </div>
                     </dl>
                   </li>
@@ -1175,9 +1158,6 @@ export const TournamentPlayerPanel = ({
         </section>
       )}
 
-      <p className={styles.revision}>
-        Подтвержденная ревизия сервера: {view.projectionRevision}
-      </p>
     </section>
   );
 };
