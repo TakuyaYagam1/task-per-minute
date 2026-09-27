@@ -228,12 +228,6 @@ export function AdminShell({
 }: AdminShellProps) {
   return (
     <main className={`${styles.container} motion-page gpu-optimized`}>
-      <header className={styles.shellHeader}>
-        <div className={styles.shellIdentity}>
-          <p className={styles.shellEyebrow}>Администрирование</p>
-          <h1 className={styles.shellTitle}>Панель управления</h1>
-        </div>
-      </header>
       <nav className={styles.shellNav} aria-label="Разделы админ-панели">
         {Object.entries(sectionLabels).map(([section, label]) => {
           const typedSection = section as AdminSection;
