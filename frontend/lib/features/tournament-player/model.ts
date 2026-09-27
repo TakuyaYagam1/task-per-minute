@@ -256,11 +256,11 @@ const participantStateCopy: Readonly<
   },
   eliminated: {
     label: "Выбывание",
-    description: "Участие в текущем турнире завершено. Новые действия недоступны.",
+    description: "Участие в текущем соревновании завершено. Новые действия недоступны.",
   },
   completed: {
-    label: "Турнир завершен",
-    description: "Итог турнира зафиксирован.",
+    label: "Соревнование завершено",
+    description: "Итог соревнования зафиксирован.",
   },
 };
 
@@ -297,7 +297,7 @@ const assignmentStageLabelFor = (
 ): string => {
   switch (stage) {
     case "swiss":
-      return "Швейцарский этап";
+      return "Квалификация";
     case "semifinal":
       return "Полуфинал";
     case "final":

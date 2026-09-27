@@ -327,13 +327,13 @@ const setupPairingRoutes = async (
 };
 
 const pairingRegion = (page: Page) =>
-  page.getByRole("region", { name: "Пары Swiss" });
+  page.getByRole("region", { name: "Пары квалификации" });
 
 const openPairingEditor = async (page: Page): Promise<ReturnType<typeof pairingRegion>> => {
   await page.goto("/admin");
   await page.getByPlaceholder("Введите пароль...").fill("correct-password");
   await page.getByRole("button", { name: "Войти" }).click();
-  await page.getByRole("button", { name: "Турниры" }).click();
+  await page.getByRole("button", { name: "Соревнования" }).click();
   const row = page.getByRole("row").filter({ hasText: "Swiss контракт" });
   await row.getByRole("button", { name: "Открыть" }).click();
   await expect(page.locator("#tournament-detail-title")).toHaveText("Swiss контракт");
@@ -349,8 +349,8 @@ const openPairingEditor = async (page: Page): Promise<ReturnType<typeof pairingR
 };
 
 for (const [state, hint] of [
-  ["registration", 'Проверьте состав, затем нажмите "Зафиксировать состав" и "Начать швейцарский этап". После этого можно формировать пары.'],
-  ["roster_locked", 'Нажмите "Начать швейцарский этап". После этого можно формировать пары.'],
+  ["registration", 'Проверьте состав, затем нажмите "Зафиксировать состав" и "Начать квалификацию". После этого можно формировать пары.'],
+  ["roster_locked", 'Нажмите "Начать квалификацию". После этого можно формировать пары.'],
 ] as const) {
   test(`не отправляет пары до запуска турнира в состоянии ${state}`, async ({ page }) => {
     const { pairingRequests } = await setupPairingRoutes(page, 4, {
@@ -360,7 +360,7 @@ for (const [state, hint] of [
     const submit = region.getByRole("button", { name: "Сформировать пары" });
 
     await expect(submit).toBeDisabled();
-    await expect(region).toContainText("Турнир не запущен");
+    await expect(region).toContainText("Соревнование не запущено");
     await expect(region).toContainText(hint);
     expect(pairingRequests).toHaveLength(0);
   });
@@ -528,7 +528,7 @@ test("сохраняет прежний server result после 409 и дает
       if (pairingCall === 1) {
         await fulfillJSON(route, 200, round);
       } else {
-        await fulfillJSON(route, 409, problem(409, "Ревизия турнира устарела"));
+        await fulfillJSON(route, 409, problem(409, "Ревизия соревнования устарела"));
       }
     },
   });
@@ -541,7 +541,7 @@ test("сохраняет прежний server result после 409 и дает
 
   await submit.click();
   await expect.poll(() => pairingRequests.length).toBe(2);
-  await expect(region.getByRole("alert")).toContainText("Ревизия турнира устарела");
+  await expect(region.getByRole("alert")).toContainText("Ревизия соревнования устарела");
   await expect(region.getByRole("alert")).toContainText("Результат предыдущего сохранения оставлен на экране");
   await expect(region).toContainText("План раунда 1");
   await expect(region).toContainText("Игрок 4");

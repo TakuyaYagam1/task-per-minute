@@ -514,6 +514,14 @@ PublicLiveGame:
       format: date-time
       nullable: true
       readOnly: true
+    solve_time_ms:
+      type: integer
+      format: int64
+      minimum: 0
+      maximum: 9007199254740991
+      nullable: true
+      description: Server-authoritative elapsed milliseconds from game start to the accepted winning flag. Null unless an official solved result has a scoped accepted submission.
+      readOnly: true
     result_reason:
       type: string
       nullable: true

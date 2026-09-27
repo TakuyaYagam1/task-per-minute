@@ -20,10 +20,10 @@ import {
 import { log, useTimedNotification } from "../../shared/lib";
 import {
   Button,
+  Dialog,
   Message,
   Panel,
   Status,
-  TechnicalDetails,
   ViewportPortal,
 } from "../../shared/ui";
 
@@ -144,7 +144,7 @@ const DIFFICULTY_CONFIG: Record<TaskDifficulty, { label: string }> = {
 
 const KIND_CONFIG: Record<TaskKind, { label: string }> = {
   normal: { label: "Обычная" },
-  golden: { label: "Золотая" },
+  golden: { label: "Для дополнительного отбора" },
 };
 
 const MAX_INT32 = 2_147_483_647;
@@ -256,7 +256,6 @@ const apiErrorMessage = (error: unknown, fallback: string): string => {
 
 
 export const TournamentContentManager = ({
-  content,
   contentEmpty = false,
   contentState,
   contentError,
@@ -284,6 +283,7 @@ export const TournamentContentManager = ({
   const [submitting, setSubmitting] = useState(false);
   const [taskFormErrors, setTaskFormErrors] = useState<TaskFormErrors>({});
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
+  const [editorOpen, setEditorOpen] = useState(false);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [tasksState, setTasksState] = useState<LoadState>("loading");
   const [tasksError, setTasksError] = useState<string | null>(null);
@@ -292,6 +292,8 @@ export const TournamentContentManager = ({
   const operationControllerRef = useRef<AbortController | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const formRef = useRef<HTMLFormElement>(null);
+  const titleInputRef = useRef<HTMLInputElement>(null);
+  const editorTriggerRef = useRef<HTMLElement | null>(null);
   const mountedRef = useRef(false);
   const formBaselineRef = useRef<TaskFormSnapshot>(emptyTaskFormSnapshot());
   const { notification, showNotification } =
@@ -440,7 +442,32 @@ export const TournamentContentManager = ({
     return true;
   }, [formDirty]);
 
-  const startEditing = useCallback((task: Task) => {
+  const closeEditor = useCallback((): void => {
+    if (submitting) {
+      return;
+    }
+    if (
+      formDirty &&
+      !window.confirm("Есть несохраненные изменения. Закрыть без сохранения?")
+    ) {
+      return;
+    }
+    setEditorOpen(false);
+    resetForm({ force: true });
+  }, [formDirty, resetForm, submitting]);
+
+  const openCreateEditor = useCallback(
+    (trigger: HTMLButtonElement): void => {
+      if (!resetForm()) {
+        return;
+      }
+      editorTriggerRef.current = trigger;
+      setEditorOpen(true);
+    },
+    [resetForm],
+  );
+
+  const startEditing = useCallback((task: Task, trigger: HTMLButtonElement) => {
     if (editingTaskId === task.id) {
       return;
     }
@@ -469,7 +496,8 @@ export const TournamentContentManager = ({
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
-    formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    editorTriggerRef.current = trigger;
+    setEditorOpen(true);
   }, [editingTaskId, formDirty]);
 
   const updateHint = useCallback(
@@ -667,6 +695,7 @@ export const TournamentContentManager = ({
         notify("success", wasEditing ? "Задача успешно обновлена!" : "Задача успешно создана!");
         resetForm({ force: true });
         setLastUploadedSource(uploadedSource);
+        setEditorOpen(false);
       }
       onReloadContent();
       void loadTasks({ silent: true });
@@ -711,6 +740,7 @@ export const TournamentContentManager = ({
       setTasks((current) => current.filter((task) => task.id !== taskId));
       if (editingTaskId === taskId) {
         resetForm({ force: true });
+        setEditorOpen(false);
       }
       notify("success", "Задача удалена");
       onReloadContent();
@@ -739,7 +769,7 @@ export const TournamentContentManager = ({
     category === "pwn" ? "host:port" : "https://example.com/task";
 
   return (
-    <section className={styles.root} aria-labelledby="tournament-content-title">
+    <section className={styles.root} aria-label="Каталог задач">
       {notification && (
         <ViewportPortal>
           <div
@@ -757,449 +787,432 @@ export const TournamentContentManager = ({
         </ViewportPortal>
       )}
 
-      <Panel
-        title="Задачи"
-        description="Создавайте задачи, редактируйте условия и добавляйте файлы."
-        className={styles.catalogPanel}
+      {contentState === "loading" && (
+        <Message tone="loading" title="Загружаем публикацию">
+          Получаем опубликованный набор задач.
+        </Message>
+      )}
+      {contentState === "error" && (
+        <Message
+          tone={contentEmpty ? "empty" : "error"}
+          title={contentEmpty ? "Публикации пока нет" : "Контент недоступен"}
+        >
+          {contentError || "Не удалось загрузить опубликованные задачи"}
+          <Button
+            variant="secondary"
+            size="small"
+            className={styles.inlineButton}
+            onClick={onReloadContent}
+          >
+            Повторить загрузку
+          </Button>
+        </Message>
+      )}
+
+      <Dialog
+        open={editorOpen}
+        title={editingTaskId ? "Редактировать задачу" : "Создать задачу"}
+        description="Заполните условия задачи и сохраните изменения."
+        size="large"
+        initialFocusRef={titleInputRef}
+        returnFocusRef={editorTriggerRef}
+        closeLabel="Закрыть редактор задачи"
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen) {
+            closeEditor();
+          }
+        }}
       >
-        <div className={styles.contentSummary}>
-          <div className={styles.summaryHeading}>
-            <div>
-              <h2 id="tournament-content-title" className={styles.sectionTitle}>
-                Задачи для турниров
-              </h2>
-              <p className={styles.summaryDescription}>
-                Опубликованный набор используется при создании турнира.
+        <form ref={formRef} onSubmit={(event) => void handleSubmit(event)} className={styles.form} noValidate>
+          <div className={styles.field}>
+            <label htmlFor="admin-task-title">Название задачи</label>
+            <input
+              ref={titleInputRef}
+              id="admin-task-title"
+              name="title"
+              type="text"
+              required
+              value={title}
+              onChange={(event) => {
+                setTitle(event.target.value);
+                clearTaskFormError("title");
+                clearTaskFormError("form");
+              }}
+              placeholder="Введите название..."
+              maxLength={MAX_TASK_TITLE_LENGTH}
+              className={taskFormErrors.title ? styles.inputError : undefined}
+              aria-invalid={Boolean(taskFormErrors.title)}
+              aria-describedby={taskFormErrors.title ? "admin-task-title-error" : undefined}
+            />
+            {taskFormErrors.title && (
+              <p id="admin-task-title-error" className={styles.fieldError}>
+                {taskFormErrors.title}
               </p>
-            </div>
-            {contentState === "ready" && content ? (
-              <Status tone="success">Опубликовано</Status>
-            ) : null}
+            )}
           </div>
 
-          {contentState === "loading" && (
-            <Message tone="loading" title="Загружаем публикацию">
-              Получаем опубликованный набор задач.
-            </Message>
-          )}
-          {contentState === "error" && (
-            <Message
-              tone={contentEmpty ? "empty" : "error"}
-              title={contentEmpty ? "Публикации пока нет" : "Контент недоступен"}
-            >
-              {contentError || "Не удалось загрузить опубликованные задачи"}
-              <Button
-                variant="secondary"
-                size="small"
-                className={styles.inlineButton}
-                onClick={onReloadContent}
+          <div className={styles.field}>
+            <label htmlFor="admin-task-description">Описание</label>
+            <textarea
+              id="admin-task-description"
+              name="description"
+              required
+              value={description}
+              onChange={(event) => {
+                setDescription(event.target.value);
+                clearTaskFormError("description");
+                clearTaskFormError("form");
+              }}
+              placeholder="Опишите задачу..."
+              rows={4}
+              className={taskFormErrors.description ? styles.inputError : undefined}
+              aria-invalid={Boolean(taskFormErrors.description)}
+              aria-describedby={taskFormErrors.description ? "admin-task-description-error" : undefined}
+            />
+            {taskFormErrors.description && (
+              <p id="admin-task-description-error" className={styles.fieldError}>
+                {taskFormErrors.description}
+              </p>
+            )}
+          </div>
+
+          <div className={styles.formRow}>
+            <div className={styles.field}>
+              <label htmlFor="admin-task-category">Категория</label>
+              <select
+                id="admin-task-category"
+                name="category"
+                value={category}
+                onChange={(event) => setCategory(event.target.value as TaskCategory)}
               >
-                Повторить загрузку
-              </Button>
-            </Message>
-          )}
-          {contentState === "ready" && content && (
-            <TechnicalDetails>
-              <dl className={styles.revisionGrid} aria-label="Данные публикации">
-                <div>
-                  <dt>Версия набора</dt>
-                  <dd>{content.content_revision}</dd>
-                </div>
-                <div>
-                  <dt>Публикация</dt>
-                  <dd><code>{content.publication_id}</code></dd>
-                </div>
-                <div>
-                  <dt>Набор обычных задач</dt>
-                  <dd><code>{content.normal_pool_revision_id}</code></dd>
-                </div>
-                <div>
-                  <dt>Набор золотых задач</dt>
-                  <dd><code>{content.golden_pool_revision_id}</code></dd>
-                </div>
-              </dl>
-            </TechnicalDetails>
-          )}
-        </div>
+                {Object.entries(CATEGORY_CONFIG).map(([value, config]) => (
+                  <option key={value} value={value}>
+                    {config.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className={styles.field}>
+              <label htmlFor="admin-task-kind">Пул задания</label>
+              <select
+                id="admin-task-kind"
+                name="kind"
+                value={kind}
+                onChange={(event) => setKind(event.target.value as TaskKind)}
+              >
+                {Object.entries(KIND_CONFIG).map(([value, config]) => (
+                  <option key={value} value={value}>
+                    {config.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className={styles.field}>
+              <label htmlFor="admin-task-difficulty">Сложность</label>
+              <select
+                id="admin-task-difficulty"
+                name="difficulty"
+                value={difficulty}
+                onChange={(event) => setDifficulty(event.target.value as TaskDifficulty)}
+              >
+                {Object.entries(DIFFICULTY_CONFIG).map(([value, config]) => (
+                  <option key={value} value={value}>
+                    {config.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
 
-        <div className={styles.managerLayout}>
-          <Panel
-            as="article"
-            title={editingTaskId ? "Редактировать задачу" : "Создать задачу"}
-            description="Заполните условия задачи и нажмите кнопку сохранения."
-            className={styles.formPanel}
-          >
-            <form ref={formRef} onSubmit={(event) => void handleSubmit(event)} className={styles.form} noValidate>
-              <div className={styles.field}>
-                <label htmlFor="admin-task-title">Название задачи</label>
-                <input
-                  id="admin-task-title"
-                  name="title"
-                  type="text"
-                  required
-                  value={title}
-                  onChange={(event) => {
-                    setTitle(event.target.value);
-                    clearTaskFormError("title");
-                    clearTaskFormError("form");
-                  }}
-                  placeholder="Введите название..."
-                  maxLength={MAX_TASK_TITLE_LENGTH}
-                  className={taskFormErrors.title ? styles.inputError : undefined}
-                  aria-invalid={Boolean(taskFormErrors.title)}
-                  aria-describedby={taskFormErrors.title ? "admin-task-title-error" : undefined}
-                />
-                {taskFormErrors.title && (
-                  <p id="admin-task-title-error" className={styles.fieldError}>
-                    {taskFormErrors.title}
-                  </p>
-                )}
-              </div>
-
-              <div className={styles.field}>
-                <label htmlFor="admin-task-description">Описание</label>
-                <textarea
-                  id="admin-task-description"
-                  name="description"
-                  required
-                  value={description}
-                  onChange={(event) => {
-                    setDescription(event.target.value);
-                    clearTaskFormError("description");
-                    clearTaskFormError("form");
-                  }}
-                  placeholder="Опишите задачу..."
-                  rows={4}
-                  className={taskFormErrors.description ? styles.inputError : undefined}
-                  aria-invalid={Boolean(taskFormErrors.description)}
-                  aria-describedby={taskFormErrors.description ? "admin-task-description-error" : undefined}
-                />
-                {taskFormErrors.description && (
-                  <p id="admin-task-description-error" className={styles.fieldError}>
-                    {taskFormErrors.description}
-                  </p>
-                )}
-              </div>
-
-              <div className={styles.formRow}>
-                <div className={styles.field}>
-                  <label htmlFor="admin-task-category">Категория</label>
-                  <select
-                    id="admin-task-category"
-                    name="category"
-                    value={category}
-                    onChange={(event) => setCategory(event.target.value as TaskCategory)}
-                  >
-                    {Object.entries(CATEGORY_CONFIG).map(([value, config]) => (
-                      <option key={value} value={value}>
-                        {config.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div className={styles.field}>
-                  <label htmlFor="admin-task-kind">Пул задания</label>
-                  <select
-                    id="admin-task-kind"
-                    name="kind"
-                    value={kind}
-                    onChange={(event) => setKind(event.target.value as TaskKind)}
-                  >
-                    {Object.entries(KIND_CONFIG).map(([value, config]) => (
-                      <option key={value} value={value}>
-                        {config.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div className={styles.field}>
-                  <label htmlFor="admin-task-difficulty">Сложность</label>
-                  <select
-                    id="admin-task-difficulty"
-                    name="difficulty"
-                    value={difficulty}
-                    onChange={(event) => setDifficulty(event.target.value as TaskDifficulty)}
-                  >
-                    {Object.entries(DIFFICULTY_CONFIG).map(([value, config]) => (
-                      <option key={value} value={value}>
-                        {config.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              <div className={styles.formRow}>
-                <div className={styles.field}>
-                  <label htmlFor="admin-task-time-limit">Лимит времени (сек)</label>
-                  <input
-                    id="admin-task-time-limit"
-                    name="time_limit"
-                    type="number"
-                    required
-                    min="1"
-                    value={timeLimit}
-                    onChange={(event) => {
-                      setTimeLimit(event.target.value);
-                      clearTaskFormError("timeLimit");
-                      clearTaskFormError("form");
-                    }}
-                    placeholder="60"
-                    className={taskFormErrors.timeLimit ? styles.inputError : undefined}
-                    aria-invalid={Boolean(taskFormErrors.timeLimit)}
-                    aria-describedby={taskFormErrors.timeLimit ? "admin-task-time-limit-error" : undefined}
-                  />
-                  {taskFormErrors.timeLimit && (
-                    <p id="admin-task-time-limit-error" className={styles.fieldError}>
-                      {taskFormErrors.timeLimit}
-                    </p>
-                  )}
-                </div>
-                <div className={styles.field}>
-                  <label htmlFor="admin-task-flag">Флаг</label>
-                  <input
-                    id="admin-task-flag"
-                    name="flag"
-                    type="text"
-                    required
-                    value={flag}
-                    onChange={(event) => {
-                      setFlag(event.target.value);
-                      clearTaskFormError("flag");
-                      clearTaskFormError("form");
-                    }}
-                    placeholder="flag{...}"
-                    maxLength={MAX_TASK_FLAG_LENGTH}
-                    className={taskFormErrors.flag ? styles.inputError : undefined}
-                    aria-invalid={Boolean(taskFormErrors.flag)}
-                    aria-describedby={taskFormErrors.flag ? "admin-task-flag-error" : undefined}
-                  />
-                  {taskFormErrors.flag && (
-                    <p id="admin-task-flag-error" className={styles.fieldError}>
-                      {taskFormErrors.flag}
-                    </p>
-                  )}
-                </div>
-              </div>
-
-              <div className={styles.categoryField}>
-                <label htmlFor="admin-task-url" className={styles.categoryFieldLabel}>
-                  {CATEGORY_CONFIG[category].label} URL
-                </label>
-                <input
-                  id="admin-task-url"
-                  name="task_url"
-                  type="text"
-                  value={taskUrl}
-                  onChange={(event) => {
-                    setTaskUrl(event.target.value);
-                    clearTaskFormError("taskUrl");
-                    clearTaskFormError("form");
-                  }}
-                  placeholder={taskUrlPlaceholder}
-                  className={taskFormErrors.taskUrl ? styles.inputError : undefined}
-                  aria-invalid={Boolean(taskFormErrors.taskUrl)}
-                  aria-describedby={taskFormErrors.taskUrl ? "admin-task-url-error" : undefined}
-                />
-                {taskFormErrors.taskUrl && (
-                  <p id="admin-task-url-error" className={styles.fieldError}>
-                    {taskFormErrors.taskUrl}
-                  </p>
-                )}
-              </div>
-
-              <div className={styles.categoryField}>
-                <span className={styles.categoryFieldLabel}>ZIP-архив с исходниками</span>
-                <label htmlFor="admin-task-source" className={styles.fileUploadZone}>
-                  <span className={styles.fileUploadText}>
-                    <strong>Выбрать ZIP-архив</strong>
-                  </span>
-                </label>
-                <input
-                  ref={fileInputRef}
-                  id="admin-task-source"
-                  name="source_file"
-                  type="file"
-                  accept=".zip,application/zip"
-                  onChange={handleFileChange}
-                  className={styles.visuallyHidden}
-                />
-
-                {sourceFile && (
-                  <div className={styles.fileInfo}>
-                    <span className={styles.fileInfoName}>
-                      <strong>{sourceFile.name}</strong>
-                      <span className={styles.fileInfoMeta}>
-                        {(sourceFile.size / 1024 / 1024).toFixed(1)} MB - {existingSourceFileURL && !sourceFileCleared ? "заменит текущий архив после сохранения" : "загрузится после сохранения"}
-                      </span>
-                    </span>
-                    <button type="button" className={styles.fileInfoActionDanger} onClick={removeFile}>
-                      Убрать
-                    </button>
-                  </div>
-                )}
-                {!sourceFile && existingSourceFileURL && !sourceFileCleared && (
-                  <div className={styles.fileInfo}>
-                    <span className={styles.fileInfoName}>
-                      <strong>Текущий архив сохранён</strong>
-                      <span className={styles.fileInfoMeta}>Удаление применится только после сохранения задачи</span>
-                    </span>
-                    {editingTaskId && (
-                      <a
-                        className={styles.fileInfoAction}
-                        href={adminApi.sourceDownloadURL(editingTaskId)}
-                        download="source.zip"
-                        target="_blank"
-                        rel="noreferrer"
-                      >
-                        Скачать текущий ZIP
-                      </a>
-                    )}
-                    <button type="button" className={styles.fileInfoActionDanger} onClick={removeExistingSourceFile}>
-                      Пометить к удалению
-                    </button>
-                  </div>
-                )}
-                {!sourceFile && existingSourceFileURL && sourceFileCleared && (
-                  <div className={styles.fileInfo}>
-                    <span className={styles.fileInfoName}>
-                      <strong>Архив будет удалён после сохранения задачи</strong>
-                      <span className={styles.fileInfoMeta}>До сохранения можно отменить это действие</span>
-                    </span>
-                    <button type="button" className={styles.fileInfoAction} onClick={restoreExistingSourceFile}>
-                      Отменить удаление
-                    </button>
-                  </div>
-                )}
-                {taskFormErrors.sourceFile && (
-                  <p className={styles.fieldError}>{taskFormErrors.sourceFile}</p>
-                )}
-              </div>
-
-              <div className={styles.field}>
-                <span className={styles.label}>Подсказки (до 3, необязательно)</span>
-                <div className={styles.hintsGrid}>
-                  {hints.map((hint, index) => (
-                    <input
-                      key={index}
-                      type="text"
-                      value={hint}
-                      onChange={(event) => updateHint(index, event.target.value)}
-                      placeholder={`Подсказка ${index + 1}`}
-                    />
-                  ))}
-                </div>
-              </div>
-
-              <div className={styles.buttonGroup}>
-                <Button type="submit" loading={submitting} loadingLabel={editingTaskId ? "Сохраняем" : "Создаем"}>
-                  {editingTaskId ? "Сохранить задачу" : "Создать задачу"}
-                </Button>
-                <Button
-                  type="button"
-                  variant="secondary"
-                  onClick={() => {
-                    resetForm();
-                  }}
-                  disabled={submitting}
-                >
-                  {editingTaskId ? "Отменить" : "Очистить"}
-                </Button>
-              </div>
-              {taskFormErrors.form && (
-                <p className={`${styles.fieldError} ${styles.formLevelError}`} role="alert">
-                  {taskFormErrors.form}
+          <div className={styles.formRow}>
+            <div className={styles.field}>
+              <label htmlFor="admin-task-time-limit">Лимит времени (сек)</label>
+              <input
+                id="admin-task-time-limit"
+                name="time_limit"
+                type="number"
+                required
+                min="1"
+                value={timeLimit}
+                onChange={(event) => {
+                  setTimeLimit(event.target.value);
+                  clearTaskFormError("timeLimit");
+                  clearTaskFormError("form");
+                }}
+                placeholder="60"
+                className={taskFormErrors.timeLimit ? styles.inputError : undefined}
+                aria-invalid={Boolean(taskFormErrors.timeLimit)}
+                aria-describedby={taskFormErrors.timeLimit ? "admin-task-time-limit-error" : undefined}
+              />
+              {taskFormErrors.timeLimit && (
+                <p id="admin-task-time-limit-error" className={styles.fieldError}>
+                  {taskFormErrors.timeLimit}
                 </p>
               )}
-            </form>
-          </Panel>
+            </div>
+            <div className={styles.field}>
+              <label htmlFor="admin-task-flag">Флаг</label>
+              <input
+                id="admin-task-flag"
+                name="flag"
+                type="text"
+                required
+                value={flag}
+                onChange={(event) => {
+                  setFlag(event.target.value);
+                  clearTaskFormError("flag");
+                  clearTaskFormError("form");
+                }}
+                placeholder="flag{...}"
+                maxLength={MAX_TASK_FLAG_LENGTH}
+                className={taskFormErrors.flag ? styles.inputError : undefined}
+                aria-invalid={Boolean(taskFormErrors.flag)}
+                aria-describedby={taskFormErrors.flag ? "admin-task-flag-error" : undefined}
+              />
+              {taskFormErrors.flag && (
+                <p id="admin-task-flag-error" className={styles.fieldError}>
+                  {taskFormErrors.flag}
+                </p>
+              )}
+            </div>
+          </div>
 
-          <Panel
-            as="article"
-            title="Список задач"
-            description={tasksState === "ready" ? `${tasks.length} ${tasks.length === 1 ? "задача" : "задач"}` : ""}
-            className={styles.listPanel}
-            footer={
-              <Button
-                variant="secondary"
-                size="small"
-                onClick={() => void loadTasks()}
-                loading={tasksState === "loading"}
-                loadingLabel="Обновляем"
-              >
-                Обновить список
-              </Button>
-            }
-          >
-            {lastUploadedSource && (
-              <div className={styles.sourceDownloadNotice} role="status">
-                <strong>Исходники загружены в SeaweedFS</strong>
-                <span>
-                  {lastUploadedSource.fileName} для задачи &quot;{lastUploadedSource.taskTitle}&quot;. Ссылка временная: {lastUploadedSource.expiresInSeconds} сек.
+          <div className={styles.categoryField}>
+            <label htmlFor="admin-task-url" className={styles.categoryFieldLabel}>
+              {CATEGORY_CONFIG[category].label} URL
+            </label>
+            <input
+              id="admin-task-url"
+              name="task_url"
+              type="text"
+              value={taskUrl}
+              onChange={(event) => {
+                setTaskUrl(event.target.value);
+                clearTaskFormError("taskUrl");
+                clearTaskFormError("form");
+              }}
+              placeholder={taskUrlPlaceholder}
+              className={taskFormErrors.taskUrl ? styles.inputError : undefined}
+              aria-invalid={Boolean(taskFormErrors.taskUrl)}
+              aria-describedby={taskFormErrors.taskUrl ? "admin-task-url-error" : undefined}
+            />
+            {taskFormErrors.taskUrl && (
+              <p id="admin-task-url-error" className={styles.fieldError}>
+                {taskFormErrors.taskUrl}
+              </p>
+            )}
+          </div>
+
+          <div className={styles.categoryField}>
+            <span className={styles.categoryFieldLabel}>ZIP-архив с исходниками</span>
+            <label htmlFor="admin-task-source" className={styles.fileUploadZone}>
+              <span className={styles.fileUploadText}>
+                <strong>Выбрать ZIP-архив</strong>
+              </span>
+            </label>
+            <input
+              ref={fileInputRef}
+              id="admin-task-source"
+              name="source_file"
+              type="file"
+              accept=".zip,application/zip"
+              onChange={handleFileChange}
+              className={styles.visuallyHidden}
+            />
+
+            {sourceFile && (
+              <div className={styles.fileInfo}>
+                <span className={styles.fileInfoName}>
+                  <strong>{sourceFile.name}</strong>
+                  <span className={styles.fileInfoMeta}>
+                    {(sourceFile.size / 1024 / 1024).toFixed(1)} MB - {existingSourceFileURL && !sourceFileCleared ? "заменит текущий архив после сохранения" : "загрузится после сохранения"}
+                  </span>
                 </span>
-                <a href={lastUploadedSource.url} download={lastUploadedSource.fileName} target="_blank" rel="noreferrer">
-                  Скачать загруженный ZIP
-                </a>
+                <button type="button" className={styles.fileInfoActionDanger} onClick={removeFile}>
+                  Убрать
+                </button>
               </div>
             )}
+            {!sourceFile && existingSourceFileURL && !sourceFileCleared && (
+              <div className={styles.fileInfo}>
+                <span className={styles.fileInfoName}>
+                  <strong>Текущий архив сохранён</strong>
+                  <span className={styles.fileInfoMeta}>Удаление применится только после сохранения задачи</span>
+                </span>
+                {editingTaskId && (
+                  <a
+                    className={styles.fileInfoAction}
+                    href={adminApi.sourceDownloadURL(editingTaskId)}
+                    download="source.zip"
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Скачать текущий ZIP
+                  </a>
+                )}
+                <button type="button" className={styles.fileInfoActionDanger} onClick={removeExistingSourceFile}>
+                  Пометить к удалению
+                </button>
+              </div>
+            )}
+            {!sourceFile && existingSourceFileURL && sourceFileCleared && (
+              <div className={styles.fileInfo}>
+                <span className={styles.fileInfoName}>
+                  <strong>Архив будет удалён после сохранения задачи</strong>
+                  <span className={styles.fileInfoMeta}>До сохранения можно отменить это действие</span>
+                </span>
+                <button type="button" className={styles.fileInfoAction} onClick={restoreExistingSourceFile}>
+                  Отменить удаление
+                </button>
+              </div>
+            )}
+            {taskFormErrors.sourceFile && (
+              <p className={styles.fieldError}>{taskFormErrors.sourceFile}</p>
+            )}
+          </div>
 
-            {tasksState === "loading" && (
-              <Message tone="loading" title="Загрузка задач">
-                Загружаем актуальный каталог задач.
-              </Message>
-            )}
-            {tasksState === "error" && (
-              <Message tone="error" title="Не удалось загрузить задачи">
-                {tasksError}
-                <Button variant="secondary" size="small" className={styles.inlineButton} onClick={() => void loadTasks()}>
-                  Повторить
-                </Button>
-              </Message>
-            )}
-            {tasksState === "ready" && tasks.length === 0 && (
-              <Message tone="empty" title="Каталог пуст">
-                Пока нет созданных задач
-              </Message>
-            )}
-            {tasksState === "ready" && tasks.length > 0 && (
-              <div className={styles.taskList} aria-label="Каталог задач">
-                {tasks.map((task) => {
-                  const categoryInfo = CATEGORY_CONFIG[task.category];
-                  const difficultyInfo = DIFFICULTY_CONFIG[task.difficulty];
-                  return (
-                    <article key={task.id} className={styles.taskItem}>
-                      <div className={styles.taskItemInfo}>
-                        <h3 className={styles.taskItemTitle}>{task.title}</h3>
-                        <div className={styles.taskItemMeta}>
-                          <Status tone="info" size="small">
-                            {categoryInfo?.label || task.category}
-                          </Status>
-                          <Status tone={task.difficulty === "hard" ? "error" : task.difficulty === "medium" ? "warning" : "success"} size="small">
-                            {difficultyInfo?.label || task.difficulty}
-                          </Status>
-                          <span className={styles.taskMetaText}>Лимит: {task.time_limit} сек</span>
-                          <span className={styles.taskMetaText}>
-                            Пул: {KIND_CONFIG[task.kind].label}
-                          </span>
-                          <span className={styles.taskMetaText}>Версия: {task.version}</span>
-                          {task.source_file_url && <span className={styles.taskMetaText}>ZIP загружен</span>}
-                        </div>
-                      </div>
-                      <div className={styles.taskItemActions}>
-                        <button type="button" className={styles.taskItemButton} onClick={() => startEditing(task)} title="Редактировать задачу" aria-label={`Редактировать задачу ${task.title}`}>
-                          Изменить
-                        </button>
-                        <button type="button" className={`${styles.taskItemButton} ${styles.taskItemButtonDanger}`} onClick={() => void handleDeleteTask(task.id)} title="Удалить задачу" aria-label={`Удалить задачу ${task.title}`}>
-                          Удалить
-                        </button>
-                      </div>
-                    </article>
-                  );
-                })}
-              </div>
-            )}
-          </Panel>
-        </div>
+          <div className={styles.field}>
+            <span className={styles.label}>Подсказки (до 3, необязательно)</span>
+            <div className={styles.hintsGrid}>
+              {hints.map((hint, index) => (
+                <input
+                  key={index}
+                  type="text"
+                  value={hint}
+                  onChange={(event) => updateHint(index, event.target.value)}
+                  placeholder={`Подсказка ${index + 1}`}
+                />
+              ))}
+            </div>
+          </div>
+
+          <div className={styles.buttonGroup}>
+            <Button type="submit" loading={submitting} loadingLabel={editingTaskId ? "Сохраняем" : "Создаем"}>
+              {editingTaskId ? "Сохранить задачу" : "Создать задачу"}
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => {
+                if (editingTaskId) {
+                  closeEditor();
+                } else {
+                  resetForm();
+                }
+              }}
+              disabled={submitting}
+            >
+              {editingTaskId ? "Отменить" : "Очистить"}
+            </Button>
+          </div>
+          {taskFormErrors.form && (
+            <p className={`${styles.fieldError} ${styles.formLevelError}`} role="alert">
+              {taskFormErrors.form}
+            </p>
+          )}
+        </form>
+      </Dialog>
+
+      <Panel
+        as="article"
+        aria-labelledby="admin-task-list-title"
+        header={
+          <div className={styles.listHeader}>
+            <div>
+              <h2 id="admin-task-list-title" className={styles.sectionTitle}>
+                Список задач
+              </h2>
+              {tasksState === "ready" && (
+                <p className={styles.listDescription}>
+                  Всего: {tasks.length}
+                </p>
+              )}
+            </div>
+            <Button onClick={(event) => openCreateEditor(event.currentTarget)}>
+              Создать задачу
+            </Button>
+          </div>
+        }
+        className={styles.listPanel}
+        footer={
+          <Button
+            variant="secondary"
+            size="small"
+            onClick={() => void loadTasks()}
+            loading={tasksState === "loading"}
+            loadingLabel="Обновляем"
+          >
+            Обновить список
+          </Button>
+        }
+      >
+        {lastUploadedSource && (
+          <div className={styles.sourceDownloadNotice} role="status">
+            <strong>Исходники загружены</strong>
+            <span>
+              {lastUploadedSource.fileName} для задачи &quot;{lastUploadedSource.taskTitle}&quot;. Ссылка временная: {lastUploadedSource.expiresInSeconds} сек.
+            </span>
+            <a href={lastUploadedSource.url} download={lastUploadedSource.fileName} target="_blank" rel="noreferrer">
+              Скачать загруженный ZIP
+            </a>
+          </div>
+        )}
+
+        {tasksState === "loading" && (
+          <Message tone="loading" title="Загрузка задач">
+            Загружаем актуальный каталог задач.
+          </Message>
+        )}
+        {tasksState === "error" && (
+          <Message tone="error" title="Не удалось загрузить задачи">
+            {tasksError}
+            <Button variant="secondary" size="small" className={styles.inlineButton} onClick={() => void loadTasks()}>
+              Повторить
+            </Button>
+          </Message>
+        )}
+        {tasksState === "ready" && tasks.length === 0 && (
+          <Message tone="empty" title="Каталог пуст">
+            Пока нет созданных задач
+          </Message>
+        )}
+        {tasksState === "ready" && tasks.length > 0 && (
+          <div className={styles.taskList} aria-label="Каталог задач">
+            {tasks.map((task) => {
+              const categoryInfo = CATEGORY_CONFIG[task.category];
+              const difficultyInfo = DIFFICULTY_CONFIG[task.difficulty];
+              return (
+                <article key={task.id} className={styles.taskItem}>
+                  <div className={styles.taskItemInfo}>
+                    <h3 className={styles.taskItemTitle}>{task.title}</h3>
+                    <div className={styles.taskItemMeta}>
+                      <Status tone="info" size="small">
+                        {categoryInfo?.label || task.category}
+                      </Status>
+                      <Status tone={task.difficulty === "hard" ? "error" : task.difficulty === "medium" ? "warning" : "success"} size="small">
+                        {difficultyInfo?.label || task.difficulty}
+                      </Status>
+                      <span className={styles.taskMetaText}>Лимит: {task.time_limit} сек</span>
+                      <span className={styles.taskMetaText}>
+                        Пул: {KIND_CONFIG[task.kind].label}
+                      </span>
+                      <span className={styles.taskMetaText}>Версия: {task.version}</span>
+                      {task.source_file_url && <span className={styles.taskMetaText}>ZIP загружен</span>}
+                    </div>
+                  </div>
+                  <div className={styles.taskItemActions}>
+                    <button type="button" className={styles.taskItemButton} onClick={(event) => startEditing(task, event.currentTarget)} title="Редактировать задачу" aria-label={`Редактировать задачу ${task.title}`}>
+                      Изменить
+                    </button>
+                    <button type="button" className={`${styles.taskItemButton} ${styles.taskItemButtonDanger}`} onClick={() => void handleDeleteTask(task.id)} title="Удалить задачу" aria-label={`Удалить задачу ${task.title}`}>
+                      Удалить
+                    </button>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        )}
       </Panel>
     </section>
   );

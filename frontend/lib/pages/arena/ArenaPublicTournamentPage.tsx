@@ -78,7 +78,7 @@ const viewItems: readonly Readonly<{
   { view: "overview", label: "Обзор" },
   { view: "matches", label: "Матчи" },
   { view: "bracket", label: "Сетка" },
-  { view: "standings", label: "Турнирная таблица" },
+  { view: "standings", label: "Таблица соревнования" },
 ];
 
 const viewFromLocation = (): ArenaPublicView => {
@@ -100,12 +100,20 @@ const locationStateFromWindow = (): PublicLocationState => {
   };
 };
 
+const getSafeArenaCatalogReturnPath = (value: string | null): string => {
+  const safePath = getSafeArenaPublicReturnPath(value);
+  if (safePath && (safePath === "/arena" || safePath.startsWith("/arena?"))) {
+    return safePath;
+  }
+  return "/arena";
+};
+
 const errorFor = (error: unknown): Pick<PublicTournamentLoadState, "status" | "error"> => {
   if (error instanceof ApiError) {
     if (error.kind === "not_found") {
       return {
         status: "not_found",
-        error: "Турнир не найден или больше не публикуется.",
+        error: "Соревнование не найдено или больше не публикуется.",
       };
     }
     if (error.kind === "rate_limited") {
@@ -117,7 +125,7 @@ const errorFor = (error: unknown): Pick<PublicTournamentLoadState, "status" | "e
   }
   return {
     status: "error",
-    error: "Не удалось загрузить турнир. Повторите попытку.",
+    error: "Не удалось загрузить соревнование. Повторите попытку.",
   };
 };
 
@@ -151,7 +159,7 @@ const PublicBroadcastContent = ({
     if (context.recoveryError?.kind === "not_found") {
       return (
         <Message tone="info" title="Матчи еще не опубликованы">
-          <p>Матчи и результаты появятся после старта турнира.</p>
+          <p>Матчи и результаты появятся после старта соревнования.</p>
           <Button type="button" size="small" variant="secondary" onClick={context.retry}>
             Проверить снова
           </Button>
@@ -233,7 +241,7 @@ export const ArenaPublicTournamentPage = ({
       setLoadState({
         status: "not_found",
         item: null,
-        error: "Турнир не найден.",
+        error: "Соревнование не найдено.",
         metadataStale: false,
       });
       return () => controller.abort();
@@ -368,7 +376,7 @@ export const ArenaPublicTournamentPage = ({
     setView(nextView);
   };
 
-  const returnHref = safeReturnPath ?? "/arena";
+  const returnHref = getSafeArenaCatalogReturnPath(safeReturnPath);
   const accessStatus = loadState.status === "loading" ? "loading" :
     loadState.status === "ready" ? "ready" :
       loadState.status === "not_found" ? "missing" : "transport";
@@ -377,19 +385,19 @@ export const ArenaPublicTournamentPage = ({
     <ArenaShell accessStatus={accessStatus}>
       <div className={styles.page}>
         <Link className={styles.backLink} href={returnHref}>
-          Вернуться к каталогу
+          К списку соревнований
         </Link>
 
         {loadState.status === "loading" && loadState.item === null && (
-          <Message tone="loading" title="Загрузка турнира">
-            <p>Открываем страницу турнира.</p>
+          <Message tone="loading" title="Загрузка соревнования">
+            <p>Открываем страницу соревнования.</p>
           </Message>
         )}
 
         {loadState.error && (
           <Message
             tone={loadState.status === "rate_limited" ? "warning" : "error"}
-            title={loadState.status === "not_found" ? "Турнир не найден" : "Турнир недоступен"}
+            title={loadState.status === "not_found" ? "Соревнование не найдено" : "Соревнование недоступно"}
           >
             <p>{loadState.error}</p>
             <Button
@@ -409,7 +417,7 @@ export const ArenaPublicTournamentPage = ({
           <>
             <header className={styles.header}>
               <div className={styles.heading}>
-                <p className={styles.eyebrow}>Трансляция турнира</p>
+                <p className={styles.eyebrow}>Трансляция соревнования</p>
                 <h1 className={styles.title}>{loadState.item.name}</h1>
               </div>
               <Status tone={loadState.item.group === "live" ? "live" : "info"}>
@@ -420,7 +428,7 @@ export const ArenaPublicTournamentPage = ({
               )}
             </header>
 
-            <section className={styles.metadata} aria-label="Сведения о турнире">
+            <section className={styles.metadata} aria-label="Сведения о соревновании">
               <dl className={styles.facts}>
                 <div>
                   <dt>Состояние</dt>
@@ -443,13 +451,13 @@ export const ArenaPublicTournamentPage = ({
                   <dd>{catalogScheduleLabel(loadState.item)}</dd>
                 </div>
                 <div>
-                  <dt>Создан</dt>
+                  <dt>Создание</dt>
                   <dd>{catalogCreatedLabel(loadState.item.createdAt)}</dd>
                 </div>
               </dl>
             </section>
 
-            <nav className={styles.viewNav} aria-label="Разделы турнира">
+            <nav className={styles.viewNav} aria-label="Разделы соревнования">
               {viewItems.map((item) => (
                 <Link
                   aria-current={view === item.view ? "page" : undefined}
@@ -476,10 +484,11 @@ export const ArenaPublicTournamentPage = ({
               ))}
             </nav>
 
-            <aside className={styles.participationSlot} aria-label="Участие в турнире">
+            <aside className={styles.participationSlot} aria-label="Участие в соревновании">
               <TournamentEntry
                 key={loadState.item.tournamentId}
                 publicId={loadState.item.publicId}
+                catalogReturnPath={returnHref}
                 returnPath={buildViewHref(view)}
                 state={loadState.item.state}
                 tournamentId={loadState.item.tournamentId}
@@ -487,8 +496,8 @@ export const ArenaPublicTournamentPage = ({
             </aside>
 
             {isPrestartItem(loadState.item) ? (
-              <Message tone="info" title="Турнир готовится к старту">
-                <p>Матчи и таблица появятся после старта турнира.</p>
+              <Message tone="info" title="Соревнование готовится к старту">
+                <p>Матчи и таблица появятся после старта соревнования.</p>
               </Message>
             ) : (
               <PublicBroadcast

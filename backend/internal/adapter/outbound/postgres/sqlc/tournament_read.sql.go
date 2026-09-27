@@ -1094,6 +1094,7 @@ SELECT series.id AS series_id,
     current_game.current_game_started_at,
     current_game.current_game_effective_deadline,
     current_game.current_game_finished_at,
+    current_game_solve.submission_received_at AS current_game_solve_submission_received_at,
     COALESCE(current_game.current_game_result_reason, '')::TEXT AS current_game_result_reason,
     current_game.current_game_winner_display_name,
     COALESCE(current_game.first_connection_status, 'unknown')::TEXT AS first_connection_status,
@@ -1160,6 +1161,7 @@ LEFT JOIN LATERAL (
 LEFT JOIN LATERAL (
     SELECT slot.slot_number AS current_game_position,
         slot.category::TEXT AS current_game_category,
+        attempt.id AS current_game_attempt_id,
         attempt.state::TEXT AS current_game_state,
         attempt.started_at AS current_game_started_at,
         CASE
@@ -1230,6 +1232,52 @@ LEFT JOIN LATERAL (
         attempt.id DESC
     LIMIT 1
 ) AS current_game ON TRUE
+LEFT JOIN LATERAL (
+    SELECT submission.received_at AS submission_received_at
+    FROM game_attempts AS attempt
+    JOIN official_result_heads AS result_head
+        ON result_head.entity_kind = 'game_attempt'
+        AND result_head.entity_id = attempt.id
+        AND result_head.series_id = attempt.series_id
+        AND result_head.roster_id = attempt.roster_id
+        AND result_head.game_attempt_id = attempt.id
+    JOIN official_result_revisions AS result_revision
+        ON result_revision.id = result_head.current_revision_id
+        AND result_revision.tournament_id = series.tournament_id
+        AND result_revision.entity_kind = 'game_attempt'
+        AND result_revision.entity_id = attempt.id
+        AND result_revision.game_attempt_id = attempt.id
+        AND result_revision.series_id = attempt.series_id
+        AND result_revision.roster_id = attempt.roster_id
+        AND result_revision.result_state = 'completed'
+        AND result_revision.result_reason = 'solved'
+        AND result_revision.winner_id = attempt.winner_id
+    JOIN result_events AS result_event
+        ON result_event.id = result_revision.result_event_id
+        AND result_event.tournament_id = result_revision.tournament_id
+        AND result_event.roster_id = result_revision.roster_id
+        AND result_event.series_id = result_revision.series_id
+        AND result_event.attempt_id = attempt.id
+        AND result_event.result_state = 'completed'
+        AND result_event.result_reason = 'solved'
+    JOIN submission_events AS submission
+        ON submission.id = result_event.submission_event_id
+        AND submission.tournament_id = series.tournament_id
+        AND submission.roster_id = attempt.roster_id
+        AND submission.series_id = attempt.series_id
+        AND submission.attempt_id = attempt.id
+        AND submission.participant_id = result_revision.winner_id
+        AND submission.status = 'accepted'
+    WHERE attempt.id = current_game.current_game_attempt_id
+        AND attempt.state = 'completed'
+        AND attempt.result_reason = 'solved'
+        AND attempt.winner_id IS NOT NULL
+        AND attempt.started_at IS NOT NULL
+        AND submission.received_at >= attempt.started_at
+    ORDER BY submission.received_at,
+        submission.id
+    LIMIT 1
+) AS current_game_solve ON TRUE
 WHERE series.tournament_id = $1
     AND series.state <> 'superseded'
 ORDER BY series.created_at,
@@ -1237,26 +1285,27 @@ ORDER BY series.created_at,
 `
 
 type ListPublicTournamentReadSeriesRow struct {
-	SeriesID                     uuid.UUID
-	Stage                        string
-	RoundNumber                  int16
-	Format                       string
-	State                        string
-	FirstDisplayName             string
-	SecondDisplayName            string
-	FirstParticipantWins         int16
-	SecondParticipantWins        int16
-	CurrentGamePosition          int32
-	CurrentGameCategory          string
-	CurrentGameState             string
-	CurrentGameStartedAt         pgtype.Timestamptz
-	CurrentGameEffectiveDeadline pgtype.Timestamptz
-	CurrentGameFinishedAt        pgtype.Timestamptz
-	CurrentGameResultReason      string
-	CurrentGameWinnerDisplayName *string
-	FirstConnectionStatus        string
-	SecondConnectionStatus       string
-	ScheduledAt                  pgtype.Timestamptz
+	SeriesID                             uuid.UUID
+	Stage                                string
+	RoundNumber                          int16
+	Format                               string
+	State                                string
+	FirstDisplayName                     string
+	SecondDisplayName                    string
+	FirstParticipantWins                 int16
+	SecondParticipantWins                int16
+	CurrentGamePosition                  int32
+	CurrentGameCategory                  string
+	CurrentGameState                     string
+	CurrentGameStartedAt                 pgtype.Timestamptz
+	CurrentGameEffectiveDeadline         pgtype.Timestamptz
+	CurrentGameFinishedAt                pgtype.Timestamptz
+	CurrentGameSolveSubmissionReceivedAt pgtype.Timestamptz
+	CurrentGameResultReason              string
+	CurrentGameWinnerDisplayName         *string
+	FirstConnectionStatus                string
+	SecondConnectionStatus               string
+	ScheduledAt                          pgtype.Timestamptz
 }
 
 func (q *Queries) ListPublicTournamentReadSeries(ctx context.Context, tournamentID uuid.UUID) ([]ListPublicTournamentReadSeriesRow, error) {
@@ -1284,6 +1333,7 @@ func (q *Queries) ListPublicTournamentReadSeries(ctx context.Context, tournament
 			&i.CurrentGameStartedAt,
 			&i.CurrentGameEffectiveDeadline,
 			&i.CurrentGameFinishedAt,
+			&i.CurrentGameSolveSubmissionReceivedAt,
 			&i.CurrentGameResultReason,
 			&i.CurrentGameWinnerDisplayName,
 			&i.FirstConnectionStatus,

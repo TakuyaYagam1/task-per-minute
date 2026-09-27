@@ -97,11 +97,11 @@ const summaryFor = (
   role: ArenaRole,
   tournamentName?: string,
 ): ArenaRoleSummary => ({
-  title: `${tournamentName?.trim() || "Турнир"} - ${ROLE_LABELS[role]}: ${tournamentStateLabel(tournament.state)}`,
+  title: `${tournamentName?.trim() || "Соревнование"} - ${ROLE_LABELS[role]}: ${tournamentStateLabel(tournament.state)}`,
   description:
     role === "spectator"
-      ? "Следите за матчами и результатами турнира."
-      : "Состояние и доступные действия в турнире.",
+      ? "Следите за матчами и результатами соревнования."
+      : "Состояние и доступные действия в соревновании.",
   metrics: [
     { label: "Состояние", value: tournamentStateLabel(tournament.state) },
     { label: "Размер состава", value: String(tournament.roster_size) },
@@ -122,8 +122,8 @@ const messageFor = (
         description: role === "participant"
           ? "Открываем страницу участника и проверяем матч."
           : role === "spectator"
-            ? "Открываем трансляцию турнира."
-            : "Открываем панель турнира.",
+            ? "Открываем трансляцию соревнования."
+            : "Открываем панель соревнования.",
       };
     case "unauthorized":
       return {
@@ -132,7 +132,7 @@ const messageFor = (
         description:
           role === "participant"
             ? "Войдите как участник, чтобы открыть страницу матча."
-            : "Войдите как оператор, чтобы открыть панель турнира.",
+            : "Войдите как оператор, чтобы открыть панель соревнования.",
         action: {
           href: buildArenaLoginHref(
             role === "participant" ? "participant" : "operator",
@@ -146,20 +146,20 @@ const messageFor = (
         tone: "error",
         title: "Доступ запрещен",
         description:
-          "Сессия распознана, но доступа к выбранному турниру нет.",
+          "Сессия распознана, но доступа к выбранному соревнованию нет.",
       };
     case "missing":
       return {
         tone: "error",
-        title: "Турнир не найден",
-        description: "Проверьте ссылку или выберите другой турнир.",
-        action: { href: "/arena", label: "Выбрать другой турнир" },
+        title: "Соревнование не найдено",
+        description: "Проверьте ссылку или выберите другое соревнование.",
+        action: { href: "/arena", label: "Выбрать другое соревнование" },
       };
     case "transport":
       return {
         tone: "error",
         title: "Не удалось подключиться",
-        description: "Сервис турниров временно недоступен. Попробуйте обновить страницу.",
+        description: "Сервис соревнований временно недоступен. Попробуйте обновить страницу.",
         action: {
           href: `/arena/${role}/${encodeURIComponent(tournamentId)}`,
           label: "Повторить",
@@ -168,8 +168,8 @@ const messageFor = (
     case "completed":
       return {
         tone: "info",
-        title: "Турнир завершен",
-        description: "Итог турнира зафиксирован. Доступен только просмотр.",
+        title: "Соревнование завершено",
+        description: "Итог соревнования зафиксирован. Доступен только просмотр.",
       };
     case "ready":
       return undefined;
@@ -474,7 +474,7 @@ export const ArenaRolePage = ({ returnPath, role, tournamentId }: ArenaRolePageP
     >
       {safePublicReturnPath && (
         <Link className={arenaStyles.stateAction} href={safePublicReturnPath}>
-          Вернуться к турниру
+          Вернуться к соревнованию
         </Link>
       )}
       {(state.accessStatus === "ready" || state.accessStatus === "completed") && (

@@ -98,9 +98,16 @@ const setupAdminNavigationApi = async (page: Page): Promise<void> => {
 
 const loginAdmin = async (page: Page, path = '/admin'): Promise<void> => {
   await page.goto(path);
+  await expect(page.getByText('Закрытый раздел', { exact: true })).toHaveCount(0);
+  await expect(
+    page.getByText('Введите пароль, чтобы продолжить работу с панелью управления.', { exact: true }),
+  ).toHaveCount(0);
   await page.getByPlaceholder('Введите пароль...').fill('correct-password');
   await page.getByRole('button', { name: 'Войти' }).click();
   await expect(page.getByRole('heading', { name: 'Панель управления' })).toBeVisible();
+  await expect(page.getByTestId('site-header')).toHaveCSS('position', 'sticky');
+  await expect(page.getByRole('link', { name: 'Общий рейтинг', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Выйти', exact: true })).toBeVisible();
 };
 
 test.beforeEach(async ({ page }) => {
@@ -130,31 +137,56 @@ test('admin navigation is reflected in the URL and survives history and reload',
   await expect(page).toHaveURL(/section=players&view=overview/);
 });
 
+test('back to top appears after scrolling and returns to the page start', async ({ page }) => {
+  await loginAdmin(page, '/admin?section=players&view=overview');
+  const backToTop = page.getByTestId('back-to-top');
+  await expect(backToTop).toHaveCount(0);
+
+  await page.evaluate(() => {
+    document.body.style.minHeight = '1400px';
+    window.scrollTo({ top: 600, behavior: 'auto' });
+  });
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(400);
+  await expect(backToTop).toBeVisible();
+
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await backToTop.click();
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0);
+});
+
 test('admin task draft is guarded on section changes and stays after cancel', async ({ page }) => {
   await loginAdmin(page, '/admin?section=tasks&view=overview');
-  await expect(page.getByPlaceholder('Введите название...')).toBeVisible();
-  await page.getByPlaceholder('Введите название...').fill('Draft task');
+  await expect(page.getByRole('region', { name: 'Задания' })).toBeVisible();
+  await expect(page.getByText('Каталог и публикация', { exact: true })).toHaveCount(0);
+  await expect(page.getByText(/Создавайте задачи, обновляйте их/)).toHaveCount(0);
+  await page.getByRole('button', { name: 'Создать задачу', exact: true }).click();
+  const taskDialog = page.getByRole('dialog', { name: 'Создать задачу' });
+  await expect(taskDialog).toBeVisible();
+  const taskTitle = taskDialog.getByPlaceholder('Введите название...');
+  await taskTitle.fill('Draft task');
 
   page.once('dialog', async (dialog) => {
     expect(dialog.type()).toBe('confirm');
     await dialog.dismiss();
   });
-  await page.getByRole('button', { name: 'Игроки' }).click();
-  await expect(page).toHaveURL(/section=tasks&view=overview/);
-  await expect(page.getByPlaceholder('Введите название...')).toHaveValue('Draft task');
+  await taskDialog.getByRole('button', { name: 'Закрыть редактор задачи' }).click();
+  await expect(taskDialog).toBeVisible();
+  await expect(taskTitle).toHaveValue('Draft task');
 
   page.once('dialog', async (dialog) => {
     expect(dialog.type()).toBe('confirm');
     await dialog.accept();
   });
+  await taskDialog.getByRole('button', { name: 'Закрыть редактор задачи' }).click();
+  await expect(taskDialog).toBeHidden();
   await page.getByRole('button', { name: 'Игроки' }).click();
   await expect(page).toHaveURL(/section=players&view=overview/);
-  await expect(page.getByPlaceholder('Введите название...')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Создать задачу', exact: true })).toHaveCount(0);
 });
 
 test('admin dirty history cancellation preserves the forward stack', async ({ page }) => {
   await loginAdmin(page, '/admin?section=tasks&view=overview');
-  await expect(page.getByPlaceholder('Введите название...')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Создать задачу', exact: true })).toBeVisible();
 
   await page.getByRole('button', { name: 'Игроки' }).click();
   await page.getByRole('button', { name: 'Задачи' }).click();
@@ -164,7 +196,10 @@ test('admin dirty history cancellation preserves the forward stack', async ({ pa
 
   await page.goBack();
   await expect(page).toHaveURL(/section=tasks&view=overview/);
-  const taskTitle = page.getByPlaceholder('Введите название...');
+  await page.getByRole('button', { name: 'Создать задачу', exact: true }).click();
+  const taskDialog = page.getByRole('dialog', { name: 'Создать задачу' });
+  await expect(taskDialog).toBeVisible();
+  const taskTitle = taskDialog.getByPlaceholder('Введите название...');
   await taskTitle.fill('History draft');
 
   page.once('dialog', async (dialog) => {
@@ -185,8 +220,10 @@ test('admin dirty history cancellation preserves the forward stack', async ({ pa
 
   await page.goForward();
   await expect(page).toHaveURL(/section=tasks&view=overview/);
-  await expect(page.getByPlaceholder('Введите название...')).toBeVisible();
-  await expect(page.getByPlaceholder('Введите название...')).toHaveValue('');
+  await page.getByRole('button', { name: 'Создать задачу', exact: true }).click();
+  const restoredTaskDialog = page.getByRole('dialog', { name: 'Создать задачу' });
+  await expect(restoredTaskDialog).toBeVisible();
+  await expect(restoredTaskDialog.getByPlaceholder('Введите название...')).toHaveValue('');
 
   await page.goForward();
   await expect(page).toHaveURL(/section=players&view=overview/);

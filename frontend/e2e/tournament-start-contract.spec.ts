@@ -215,7 +215,7 @@ const loginAndOpenTournament = async (page: Page): Promise<void> => {
   await page.goto("/admin");
   await page.getByPlaceholder("Введите пароль...").fill("correct-password");
   await page.getByRole("button", { name: "Войти" }).click();
-  await page.getByRole("button", { name: "Турниры" }).click();
+  await page.getByRole("button", { name: "Соревнования" }).click();
   await page.getByRole("row").filter({ hasText: "Стартовый турнир" }).getByRole("button", { name: "Открыть" }).click();
   await expect(page.getByRole("heading", { name: "Стартовый турнир" })).toBeVisible();
   await expect(page.getByTestId("tournament-start-controls")).toBeVisible();
@@ -263,7 +263,7 @@ test("оставляет заметный отступ между подсказ
   expect((actionBox?.y ?? 0) - ((guidanceBox?.y ?? 0) + (guidanceBox?.height ?? 0))).toBeGreaterThan(8);
 });
 
-test("из зафиксированного состава запускает швейцарский этап и предлагает открыть сетку", async ({ page }) => {
+test("из зафиксированного состава запускает квалификацию и предлагает открыть сетку", async ({ page }) => {
   const initial = tournament("roster_locked");
   const harness = await setupHarness(page, {
     listItems: [initial],
@@ -273,15 +273,15 @@ test("из зафиксированного состава запускает ш
   await loginAndOpenTournament(page);
 
   const panel = page.getByTestId("tournament-start-controls");
-  await panel.getByRole("button", { name: "Начать швейцарский этап" }).click();
+  await panel.getByRole("button", { name: "Начать квалификацию" }).click();
   await expect.poll(() => harness.actionRequests.length).toBe(1);
   expect(harness.actionRequests[0]?.body).toEqual({
     action: "start_swiss",
     confirmed: true,
     expected_projection_revision: 29,
-    reason: "Оператор подтвердил запуск швейцарского этапа",
+    reason: "Оператор подтвердил запуск квалификации",
   });
-  await expect(panel).toContainText("Швейцарский этап запущен");
+  await expect(panel).toContainText("Квалификация запущена");
   await panel.getByRole("button", { name: "Открыть сетку и серии" }).click();
   await expect(page).toHaveURL(new RegExp(`[?&]view=bracket(?:&|$)`));
 });
@@ -334,8 +334,8 @@ test("не применяет поздний снимок после ухода 
 
   await page.getByTestId("tournament-start-controls").getByRole("button", { name: "Открыть регистрацию" }).click();
   await expect.poll(() => harness.snapshotRequests.length).toBe(1);
-  await page.getByRole("button", { name: "Назад к турнирам" }).click();
-  await expect(page.getByRole("heading", { name: "Турниры" }).first()).toBeVisible();
+  await page.getByRole("button", { name: "К списку соревнований" }).click();
+  await expect(page.getByRole("heading", { name: "Соревнования" }).first()).toBeVisible();
   harness.releaseSnapshot();
   await harness.snapshotSettled;
   expect(harness.actionRequests).toHaveLength(0);
@@ -353,12 +353,12 @@ test("409 показывает понятный конфликт и требуе
   await loginAndOpenTournament(page);
 
   const panel = page.getByTestId("tournament-start-controls");
-  const actionButton = panel.getByRole("button", { name: "Начать швейцарский этап" });
+  const actionButton = panel.getByRole("button", { name: "Начать квалификацию" });
   await actionButton.click();
   const alert = panel.getByRole("alert");
   await expect(alert).toContainText("Действие недоступно");
   await expect(alert).toContainText(
-    "Уже идет другой турнир. Завершите или отмените его перед запуском нового.",
+    "Уже идет другое соревнование. Завершите или отмените его перед запуском нового.",
   );
   await expect(alert).not.toContainText("another tournament is already active");
   await expect(actionButton).toBeDisabled();
@@ -394,7 +394,7 @@ test("generic 409 показывает русское сообщение о ко
 
 test("422 показывает серверную причину и оставляет переход доступным для повтора", async ({ page }) => {
   const initial = tournament("roster_locked");
-  const detail = "Состав не готов к запуску швейцарского этапа";
+  const detail = "Состав не готов к запуску квалификации";
   const harness = await setupHarness(page, {
     actionDetail: detail,
     actionStatus: 422,
@@ -405,7 +405,7 @@ test("422 показывает серверную причину и оставл
   await loginAndOpenTournament(page);
 
   const panel = page.getByTestId("tournament-start-controls");
-  const actionButton = panel.getByRole("button", { name: "Начать швейцарский этап" });
+  const actionButton = panel.getByRole("button", { name: "Начать квалификацию" });
   await actionButton.click();
   await expect(panel.getByRole("alert")).toContainText(detail);
   await expect(actionButton).toBeEnabled();
@@ -424,6 +424,6 @@ test("в состоянии регистрации предлагает подт
 
   const panel = page.getByTestId("tournament-start-controls");
   await expect(panel).toContainText("Подтвердите состав");
-  await expect(panel.getByRole("button", { name: "Начать швейцарский этап" })).toHaveCount(0);
+  await expect(panel.getByRole("button", { name: "Начать квалификацию" })).toHaveCount(0);
   await expect(panel.getByRole("button", { name: "Открыть регистрацию" })).toHaveCount(0);
 });

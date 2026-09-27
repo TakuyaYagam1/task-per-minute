@@ -63,10 +63,9 @@ type BroadcastCurrentGame = Readonly<{
   category: string | null;
   effectiveDeadline: string | null;
   finishedAt: string | null;
-  firstConnectionStatus: string | null;
   position: number | null;
   resultReason: string | null;
-  secondConnectionStatus: string | null;
+  solveTimeMs: number | null;
   startedAt: string | null;
   state: string | null;
   winnerName: string | null;
@@ -123,7 +122,7 @@ const PROJECTION_TABS: ReadonlyArray<Readonly<{
   },
   {
     view: "swiss",
-    label: "Swiss",
+    label: "Квалификация",
     tabId: "broadcast-swiss-tab",
     panelId: "broadcast-swiss",
   },
@@ -135,35 +134,32 @@ const PROJECTION_TABS: ReadonlyArray<Readonly<{
   },
 ];
 
-const CONNECTION_LABELS: Readonly<Record<PublicConnectionStatus, string>> = {
-  idle: "Ожидание",
-  connecting: "Подключение",
-  connected: "На связи",
-  reconnecting: "Переподключение",
-  recovering: "Обновление данных",
-  rejected: "Доступ отклонен",
-  error: "Данные устарели",
+const CONNECTION_WARNINGS: Readonly<Partial<Record<PublicConnectionStatus, string>>> = {
+  reconnecting: "Связь прервана. Повторяем подключение.",
+  recovering: "Обновляем данные после разрыва связи.",
+  rejected: "Автоматические обновления недоступны: соединение отклонено.",
+  error: "Автоматические обновления недоступны: произошла ошибка соединения.",
 };
 
 const PHASE_COPY: Readonly<Record<BroadcastPhase, Readonly<{ title: string; description: string }>>> = {
   waiting: {
-    title: "Турнир ожидает старта",
+    title: "Соревнование ожидает старта",
     description: "Матчи появятся после публикации расписания.",
   },
   live: {
-    title: "Турнир идет",
+    title: "Соревнование идет",
     description: "Счет и статусы матчей обновляются автоматически.",
   },
   technical_pause: {
     title: "Техническая пауза",
-    description: "Турнир приостановлен. Ожидайте продолжения.",
+    description: "Соревнование приостановлено. Ожидайте продолжения.",
   },
   cancelled: {
-    title: "Турнир отменен",
-    description: "Показаны результаты на момент отмены турнира.",
+    title: "Соревнование отменено",
+    description: "Показаны подтвержденные данные на момент отмены соревнования.",
   },
   completed: {
-    title: "Турнир завершен",
+    title: "Соревнование завершено",
     description: "Итоговая таблица и сетка доступны для просмотра.",
   },
 };
@@ -234,23 +230,6 @@ const resultReasonLabel = (value: unknown): string | null => {
   }
 };
 
-const connectionLabel = (value: string | null): string => {
-  switch (value) {
-    case "connected":
-    case "online":
-    case "present":
-      return "На связи";
-    case "reconnecting":
-      return "Переподключение";
-    case "disconnected":
-    case "offline":
-    case "absent":
-      return "Не в сети";
-    default:
-      return "Не опубликован";
-  }
-};
-
 const actionLabel = (value: string | null): string => {
   switch (value) {
     case "ban":
@@ -288,13 +267,6 @@ const scoreValues = (value: unknown): readonly [number, number] => {
   ];
 };
 
-const connectionStatusFrom = (
-  record: Record<string, unknown> | null,
-  key: string,
-): string | null => {
-  return stringValue(record?.[key]) ?? null;
-};
-
 const currentGameFrom = (
   item: Record<string, unknown> | undefined,
 ): BroadcastCurrentGame | null => {
@@ -307,16 +279,9 @@ const currentGameFrom = (
     category: stringValue(source.category) ?? null,
     effectiveDeadline: dateTimeValue(source.effective_deadline),
     finishedAt: dateTimeValue(source.finished_at),
-    firstConnectionStatus: connectionStatusFrom(
-      source,
-      "first_connection_status",
-    ),
     position: integerValue(source.position) ?? null,
     resultReason: stringValue(source.result_reason) ?? null,
-    secondConnectionStatus: connectionStatusFrom(
-      source,
-      "second_connection_status",
-    ),
+    solveTimeMs: integerValue(source.solve_time_ms) ?? null,
     startedAt: dateTimeValue(source.started_at),
     state: stringValue(source.state) ?? null,
     winnerName: winner ?? null,
@@ -379,9 +344,9 @@ const draftFrom = (
 const stageLabel = (value: unknown): string => {
   switch (value) {
     case "swiss":
-      return "Swiss";
+      return "Квалификация";
     case "golden":
-      return "Golden";
+      return "Дополнительный отбор";
     case "playoffs":
       return "Плей-офф";
     case "semifinal":
@@ -521,7 +486,7 @@ const swissMatchesFrom = (
     const [firstWins, secondWins] = scoreValues(item.score);
     matches.push({
       key: `series:${seriesId}`,
-      stage: "Swiss",
+      stage: "Квалификация",
       round: `Раунд ${roundNumber}`,
       firstName: displayName(item.first_display_name),
       secondName: displayName(item.second_display_name),
@@ -556,6 +521,40 @@ const matchButtonLabel = (match: BroadcastMatch): string =>
   `${match.stage} ${match.round}: ${match.firstName} - ${match.secondName}, ` +
   `${match.firstWins}:${match.secondWins}, ` +
   `${match.format ? `${formatSeriesFormat(match.format)}, ` : ""}${formatSeriesState(match.state)}`;
+
+const currentGameTitle = (seriesFormat: string | undefined, position: number | null): string => {
+  const normalizedFormat = seriesFormat?.toLowerCase();
+  if (normalizedFormat === "bo1") {
+    return "BO1";
+  }
+  if (normalizedFormat === "bo3") {
+    return position === null ? "BO3" : `BO3 - Игра ${position}`;
+  }
+  return position === null ? "Игра" : `Игра ${position}`;
+};
+
+const currentGameOutcome = (game: BroadcastCurrentGame): string | null => {
+  const reason = resultReasonLabel(game.resultReason);
+  if (game.winnerName) {
+    return `Победитель: ${game.winnerName}${reason ? ` - ${reason}` : ""}`;
+  }
+  if (game.state === "cancelled" || game.resultReason === "cancelled" ||
+    game.resultReason === "series_cancelled" || game.resultReason === "tournament_cancelled") {
+    return "Матч отменен";
+  }
+  if (reason) {
+    return `Итог: ${reason}`;
+  }
+  return game.finishedAt ? "Итог объявлен" : null;
+};
+
+const currentGameSolveTime = (game: BroadcastCurrentGame): string | null => {
+  if (game.state !== "completed" || game.resultReason !== "solved" ||
+    game.winnerName === null || game.solveTimeMs === null) {
+    return null;
+  }
+  return `Время решения: ${game.winnerName} - ${formatDurationClock(game.solveTimeMs)}`;
+};
 
 const eliminatedNameFrom = (match: BroadcastMatch): string | undefined => {
   if (!match.winnerName) {
@@ -596,11 +595,13 @@ const CurrentGamePanel = ({
   receivedAtMonotonicMs,
   serverTimestamp,
   seriesId,
+  seriesFormat,
 }: Readonly<{
   game: BroadcastCurrentGame | null;
   receivedAtMonotonicMs?: number;
   serverTimestamp?: string;
   seriesId: string | null;
+  seriesFormat?: string;
 }>) => {
   const validServerTimestamp = serverTimestamp !== undefined && Number.isFinite(Date.parse(serverTimestamp))
     ? serverTimestamp
@@ -609,6 +610,9 @@ const CurrentGamePanel = ({
     Number.isFinite(Date.parse(game.effectiveDeadline))
     ? game.effectiveDeadline
     : undefined;
+  const showCountdown = game?.state === "active" && validDeadline !== undefined && validServerTimestamp !== undefined;
+  const outcome = game === null ? null : currentGameOutcome(game);
+  const solveTime = game === null ? null : currentGameSolveTime(game);
 
   return (
     <section
@@ -620,7 +624,7 @@ const CurrentGamePanel = ({
     >
       <div className={styles.subsectionHeader}>
         <div>
-          <h4 id="broadcast-current-game-title">Игра {game?.position ?? "-"}</h4>
+          <h4 id="broadcast-current-game-title">{currentGameTitle(seriesFormat, game?.position ?? null)}</h4>
         </div>
         <span className={styles.gameState}>{game?.state ? formatSeriesState(game.state) : "Не опубликована"}</span>
       </div>
@@ -634,14 +638,6 @@ const CurrentGamePanel = ({
               <dd data-testid="broadcast-game-category">{game.category ?? "Категория пока не объявлена"}</dd>
             </div>
             <div>
-              <dt>Дедлайн</dt>
-              <dd data-testid="broadcast-game-deadline">
-                {game.effectiveDeadline ? (
-                  <time dateTime={game.effectiveDeadline}>{formatArenaDateTime(game.effectiveDeadline)}</time>
-                ) : "Не объявлен"}
-              </dd>
-            </div>
-            <div>
               <dt>Начало</dt>
               <dd>{game.startedAt ? formatArenaDateTime(game.startedAt) : "Не начата"}</dd>
             </div>
@@ -649,33 +645,19 @@ const CurrentGamePanel = ({
               <dt>Завершение</dt>
               <dd>{game.finishedAt ? formatArenaDateTime(game.finishedAt) : "Не завершена"}</dd>
             </div>
-            <div>
-              <dt>Первый участник</dt>
-              <dd>{connectionLabel(game.firstConnectionStatus)}</dd>
-            </div>
-            <div>
-              <dt>Второй участник</dt>
-              <dd>{connectionLabel(game.secondConnectionStatus)}</dd>
-            </div>
           </dl>
-          <div className={styles.gameCountdown}>
-            <span>До конца</span>
-            {validDeadline && validServerTimestamp ? (
+          {showCountdown && (
+            <div className={styles.gameCountdown}>
+              <span>До конца</span>
               <GameCountdown
                 deadline={validDeadline}
                 receivedAtMonotonicMs={receivedAtMonotonicMs}
                 serverTimestamp={validServerTimestamp}
               />
-            ) : (
-              <span data-testid="broadcast-game-countdown">Срок пока не объявлен</span>
-            )}
-          </div>
-          {(game.finishedAt || game.winnerName || resultReasonLabel(game.resultReason)) && (
-            <p className={styles.gameOutcome}>
-              {game.winnerName ? `Победитель: ${game.winnerName}` : "Результат пока не подтвержден"}
-              {resultReasonLabel(game.resultReason) ? ` - ${resultReasonLabel(game.resultReason)}` : ""}
-            </p>
+            </div>
           )}
+          {outcome && <p className={styles.gameOutcome}>{outcome}</p>}
+          {solveTime && <p className={styles.gameSolveTime} data-testid="broadcast-game-solve-time">{solveTime}</p>}
         </>
       )}
     </section>
@@ -986,10 +968,12 @@ export const TournamentBroadcastPanel = ({
           <p className={styles.lead}>{phaseCopy.description}</p>
         </div>
         <div className={styles.headerActions}>
-          <div className={styles.connection} data-connection={connectionStatus} role="status" data-testid="broadcast-connection">
-            <span aria-hidden="true" className={styles.connectionDot} />
-            {CONNECTION_LABELS[connectionStatus]}
-          </div>
+          {CONNECTION_WARNINGS[connectionStatus] && (
+            <div className={styles.connection} data-connection={connectionStatus} role="status" data-testid="broadcast-connection">
+              <span aria-hidden="true" className={styles.connectionDot} />
+              {CONNECTION_WARNINGS[connectionStatus]}
+            </div>
+          )}
           <button
             aria-pressed={isFullscreen}
             className={styles.fullscreenButton}
@@ -1081,6 +1065,7 @@ export const TournamentBroadcastPanel = ({
                 receivedAtMonotonicMs={receivedAtMonotonicMs}
                 serverTimestamp={serverTimestamp}
                 seriesId={selectedSeriesId}
+                seriesFormat={selectedMatch.format}
               />
               {selectedDraft && (selectedDraft.format === "bo1" || selectedDraft.format === "bo3") && (
                 <DraftPanel draft={selectedDraft} seriesId={selectedSeriesId} />
@@ -1096,8 +1081,8 @@ export const TournamentBroadcastPanel = ({
         </section>
       </div>}
 
-      {showProjections && <section className={styles.projections} aria-label="Данные турнира">
-        {showProjectionTabs && <div className={styles.tabs} role="tablist" aria-label="Таблица и этапы турнира">
+      {showProjections && <section className={styles.projections} aria-label="Данные соревнования">
+        {showProjectionTabs && <div className={styles.tabs} role="tablist" aria-label="Таблица и этапы соревнования">
           {projectionTabs.map((tab) => (
             <button
               aria-controls={tab.panelId}
@@ -1123,7 +1108,7 @@ export const TournamentBroadcastPanel = ({
           <div
             {...(showProjectionTabs
               ? { "aria-labelledby": "broadcast-scoreboard-tab" }
-              : { "aria-label": "Турнирная таблица" })}
+              : { "aria-label": "Таблица соревнования" })}
             className={styles.tableWrap}
             id="broadcast-scoreboard"
             role="tabpanel"
@@ -1131,7 +1116,7 @@ export const TournamentBroadcastPanel = ({
             {scoreboard.length === 0 ? (
               <p className={styles.empty}>Таблица пока не опубликована.</p>
             ) : (
-              <table aria-label="Публичная таблица турнира" className={styles.table}>
+              <table aria-label="Публичная таблица соревнования" className={styles.table}>
                 <thead>
                   <tr>
                     <th scope="col">Место</th>
@@ -1177,7 +1162,7 @@ export const TournamentBroadcastPanel = ({
           <div
             {...(showProjectionTabs
               ? { "aria-labelledby": "broadcast-swiss-tab" }
-              : { "aria-label": "Swiss этап" })}
+              : { "aria-label": "Этап квалификации" })}
             className={styles.swiss}
             id="broadcast-swiss"
             role="tabpanel"

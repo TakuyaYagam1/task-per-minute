@@ -98,7 +98,7 @@ export const TournamentJournalSection = ({
         onSessionExpired?.();
       }
       setLoadState("error");
-      setLoadError(problemMessage(error, "Не удалось загрузить список турниров"));
+      setLoadError(problemMessage(error, "Не удалось загрузить список соревнований"));
     } finally {
       if (controllerRef.current === controller) {
         controllerRef.current = null;
@@ -115,15 +115,15 @@ export const TournamentJournalSection = ({
   }, [loadTournaments]);
 
   return (
-    <section className={styles.root} aria-label="Журнал турнира">
+    <section className={styles.root} aria-label="Журнал соревнования">
       <Panel
-        title="Журнал турнира"
-        description="События выбранного турнира и материалы для разбора инцидентов."
+        title="Журнал соревнования"
+        description="События выбранного соревнования и материалы для разбора инцидентов."
         className={styles.panel}
       >
         <div className={styles.toolbar}>
           <div className={styles.selector}>
-            <label htmlFor="tournament-journal-select">Турнир</label>
+            <label htmlFor="tournament-journal-select">Соревнование</label>
             <select
               id="tournament-journal-select"
               value={selectedTournamentId ?? ""}
@@ -132,7 +132,7 @@ export const TournamentJournalSection = ({
               }
               disabled={loadState !== "ready"}
             >
-              <option value="">Выберите турнир</option>
+              <option value="">Выберите соревнование</option>
               {tournaments.map((tournament) => (
                 <option key={tournament.id} value={tournament.id}>
                   {tournament.name} - {tournament.public_id}
@@ -152,7 +152,7 @@ export const TournamentJournalSection = ({
         </div>
 
         {loadState === "error" ? (
-          <Message tone="error" title="Список турниров недоступен">
+          <Message tone="error" title="Список соревнований недоступен">
             {loadError}
             <Button
               variant="secondary"
@@ -166,16 +166,16 @@ export const TournamentJournalSection = ({
         {loadState === "ready" && !selectedTournament ? (
           <Message
             tone={selectedTournamentId ? "error" : "empty"}
-            title={selectedTournamentId ? "Турнир недоступен" : "Турнир не выбран"}
+            title={selectedTournamentId ? "Соревнование недоступно" : "Соревнование не выбрано"}
           >
             {selectedTournamentId ? (
               <>
-                Выбранный турнир не найден. Обновите список или выберите другой турнир.
+                Выбранное соревнование не найдено. Обновите список или выберите другое соревнование.
               </>
             ) : tournaments.length === 0 ? (
-              "Журнал появится после создания турнира."
+              "Журнал появится после создания соревнования."
             ) : (
-              "Выберите турнир, чтобы открыть его журнал."
+              "Выберите соревнование, чтобы открыть его журнал."
             )}
           </Message>
         ) : null}

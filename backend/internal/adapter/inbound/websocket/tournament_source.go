@@ -344,6 +344,7 @@ func publicSnapshotInput(view usecase.PublicSnapshotView) tournamentws.PublicSna
 				StartedAt:              game.StartedAt,
 				EffectiveDeadline:      game.EffectiveDeadline,
 				FinishedAt:             game.FinishedAt,
+				SolveTimeMS:            game.SolveTimeMS,
 				ResultReason:           game.ResultReason,
 				WinnerDisplayName:      game.WinnerDisplayName,
 				FirstConnectionStatus:  game.FirstConnectionStatus,

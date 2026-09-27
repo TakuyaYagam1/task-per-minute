@@ -50,12 +50,6 @@
   letter-spacing: -0.02em;
 }
 
-.shellCurrentSection {
-  margin: 8px 0 0;
-  color: var(--admin-muted);
-  font-size: 0.9rem;
-}
-
 .shellNav {
   display: flex;
   flex-wrap: wrap;

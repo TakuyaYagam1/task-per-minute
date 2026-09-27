@@ -125,7 +125,7 @@ test("participant completes server-owned Golden readiness, task and placement fl
   await expect(panel).toContainText("Это общая группа с единым распределением мест, а не BO1-серия.");
   await expect(panel.getByText("Материалы попытки")).toHaveCount(0);
 
-  await panel.getByRole("button", { name: "Готов к Golden", exact: true }).click();
+  await panel.getByRole("button", { name: "Готов к дополнительному отбору", exact: true }).click();
   await expect(panel).toHaveAttribute("data-golden-state", "ready");
   expect(mutationBodies[0]).toEqual({
     attempt_id: tournamentFixtureIds.attempt,
@@ -166,7 +166,7 @@ test("participant completes server-owned Golden readiness, task and placement fl
     role: null,
   });
 
-  const goldenInput = panel.getByRole("textbox", { name: "Ответ Golden", exact: true });
+  const goldenInput = panel.getByRole("textbox", { name: "Ответ дополнительного отбора", exact: true });
   await goldenInput.focus();
   await expect(goldenInput).toBeFocused();
   const focusState = await goldenInput.evaluate((element) => {
@@ -189,7 +189,7 @@ test("participant completes server-owned Golden readiness, task and placement fl
   await expect(goldenActionStatus).toHaveAttribute("aria-live", "assertive");
   await goldenInput.fill("flag{golden_acceptance}");
   await goldenInput.press("Enter");
-  await expect(panel).toContainText("Решение Golden принято.");
+  await expect(panel).toContainText("Решение дополнительного отбора принято.");
   expect(mutationBodies[1]).toEqual({
     attempt_id: tournamentFixtureIds.attempt,
     expected_runtime_revision: 3,
@@ -226,10 +226,10 @@ test("Golden loading error keeps a named landmark and an announced message", asy
   await page.goto(participantURL);
   const panel = page.getByTestId("participant-golden-panel");
   await expect(panel).toHaveAttribute("data-state", "error");
-  await expect(page.getByRole("region", { name: "Golden Task", exact: true })).toBeVisible();
-  await expect(panel.getByRole("heading", { name: "Golden Task", exact: true })).toBeVisible();
-  const goldenError = panel.getByRole("alert").filter({ hasText: "Golden недоступен" });
-  await expect(goldenError).toContainText("Golden недоступен");
+  await expect(page.getByRole("region", { name: "Задание дополнительного отбора", exact: true })).toBeVisible();
+  await expect(panel.getByRole("heading", { name: "Задание дополнительного отбора", exact: true })).toBeVisible();
+  const goldenError = panel.getByRole("alert").filter({ hasText: "Дополнительный отбор недоступен" });
+  await expect(goldenError).toContainText("Дополнительный отбор недоступен");
   await expect(goldenError).toHaveAttribute("role", "alert");
   await expect(goldenError).toHaveAttribute("aria-live", "assertive");
 });
@@ -247,8 +247,9 @@ test("Golden no-show and technical pause stay taskless and server-controlled", a
   await page.goto(participantURL);
   const panel = page.getByTestId("participant-golden-panel");
   await expect(panel).toContainText("Материалы не выданы");
-  await expect(panel.getByLabel("Ответ Golden")).toHaveCount(0);
-  await expect(panel.getByRole("heading", { name: "Golden проверка" })).toHaveCount(0);
+  await expect(panel.getByLabel("Ответ дополнительного отбора")).toHaveCount(0);
+  await expect(panel.getByRole("heading", { level: 3 })).toHaveCount(0);
+  await expect(panel.getByRole("region")).toHaveCount(0);
 
   current = { ...current, runtime_revision: 4, state: "technical_pause" };
   await panel.getByRole("button", { name: "Обновить данные" }).click();
@@ -346,7 +347,7 @@ test("stale Golden submission recovers a continuation attempt without replay", a
 
   await page.goto(participantURL);
   const panel = page.getByTestId("participant-golden-panel");
-  await panel.getByLabel("Ответ Golden").fill("flag{stale}");
+  await panel.getByLabel("Ответ дополнительного отбора").fill("flag{stale}");
   await panel.getByRole("button", { name: "Отправить ответ", exact: true }).click();
 
   await expect(panel).toHaveAttribute("data-attempt-id", nextAttemptId);
@@ -354,7 +355,7 @@ test("stale Golden submission recovers a continuation attempt without replay", a
     "data-status",
     "conflict",
   );
-  await expect(panel.getByLabel("Ответ Golden")).toHaveValue("");
+  await expect(panel.getByLabel("Ответ дополнительного отбора")).toHaveValue("");
   expect(submitCount).toBe(1);
   expect(getCount).toBeGreaterThanOrEqual(2);
 });

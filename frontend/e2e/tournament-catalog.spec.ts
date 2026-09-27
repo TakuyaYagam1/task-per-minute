@@ -153,8 +153,23 @@ test("catalog renders 20 items, sends server filters, and preserves a multiword 
   });
 
   await page.goto("/arena?group=live&sort=name");
-  await expect(page.getByRole("heading", { name: "Турниры", exact: true })).toBeVisible();
+  const heading = page.getByRole("heading", { level: 1, name: "Соревнования", exact: true });
+  await expect(heading).toBeVisible();
+  await expect(page.getByText("Публичный каталог", { exact: true })).toHaveCount(0);
+  await expect(
+    page.getByText("Выберите соревнование для просмотра. Публичный просмотр доступен без входа.", {
+      exact: true,
+    }),
+  ).toHaveCount(0);
+  await expect(page.getByText("До 20 турниров на странице", { exact: true })).toHaveCount(0);
+  const headingBox = await heading.boundingBox();
+  const viewport = page.viewportSize();
+  expect(headingBox).not.toBeNull();
+  expect(viewport).not.toBeNull();
+  expect(Math.abs((headingBox?.x ?? 0) + (headingBox?.width ?? 0) / 2 - (viewport?.width ?? 0) / 2))
+    .toBeLessThanOrEqual(1);
   await expect(page.getByRole("link", { name: /Контур 19/ })).toBeVisible();
+  await expect(page.getByText("Открыть обзор", { exact: true })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Следующая страница" })).toBeVisible();
 
   const search = page.getByRole("searchbox", { name: "Поиск", exact: true });
@@ -219,8 +234,69 @@ test("catalog empty state is explicit and does not invent tournament data", asyn
   });
 
   await page.goto("/arena?group=completed");
-  await expect(page.getByRole("status").filter({ hasText: "Турниры не найдены" })).toBeVisible();
+  await expect(page.getByRole("status").filter({ hasText: "Соревнования не найдены" })).toBeVisible();
   await expect(page.getByRole("link", { name: /Открыть обзор/ })).toHaveCount(0);
+});
+
+test("catalog maps qualification stages and keeps cards keyboard accessible on mobile", async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 900 });
+  await installCatalogRoute(page, async (_url, route) => {
+    await fulfillJSON(route, {
+      items: [
+        liveItem,
+        item({
+          group: "live",
+          name: "Дополнительная квалификация",
+          public_id: "golden-qualification",
+          stage: "golden",
+          state: "golden",
+          tournament_id: "00000000-0000-4000-8000-000000000204",
+        }),
+        item({
+          group: "live",
+          name: "Финальная сетка",
+          public_id: "playoff-final",
+          stage: "playoffs",
+          state: "playoffs",
+          tournament_id: "00000000-0000-4000-8000-000000000205",
+        }),
+        item({
+          name: "Ближайшее соревнование",
+          public_id: "upcoming-competition",
+          tournament_id: "00000000-0000-4000-8000-000000000206",
+        }),
+      ],
+      next_cursor: null,
+    });
+  });
+
+  await page.goto("/arena");
+  const swissCard = page.getByRole("link", { name: /Живой швейцарский этап/ }).first();
+  const goldenCard = page.getByRole("link", { name: /Дополнительная квалификация/ }).first();
+  const playoffsCard = page.getByRole("link", { name: /Финальная сетка/ }).first();
+  await expect(
+    swissCard.getByText("Этап", { exact: true }).locator("..").getByText("Квалификация", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    goldenCard.getByText("Этап", { exact: true }).locator("..").getByText("Квалификация", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    playoffsCard.getByText("Этап", { exact: true }).locator("..").getByText("Плей-офф", { exact: true }),
+  ).toBeVisible();
+  await expect(swissCard).toContainText("Квалификация и плей-офф");
+  await expect(goldenCard).toContainText("Квалификация и плей-офф");
+  await expect(playoffsCard).toContainText("Квалификация и плей-офф");
+
+  const card = swissCard;
+  await expect(card).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: /Ближайшее соревнование/ }).first().getByText("Предстоящее", { exact: true }),
+  ).toBeVisible();
+  await expectNoHorizontalOverflow(page);
+  await card.focus();
+  await expect(card).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(page).toHaveURL(/\/arena\/tournaments\/live-swiss/);
 });
 
 test("catalog rate limits expose retry and retain a recoverable error state", async ({ page }) => {
@@ -261,32 +337,33 @@ test("public detail is anonymous, keeps the catalog return path, and exposes all
   await page.goto(`/arena/tournaments/${publicId}?view=overview&return=${encodeURIComponent("/arena?group=live")}`);
   await expect(page.getByRole("heading", { name: "Сентябрьский контур", exact: true })).toBeVisible();
   await expect(page.getByText("Идет", { exact: true })).toBeVisible();
+  const catalogLinks = page.getByRole("link", { name: "К списку соревнований", exact: true });
+  await expect(catalogLinks).toHaveCount(2);
+  await expect(catalogLinks.nth(0)).toHaveAttribute("href", "/arena?group=live");
+  await expect(catalogLinks.nth(1)).toHaveAttribute("href", "/arena?group=live");
+  await expect(catalogLinks.nth(0)).toHaveCSS("border-style", "solid");
   await expect(
-    page.getByRole("region", { name: "Сведения о турнире" })
+    page.getByRole("region", { name: "Сведения о соревновании" })
       .getByText("Техническая пауза", { exact: true }),
   ).toBeVisible();
-  await expect(page.getByRole("link", { name: "Вернуться к каталогу" })).toHaveAttribute(
-    "href",
-    "/arena?group=live",
-  );
   await expect(page.getByRole("link", { name: "Участник", exact: true })).toHaveCount(0);
   await expect(page.getByRole("link", { name: "Оператор", exact: true })).toHaveCount(0);
 
   await page.getByRole("link", { name: "Матчи" }).click();
   await expect(page).toHaveURL(/view=matches/);
-  await expect(page.getByRole("heading", { name: "Матчи сервера" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Матчи", exact: true })).toBeVisible();
 
   await page.getByRole("link", { name: "Сетка" }).click();
   await expect(page).toHaveURL(/view=bracket/);
-  await expect(page.getByRole("tab", { name: "Swiss" })).toBeVisible();
+  await expect(page.getByRole("tab", { name: "Квалификация" })).toBeVisible();
   await expect(page.getByRole("tab", { name: "Плей-офф" })).toBeVisible();
-  await expect(page.getByRole("tab", { name: "Swiss" })).toHaveAttribute("aria-selected", "false");
-  await page.getByRole("tab", { name: "Swiss" }).click();
-  await expect(page.getByRole("tabpanel", { name: "Swiss" })).toBeVisible();
+  await expect(page.getByRole("tab", { name: "Квалификация" })).toHaveAttribute("aria-selected", "false");
+  await page.getByRole("tab", { name: "Квалификация" }).click();
+  await expect(page.getByRole("tabpanel", { name: "Квалификация" })).toBeVisible();
 
-  await page.getByRole("link", { name: "Турнирная таблица" }).click();
+  await page.getByRole("link", { name: "Таблица соревнования" }).click();
   await expect(page).toHaveURL(/view=standings/);
-  await expect(page.getByRole("table", { name: "Публичная таблица турнира" })).toBeVisible();
+  await expect(page.getByRole("table", { name: "Публичная таблица соревнования" })).toBeVisible();
   await page.goBack();
   await expect(page).toHaveURL(/view=bracket/);
   await page.goBack();
@@ -314,7 +391,7 @@ test("catalog rejects malformed and duplicate responses, then recovers through r
   });
 
   await page.goto("/arena");
-  await expect(page.getByText("Сервер вернул неожиданный ответ каталога")).toBeVisible();
+  await expect(page.getByText("Не удалось загрузить каталог. Повторите попытку.")).toBeVisible();
   allowSuccess = true;
   await page.getByRole("button", { name: "Повторить" }).click();
   await expect(page.getByRole("link", { name: /Сентябрьский контур/ })).toBeVisible();
@@ -365,7 +442,7 @@ test("detail errors distinguish missing, rate limited, and transport states and 
   });
 
   await page.goto(`/arena/tournaments/${publicId}`);
-  await expect(page.getByText("Турнир не найден или больше не публикуется")).toBeVisible();
+  await expect(page.getByText("Соревнование не найдено или больше не публикуется")).toBeVisible();
   mode = "success";
   await page.getByRole("button", { name: "Повторить" }).click();
   await expect(page.getByRole("heading", { name: "Сентябрьский контур", exact: true })).toBeVisible();
@@ -375,7 +452,7 @@ test("detail errors distinguish missing, rate limited, and transport states and 
   await expect(page.getByText("Слишком много запросов. Повторите попытку позже.")).toBeVisible();
   mode = "transport";
   await page.reload();
-  await expect(page.getByText("Не удалось загрузить турнир. Повторите попытку.")).toBeVisible();
+  await expect(page.getByText("Не удалось загрузить соревнование. Повторите попытку.")).toBeVisible();
 });
 
 test("prestart detail does not open the public recovery transport", async ({ page }) => {
@@ -389,7 +466,7 @@ test("prestart detail does not open the public recovery transport", async ({ pag
   });
 
   await page.goto(`/arena/tournaments/${publicId}?view=overview`);
-  await expect(page.getByText("Турнир готовится к старту")).toBeVisible();
+  await expect(page.getByText("Соревнование готовится к старту")).toBeVisible();
   expect(snapshotRequests).toBe(0);
 });
 
@@ -404,7 +481,7 @@ test("wrong public slug response is rejected before any recovery request", async
   });
 
   await page.goto(`/arena/tournaments/${publicId}`);
-  await expect(page.getByText("Не удалось загрузить турнир. Повторите попытку.")).toBeVisible();
+  await expect(page.getByText("Не удалось загрузить соревнование. Повторите попытку.")).toBeVisible();
   expect(snapshotRequests).toBe(0);
 });
 
@@ -412,13 +489,16 @@ test("public return paths allow one local detail hop and reject external targets
   await installDetailAndSnapshotRoutes(page);
   const nestedReturn = `/arena/tournaments/${publicId}?view=matches&return=${encodeURIComponent("/arena?group=live")}`;
   await page.goto(`/arena/tournaments/${publicId}?view=overview&return=${encodeURIComponent(nestedReturn)}`);
-  await expect(page.getByRole("link", { name: "Вернуться к каталогу" })).toHaveAttribute(
-    "href",
-    nestedReturn,
-  );
+  const nestedCatalogLinks = page.getByRole("link", { name: "К списку соревнований", exact: true });
+  await expect(nestedCatalogLinks).toHaveCount(2);
+  await expect(nestedCatalogLinks.nth(0)).toHaveAttribute("href", "/arena");
+  await expect(nestedCatalogLinks.nth(1)).toHaveAttribute("href", "/arena");
 
   await page.goto(`/arena/tournaments/${publicId}?view=overview&return=${encodeURIComponent("https://evil.example")}`);
-  await expect(page.getByRole("link", { name: "Вернуться к каталогу" })).toHaveAttribute("href", "/arena");
+  const fallbackCatalogLinks = page.getByRole("link", { name: "К списку соревнований", exact: true });
+  await expect(fallbackCatalogLinks).toHaveCount(2);
+  await expect(fallbackCatalogLinks.nth(0)).toHaveAttribute("href", "/arena");
+  await expect(fallbackCatalogLinks.nth(1)).toHaveAttribute("href", "/arena");
 });
 
 const setTheme = async (page: Page, theme: "dark" | "light"): Promise<void> => {
@@ -503,7 +583,7 @@ for (const theme of ["dark", "light"] as const) {
         page.getByRole("heading", { level: 1, name: "Сентябрьский контур", exact: true }),
       ).toBeVisible();
       await expect(page.getByRole("region", { name: "Матч-центр" })).toBeVisible();
-      await expect(page.getByRole("heading", { name: "Участие в турнире", exact: true })).toBeVisible();
+      await expect(page.getByRole("heading", { name: "Участие в соревновании", exact: true })).toBeVisible();
       await expectNoHorizontalOverflow(page);
       await page.screenshot({
         animations: "disabled",

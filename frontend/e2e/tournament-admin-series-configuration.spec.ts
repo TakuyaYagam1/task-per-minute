@@ -393,7 +393,7 @@ const loginAndOpenSeriesEditor = async (page: Page): Promise<ReturnType<Page['ge
   await page.goto('/admin');
   await page.getByPlaceholder('Введите пароль...').fill('correct-password');
   await page.getByRole('button', { name: 'Войти' }).click();
-  await page.getByRole('button', { name: 'Турниры' }).click();
+  await page.getByRole('button', { name: 'Соревнования' }).click();
   const row = page.getByRole('row').filter({ hasText: 'Series конфигурация' });
   await row.getByRole('button', { name: 'Открыть' }).click();
   await page.getByRole('button', { name: 'Сетка и серии' }).click();
@@ -412,7 +412,7 @@ test.describe('FE-031 per-Series category configuration', () => {
     const { configurationPatches } = await setupSeriesRoutes(page);
     const region = await loginAndOpenSeriesEditor(page);
     const reservePanel = region.locator('section[aria-labelledby="reserve-count-title"]');
-    const reserveSelect = region.getByLabel('Количество резервов для normal и Golden');
+    const reserveSelect = region.getByLabel('Количество резервов для обычного режима и дополнительного отбора');
     const reserveSave = region.getByRole('button', { name: 'Сохранить резерв' });
 
     await expect(reserveSelect).toHaveValue('2');
@@ -476,7 +476,7 @@ test.describe('FE-031 per-Series category configuration', () => {
       },
     });
     const region = await loginAndOpenSeriesEditor(page);
-    const reserveSelect = region.getByLabel('Количество резервов для normal и Golden');
+    const reserveSelect = region.getByLabel('Количество резервов для обычного режима и дополнительного отбора');
     const reserveSave = region.getByRole('button', { name: 'Сохранить резерв' });
     await reserveSelect.selectOption('1');
     await reserveSave.click();
@@ -493,12 +493,12 @@ test.describe('FE-031 per-Series category configuration', () => {
         await fulfillJSON(
           route,
           422,
-          problem('Турнир уже начался и не принимает изменение резерва.', 422, 'Invalid configuration cutoff'),
+          problem('Соревнование уже началось и не принимает изменение резерва.', 422, 'Invalid configuration cutoff'),
         );
       },
     });
     const region = await loginAndOpenSeriesEditor(page);
-    const reserveSelect = region.getByLabel('Количество резервов для normal и Golden');
+    const reserveSelect = region.getByLabel('Количество резервов для обычного режима и дополнительного отбора');
     await reserveSelect.selectOption('1');
     await region.getByRole('button', { name: 'Сохранить резерв' }).click();
 
@@ -511,20 +511,20 @@ test.describe('FE-031 per-Series category configuration', () => {
   test('keeps the reserve selector read-only after tournament start', async ({ page }) => {
     await setupSeriesRoutes(page, { tournamentStarted: true });
     const region = await loginAndOpenSeriesEditor(page);
-    await expect(region.getByLabel('Количество резервов для normal и Golden')).toBeDisabled();
+    await expect(region.getByLabel('Количество резервов для обычного режима и дополнительного отбора')).toBeDisabled();
     await expect(region.getByRole('button', { name: 'Сохранить резерв' })).toBeDisabled();
-    await expect(region).toContainText('Турнир уже начался');
+    await expect(region).toContainText('Соревнование уже началось');
   });
 
   test('keeps independent modes, exposes pool choices, and sends exact Series PATCH requests', async ({ page }) => {
     const { seriesPatches } = await setupSeriesRoutes(page);
     const region = await loginAndOpenSeriesEditor(page);
 
-    const swiss = seriesCard(region, /Swiss.*1|Swiss.*раунд.*1/i);
-    const golden = seriesCard(region, /Golden|Золот/i);
+    const swiss = seriesCard(region, /Квалификация.*1/i);
+    const golden = seriesCard(region, /Дополнительный отбор/i);
     const semifinal = seriesCard(region, /Semifinal|Полуфинал/i);
     const final = seriesCard(region, /Серия 4 - Финал/i);
-    const cutoff = seriesCard(region, /Серия 5 - Swiss, раунд 2/i);
+    const cutoff = seriesCard(region, /Серия 5 - Квалификация, раунд 2/i);
 
     await expect(swiss.getByLabel('Режим серии 1')).toHaveValue('random');
     await expect(golden.getByLabel('Режим серии 2')).toHaveValue('admin');
@@ -629,7 +629,7 @@ test.describe('FE-031 per-Series category configuration', () => {
       },
     });
     const region = await loginAndOpenSeriesEditor(page);
-    const swiss = seriesCard(region, /Swiss.*1|Swiss.*раунд.*1/i);
+    const swiss = seriesCard(region, /Квалификация.*1/i);
     await swiss.getByLabel('Режим серии 1').selectOption('admin');
     await swiss.getByLabel('Категория серии 1').selectOption('crypto');
     await swiss.getByRole('button', { name: 'Сохранить серию 1' }).click();
@@ -656,7 +656,7 @@ test.describe('FE-031 per-Series category configuration', () => {
       },
     });
     const region = await loginAndOpenSeriesEditor(page);
-    const swiss = seriesCard(region, /Swiss.*1|Swiss.*раунд.*1/i);
+    const swiss = seriesCard(region, /Квалификация.*1/i);
     await swiss.getByLabel('Режим серии 1').selectOption('admin');
     await swiss.getByLabel('Категория серии 1').selectOption('crypto');
     await swiss.getByRole('button', { name: 'Сохранить серию 1' }).click();

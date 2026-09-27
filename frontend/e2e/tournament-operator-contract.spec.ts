@@ -305,10 +305,10 @@ test("creates a tournament and reuses the returned server revision", async ({ pa
   });
 
   await openFixture(page);
-  await page.getByRole("button", { name: "Создать турнир" }).click();
+  await page.getByRole("button", { name: "Создать соревнование" }).click();
   await expect(page.getByLabel("Результат вызова API")).toContainText('"revision":7');
   await expect(page.getByText("Созданная ревизия: 7")).toBeVisible();
-  await page.getByRole("button", { name: "Создать турнир" }).click();
+  await page.getByRole("button", { name: "Создать соревнование" }).click();
   await expect(page.getByLabel("Результат вызова API")).toContainText('"revision":7');
   expect(requests).toHaveLength(2);
   expect(requests[0].headers()["idempotency-key"]).not.toBe(requests[1].headers()["idempotency-key"]);
@@ -376,7 +376,7 @@ test("rejects malformed successful operator responses", async ({ page }) => {
   });
 
   await openFixture(page);
-  await page.getByRole("button", { name: "Создать турнир" }).click();
+  await page.getByRole("button", { name: "Создать соревнование" }).click();
   await expect(page.getByLabel("Результат вызова API")).toContainText("ApiContractError");
   await expect(page.getByLabel("Результат вызова API")).toContainText(
     "Invalid API response: admin/tournament create",

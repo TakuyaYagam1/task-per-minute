@@ -267,6 +267,7 @@ const isPublicLiveGame = (value: unknown): value is Record<string, unknown> => {
       "started_at",
       "effective_deadline",
       "finished_at",
+      "solve_time_ms",
       "result_reason",
       "winner_display_name",
       "first_connection_status",
@@ -281,6 +282,7 @@ const isPublicLiveGame = (value: unknown): value is Record<string, unknown> => {
     !isNullableDateTime(value.started_at) ||
     !isNullableDateTime(value.effective_deadline) ||
     !isNullableDateTime(value.finished_at) ||
+    !(value.solve_time_ms === undefined || value.solve_time_ms === null || isNonNegativeInteger(value.solve_time_ms)) ||
     (value.result_reason !== null && !isNonBlank(value.result_reason)) ||
     (value.winner_display_name !== null && !isPublicDisplayName(value.winner_display_name)) ||
     !isPublicConnectionStatus(value.first_connection_status) ||
@@ -305,10 +307,26 @@ const isPublicLiveGame = (value: unknown): value is Record<string, unknown> => {
     if (value.state !== "completed" && value.winner_display_name !== null) {
       return false;
     }
+    if (
+      value.state === "completed" &&
+      value.result_reason !== "solved" &&
+      value.solve_time_ms !== null &&
+      value.solve_time_ms !== undefined
+    ) {
+      return false;
+    }
+    if (value.state !== "completed" && value.solve_time_ms !== null && value.solve_time_ms !== undefined) {
+      return false;
+    }
     return true;
   }
 
-  if (value.finished_at !== null || value.result_reason !== null || value.winner_display_name !== null) {
+  if (
+    value.finished_at !== null ||
+    value.result_reason !== null ||
+    value.winner_display_name !== null ||
+    (value.solve_time_ms !== null && value.solve_time_ms !== undefined)
+  ) {
     return false;
   }
   if (value.state === "active") {

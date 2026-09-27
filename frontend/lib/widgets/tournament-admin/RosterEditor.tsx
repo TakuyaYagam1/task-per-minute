@@ -195,7 +195,7 @@ export const RosterEditor = ({
       }
       setRosterState("error");
       setRosterError(
-        rosterErrorMessage(error, "Не удалось загрузить состав турнира"),
+        rosterErrorMessage(error, "Не удалось загрузить состав соревнования"),
       );
     } finally {
       if (rosterControllerRef.current === controller) {
@@ -423,11 +423,11 @@ export const RosterEditor = ({
       if (error instanceof ApiError && error.status === 409) {
         resetPreflight();
         setRosterError(
-          `${error.problem?.detail || "Данные турнира изменились."} Ваши изменения сохранены в форме. Перезагрузите данные перед новой попыткой.`,
+          `${error.problem?.detail || "Данные соревнования изменились."} Ваши изменения сохранены в форме. Перезагрузите данные перед новой попыткой.`,
         );
       } else {
         setRosterError(
-          rosterErrorMessage(error, "Не удалось сохранить состав турнира"),
+          rosterErrorMessage(error, "Не удалось сохранить состав соревнования"),
         );
       }
     } finally {
@@ -525,7 +525,7 @@ export const RosterEditor = ({
       setPreflightState("error");
       setPreflightError(
         error instanceof ApiError && error.status === 409
-          ? `${rosterErrorMessage(error, "Данные турнира изменились.")} Обновите данные и повторите проверку.`
+          ? `${rosterErrorMessage(error, "Данные соревнования изменились.")} Обновите данные и повторите проверку.`
           : rosterErrorMessage(error, "Не удалось проверить готовность к старту"),
       );
     } finally {
@@ -583,8 +583,8 @@ export const RosterEditor = ({
       }
       setControlError(
         error instanceof ApiError && error.status === 409
-          ? `${rosterErrorMessage(error, "Данные турнира изменились.")} Перезагрузите данные и запустите проверку заново.`
-          : rosterErrorMessage(error, "Не удалось зафиксировать состав турнира"),
+          ? `${rosterErrorMessage(error, "Данные соревнования изменились.")} Перезагрузите данные и запустите проверку заново.`
+          : rosterErrorMessage(error, "Не удалось зафиксировать состав соревнования"),
       );
     } finally {
       setLockingRoster(false);
@@ -637,8 +637,8 @@ export const RosterEditor = ({
       }
       setControlError(
         error instanceof ApiError && error.status === 409
-          ? `${rosterErrorMessage(error, "Данные турнира изменились.")} Обновите данные перед повторной попыткой.`
-          : rosterErrorMessage(error, "Не удалось разблокировать состав турнира"),
+          ? `${rosterErrorMessage(error, "Данные соревнования изменились.")} Обновите данные перед повторной попыткой.`
+          : rosterErrorMessage(error, "Не удалось разблокировать состав соревнования"),
       );
     } finally {
       setUnlockingRoster(false);
@@ -647,13 +647,13 @@ export const RosterEditor = ({
 
   return (
     <Panel
-      title="Состав турнира"
-      description="Выберите турнир, чтобы загрузить его состав и активных игроков."
+      title="Состав соревнования"
+      description="Выберите соревнование, чтобы загрузить его состав и активных игроков."
       className={styles.panel}
     >
       {showTournamentChooser ? <div className={styles.chooser}>
         <label htmlFor="roster-tournament-select">
-          Турнир для редактирования состава
+          Соревнование для редактирования состава
         </label>
         <select
           id="roster-tournament-select"
@@ -661,7 +661,7 @@ export const RosterEditor = ({
           value={selectedTournamentId}
           onChange={(event) => onSelectTournament(event.target.value)}
         >
-          <option value="">Выберите турнир</option>
+          <option value="">Выберите соревнование</option>
           {tournaments.map((tournament) => (
             <option key={tournament.id} value={tournament.id}>
               {tournament.name} - {formatTournamentState(tournament.state)}
@@ -671,14 +671,14 @@ export const RosterEditor = ({
       </div> : null}
 
       {!selectedTournament && (
-        <Message tone="empty" title="Турнир не выбран">
-          Выберите турнир из списка выше, чтобы просмотреть и изменить его состав.
+        <Message tone="empty" title="Соревнование не выбрано">
+          Выберите соревнование из списка выше, чтобы просмотреть и изменить его состав.
         </Message>
       )}
 
       {selectedTournament && rosterState === "loading" && (
         <Message tone="loading" title="Загружаем состав">
-          Получаем состав турнира и список активных игроков.
+          Получаем состав соревнования и список активных игроков.
         </Message>
       )}
 
@@ -723,7 +723,7 @@ export const RosterEditor = ({
                 <dd>{roster.locked ? "Да" : "Нет"}</dd>
               </div>
               <div>
-                <dt>Турнир начался</dt>
+                <dt>Соревнование началось</dt>
                 <dd>{roster.execution_started ? "Да" : "Нет"}</dd>
               </div>
             </dl>
@@ -732,11 +732,11 @@ export const RosterEditor = ({
           {rosterEditingLocked && (
             <Message
               tone={roster.execution_started ? "warning" : "success"}
-              title={roster.execution_started ? "Турнир уже начался" : "Состав зафиксирован"}
+              title={roster.execution_started ? "Соревнование уже началось" : "Состав зафиксирован"}
             >
               {roster.execution_started
-                ? "Состав больше нельзя менять после начала турнира."
-                : "Перейдите в раздел \"Обзор\", чтобы запустить швейцарский этап."
+                ? "Состав больше нельзя менять после начала соревнования."
+                : "Перейдите в раздел \"Обзор\", чтобы запустить квалификацию."
               }
               {!roster.execution_started && onNavigateToOverview ? (
                 <Button
@@ -879,7 +879,7 @@ export const RosterEditor = ({
                   Проверка перед стартом
                 </h4>
                 <p className={styles.sectionDescription}>
-                  Проверьте, что состав и задачи готовы к запуску турнира.
+                  Проверьте, что состав и задачи готовы к запуску соревнования.
                 </p>
               </div>
               <Button
@@ -998,10 +998,10 @@ export const RosterEditor = ({
 
           {draftParticipants.length === 0 ? (
             <Message tone="empty" title="Состав пуст">
-              Добавьте активного игрока, чтобы сформировать состав турнира.
+              Добавьте активного игрока, чтобы сформировать состав соревнования.
             </Message>
           ) : rosterEditingLocked ? (
-            <div className={styles.list} aria-label="Состав турнира">
+            <div className={styles.list} aria-label="Состав соревнования">
               {draftParticipants.map((participant, index) => {
                 const player = playerById.get(participant.playerId);
                 const participantName = player?.username || `Участник ${index + 1}`;

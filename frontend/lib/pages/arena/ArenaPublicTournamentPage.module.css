@@ -5,18 +5,30 @@
 }
 
 .backLink {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
   width: fit-content;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-small);
+  padding: 0.55rem 0.85rem;
+  background: var(--surface-muted);
   color: var(--accent-strong);
   font-size: 0.84rem;
   font-weight: 750;
   text-decoration: none;
+  transition:
+    border-color var(--motion),
+    background-color var(--motion),
+    color var(--motion);
 }
 
 .backLink:hover,
 .backLink:focus-visible {
-  color: var(--text);
-  text-decoration: underline;
-  text-underline-offset: 0.2rem;
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent-strong);
 }
 
 .backLink:focus-visible,
@@ -160,6 +172,10 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .backLink {
+    transition: none;
+  }
+
   .viewLink {
     transition: none;
   }

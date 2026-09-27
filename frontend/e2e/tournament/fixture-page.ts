@@ -14,7 +14,7 @@ export const tournamentFixturePage = (baseURL = "/"): string => {
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="color-scheme" content="dark light">
     <base href="${baseHref}">
-    <title>Изолированный контур турнира</title>
+    <title>Изолированный контур соревнования</title>
     <style>
       :root {
         --bg: #101419;
@@ -405,7 +405,7 @@ export const tournamentFixturePage = (baseURL = "/"): string => {
   <body>
     <main class="shell">
       <header class="masthead">
-        <div class="brand"><span class="mark">TPM</span><span>Контур турнира</span></div>
+        <div class="brand"><span class="mark">TPM</span><span>Контур соревнования</span></div>
         <div class="theme-switch" aria-label="Тема">
           <button class="theme-button" type="button" data-theme="dark" aria-pressed="true">Темная</button>
           <button class="theme-button" type="button" data-theme="light" aria-pressed="false">Светлая</button>
@@ -435,13 +435,13 @@ export const tournamentFixturePage = (baseURL = "/"): string => {
           <section class="role-row" data-role="participant" aria-labelledby="participant-title">
             <div class="role-title">
               <span class="role-index">01</span>
-              <div><h3 id="participant-title">Participant</h3><p>лобби, assignment, Golden</p></div>
+              <div><h3 id="participant-title">Participant</h3><p>лобби, assignment, дополнительный отбор</p></div>
             </div>
             <div class="role-content">
               <p class="endpoint">GET /api/v1/tournaments/{id}/participant/*</p>
               <div class="button-row">
                 <button class="action-button primary" type="button" data-role-action="participant-session">Показать сессию</button>
-                <button class="action-button" type="button" data-role-action="participant-golden">Показать Golden</button>
+                <button class="action-button" type="button" data-role-action="participant-golden">Показать дополнительный отбор</button>
                 <button class="action-button" type="button" data-role-action="participant-error">Проверить HTTP 409</button>
                 <button class="action-button" type="button" data-role-action="participant-realtime">Открыть realtime</button>
               </div>

@@ -256,7 +256,7 @@ export default function OperatorApiFixture() {
       <h1>Контракт API оператора</h1>
       <p>Изолированный экран вызывает production adapter из браузерного runtime.</p>
       <button type="button" disabled={!hydrated} onClick={() => { void invoke(runCreate); }}>
-        Создать турнир
+        Создать соревнование
       </button>
       <button type="button" disabled={!hydrated} onClick={() => { void invoke(runSnapshot); }}>
         Получить снимок оператора

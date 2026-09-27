@@ -1,5 +1,6 @@
 import "./globals.css";
 import { SiteHeaderAuthProvider } from "@/features/site-header";
+import { BackToTop } from "@/widgets/back-to-top";
 import { SiteHeader } from "@/widgets/site-header";
 
 const themeStorageKey = "task-per-minute-theme";
@@ -22,7 +23,7 @@ const themeBootstrapScript = `
 
 export const metadata = {
   title: "Task Per Minute",
-  description: "Платформа турниров CTF",
+  description: "Платформа соревнований CTF",
 };
 
 export default function RootLayout({
@@ -38,6 +39,7 @@ export default function RootLayout({
       <body>
         <SiteHeaderAuthProvider>
           <SiteHeader />
+          <BackToTop />
           {children}
         </SiteHeaderAuthProvider>
       </body>

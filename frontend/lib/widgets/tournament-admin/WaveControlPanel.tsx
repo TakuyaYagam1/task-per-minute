@@ -536,7 +536,7 @@ export const WaveControlPanel = ({
       }
       if (error instanceof ApiError && error.status === 409) {
         setStale(true);
-        setCommandError("Состояние турнира устарело. Обновите данные перед повтором.");
+        setCommandError("Состояние соревнования устарело. Обновите данные перед повтором.");
       } else {
         setCommandError(problemMessage(error, "Не удалось изменить состояние волны"));
       }
@@ -559,8 +559,8 @@ export const WaveControlPanel = ({
     >
       <div className={styles.toolbar}>
         <div>
-          <strong>Турнир</strong>
-          <strong>{snapshot?.tournament.name || "Загружаем турнир"}</strong>
+          <strong>Соревнование</strong>
+          <strong>{snapshot?.tournament.name || "Загружаем соревнование"}</strong>
         </div>
         <div className={styles.connection} data-testid="operator-wave-connection">
           <Status tone={realtime.status === "connected" ? "success" : "warning"}>
@@ -582,11 +582,11 @@ export const WaveControlPanel = ({
 
       {status === "connecting" && !snapshot ? (
         <Message tone="loading" title="Загружаем состояние">
-          Получаем актуальные данные турнира.
+          Получаем актуальные данные соревнования.
         </Message>
       ) : null}
       {status === "stale" && !snapshot ? (
-        <Message tone="error" title="Данные турнира недоступны">
+        <Message tone="error" title="Данные соревнования недоступны">
           <button className={styles.linkButton} type="button" onClick={refresh}>Обновить данные</button>
         </Message>
       ) : null}
@@ -641,7 +641,7 @@ export const WaveControlPanel = ({
 
       {operatorRecovery && waves.length === 0 ? (
         <Message tone="empty" title="Волн пока нет">
-          В этом турнире пока нет активных или завершенных волн.
+          В этом соревновании пока нет активных или завершенных волн.
         </Message>
       ) : null}
     </Panel>

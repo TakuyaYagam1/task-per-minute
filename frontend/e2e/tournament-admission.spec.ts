@@ -151,7 +151,7 @@ const installPlayerMe = async (page: Page, status = 200): Promise<void> => {
 
 const detailURL = (): string =>
   `/arena/tournaments/${publicId}?view=overview&return=${encodeURIComponent(
-    `/arena/tournaments/${publicId}?view=overview`,
+    "/arena?group=live",
   )}`;
 
 test("anonymous detail keeps queue idle until the player explicitly participates", async ({ page }) => {
@@ -182,7 +182,11 @@ test("anonymous detail keeps queue idle until the player explicitly participates
 
   await page.goto(detailURL());
   await expect(page.getByRole("heading", { name: "Сентябрьский контур", exact: true })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Участие в турнире", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Участие в соревновании", exact: true })).toBeVisible();
+  const catalogLinks = page.getByRole("link", { name: "К списку соревнований", exact: true });
+  await expect(catalogLinks).toHaveCount(2);
+  await expect(catalogLinks.nth(0)).toHaveAttribute("href", "/arena?group=live");
+  await expect(catalogLinks.nth(1)).toHaveAttribute("href", "/arena?group=live");
   expect(queueGets).toBe(0);
   await expect(page.getByRole("button", { name: "Участвовать", exact: true })).toBeVisible();
 
@@ -254,6 +258,12 @@ test(
     "href",
     new RegExp(`/arena/participant/${tournamentId}\\?return=`),
   );
+  const workspaceHref = await workspaceLink.getAttribute("href");
+  expect(workspaceHref).not.toBeNull();
+  const workspaceURL = new URL(workspaceHref ?? "", "https://arena.local");
+  expect(workspaceURL.searchParams.get("return")).toBe(
+    `/arena/tournaments/${publicId}?view=overview&return=%2Farena%3Fgroup%3Dlive`,
+  );
   await expect(page.getByText(/место в очереди/i)).toHaveCount(0);
   await expect(page.getByText(/seed|позиция в очереди/i)).toHaveCount(0);
   },
@@ -268,7 +278,7 @@ test("checked in prestart status waits for publication before offering participa
   });
 
   await page.goto(detailURL());
-  await expect(page.getByText("Участие подтверждено. Страница матча откроется после старта турнира.")).toBeVisible();
+  await expect(page.getByText("Участие подтверждено. Страница матча откроется после старта соревнования.")).toBeVisible();
   await expect(page.getByRole("link", { name: "Открыть мой матч" })).toHaveCount(0);
 });
 

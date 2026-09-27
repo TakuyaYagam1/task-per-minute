@@ -48,9 +48,9 @@ const statusLabels: Record<TournamentLiveConnectionStatus, string> = {
 };
 
 const statusMessages: Record<TournamentLiveConnectionStatus, string> = {
-  connecting: "Загружаем данные турнира.",
-  recovering: "Обновляем данные турнира.",
-  live: "Показываем подтвержденные данные турнира.",
+  connecting: "Загружаем данные соревнования.",
+  recovering: "Обновляем данные соревнования.",
+  live: "Показываем подтвержденные данные соревнования.",
   stale: "Не удалось обновить данные. Повторите попытку.",
   awaiting_server: "Время истекло. Ожидаем результат.",
   rejected: "Не удалось подключиться к трансляции. Проверьте доступ и повторите попытку.",
@@ -73,7 +73,7 @@ export const TournamentLivePanel = ({
 }: TournamentLivePanelProps) => {
   const displayStatus = effectiveStatus(status, countdown);
   const commandsEnabled = displayStatus === "live" && (countdown?.commandsEnabled ?? true);
-  const panelTitle = title ?? (role === "public" ? "Трансляция турнира" : "Состояние турнира");
+  const panelTitle = title ?? (role === "public" ? "Трансляция соревнования" : "Состояние соревнования");
   const panelRole = role === "public" ? "Трансляция" : roleLabels[role];
 
   return (

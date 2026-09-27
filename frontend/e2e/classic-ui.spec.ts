@@ -123,12 +123,12 @@ const waitForRoleSurface = async (page: Page, role: Role): Promise<void> => {
   if (role === "participant") {
     const participantPanel = page.getByTestId("participant-player-panel");
     await expect(participantPanel).toBeVisible();
-    await expect(participantPanel.getByRole("heading", { name: "Турнирная позиция" })).toBeVisible();
+    await expect(participantPanel.getByRole("heading", { name: "Позиция в соревновании" })).toBeVisible();
     return;
   }
 
   if (role === "operator") {
-    await expect(page.getByRole("heading", { name: "Управление турниром" }).last()).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Управление соревнованием" }).last()).toBeVisible();
     await expect(page.getByText("Данные обновлены", { exact: true })).toBeVisible();
     return;
   }
@@ -273,12 +273,19 @@ for (const surface of surfaces) {
         if (surface.name === "leaderboard") {
           await expect(page.getByRole("table")).toBeVisible();
         } else if (surface.name === "arena") {
-          await expect(page.getByRole("heading", { name: "Турниры", exact: true })).toBeVisible();
+          await expect(page.getByRole("heading", { name: "Соревнования", exact: true })).toBeVisible();
           await expect(page.getByRole("link", { name: /Сентябрьский контур/ })).toBeVisible();
+          const qualificationLabels = page.getByText("Квалификация", { exact: true });
+          await expect(qualificationLabels).toHaveCount(2);
+          await expect(qualificationLabels.first()).toBeVisible();
         } else if ("role" in surface) {
           await waitForRoleSurface(page, surface.role);
         } else {
           await expect(page.locator("main")).toBeVisible();
+          await expect(page.getByRole("heading", { name: "Task Per Minute", exact: true })).toBeVisible();
+          await expect(page.getByRole("heading", { name: "CTF Соревнования", exact: true })).toBeVisible();
+          await expect(page.getByText("Платформа турниров CTF", { exact: true })).toHaveCount(0);
+          await expect(page.getByText("CTF турнир", { exact: true })).toHaveCount(0);
         }
 
         await setTheme(page, theme);

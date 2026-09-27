@@ -53,18 +53,18 @@ export const toPublicTournamentCatalogItemView = (
 
 const GROUP_LABELS: Readonly<Record<PublicTournamentCatalogGroup, string>> = {
   live: "Идет",
-  upcoming: "Предстоящий",
-  completed: "Завершен",
+  upcoming: "Предстоящее",
+  completed: "Завершено",
 };
 
 const STAGE_LABELS: Readonly<Record<PublicTournamentCatalogStage, string>> = {
   registration: "Регистрация",
   roster_locked: "Состав зафиксирован",
-  swiss: "Швейцарский этап",
-  golden: "Золотой этап",
+  swiss: "Квалификация",
+  golden: "Квалификация",
   playoffs: "Плей-офф",
-  completed: "Завершен",
-  cancelled: "Отменен",
+  completed: "Завершено",
+  cancelled: "Отменено",
 };
 
 export const catalogGroupLabel = (group: PublicTournamentCatalogGroup): string =>
@@ -79,7 +79,7 @@ export const catalogStateLabel = (
 
 export const catalogFormatLabel = (
   preset: PublicTournamentCatalogItemView["preset"],
-): string => preset === "tournament_v1" ? "Швейцарская система и плей-офф" : "Формат турнира";
+): string => preset === "tournament_v1" ? "Квалификация и плей-офф" : "Формат соревнования";
 
 export const catalogRosterLabel = (
   item: Pick<PublicTournamentCatalogItemView, "rosterSize" | "plannedRosterSize">,
@@ -92,10 +92,10 @@ export const catalogScheduleLabel = (
     return `Старт: ${formatArenaDateTime(item.scheduledAt)}`;
   }
   if (item.startedAt) {
-    return `Начат: ${formatArenaDateTime(item.startedAt)}`;
+    return `Начато: ${formatArenaDateTime(item.startedAt)}`;
   }
   if (item.finishedAt) {
-    return `Завершен: ${formatArenaDateTime(item.finishedAt)}`;
+    return `Завершено: ${formatArenaDateTime(item.finishedAt)}`;
   }
   return "Время уточняется";
 };

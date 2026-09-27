@@ -203,7 +203,7 @@ export const GoldenPlayoffControlPanel = ({
       }
       if (requestGeneration === requestGenerationRef.current) {
         setGoldenState("error");
-        setLoadError(problemMessage(error, "Не удалось загрузить золотой этап"));
+        setLoadError(problemMessage(error, "Не удалось загрузить дополнительный отбор"));
       }
     } finally {
       if (controllerRef.current === controller) {
@@ -277,7 +277,7 @@ export const GoldenPlayoffControlPanel = ({
           confirmed: true,
           expected_projection_revision: projectionRevision,
           reason: action === "start_golden"
-            ? "Оператор подтвердил переход в Golden"
+            ? "Оператор подтвердил переход в дополнительный отбор"
             : "Оператор подтвердил переход в плей-офф",
         },
         createOperatorCommandIntent(),
@@ -294,9 +294,9 @@ export const GoldenPlayoffControlPanel = ({
       if (error instanceof ApiError && error.status === 409) {
         await loadState();
         setStale(true);
-        setCommandError("Состояние турнира изменилось. Обновите данные перед повтором.");
+        setCommandError("Состояние соревнования изменилось. Обновите данные перед повтором.");
       } else {
-        setCommandError(problemMessage(error, "Не удалось изменить этап турнира"));
+        setCommandError(problemMessage(error, "Не удалось изменить этап соревнования"));
       }
     } finally {
       commandInFlightRef.current = false;
@@ -331,9 +331,9 @@ export const GoldenPlayoffControlPanel = ({
       if (error instanceof ApiError && error.status === 409) {
         await loadState();
         setStale(true);
-        setCommandError("Состояние золотого этапа изменилось. Обновите данные перед повтором.");
+        setCommandError("Состояние дополнительного отбора изменилось. Обновите данные перед повтором.");
       } else {
-        setCommandError(problemMessage(error, "Не удалось открыть подготовку к золотому этапу"));
+        setCommandError(problemMessage(error, "Не удалось открыть подготовку к дополнительному отбору"));
       }
     } finally {
       commandInFlightRef.current = false;
@@ -376,9 +376,9 @@ export const GoldenPlayoffControlPanel = ({
       if (error instanceof ApiError && error.status === 409) {
         await loadState();
         setStale(true);
-        setCommandError("Игра золотого этапа изменилась. Обновите данные перед повтором.");
+        setCommandError("Игра дополнительного отбора изменилась. Обновите данные перед повтором.");
       } else {
-        setCommandError(problemMessage(error, "Не удалось начать игру золотого этапа"));
+        setCommandError(problemMessage(error, "Не удалось начать игру дополнительного отбора"));
       }
     } finally {
       commandInFlightRef.current = false;
@@ -392,7 +392,7 @@ export const GoldenPlayoffControlPanel = ({
 
   return (
     <Panel
-      title="Золотой этап и плей-офф"
+      title="Дополнительный отбор и плей-офф"
       description="Проверяйте готовность игроков, запускайте дополнительные игры и следите за сеткой плей-офф."
       className={styles.root}
       data-testid="operator-golden-playoff-control-panel"
@@ -418,13 +418,13 @@ export const GoldenPlayoffControlPanel = ({
       </div>
 
       {goldenState === "loading" && golden === null ? (
-        <Message tone="loading" title="Загружаем золотой этап">
+        <Message tone="loading" title="Загружаем дополнительный отбор">
           Получаем группы участников и готовность к играм.
         </Message>
       ) : null}
       {goldenState === "error" ? (
-        <Message tone="error" title="Золотой этап недоступен">
-          {loadError ?? "Не удалось загрузить данные золотого этапа."}
+        <Message tone="error" title="Дополнительный отбор недоступен">
+          {loadError ?? "Не удалось загрузить данные дополнительного отбора."}
           <button className={styles.linkButton} type="button" onClick={refresh}>
             Обновить данные
           </button>
@@ -439,8 +439,8 @@ export const GoldenPlayoffControlPanel = ({
         </Message>
       ) : null}
       {goldenState === "ready" && golden === null && !GOLDEN_CONTROL_STATES.has(currentState) ? (
-        <Message tone="empty" title="Золотой этап пока недоступен">
-          Управление появится после завершения швейцарского этапа.
+        <Message tone="empty" title="Дополнительный отбор пока недоступен">
+          Управление появится после завершения квалификации.
         </Message>
       ) : null}
 
@@ -455,7 +455,7 @@ export const GoldenPlayoffControlPanel = ({
               loadingLabel="Запускаем этап"
               onClick={() => void handleLifecycleAction("start_golden")}
             >
-              Начать золотой этап
+              Начать дополнительный отбор
             </Button>
             <Button
               variant="secondary"
@@ -480,7 +480,7 @@ export const GoldenPlayoffControlPanel = ({
           </div>
           {currentState === "golden" && !completeGolden ? (
             <p className={styles.blockingHint}>
-              Плей-офф станет доступен после завершения всех групп золотого этапа.
+              Плей-офф станет доступен после завершения всех групп дополнительного отбора.
             </p>
           ) : null}
           <div className={styles.groups} data-testid="golden-groups">
@@ -541,7 +541,7 @@ export const GoldenPlayoffControlPanel = ({
             <Message tone="empty" title="Группы еще не сформированы">
               {currentState === "golden"
                 ? "Нажмите кнопку подготовки групп, чтобы распределить участников."
-                : "Группы для выбранного турнира пока не готовы."}
+                : "Группы для выбранного соревнования пока не готовы."}
             </Message>
           ) : null}
         </>
@@ -623,7 +623,7 @@ export const GoldenPlayoffControlPanel = ({
         </section>
       ) : null}
       {currentState === "completed" && scoreboard !== null ? (
-        <section className={styles.champion} data-testid="server-champion" aria-label="Чемпион турнира">
+        <section className={styles.champion} data-testid="server-champion" aria-label="Чемпион соревнования">
           <span>Победитель по итоговой таблице</span>
           <strong>{champion?.display_name ?? "Чемпион пока не определен"}</strong>
           {champion ? <small>Место 1, очки: {champion.points}</small> : null}

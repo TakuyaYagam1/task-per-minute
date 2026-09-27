@@ -372,21 +372,21 @@ const openRoster = async (page: Page, expectParticipant: boolean = true): Promis
   await page.goto("/admin");
   await page.getByPlaceholder("Введите пароль...").fill("correct-password");
   await page.getByRole("button", { name: "Войти" }).click();
-  await page.getByRole("button", { name: "Турниры" }).click();
+  await page.getByRole("button", { name: "Соревнования" }).click();
   const row = page.getByRole("row").filter({ hasText: "Турнир состава" });
   const open = row.getByRole("button", { name: "Открыть" });
   await expect(open).toBeVisible();
   await open.click();
   await expect(page.getByRole("heading", { name: "Турнир состава" })).toBeVisible();
   await page.getByRole("button", { name: "Участники" }).click();
-  await expect(page.getByText(/Состав турнира|Участники турнира|Участники/i).first()).toBeVisible();
+  await expect(page.getByText(/Состав соревнования|Участники соревнования|Участники/i).first()).toBeVisible();
   if (expectParticipant) {
     await expect(rosterRegion(page).getByRole("group").first()).toBeVisible();
   }
 };
 
 const rosterRegion = (page: Page) =>
-  page.getByRole("region", { name: /Состав турнира|Участники турнира/i }).first();
+  page.getByRole("region", { name: /Состав соревнования|Участники соревнования/i }).first();
 
 const rosterGroup = (page: Page, index: number) =>
   rosterRegion(page).getByRole("group").nth(index - 1);
@@ -613,7 +613,7 @@ test("сохраняет draft при русском 409 и показывает
   await expect(page).toHaveURL(new RegExp(`[?&]tournament=${tournamentID}(?:&|$)`));
   await expect(page).toHaveURL(new RegExp(`[?&]view=overview(?:&|$)`));
   await expect(page.getByTestId("tournament-start-controls")).toBeVisible();
-  await expect(page.getByRole("button", { name: "Начать швейцарский этап" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Начать квалификацию" })).toBeVisible();
 });
 
 test("показывает успешный preflight и блокирует состав только с актуальным отчетом", async ({ page }) => {
@@ -852,7 +852,7 @@ test("требует подтверждение и причину для изм�
   ), { players });
   await openRoster(page);
   const executingRegion = rosterRegion(page);
-  await expect(executingRegion).toContainText("Турнир уже начался");
+  await expect(executingRegion).toContainText("Соревнование уже началось");
   await expect(executingRegion.getByText("Изменить зафиксированный состав", { exact: true })).toHaveCount(0);
 });
 

@@ -103,8 +103,8 @@ export default function TournamentFormattingFixture() {
   return (
     <main className="fixture-shell" data-hydrated={hydrated ? "true" : "false"}>
       <header className="fixture-header">
-        <p className="fixture-kicker">Публичное представление данных турнира</p>
-        <h1>Общий формат турнира</h1>
+        <p className="fixture-kicker">Публичное представление данных соревнования</p>
+        <h1>Общий формат соревнования</h1>
         <p className="fixture-lede">
           Синтетический стенд с русскими подписями, серверным временем и безопасными запасными сообщениями.
         </p>
@@ -155,11 +155,11 @@ export default function TournamentFormattingFixture() {
         </Panel>
       </div>
 
-      <Panel title="Состояния турнира" description="Выберите состояние, чтобы проверить подпись.">
+      <Panel title="Состояния соревнования" description="Выберите состояние, чтобы проверить подпись.">
         <div className="control-section">
           <div className="current-values">
             <Status data-testid="tournament-status" tone="info">
-              Турнир: {formatTournamentStatus(tournamentStatus)}
+              Соревнование: {formatTournamentStatus(tournamentStatus)}
             </Status>
             <Status data-testid="game-status" tone="info">
               Игра: {formatGameStatus(gameStatus)}
@@ -169,7 +169,7 @@ export default function TournamentFormattingFixture() {
             </Status>
           </div>
           <fieldset className="option-group">
-            <legend>Состояние турнира</legend>
+            <legend>Состояние соревнования</legend>
             <div className="option-list">
               {tournamentStatusOptions.map((state) => (
                 <OptionButton
@@ -274,7 +274,7 @@ export default function TournamentFormattingFixture() {
       </div>
 
       <Panel title="Действия" description="Основные подписи действий остаются понятными на русском.">
-        <div className="action-list" aria-label="Действия турнира">
+        <div className="action-list" aria-label="Действия соревнования">
           {actionOptions.map((action) => (
             <span className="action-label" key={action}>{arenaActionLabel(action)}</span>
           ))}

@@ -415,7 +415,7 @@ export const TournamentPlayerPanel = ({
       data-testid="participant-player-panel"
     >
       <div className={styles.header}>
-        <h2 className={styles.title} id="participant-player-title">Турнирная позиция</h2>
+        <h2 className={styles.title} id="participant-player-title">Позиция в соревновании</h2>
         <Status tone={statusTone(view.state)} data-testid="participant-player-state">
           {view.stateLabel}
         </Status>
@@ -719,7 +719,7 @@ export const TournamentPlayerPanel = ({
 
       <dl className={styles.details} aria-label="Данные участника">
         <div className={styles.detailRow}>
-          <dt>Турнир</dt>
+          <dt>Соревнование</dt>
           <dd>{view.tournamentLabel}</dd>
         </div>
         <div className={styles.detailRow}>

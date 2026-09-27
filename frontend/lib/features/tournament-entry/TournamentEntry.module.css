@@ -101,6 +101,7 @@
 }
 
 .returnLink {
+  min-height: 44px;
   width: fit-content;
   border-color: var(--border-strong);
   background: var(--surface-muted);

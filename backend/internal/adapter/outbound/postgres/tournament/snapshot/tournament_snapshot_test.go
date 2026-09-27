@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
@@ -392,6 +393,40 @@ func TestPublicSeriesReadSQLUsesStoredStageLineageAndNullableSchedule(t *testing
 	require.Contains(t, seriesQuery, "NULL::TIMESTAMPTZ AS scheduled_at")
 	require.NotContains(t, seriesQuery, "started_at AS scheduled_at")
 	require.NotContains(t, seriesQuery, "created_at AS scheduled_at")
+	require.Contains(t, seriesQuery, "current_game_solve.submission_received_at AS current_game_solve_submission_received_at")
+	require.Contains(t, seriesQuery, "official_result_heads AS result_head")
+	require.Contains(t, seriesQuery, "result_revision.result_reason = 'solved'")
+	require.Contains(t, seriesQuery, "submission.status = 'accepted'")
+	require.Contains(t, seriesQuery, "submission.received_at >= attempt.started_at")
+	require.NotContains(t, seriesQuery, "current_game_finished_at - current_game_started_at")
+}
+
+func TestPublicTournamentReadSolveTimeUsesAcceptedSubmissionTimestamp(t *testing.T) {
+	t.Parallel()
+
+	startedAt := time.Date(2026, 9, 27, 12, 0, 0, 0, time.UTC)
+	receivedAt := startedAt.Add(1234 * time.Millisecond)
+	reason := string(domain.GameResultReasonSolved)
+	value, err := publicTournamentReadSolveTime(&receivedAt, &startedAt, domain.GameStateCompleted, &reason)
+	require.NoError(t, err)
+	require.NotNil(t, value)
+	require.Equal(t, int64(1234), *value)
+
+	zero := startedAt
+	value, err = publicTournamentReadSolveTime(&zero, &startedAt, domain.GameStateCompleted, &reason)
+	require.NoError(t, err)
+	require.NotNil(t, value)
+	require.Equal(t, int64(0), *value)
+
+	value, err = publicTournamentReadSolveTime(nil, &startedAt, domain.GameStateCompleted, &reason)
+	require.NoError(t, err)
+	require.Nil(t, value)
+
+	_, err = publicTournamentReadSolveTime(&receivedAt, &startedAt, domain.GameStateCompleted, func() *string {
+		value := string(domain.GameResultReasonSurrender)
+		return &value
+	}())
+	require.ErrorIs(t, err, ErrTournamentSnapshotInvalid)
 }
 
 func TestPublicSeriesReadSQLUsesFixedTournamentTaskDurationForActiveDeadline(t *testing.T) {

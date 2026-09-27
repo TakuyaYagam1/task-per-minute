@@ -41,7 +41,7 @@ const STATUS_LABELS: Record<ArenaAccessStatus, string> = {
   completed: "Только чтение",
   unauthorized: "Нужен вход",
   forbidden: "Доступ запрещен",
-  missing: "Турнир не найден",
+  missing: "Соревнование не найдено",
   transport: "Ошибка соединения",
 };
 
@@ -91,9 +91,9 @@ export const ArenaShell = ({
     <div className={styles.shell} data-testid="arena-shell">
       <div className={styles.container}>
         {hasTournamentContext && (
-          <section className={styles.context} aria-label="Контекст турнира">
+          <section className={styles.context} aria-label="Контекст соревнования">
             <div className={styles.contextDetails}>
-              <strong>{tournamentName || "Турнир"}</strong>
+              <strong>{tournamentName || "Соревнование"}</strong>
             </div>
             <div className={styles.contextAside}>
               {role && <span className={styles.roleName}>{ROLE_LABELS[role]}</span>}
@@ -131,7 +131,7 @@ export const ArenaShell = ({
                 </div>
                 {summary.readOnly && <Status tone="info">Только чтение</Status>}
               </div>
-              <div className={styles.metrics} role="list" aria-label="Сводка турнира">
+              <div className={styles.metrics} role="list" aria-label="Сводка соревнования">
                 {summary.metrics.map((metric) => (
                   <div className={styles.metric} role="listitem" key={metric.label}>
                     <span className={styles.metricLabel}>{metric.label}</span>
@@ -141,7 +141,7 @@ export const ArenaShell = ({
               </div>
               {summary.readOnly && (
                 <Message className={styles.readOnlyNote} tone="info" title="Результаты зафиксированы">
-                  Действия турнира отключены. Доступен только просмотр состояния.
+                  Действия соревнования отключены. Доступен только просмотр состояния.
                 </Message>
               )}
             </Panel>

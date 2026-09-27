@@ -498,6 +498,9 @@ func publicLiveGameItem(item tournamentsnapshot.PublicCurrentGameView) (api.Publ
 	if !ok {
 		return api.PublicLiveGame{}, false
 	}
+	if !validPublicLiveGameSolveTime(item, state) {
+		return api.PublicLiveGame{}, false
+	}
 	return api.PublicLiveGame{
 		Position:               int32(item.Position), //nolint:gosec // position range is validated above
 		Category:               category,
@@ -505,11 +508,21 @@ func publicLiveGameItem(item tournamentsnapshot.PublicCurrentGameView) (api.Publ
 		StartedAt:              cloneTimePointer(item.StartedAt),
 		EffectiveDeadline:      cloneTimePointer(item.EffectiveDeadline),
 		FinishedAt:             cloneTimePointer(item.FinishedAt),
+		SolveTimeMs:            cloneInt64Pointer(item.SolveTimeMS),
 		ResultReason:           reason,
 		WinnerDisplayName:      winner,
 		FirstConnectionStatus:  firstStatus,
 		SecondConnectionStatus: secondStatus,
 	}, true
+}
+
+func validPublicLiveGameSolveTime(item tournamentsnapshot.PublicCurrentGameView, state api.GameState) bool {
+	if item.SolveTimeMS == nil {
+		return true
+	}
+	return *item.SolveTimeMS >= 0 && *item.SolveTimeMS <= tournamentsnapshot.MaxPublicSolveTimeMS &&
+		state == api.GameStateCompleted &&
+		item.ResultReason != nil && *item.ResultReason == string(domain.GameResultReasonSolved)
 }
 
 func validPublicLiveGameIdentity(

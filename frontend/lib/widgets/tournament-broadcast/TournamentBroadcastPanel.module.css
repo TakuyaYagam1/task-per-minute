@@ -60,7 +60,8 @@
   border: 1px solid var(--border-strong);
   border-radius: 999px;
   background: var(--surface-muted);
-  color: var(--secondary);
+  border-color: var(--warning);
+  color: var(--warning);
   font-size: 0.8rem;
   font-weight: 750;
 }
@@ -70,15 +71,6 @@
   height: 0.5rem;
   border-radius: 50%;
   background: var(--warning);
-}
-
-.connection[data-connection="connected"] {
-  border-color: var(--success);
-  color: var(--success);
-}
-
-.connection[data-connection="connected"] .connectionDot {
-  background: var(--success);
 }
 
 .connection[data-connection="error"],
@@ -444,7 +436,7 @@
 .draftFacts {
   display: grid;
   min-width: 0;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 0.65rem;
   margin: 0;
 }
@@ -496,6 +488,7 @@
 }
 
 .gameOutcome,
+.gameSolveTime,
 .draftNotice,
 .officialWinner,
 .officialReason {

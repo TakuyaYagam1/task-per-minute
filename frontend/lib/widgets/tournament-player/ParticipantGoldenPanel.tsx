@@ -136,14 +136,14 @@ export const ParticipantGoldenPanel = ({
         <div className={styles.header}>
           <div>
             <p className={styles.eyebrow}>Групповое задание</p>
-            <h2 className={styles.title} id="participant-golden-title">Golden Task</h2>
+            <h2 className={styles.title} id="participant-golden-title">Задание дополнительного отбора</h2>
           </div>
           <Status tone={golden.loadStatus === "loading" ? "loading" : "error"}>
-            {golden.loadStatus === "loading" ? "Загружаем Golden" : "Нет связи"}
+            {golden.loadStatus === "loading" ? "Загружаем дополнительный отбор" : "Нет связи"}
           </Status>
         </div>
         {golden.loadMessage !== null && (
-          <Message tone="error" title="Golden недоступен">
+          <Message tone="error" title="Дополнительный отбор недоступен">
             <p>{golden.loadMessage}</p>
             <Button onClick={golden.refresh} type="button" variant="secondary">Повторить</Button>
           </Message>
@@ -182,7 +182,7 @@ export const ParticipantGoldenPanel = ({
       <div className={styles.header}>
         <div>
           <p className={styles.eyebrow}>Групповое задание</p>
-          <h2 className={styles.title} id="participant-golden-title">Golden Task</h2>
+          <h2 className={styles.title} id="participant-golden-title">Задание дополнительного отбора</h2>
           <p className={styles.description}>
             Это общая группа с единым распределением мест, а не BO1-серия.
           </p>
@@ -190,7 +190,7 @@ export const ParticipantGoldenPanel = ({
         <Status tone={stateTone(snapshot.state)}>{formatGoldenState(snapshot.state)}</Status>
       </div>
 
-      <dl className={styles.facts} aria-label="Golden группа">
+      <dl className={styles.facts} aria-label="Группа дополнительного отбора">
         <div>
           <dt>Таймер</dt>
           <dd data-testid="participant-golden-timer">
@@ -221,7 +221,7 @@ export const ParticipantGoldenPanel = ({
             type="button"
             variant="primary"
           >
-            Готов к Golden
+            Готов к дополнительному отбору
           </Button>
           <p>Материалы появятся после старта и допуска участника.</p>
         </div>
@@ -255,7 +255,7 @@ export const ParticipantGoldenPanel = ({
             <div><dt>Лимит</dt><dd>{snapshot.task.time_limit_seconds} с</dd></div>
           </dl>
           <div className={styles.taskLinks}>
-            {taskHref !== null && <a href={taskHref}>Открыть Golden задание</a>}
+            {taskHref !== null && <a href={taskHref}>Открыть задание дополнительного отбора</a>}
             {snapshot.task.source_file_available && (
               <Button
                 disabled={sourceFile.status === "loading"}
@@ -288,7 +288,7 @@ export const ParticipantGoldenPanel = ({
 
       {submitAllowed && (
         <form className={styles.submit} onSubmit={submitAnswer}>
-          <label htmlFor="participant-golden-answer">Ответ Golden</label>
+          <label htmlFor="participant-golden-answer">Ответ дополнительного отбора</label>
           <div className={styles.submitRow}>
             <input
               aria-describedby={goldenSubmitDescribedBy}
@@ -335,7 +335,7 @@ export const ParticipantGoldenPanel = ({
           data-testid="participant-golden-action-status"
           id="participant-golden-action-status"
           tone={actionTone(golden.actionStatus)}
-          title={golden.actionStatus === "accepted" ? "Действие подтверждено" : "Golden"}
+          title={golden.actionStatus === "accepted" ? "Действие подтверждено" : "Дополнительный отбор"}
         >
           <p>{golden.actionMessage}</p>
         </Message>

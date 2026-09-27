@@ -146,7 +146,7 @@ test("participant role keeps its API boundary and can read the generated Golden 
   await openFixture(page);
   await page.getByRole("button", { name: "Показать сессию" }).click();
   await expect(page.getByLabel("Результат вызова")).toContainText("Participant session: 3 ответ(а), revision 9");
-  await page.getByRole("button", { name: "Показать Golden" }).click();
+  await page.getByRole("button", { name: "Показать дополнительный отбор" }).click();
   await expect(page.getByLabel("Результат вызова")).toContainText("Participant Golden: 1 ответ(а), revision 9");
 
   expect(evidence.apiPaths).toEqual(expect.arrayContaining([

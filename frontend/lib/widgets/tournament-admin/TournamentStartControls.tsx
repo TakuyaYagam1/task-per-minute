@@ -29,12 +29,12 @@ const expectedStateFor = (action: LifecycleAction): Tournament["state"] =>
   action === "open_registration" ? "draft" : "roster_locked";
 
 const actionLabel = (action: LifecycleAction): string =>
-  action === "open_registration" ? "Открыть регистрацию" : "Начать швейцарский этап";
+  action === "open_registration" ? "Открыть регистрацию" : "Начать квалификацию";
 
 const actionReason = (action: LifecycleAction): string =>
   action === "open_registration"
     ? "Оператор подтвердил открытие регистрации"
-    : "Оператор подтвердил запуск швейцарского этапа";
+    : "Оператор подтвердил запуск квалификации";
 
 const isAbortError = (error: unknown): boolean =>
   error instanceof DOMException &&
@@ -83,7 +83,7 @@ const transitionConflictMessage =
   "Не удалось выполнить переход. Обновите данные и проверьте готовность состава.";
 const activeTournamentConflictDetail = "another tournament is already active";
 const activeTournamentConflictMessage =
-  "Уже идет другой турнир. Завершите или отмените его перед запуском нового.";
+  "Уже идет другое соревнование. Завершите или отмените его перед запуском нового.";
 
 export const TournamentStartControls = ({
   onNavigate,
@@ -166,7 +166,7 @@ export const TournamentStartControls = ({
         if (snapshot.tournament.id !== tournament.id) {
           setActionUnavailable(false);
           setStale(true);
-          setCommandError("Данные относятся к другому турниру. Обновите данные перед повтором.");
+          setCommandError("Данные относятся к другому соревнованию. Обновите данные перед повтором.");
           return;
         }
 
@@ -175,7 +175,7 @@ export const TournamentStartControls = ({
           setActionUnavailable(false);
           setStale(true);
           setCommandError(
-            `Состояние турнира уже изменилось: ${stateLabel(snapshot.tournament.state)}. Обновите данные перед повтором.`,
+            `Состояние соревнования уже изменилось: ${stateLabel(snapshot.tournament.state)}. Обновите данные перед повтором.`,
           );
           return;
         }
@@ -227,7 +227,7 @@ export const TournamentStartControls = ({
           );
         } else {
           setActionUnavailable(false);
-          setCommandError(problemMessage(error, "Не удалось изменить этап турнира"));
+          setCommandError(problemMessage(error, "Не удалось изменить этап соревнования"));
         }
       } finally {
         if (commandControllerRef.current === controller) {
@@ -253,8 +253,8 @@ export const TournamentStartControls = ({
     <Panel
       className={styles.root}
       data-testid="tournament-start-controls"
-      title="Запуск турнира"
-      description="Откройте регистрацию и запустите турнир после фиксации состава."
+      title="Запуск соревнования"
+      description="Откройте регистрацию и запустите соревнование после фиксации состава."
     >
       <div className={styles.toolbar}>
         <Status tone={stateTone(tournament.state)}>
@@ -289,7 +289,7 @@ export const TournamentStartControls = ({
         <Message tone="success" title="Переход выполнен">
           {successAction === "open_registration"
             ? "Регистрация открыта. После набора участников проверьте состав в разделе \"Участники\"."
-            : "Швейцарский этап запущен. Откройте сетку и серии, чтобы проверить пары."}
+            : "Квалификация запущена. Откройте сетку и серии, чтобы проверить пары."}
           {successAction === "open_registration" ? (
             <Button
               className={styles.followUpButton}
@@ -320,12 +320,12 @@ export const TournamentStartControls = ({
       ) : null}
       {tournament.state === "registration" ? (
         <Message tone="info" title="Подтвердите состав">
-          Проверьте участников и зафиксируйте состав в разделе &quot;Участники&quot;, чтобы открыть запуск швейцарского этапа.
+          Проверьте участников и зафиксируйте состав в разделе &quot;Участники&quot;, чтобы открыть запуск квалификации.
         </Message>
       ) : null}
       {action === "start_swiss" ? (
         <Message tone="info" title="Состав зафиксирован">
-          Проверьте зафиксированный состав и запустите швейцарский этап.
+          Проверьте зафиксированный состав и запустите квалификацию.
         </Message>
       ) : null}
 
@@ -334,7 +334,7 @@ export const TournamentStartControls = ({
           <Button
             size="large"
             loading={busyAction === action}
-            loadingLabel={action === "open_registration" ? "Открываем регистрацию" : "Запускаем швейцарский этап"}
+            loadingLabel={action === "open_registration" ? "Открываем регистрацию" : "Запускаем квалификацию"}
             disabled={stale}
             onClick={() => void handleLifecycleAction(action)}
           >

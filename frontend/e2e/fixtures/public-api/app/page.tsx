@@ -115,12 +115,12 @@ export default function PublicApiFixture() {
   return (
     <main>
       <h1>Контракт публичного API</h1>
-      <p>Анонимный экран читает только allowlist DTO турнира, таблицы и сетки.</p>
+      <p>Анонимный экран читает только allowlist DTO соревнования, таблицы и сетки.</p>
       <button type="button" disabled={!hydrated} onClick={() => { void invoke(loadPublicState); }}>
         Получить публичное состояние
       </button>
       <button type="button" disabled={!hydrated} onClick={() => { void invoke(loadTournament); }}>
-        Получить турнир
+        Получить соревнование
       </button>
       <button type="button" disabled={!hydrated} onClick={() => { void invoke(loadScoreboard); }}>
         Получить таблицу

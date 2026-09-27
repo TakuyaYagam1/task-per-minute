@@ -101,17 +101,7 @@ export const TournamentTasksSection = ({
   }, [loadContent]);
 
   return (
-    <section className={styles.root} aria-labelledby="tournament-tasks-title">
-      <div className={styles.heading}>
-        <div>
-          <p className={styles.eyebrow}>Задания</p>
-          <h2 id="tournament-tasks-title">Каталог и публикация</h2>
-          <p>
-            Создавайте задачи, обновляйте их и работайте с исходниками. Публикация
-            контента выполняется отдельно.
-          </p>
-        </div>
-      </div>
+    <section className={styles.root} aria-label="Задания">
       <TournamentContentManager
         content={content}
         contentEmpty={contentEmpty}

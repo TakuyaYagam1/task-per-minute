@@ -39,7 +39,16 @@ import styles from "./TournamentEntry.module.css";
 
 type TournamentState = components["schemas"]["TournamentState"];
 
+const getSafeArenaCatalogReturnPath = (value: string | null | undefined): string | null => {
+  const safePath = getSafeArenaPublicReturnPath(value);
+  if (safePath === "/arena" || safePath?.startsWith("/arena?")) {
+    return safePath;
+  }
+  return null;
+};
+
 export type TournamentEntryProps = Readonly<{
+  catalogReturnPath?: string | null;
   publicId: string;
   returnPath?: string | null;
   state: TournamentState;
@@ -109,7 +118,7 @@ const conflictNotice = (reason: TournamentAdmissionConflictReason): Notice => {
       };
     case "closed":
       return {
-        body: "Турнир больше не принимает новые регистрации.",
+        body: "Соревнование больше не принимает новые регистрации.",
         title: "Регистрация закрыта",
         tone: "warning",
       };
@@ -121,19 +130,19 @@ const conflictNotice = (reason: TournamentAdmissionConflictReason): Notice => {
       };
     case "conflicting_reservation":
       return {
-        body: "Игрок уже зарезервирован в другом активном турнире.",
+        body: "Игрок уже зарезервирован в другом активном соревновании.",
         title: "Участие уже зарезервировано",
         tone: "warning",
       };
     case "conflict":
       return {
-        body: "Данные турнира изменились. Обновите страницу и повторите попытку.",
+        body: "Данные соревнования изменились. Обновите страницу и повторите попытку.",
         title: "Данные изменились",
         tone: "warning",
       };
   }
   return {
-    body: "Данные турнира изменились. Обновите страницу и повторите попытку.",
+    body: "Данные соревнования изменились. Обновите страницу и повторите попытку.",
     title: "Данные изменились",
     tone: "warning",
   };
@@ -157,8 +166,8 @@ const apiNotice = (error: unknown, operation: string): Notice => {
     }
     if (error.status === 404) {
       return {
-        body: "Турнир больше не доступен для участия.",
-        title: "Турнир не найден",
+        body: "Соревнование больше не доступно для участия.",
+        title: "Соревнование не найдено",
         tone: "error",
       };
     }
@@ -172,7 +181,7 @@ const apiNotice = (error: unknown, operation: string): Notice => {
   }
   if (error instanceof ApiContractError) {
     return {
-      body: "Не удалось загрузить данные турнира. Обновите страницу.",
+      body: "Не удалось загрузить данные соревнования. Обновите страницу.",
       title: "Ошибка данных",
       tone: "error",
     };
@@ -245,6 +254,7 @@ const canWithdrawAdmission = (
   );
 
 export const TournamentEntry = ({
+  catalogReturnPath,
   publicId,
   returnPath,
   state,
@@ -269,6 +279,10 @@ export const TournamentEntry = ({
   const safeReturnPath = useMemo(
     () => getSafeArenaPublicReturnPath(returnPath) ?? buildArenaPublicTournamentPath(publicId),
     [publicId, returnPath],
+  );
+  const safeCatalogReturnPath = useMemo(
+    () => getSafeArenaCatalogReturnPath(catalogReturnPath) ?? "/arena",
+    [catalogReturnPath],
   );
   const workspaceHref = useMemo(
     () => participantWorkspacePath(tournamentId, safeReturnPath),
@@ -472,7 +486,7 @@ export const TournamentEntry = ({
         setNotice({
           body: result.value.view.status === "withdrawn"
             ? "Регистрация отменена."
-            : "Вы записаны на турнир.",
+            : "Вы записаны на соревнование.",
           title: result.value.changed ? "Изменения сохранены" : "Участие уже оформлено",
           tone: result.value.view.status === "withdrawn" ? "warning" : "success",
         });
@@ -674,7 +688,7 @@ export const TournamentEntry = ({
   const renderAnonymous = () => (
     <div className={styles.contentStack}>
       <p className={styles.copy}>
-        Наблюдать за турниром можно без входа. Для регистрации нужен только никнейм.
+        Наблюдать за соревнованием можно без входа. Для регистрации нужен только никнейм.
       </p>
       {state === "registration" ? (
         nameFormOpen ? (
@@ -728,7 +742,7 @@ export const TournamentEntry = ({
       ) : (
         <div className={styles.contentStack}>
           <Message tone="info" title="Регистрация недоступна">
-            Сейчас турнир: {formatTournamentState(state)}.
+            Сейчас соревнование: {formatTournamentState(state)}.
           </Message>
           {phase === "error" && (
             <Button
@@ -779,7 +793,7 @@ export const TournamentEntry = ({
           <p className={styles.copy}>
             {workspacePublicationReady
               ? "Откройте страницу матча, чтобы увидеть следующий шаг."
-              : "Участие подтверждено. Страница матча откроется после старта турнира."}
+              : "Участие подтверждено. Страница матча откроется после старта соревнования."}
           </p>
         )}
         {view.status === "withdrawn" && (
@@ -812,7 +826,7 @@ export const TournamentEntry = ({
             </Link>
           )}
           {view.status === "checked_in" && !workspacePublicationReady && (
-            <Status tone="info">Матч откроется после старта турнира</Status>
+            <Status tone="info">Матч откроется после старта соревнования</Status>
           )}
           {view.status === "registered" && workspacePublicationReady && !workspaceReady && (
             <Button
@@ -859,8 +873,8 @@ export const TournamentEntry = ({
     <Panel
       as="section"
       className={styles.panel}
-      title="Участие в турнире"
-      description="Запишитесь на турнир и следите за подтверждением участия."
+      title="Участие в соревновании"
+      description="Запишитесь на соревнование и следите за подтверждением участия."
     >
       <div className={styles.entry}>
         {notice && (
@@ -899,8 +913,8 @@ export const TournamentEntry = ({
             </div>
           </div>
         )}
-        <Link className={styles.returnLink} href={safeReturnPath}>
-          Вернуться к турниру
+        <Link className={styles.returnLink} href={safeCatalogReturnPath}>
+          К списку соревнований
         </Link>
       </div>
     </Panel>

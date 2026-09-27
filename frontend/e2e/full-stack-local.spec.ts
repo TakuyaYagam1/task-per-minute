@@ -1348,13 +1348,15 @@ test.describe('local compose full stack e2e', () => {
     await loginThroughAdminUI(page);
     await adminLogin(request);
     await page.getByRole('button', { name: 'Задачи' }).click();
+    await page.getByRole('button', { name: 'Создать задачу', exact: true }).click();
     await expect(page.getByPlaceholder('Введите название...')).toBeVisible();
     await fillAdminTaskForm(page, taskInput);
     const createResponsePromise = page.waitForResponse(
       (response) => new URL(response.url()).pathname === '/api/v1/admin/tasks' &&
         response.request().method() === 'POST',
     );
-    await page.getByRole('button', { name: /Создать задачу/ }).click();
+    await page.getByRole('dialog', { name: 'Создать задачу', exact: true })
+      .getByRole('button', { name: 'Создать задачу', exact: true }).click();
     const createResponse = await createResponsePromise;
     expect(createResponse.status()).toBe(201);
     const createdTask = (await createResponse.json()) as AdminTask;
@@ -1422,16 +1424,16 @@ test.describe('local compose full stack e2e', () => {
     });
     const contentRevision = await getTournamentContentRevision(adminRequest);
 
-    await page.getByRole('button', { name: 'Турниры' }).click();
-    await expect(page.getByRole('heading', { name: 'Новый турнир' })).toBeVisible();
+    await page.getByRole('button', { name: 'Соревнования' }).click();
+    await expect(page.getByRole('heading', { name: 'Новое соревнование' })).toBeVisible();
     const reloadPublication = page.getByRole('button', { name: 'Обновить публикацию' });
     if (await reloadPublication.isVisible().catch(() => false)) {
       await reloadPublication.click();
     }
     await expect(
-      page.getByRole('region', { name: 'Новый турнир' }).getByText(`Ревизия ${contentRevision}`),
+      page.getByRole('region', { name: 'Новое соревнование' }).getByText(`Ревизия ${contentRevision}`),
     ).toBeVisible();
-    await page.getByLabel('Название турнира').fill(tournamentName);
+    await page.getByLabel('Название соревнования').fill(tournamentName);
     await page.getByLabel('Плановый размер состава').selectOption('4');
 
     const createResponse = page.waitForResponse(
@@ -1439,7 +1441,7 @@ test.describe('local compose full stack e2e', () => {
         new URL(response.url()).pathname === '/api/v1/admin/tournaments' &&
         response.request().method() === 'POST',
     );
-    await page.getByRole('button', { name: 'Создать турнир' }).click();
+    await page.getByRole('button', { name: 'Создать соревнование' }).click();
 
     const response = await createResponse;
     expect(response.status()).toBe(201);
@@ -1501,6 +1503,7 @@ test.describe('local compose full stack e2e', () => {
       task_url: 'https://example.com/fe028-normal',
     });
     await page.getByRole('button', { name: 'Задачи' }).click();
+    await page.getByRole('button', { name: 'Создать задачу', exact: true }).click();
     await expect(page.getByPlaceholder('Введите название...')).toBeVisible({ timeout: 15_000 });
 
     await fillAdminTaskForm(page, taskInput);
@@ -1520,7 +1523,8 @@ test.describe('local compose full stack e2e', () => {
         new URL(response.url()).pathname.endsWith('/source') &&
         response.request().method() === 'POST',
     );
-    await page.getByRole('button', { name: /Создать задачу/ }).click();
+    await page.getByRole('dialog', { name: 'Создать задачу', exact: true })
+      .getByRole('button', { name: 'Создать задачу', exact: true }).click();
 
     const createResponse = await createResponsePromise;
     expect(createResponse.status()).toBe(201);
@@ -1535,7 +1539,7 @@ test.describe('local compose full stack e2e', () => {
     expect(uploadResponse.status()).toBe(200);
     const upload = (await uploadResponse.json()) as UploadSourceResponse;
     expect(upload.source_file_url).toMatch(/^https?:\/\//);
-    await expect(page.getByText('Исходники загружены в SeaweedFS')).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText('Исходники загружены', { exact: true })).toBeVisible({ timeout: 15_000 });
     const downloadLink = page.getByRole('link', { name: /Скачать.*ZIP/ });
     await expect(downloadLink).toHaveAttribute('href', upload.source_file_url);
 
@@ -1701,15 +1705,15 @@ test.describe('local compose full stack e2e', () => {
       }
 
       await page.goto('/admin', { waitUntil: 'domcontentloaded' });
-      await expect(page.getByRole('button', { name: 'Турниры' })).toBeVisible({ timeout: 15_000 });
-      await page.getByRole('button', { name: 'Турниры' }).click();
+      await expect(page.getByRole('button', { name: 'Соревнования' })).toBeVisible({ timeout: 15_000 });
+      await page.getByRole('button', { name: 'Соревнования' }).click();
       const tournamentListRefresh = page.waitForResponse(
         (response) =>
           new URL(response.url()).pathname === '/api/v1/admin/tournaments' &&
           response.request().method() === 'GET',
       );
       await page
-        .getByRole('region', { name: 'Турниры' })
+        .getByRole('region', { name: 'Соревнования' })
         .getByRole('button', { name: 'Обновить список' })
         .click();
       const refreshedTournamentListResponse = await tournamentListRefresh;
@@ -1740,7 +1744,7 @@ test.describe('local compose full stack e2e', () => {
       expect((await playersResponse).status()).toBe(200);
       const initialRoster = await readRosterResponse(await rosterResponse, tournament.id);
 
-      const rosterRegion = page.getByRole('region', { name: 'Состав турнира' });
+      const rosterRegion = page.getByRole('region', { name: 'Состав соревнования' });
       await expect(rosterRegion).toBeVisible();
       expect(initialRoster.participants).toHaveLength(0);
       await expect(rosterRegion.getByText('Состав пуст')).toBeVisible();
@@ -1798,13 +1802,13 @@ test.describe('local compose full stack e2e', () => {
       }
 
       await page.reload({ waitUntil: 'domcontentloaded' });
-      await expect(page.getByRole('button', { name: 'Турниры' })).toBeVisible({ timeout: 15_000 });
+      await expect(page.getByRole('button', { name: 'Соревнования' })).toBeVisible({ timeout: 15_000 });
       const refreshedAdminAccessCSRF = (await page.context().cookies()).find(
         (cookie) => cookie.name === 'tpm_admin_access_csrf',
       );
       adminAccessCSRFToken = refreshedAdminAccessCSRF?.value ?? '';
       expect(adminAccessCSRFToken, 'admin reload did not restore the access CSRF cookie').toBeTruthy();
-      await page.getByRole('button', { name: 'Турниры' }).click();
+      await page.getByRole('button', { name: 'Соревнования' }).click();
       await page.getByRole('button', { name: 'Участники', exact: true }).click();
       await expect(rosterRegion).toBeVisible({ timeout: 15_000 });
       await expect(rosterRegion.getByRole('group')).toHaveCount(4);
@@ -1909,7 +1913,7 @@ test.describe('local compose full stack e2e', () => {
           response.request().method() === 'GET',
       );
       await page.reload({ waitUntil: 'domcontentloaded' });
-      await expect(page.getByRole('button', { name: 'Турниры' })).toBeVisible({ timeout: 15_000 });
+      await expect(page.getByRole('button', { name: 'Соревнования' })).toBeVisible({ timeout: 15_000 });
       const preflightAdminAccessCSRF = (await page.context().cookies()).find(
         (cookie) => cookie.name === 'tpm_admin_access_csrf',
       );
@@ -1918,7 +1922,7 @@ test.describe('local compose full stack e2e', () => {
         adminAccessCSRFToken,
         'admin reload before FE-029 did not restore the access CSRF cookie',
       ).toBeTruthy();
-      await page.getByRole('button', { name: 'Турниры' }).click();
+      await page.getByRole('button', { name: 'Соревнования' }).click();
       await page.getByRole('button', { name: 'Участники', exact: true }).click();
       await expect(rosterRegion).toBeVisible({ timeout: 15_000 });
       expect((await preflightRosterResponse).status()).toBe(200);
@@ -2145,7 +2149,7 @@ test.describe('local compose full stack e2e', () => {
       expect(swissTournament.state).toBe('swiss');
 
       await page.getByRole('button', { name: 'Сетка и серии', exact: true }).click();
-      const pairingRegion = page.getByRole('region', { name: 'Пары Swiss' });
+      const pairingRegion = page.getByRole('region', { name: 'Пары квалификации' });
       await expect(pairingRegion).toBeVisible({ timeout: 15_000 });
       const pairingReload = page.waitForResponse(
         (response) =>
@@ -2577,14 +2581,14 @@ test.describe('local compose full stack e2e', () => {
       await actionSelect.selectOption('pause');
       await page.getByLabel('Причина').fill('Проверка CSRF после reload operator Arena');
       await page
-        .getByLabel('Подтверждаю, что команда соответствует текущему авторитетному снимку.')
+        .getByLabel('Подтверждаю, что команда соответствует актуальным данным соревнования.')
         .check();
       const pauseResponsePromise = page.waitForResponse(
         (response) =>
           new URL(response.url()).pathname === operatorWaveActionPath &&
           response.request().method() === 'POST',
       );
-      await page.getByRole('button', { name: 'Выполнить: Пауза турнира' }).click();
+      await page.getByRole('button', { name: 'Выполнить: Пауза соревнования' }).click();
       const pauseResponse = await pauseResponsePromise;
       expect(
         pauseResponse.request().headers()['x-csrf-token'],
@@ -2594,7 +2598,7 @@ test.describe('local compose full stack e2e', () => {
         pauseResponse.status(),
         `pause after reload failed with ${pauseResponse.status()} ${pauseResponse.statusText()}`,
       ).toBe(200);
-      await expect(page.getByRole('region', { name: 'Управление турниром' }))
+      await expect(page.getByRole('region', { name: 'Управление соревнованием' }))
         .toContainText('Техническая пауза');
       for (const activeParticipantPage of [firstParticipantPage, secondParticipantPage]) {
         const runtimeStatus = activeParticipantPage.getByTestId('participant-runtime-status');
@@ -2616,14 +2620,14 @@ test.describe('local compose full stack e2e', () => {
       await actionSelect.selectOption('resume');
       await page.getByLabel('Причина').fill('Проверка resume с восстановленным CSRF contract');
       await page
-        .getByLabel('Подтверждаю, что команда соответствует текущему авторитетному снимку.')
+        .getByLabel('Подтверждаю, что команда соответствует актуальным данным соревнования.')
         .check();
       const resumeResponsePromise = page.waitForResponse(
         (response) =>
           new URL(response.url()).pathname === operatorWaveActionPath &&
           response.request().method() === 'POST',
       );
-      await page.getByRole('button', { name: 'Выполнить: Возобновить турнир' }).click();
+      await page.getByRole('button', { name: 'Выполнить: Возобновить соревнование' }).click();
       const resumeResponse = await resumeResponsePromise;
       expect(
         resumeResponse.request().headers()['x-csrf-token'],
@@ -2633,8 +2637,8 @@ test.describe('local compose full stack e2e', () => {
         resumeResponse.status(),
         `resume after reload failed with ${resumeResponse.status()} ${resumeResponse.statusText()}`,
       ).toBe(200);
-      await expect(page.getByRole('region', { name: 'Управление турниром' }))
-        .toContainText('Швейцарка');
+      await expect(page.getByRole('region', { name: 'Управление соревнованием' }))
+        .toContainText('Квалификация');
       for (const activeParticipantPage of [firstParticipantPage, secondParticipantPage]) {
         await expect(activeParticipantPage.getByTestId('participant-runtime-status'))
           .toHaveAttribute('data-paused', 'false', { timeout: 15_000 });
@@ -3602,8 +3606,8 @@ test.describe('local compose full stack e2e', () => {
       assertPublicWireRedacted();
 
       await page.goto('/admin', { waitUntil: 'domcontentloaded' });
-      await expect(page.getByRole('button', { name: 'Турниры' })).toBeVisible();
-      await page.getByRole('button', { name: 'Турниры' }).click();
+      await expect(page.getByRole('button', { name: 'Соревнования' })).toBeVisible();
+      await page.getByRole('button', { name: 'Соревнования' }).click();
       const tournamentRow = page.getByRole('row').filter({ hasText: tournamentName });
       await expect(tournamentRow).toBeVisible();
       const auditResponsePromise = page.waitForResponse(
@@ -3615,7 +3619,7 @@ test.describe('local compose full stack e2e', () => {
       );
       await tournamentRow.getByRole('button', { name: 'Открыть', exact: true }).click();
       await page
-        .getByRole('navigation', { name: 'Разделы турнира' })
+        .getByRole('navigation', { name: 'Разделы соревнования' })
         .getByRole('button', { name: 'Журнал', exact: true })
         .click();
       const auditResponse = await auditResponsePromise;
@@ -3746,7 +3750,7 @@ test.describe('local compose full stack e2e', () => {
       const participantPage = await playerContexts[0]!.newPage();
       await participantPage.goto(`/arena/participant/${tournament.id}`, { waitUntil: 'domcontentloaded' });
       await expect(participantPage.getByTestId('participant-player-panel')).toBeVisible();
-      await expect(participantPage.getByTestId('participant-player-panel')).toContainText('Отменен');
+      await expect(participantPage.getByTestId('participant-player-panel')).toContainText('Отменено');
       await expect(participantPage.getByTestId('participant-submit-button')).toHaveCount(0);
 
       if (!publicContext || !spectatorPage) {
@@ -3754,7 +3758,7 @@ test.describe('local compose full stack e2e', () => {
       }
       const broadcast = spectatorPage.getByTestId('tournament-broadcast');
       await spectatorPage.reload({ waitUntil: 'domcontentloaded' });
-      await expect(broadcast.getByTestId('broadcast-phase-title')).toHaveText('Турнир отменен');
+      await expect(broadcast.getByTestId('broadcast-phase-title')).toHaveText('Соревнование отменено');
       const publicSnapshot = await readPublicSnapshotViaApi(publicContext, tournament.id);
       const publicSerialized = JSON.stringify(publicSnapshot);
       assertPublicProjectionRedacted(publicSnapshot);
@@ -4816,7 +4820,7 @@ test.describe('local compose full stack e2e', () => {
         }
 
         await page.goto('/admin', { waitUntil: 'domcontentloaded' });
-        await page.getByRole('button', { name: 'Турниры', exact: true }).click();
+        await page.getByRole('button', { name: 'Соревнования', exact: true }).click();
         const tournamentRow = page.getByRole('row').filter({
           hasText: tournamentName,
         });
@@ -6442,7 +6446,7 @@ test.describe('local compose full stack e2e', () => {
     const anonymousPage = await anonymousContext.newPage();
     const catalogLinks = anonymousPage.getByRole('link').filter({ hasText: catalogPrefix });
     await anonymousPage.goto(`/arena?q=${encodeURIComponent(catalogPrefix)}`);
-    await expect(anonymousPage.getByRole('heading', { name: 'Турниры', exact: true })).toBeVisible();
+    await expect(anonymousPage.getByRole('heading', { name: 'Соревнования', exact: true })).toBeVisible();
     await expect(catalogLinks).toHaveCount(20);
     await expect(anonymousPage.getByRole('button', { name: 'Следующая страница' })).toBeVisible();
     await anonymousPage.getByLabel('Состояние').selectOption('upcoming');

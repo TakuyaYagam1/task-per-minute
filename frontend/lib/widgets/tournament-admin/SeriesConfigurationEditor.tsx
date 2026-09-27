@@ -49,8 +49,8 @@ const SERIES_MODE_LABELS: Readonly<Record<SeriesMode, string>> = {
 };
 
 const STAGE_LABELS: Readonly<Record<TournamentConfigurationSeries["stage"], string>> = {
-  swiss: "Swiss",
-  golden: "Золотой этап",
+  swiss: "Квалификация",
+  golden: "Дополнительный отбор",
   semifinal: "Полуфинал",
   final: "Финал",
 };
@@ -122,7 +122,7 @@ const cutoffMessage =
   "Изменение недоступно: серия уже заблокирована, начата, использована или раскрыта.";
 
 const reserveCutoffMessage =
-  "Резерв больше нельзя менять: турнир уже начался или настройки уже используются.";
+  "Резерв больше нельзя менять: соревнование уже началось или настройки уже используются.";
 
 const reserveCountFromValue = (value: string): ReserveCount | null => {
   if (value === "0") {
@@ -665,12 +665,12 @@ export const SeriesConfigurationEditor = ({
   return (
     <Panel
       title="Конфигурация серий"
-      description="Настройте режим и категории каждой серии по официальным пулам турнира."
+      description="Настройте режим и категории каждой серии по официальным пулам соревнования."
       className={styles.panel}
     >
       {showTournamentChooser ? <div className={styles.chooser}>
         <label htmlFor="series-configuration-tournament-select">
-          Турнир для настройки серий
+          Соревнование для настройки серий
         </label>
         <select
           id="series-configuration-tournament-select"
@@ -679,7 +679,7 @@ export const SeriesConfigurationEditor = ({
           onChange={(event) => onSelectTournament(event.target.value)}
           disabled={anySubmitting}
         >
-          <option value="">Выберите турнир</option>
+          <option value="">Выберите соревнование</option>
           {tournaments.map((tournament) => (
             <option key={tournament.id} value={tournament.id}>
               {tournament.name}
@@ -689,8 +689,8 @@ export const SeriesConfigurationEditor = ({
       </div> : null}
 
       {!selectedTournament && (
-        <Message tone="empty" title="Турнир не выбран">
-          Выберите турнир, чтобы загрузить конфигурацию его серий.
+        <Message tone="empty" title="Соревнование не выбрано">
+          Выберите соревнование, чтобы загрузить конфигурацию его серий.
         </Message>
       )}
 
@@ -731,7 +731,7 @@ export const SeriesConfigurationEditor = ({
                   <dd>{configuration.series.length}</dd>
                 </div>
                 <div>
-                  <dt>Резерв обычных и золотых задач</dt>
+                  <dt>Резерв обычных задач и задач дополнительного отбора</dt>
                   <dd>{configuration.reserve_count}</dd>
                 </div>
               </dl>
@@ -744,7 +744,7 @@ export const SeriesConfigurationEditor = ({
                     Резерв заданий до старта
                   </h3>
                   <p className={styles.reserveDescription}>
-                    Одно значение действует одновременно для normal и Golden. При нуле после сбоя основной попытки оператор принимает решение вручную.
+                    Одно значение действует одновременно для обычного режима и дополнительного отбора. При нуле после сбоя основной попытки оператор принимает решение вручную.
                   </p>
                 </div>
                 <Status tone={reserveEditingClosed ? "disabled" : "info"} size="small">
@@ -755,7 +755,7 @@ export const SeriesConfigurationEditor = ({
               {reserveEditingClosed && !reserveError && (
                 <Message tone="warning" title="Изменение резерва закрыто">
                   {selectedTournament.started_at
-                    ? "Турнир уже начался. Количество резервов доступно только для просмотра."
+                    ? "Соревнование уже началось. Количество резервов доступно только для просмотра."
                     : "Настройки уже используются. Количество резервов доступно только для просмотра."}
                 </Message>
               )}
@@ -763,7 +763,7 @@ export const SeriesConfigurationEditor = ({
               <div className={styles.reserveFields}>
                 <div className={`${styles.field} ${styles.reserveField}`}>
                   <label htmlFor="reserve-count-select">
-                    Количество резервов для normal и Golden
+                    Количество резервов для обычного режима и дополнительного отбора
                   </label>
                   <select
                     id="reserve-count-select"
@@ -1019,7 +1019,7 @@ export const SeriesConfigurationEditor = ({
               </>
             ) : (
               <Message tone="empty" title="Серии не найдены">
-                Для выбранного турнира нет серий.
+                Для выбранного соревнования нет серий.
                 <button
                   className={styles.inlineAction}
                   type="button"

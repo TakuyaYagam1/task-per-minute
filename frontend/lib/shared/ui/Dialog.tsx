@@ -153,6 +153,15 @@ export const Dialog = forwardRef<HTMLDialogElement, DialogProps>(
       closeRequestRef.current = true;
       onOpenChange?.(false);
       onClose?.();
+      if (typeof window !== "undefined") {
+        window.setTimeout(() => {
+          // A controlled caller may reject the close request (for example
+          // after a dirty-form confirmation). Allow the next close attempt.
+          if (openRef.current) {
+            closeRequestRef.current = false;
+          }
+        }, 0);
+      }
     }, [onClose, onOpenChange]);
 
     useEffect(() => {

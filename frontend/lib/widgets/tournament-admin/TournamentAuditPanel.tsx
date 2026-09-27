@@ -159,7 +159,7 @@ const payloadLabel = (key: string): string => {
     series_id: "ID матча",
     source_projection_revision_id: "Исходная версия данных",
     state: "Состояние",
-    tournament_id: "Турнир",
+    tournament_id: "Соревнование",
     winner_id: "Победитель",
   };
   return labels[key] ?? key;
@@ -170,7 +170,7 @@ const downloadBundle = (bundle: IncidentBundle, tournamentName: string): void =>
   const url = URL.createObjectURL(new Blob([payload], { type: "application/json" }));
   const link = document.createElement("a");
   link.href = url;
-  const filename = tournamentName.replace(/[^\p{L}\p{N}._ -]/gu, "").trim().slice(0, 80) || "Турнир";
+  const filename = tournamentName.replace(/[^\p{L}\p{N}._ -]/gu, "").trim().slice(0, 80) || "Соревнование";
   link.download = `Отчет - ${filename} - ${bundle.generated_at.slice(0, 10)}.json`;
   document.body.append(link);
   link.click();
@@ -256,7 +256,7 @@ export const TournamentAuditPanel = ({
         onSessionExpired?.();
       }
       setLoadState("error");
-      setLoadError(problemMessage(error, "Не удалось загрузить историю турнира."));
+      setLoadError(problemMessage(error, "Не удалось загрузить историю соревнования."));
       return null;
     } finally {
       if (auditControllerRef.current === controller) {
@@ -294,7 +294,7 @@ export const TournamentAuditPanel = ({
 
   const applyFilters = async (): Promise<void> => {
     if (!selectedTournamentId) {
-      setFilterError("Сначала выберите турнир.");
+      setFilterError("Сначала выберите соревнование.");
       return;
     }
     const validationError = validateFilters(filters);
@@ -365,7 +365,7 @@ export const TournamentAuditPanel = ({
       if (controller.signal.aborted) {
         return;
       }
-      downloadBundle(nextBundle, selectedTournament?.name ?? "Турнир");
+      downloadBundle(nextBundle, selectedTournament?.name ?? "Соревнование");
       setBundle({
         generated_at: nextBundle.generated_at,
         projection_revision: nextBundle.projection_revision,
@@ -391,20 +391,20 @@ export const TournamentAuditPanel = ({
 
   return (
     <Panel
-      title="История турнира"
+      title="История соревнования"
       description="Просматривайте результаты и действия администраторов. Отчет поможет разобрать ошибку или спорный результат."
       className={styles.panel}
     >
       <div className={styles.toolbar}>
         {showTournamentChooser ? (
           <div className={styles.fieldWide}>
-            <label htmlFor="audit-tournament">Турнир</label>
+            <label htmlFor="audit-tournament">Соревнование</label>
             <select
               id="audit-tournament"
               value={selectedTournamentId}
               onChange={(event) => onSelectTournament(event.target.value)}
             >
-              <option value="">Выберите турнир</option>
+              <option value="">Выберите соревнование</option>
               {tournaments.map((tournament) => (
                 <option key={tournament.id} value={tournament.id}>
                   {tournament.name} - {formatTournamentState(tournament.state)}
@@ -424,7 +424,7 @@ export const TournamentAuditPanel = ({
           >
             Скачать отчет
           </Button>
-          <span>Сохранить историю и результаты турнира в файл.</span>
+          <span>Сохранить историю и результаты соревнования в файл.</span>
         </div>
       </div>
 
@@ -436,8 +436,8 @@ export const TournamentAuditPanel = ({
       {bundle ? (
         <div className={styles.bundleReceipt} aria-live="polite">
           <div>
-            <span>Турнир</span>
-            <strong>{selectedTournament?.name ?? "Выбранный турнир"}</strong>
+            <span>Соревнование</span>
+            <strong>{selectedTournament?.name ?? "Выбранное соревнование"}</strong>
           </div>
           <div>
             <span>Отчет готов</span>
@@ -445,7 +445,7 @@ export const TournamentAuditPanel = ({
           </div>
           <div className={styles.bundleHash}>
             <TechnicalDetails>
-              <p>ID турнира: <code>{bundle.tournament_id}</code></p>
+              <p>ID соревнования: <code>{bundle.tournament_id}</code></p>
               <p>Версия данных: {bundle.projection_revision}</p>
               <span>SHA-256</span>
               <code>{bundle.sha256}</code>
@@ -595,18 +595,18 @@ export const TournamentAuditPanel = ({
         </Message>
       ) : null}
       {!selectedTournamentId ? (
-        <Message tone="info" title="Выберите турнир">
-          История и экспорт загружаются только для выбранного турнира.
+        <Message tone="info" title="Выберите соревнование">
+          История и экспорт загружаются только для выбранного соревнования.
         </Message>
       ) : null}
       {selectedTournamentId && loadState === "loading" && !currentPage ? (
         <Message tone="loading" title="Загружаем историю">
-          Получаем события выбранного турнира.
+          Получаем события выбранного соревнования.
         </Message>
       ) : null}
       {selectedTournamentId && loadState === "ready" && currentPage?.events.length === 0 ? (
         <Message tone="info" title="Событий не найдено">
-          Измените фильтры или выберите другой турнир.
+          Измените фильтры или выберите другое соревнование.
         </Message>
       ) : null}
 
@@ -614,7 +614,7 @@ export const TournamentAuditPanel = ({
         <div className={styles.results}>
           <div className={styles.resultsHeading} aria-live="polite">
             <div>
-              <strong>{selectedTournament?.name ?? "Выбранный турнир"}</strong>
+              <strong>{selectedTournament?.name ?? "Выбранное соревнование"}</strong>
               <span>Страница {pageIndex + 1}, событий: {currentPage.events.length}</span>
             </div>
             <span>Время показано в UTC</span>

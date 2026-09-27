@@ -8,20 +8,38 @@
   color: var(--text);
 }
 
-.homeLink {
-  display: inline-flex;
+.pageNav {
+  display: flex;
   align-items: center;
-  align-self: flex-start;
-  gap: 0.45rem;
+  justify-content: space-between;
+  gap: 1rem;
   width: min(100%, 68rem);
   margin: 0 auto 1.5rem;
+}
+
+.homeLink,
+.arenaLink {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  gap: 0.45rem;
+  border: 1px solid transparent;
+  border-radius: var(--radius-small);
+  padding: 0.55rem 0.7rem;
   color: var(--secondary);
   font-size: 0.82rem;
   font-weight: 650;
   text-decoration: none;
+  transition:
+    border-color var(--motion),
+    background-color var(--motion),
+    color var(--motion);
 }
 
-.homeLink:hover {
+.homeLink:hover,
+.arenaLink:hover {
+  border-color: var(--border-strong);
+  background: var(--surface-muted);
   color: var(--text);
 }
 
@@ -255,7 +273,7 @@
     padding: 1.5rem 0.75rem 3rem;
   }
 
-  .homeLink,
+  .pageNav,
   .header,
   .statsRow,
   .boardWrapper {

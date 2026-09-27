@@ -6,20 +6,7 @@
   color: var(--text);
 }
 
-.catalogPanel {
-  min-width: 0;
-}
-
-.contentSummary {
-  display: grid;
-  min-width: 0;
-  gap: 1rem;
-  margin-bottom: 1.25rem;
-  border-bottom: 1px solid var(--border);
-  padding-bottom: 1.25rem;
-}
-
-.summaryHeading {
+.listHeader {
   display: flex;
   min-width: 0;
   align-items: flex-start;
@@ -34,65 +21,14 @@
   font-weight: 780;
 }
 
-.summaryDescription {
-  max-width: 65ch;
+.listDescription {
   margin: 0.3rem 0 0;
   color: var(--secondary);
   font-size: 0.8rem;
-  line-height: 1.45;
 }
 
-.revisionGrid {
-  display: grid;
-  min-width: 0;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 0.7rem;
-  margin: 0;
-}
-
-.revisionGrid div {
-  min-width: 0;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-small);
-  padding: 0.75rem;
-  background: var(--surface-muted);
-}
-
-.revisionGrid dt {
-  color: var(--secondary);
-  font-size: 0.72rem;
-  line-height: 1.35;
-}
-
-.revisionGrid dd {
-  min-width: 0;
-  margin: 0.25rem 0 0;
-  color: var(--text);
-  font-size: 0.9rem;
-  font-weight: 780;
-}
-
-.revisionGrid code {
-  display: block;
-  overflow-wrap: anywhere;
-  color: var(--accent-strong);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: 0.72rem;
-  font-weight: 650;
-}
-
-.managerLayout {
-  display: grid;
-  min-width: 0;
-  grid-template-columns: minmax(300px, 0.85fr) minmax(0, 1.15fr);
-  gap: 1rem;
-  align-items: start;
-}
-
-.formPanel,
 .listPanel {
   min-width: 0;
-  height: 100%;
 }
 
 .form {
@@ -362,6 +298,7 @@
 .taskList {
   display: grid;
   min-width: 0;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0.65rem;
 }
 
@@ -515,23 +452,17 @@
   border-color: var(--error);
 }
 
-@media (max-width: 940px) {
-  .managerLayout {
-    grid-template-columns: 1fr;
-  }
-}
-
 @media (max-width: 640px) {
-  .summaryHeading {
+  .listHeader {
     flex-direction: column;
   }
 
-  .summaryHeading > .status {
-    width: fit-content;
+  .listHeader > button {
+    width: 100%;
   }
 
-  .revisionGrid,
-  .formRow {
+  .formRow,
+  .taskList {
     grid-template-columns: 1fr;
   }
 

@@ -379,7 +379,7 @@ test("participant renders bye, eliminated, and completed as separate states", as
   });
   await page.reload({ waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("participant-player-panel")).toHaveAttribute("data-state", "completed");
-  await expect(page.getByText("Турнир завершен")).toBeVisible();
+  await expect(page.getByText("Соревнование завершено")).toBeVisible();
 });
 
 test("participant preserves 401 and 403 access states", async ({ page }) => {
@@ -489,7 +489,7 @@ test("participant lobby keeps keyboard access and long Cyrillic copy across resp
   await installSnapshot(page, current);
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto(participantURL);
-  await expect(page.getByRole("region", { name: "Турнирная позиция" })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Позиция в соревновании" })).toBeVisible();
   await expect(page.getByRole("region", { name: "Задание для игры" })).toContainText(longCopy);
   await expect(page.getByRole("region", { name: "Следующее действие", exact: true })).toBeVisible();
 
@@ -540,7 +540,7 @@ test("participant panel fills the arena content width across viewports", async (
       };
 
       return {
-        header: rectFor("[data-testid=arena-shell] section[aria-label='Контекст турнира']"),
+        header: rectFor("[data-testid=arena-shell] section[aria-label='Контекст соревнования']"),
         main: rectFor("[data-testid=arena-shell] main"),
         panel: rectFor("[data-testid=participant-player-panel]"),
         summary: rectFor("[data-testid=arena-shell] main article[aria-label]"),

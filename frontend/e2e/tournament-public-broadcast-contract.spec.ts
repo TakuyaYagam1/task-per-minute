@@ -101,15 +101,25 @@ const installFullscreenMock = async (page: Page): Promise<void> => {
   });
 };
 
-type SnapshotMode = "live" | "bo1" | "completed-bo1" | "completed-bo3" | "result";
+type SnapshotMode =
+  | "live"
+  | "bo1"
+  | "completed-bo1"
+  | "completed-bo3"
+  | "result"
+  | "result-zero"
+  | "result-missing"
+  | "cancelled";
 
 const publicSnapshot = (mode: SnapshotMode): Record<string, unknown> => {
-  const resultMode = mode === "result";
+  const resultMode = mode === "result" || mode === "result-zero" || mode === "result-missing";
+  const cancelledMode = mode === "cancelled";
+  const terminalMode = resultMode || cancelledMode;
   const secondDraftMode = mode === "bo1" || mode === "completed-bo1";
   const completedDraftMode = mode === "completed-bo1" || mode === "completed-bo3";
   const firstDeadline = "2026-09-15T10:05:00Z";
   const secondDeadline = "2026-09-15T10:08:00Z";
-  const projectionRevision = resultMode ? 11 : completedDraftMode ? 12 : secondDraftMode ? 10 : 9;
+  const projectionRevision = terminalMode ? 11 : completedDraftMode ? 12 : secondDraftMode ? 10 : 9;
   const eventSequence = projectionRevision;
   const draftActions = completedDraftMode
     ? secondDraftMode
@@ -190,7 +200,7 @@ const publicSnapshot = (mode: SnapshotMode): Record<string, unknown> => {
       projection_revision: projectionRevision,
       tournament_id: tournamentId,
     },
-    live_draft: resultMode ? null : {
+    live_draft: terminalMode ? null : {
       actions: draftActions,
       auto_action_pending: completedDraftMode ? false : secondDraftMode,
       current_action: completedDraftMode ? null : "pick",
@@ -210,15 +220,17 @@ const publicSnapshot = (mode: SnapshotMode): Record<string, unknown> => {
       {
         current_game: {
           category: "web",
-          effective_deadline: resultMode ? null : firstDeadline,
-          finished_at: resultMode ? "2026-09-15T10:05:00Z" : null,
+          effective_deadline: terminalMode ? null : firstDeadline,
+          finished_at: terminalMode ? "2026-09-15T10:05:00Z" : null,
           first_connection_status: "connected",
           position: 1,
-          result_reason: resultMode ? "solved" : null,
+          result_reason: resultMode ? "solved" : cancelledMode ? "tournament_cancelled" : null,
           second_connection_status: "disconnected",
           started_at: "2026-09-15T10:00:00Z",
-          state: resultMode ? "completed" : "active",
+          state: resultMode ? "completed" : cancelledMode ? "cancelled" : "active",
           winner_display_name: resultMode ? "Алиса" : null,
+          ...(mode === "result" ? { solve_time_ms: 42_000 } : {}),
+          ...(mode === "result-zero" ? { solve_time_ms: 0 } : {}),
         },
         current_game_position: 1,
         first_display_name: "Алиса",
@@ -229,7 +241,7 @@ const publicSnapshot = (mode: SnapshotMode): Record<string, unknown> => {
         second_display_name: "Боб",
         series_id: firstSeriesId,
         stage: "swiss",
-        state: resultMode ? "completed" : "active",
+        state: resultMode ? "completed" : cancelledMode ? "cancelled" : "active",
       },
       {
         current_game: {
@@ -300,12 +312,12 @@ const publicSnapshot = (mode: SnapshotMode): Record<string, unknown> => {
     },
     swiss_rounds: [{ bye: null, round_number: 1, state: "active" }],
     tournament: {
-      finished_at: resultMode ? "2026-09-15T10:06:00Z" : null,
+      finished_at: terminalMode ? "2026-09-15T10:06:00Z" : null,
       preset: "tournament_v1",
       projection_revision: projectionRevision,
       roster_size: 4,
       started_at: serverTimestamp,
-      state: resultMode ? "completed" : "swiss",
+      state: resultMode ? "completed" : cancelledMode ? "cancelled" : "swiss",
       tournament_id: tournamentId,
     },
   };
@@ -432,12 +444,15 @@ test("FE-041 public match center binds selected series, game timers, and passive
 
   const broadcast = page.getByTestId("tournament-broadcast");
   await expect(broadcast).toBeVisible();
-  await expect(broadcast.getByTestId("broadcast-connection")).toBeVisible();
+  await expect(broadcast.getByTestId("broadcast-connection")).toHaveCount(0);
   await expect(broadcast.getByTestId("broadcast-selected-series")).toContainText("Алиса - Боб");
-  await expect(broadcast.getByTestId("broadcast-selected-game")).toContainText("Игра 1");
+  await expect(broadcast.getByTestId("broadcast-selected-game")).toContainText("BO3 - Игра 1");
   await expect(broadcast.getByTestId("broadcast-selected-game")).toHaveAttribute("data-series-id", firstSeriesId);
   await expect(broadcast.getByTestId("broadcast-selected-game")).toHaveAttribute("data-deadline", "2026-09-15T10:05:00Z");
   await expect(broadcast.getByTestId("broadcast-game-category")).toHaveText("web");
+  await expect(broadcast.getByTestId("broadcast-selected-game").getByText("Дедлайн", { exact: true })).toHaveCount(0);
+  await expect(broadcast.getByTestId("broadcast-selected-game")).not.toContainText("Первый участник");
+  await expect(broadcast.getByTestId("broadcast-selected-game")).not.toContainText("Второй участник");
   await expect(broadcast.getByTestId("broadcast-game-countdown")).toHaveText("5:00");
   await expect(broadcast.getByTestId("broadcast-draft-first-actor")).toHaveText("Алиса");
   await expect(broadcast.getByTestId("broadcast-draft-turn")).toHaveText("2");
@@ -454,7 +469,7 @@ test("FE-041 public match center binds selected series, game timers, and passive
   await secondMatch.press("Enter");
   await expect.poll(() => new URL(page.url()).searchParams.get("match")).toBe(`series:${secondSeriesId}`);
   await expect(broadcast.getByTestId("broadcast-selected-series")).toContainText("Чарли - Дана");
-  await expect(broadcast.getByTestId("broadcast-selected-game")).toContainText("Игра 2");
+  await expect(broadcast.getByTestId("broadcast-selected-game")).toHaveText(/BO1/);
   await expect(broadcast.getByTestId("broadcast-game-category")).toHaveText("crypto");
   await expect(broadcast.getByTestId("broadcast-game-countdown")).toHaveText("8:00");
   await expect(broadcast.getByTestId("broadcast-draft")).toHaveAttribute("data-series-id", secondSeriesId);
@@ -532,6 +547,29 @@ test("FE-041 keeps official result server-only and covers fullscreen, themes, an
   await page.reload({ waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("broadcast-official-result")).toContainText("2:1");
   await expect(page.getByTestId("broadcast-official-result")).toContainText("Алиса");
+  const completedGame = page.getByTestId("broadcast-selected-game");
+  await expect(completedGame).toContainText("BO3 - Игра 1");
+  await expect(completedGame.getByTestId("broadcast-game-countdown")).toHaveCount(0);
+  await expect(completedGame.getByTestId("broadcast-game-solve-time")).toHaveText("Время решения: Алиса - 00:42");
+  await completedGame.screenshot({ path: test.info().outputPath("match-result.png") });
+
+  mode = "result-zero";
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await expect(page.getByTestId("broadcast-selected-game").getByTestId("broadcast-game-solve-time"))
+    .toHaveText("Время решения: Алиса - 00:00");
+
+  mode = "result-missing";
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await expect(page.getByTestId("broadcast-selected-game").getByTestId("broadcast-game-solve-time"))
+    .toHaveCount(0);
+
+  mode = "cancelled";
+  await page.reload({ waitUntil: "domcontentloaded" });
+  const cancelledGame = page.getByTestId("broadcast-selected-game");
+  await expect(cancelledGame).toContainText("Матч отменен");
+  await expect(cancelledGame).not.toContainText("Результат пока не подтвержден");
+  await expect(cancelledGame.getByTestId("broadcast-game-countdown")).toHaveCount(0);
+  await expect(cancelledGame.getByTestId("broadcast-game-solve-time")).toHaveCount(0);
 
   await page.setViewportSize({ width: 390, height: 844 });
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
@@ -769,7 +807,7 @@ test("FE-042 keeps spectator tabs, names, focus, motion, and responsive actions 
 
   await expect(broadcast).toBeVisible();
   await expect(page.getByRole("main")).toBeVisible();
-  const tablist = broadcast.getByRole("tablist", { name: "Таблица и этапы турнира" });
+  const tablist = broadcast.getByRole("tablist", { name: "Таблица и этапы соревнования" });
   await expect(tablist).toBeVisible();
   await expect(broadcast.getByRole("heading", { name: /КиберспортивнаяКомандаСеверногоФронта/ })).toBeVisible();
 

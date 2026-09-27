@@ -15,19 +15,21 @@
   gap: 1rem;
 }
 
-.header {
-  align-items: end;
-  border-bottom: 1px solid var(--border);
-  padding-bottom: 1.25rem;
+.cardHeader > :last-child {
+  flex: 0 0 auto;
+  white-space: nowrap;
 }
 
-.eyebrow {
-  margin: 0 0 0.35rem;
-  color: var(--accent-strong);
-  font-size: 0.72rem;
-  font-weight: 800;
-  letter-spacing: 0.09em;
-  text-transform: uppercase;
+.header {
+  align-items: center;
+  flex-direction: column;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 1.25rem;
+  text-align: center;
+}
+
+.header > div {
+  width: 100%;
 }
 
 .title,
@@ -40,20 +42,6 @@
 .title {
   font-size: clamp(1.7rem, 4vw, 2.6rem);
   letter-spacing: -0.035em;
-}
-
-.lead {
-  max-width: 62ch;
-  margin: 0.55rem 0 0;
-  color: var(--secondary);
-  font-size: 0.92rem;
-  line-height: 1.55;
-}
-
-.pageSize {
-  flex: 0 0 auto;
-  color: var(--subtle);
-  font-size: 0.78rem;
 }
 
 .filters {
@@ -169,15 +157,6 @@
   line-height: 1.25;
 }
 
-.publicId {
-  display: block;
-  margin-top: 0.28rem;
-  overflow-wrap: anywhere;
-  color: var(--subtle);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: 0.72rem;
-}
-
 .cardFacts {
   display: grid;
   min-width: 0;
@@ -214,13 +193,6 @@
   color: var(--subtle);
 }
 
-.cardAction {
-  margin-top: auto;
-  color: var(--accent-strong);
-  font-size: 0.8rem;
-  font-weight: 800;
-}
-
 .pagination {
   display: flex;
   justify-content: center;
@@ -229,8 +201,7 @@
 
 @media (max-width: 760px) {
   .header {
-    align-items: flex-start;
-    flex-direction: column;
+    align-items: center;
   }
 
   .filters {

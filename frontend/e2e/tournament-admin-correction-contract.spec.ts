@@ -277,14 +277,14 @@ test("FE-036 closes correction after cutoff and in terminal state on light mobil
   await confirmCorrection(page);
   await page.getByRole("button", { name: "Подтвердить коррекцию" }).click();
   await expect(page.getByText("Коррекция закрыта", { exact: true })).toBeVisible();
-  await expect(page.getByText("Следующие матчи уже начались. Исправление недоступно. Приостановите турнир и изучите историю.")).toBeVisible();
+  await expect(page.getByText("Следующие матчи уже начались. Исправление недоступно. Приостановите соревнование и изучите историю.")).toBeVisible();
   await expect(page.getByRole("button", { name: "Подтвердить коррекцию" })).toHaveCount(0);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
 
   snapshot = terminalSnapshot();
   await page.reload({ waitUntil: "domcontentloaded" });
-  await expect(page.getByText("Турнир завершен", { exact: true })).toBeVisible();
-  await expect(page.getByText("Действия турнира отключены.")).toBeVisible();
+  await expect(page.getByText("Соревнование завершено", { exact: true })).toBeVisible();
+  await expect(page.getByText("Действия соревнования отключены.")).toBeVisible();
   await expect(page.getByRole("button", { name: "Подтвердить коррекцию" })).toHaveCount(0);
 
   await page.getByRole("button", { name: "Темная тема" }).click();

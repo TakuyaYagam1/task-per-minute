@@ -12,6 +12,10 @@ import (
 
 var ErrPublicSnapshotCursorConflict = errors.New("public tournament snapshot cursor conflict")
 
+// MaxPublicSolveTimeMS is the largest elapsed duration that remains exact in
+// a JavaScript number used by public clients.
+const MaxPublicSolveTimeMS int64 = (1 << 53) - 1
+
 // TournamentSnapshotUseCase provides role-scoped tournament read models.
 // Implementations assemble each response from one consistent durable snapshot.
 type TournamentSnapshotUseCase interface {
@@ -230,6 +234,7 @@ type PublicCurrentGameView struct {
 	StartedAt              *time.Time
 	EffectiveDeadline      *time.Time
 	FinishedAt             *time.Time
+	SolveTimeMS            *int64
 	ResultReason           *string
 	WinnerDisplayName      *string
 	FirstConnectionStatus  string

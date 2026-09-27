@@ -11,6 +11,7 @@ import (
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/websocket/wirelimits"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
+	usecase "github.com/TakuyaYagam1/task-per-minute/internal/port/inbound"
 )
 
 func TestTournamentPublicSnapshot(t *testing.T) {
@@ -154,6 +155,104 @@ func TestTournamentPublicSnapshot(t *testing.T) {
 	if _, err := NewPublicSnapshot(tournamentID, oversizedCollection); err == nil {
 		t.Fatal("NewPublicSnapshot() accepted an oversized collection")
 	}
+}
+
+func TestTournamentPublicSnapshotSolveTimeContract(t *testing.T) {
+	t.Parallel()
+
+	tournamentID := testUUID("00000000-0000-4000-8000-000000000001")
+	startedAt := time.Date(2026, 9, 2, 8, 0, 0, 0, time.UTC)
+	finishedAt := startedAt
+	reason := string(domain.GameResultReasonSolved)
+	winner := "red"
+	zero := int64(0)
+	input := testPublicSnapshotInput(tournamentID)
+	input.LiveSeries[0].State = "completed"
+	input.LiveSeries[0].CurrentGame = &PublicCurrentGameInput{
+		Position:               2,
+		Category:               "web",
+		State:                  "completed",
+		StartedAt:              &startedAt,
+		FinishedAt:             &finishedAt,
+		SolveTimeMS:            &zero,
+		ResultReason:           &reason,
+		WinnerDisplayName:      &winner,
+		FirstConnectionStatus:  "connected",
+		SecondConnectionStatus: "disconnected",
+	}
+	snapshot, err := NewPublicSnapshot(tournamentID, input)
+	require.NoError(t, err)
+
+	encoded, err := json.Marshal(snapshot)
+	require.NoError(t, err)
+	var payload struct {
+		LiveSeries []struct {
+			CurrentGame *struct {
+				SolveTimeMS *int64 `json:"solve_time_ms"`
+			} `json:"current_game"`
+		} `json:"live_series"`
+	}
+	require.NoError(t, json.Unmarshal(encoded, &payload))
+	require.NotNil(t, payload.LiveSeries[0].CurrentGame)
+	require.NotNil(t, payload.LiveSeries[0].CurrentGame.SolveTimeMS)
+	require.Equal(t, int64(0), *payload.LiveSeries[0].CurrentGame.SolveTimeMS)
+
+	for _, mutation := range []struct {
+		name string
+		edit func(*PublicCurrentGameInput)
+	}{
+		{name: "unsafe integer", edit: func(game *PublicCurrentGameInput) {
+			value := usecase.MaxPublicSolveTimeMS + 1
+			game.SolveTimeMS = &value
+		}},
+		{name: "non solve result", edit: func(game *PublicCurrentGameInput) {
+			value := int64(10)
+			game.SolveTimeMS = &value
+			result := string(domain.GameResultReasonSurrender)
+			game.ResultReason = &result
+		}},
+	} {
+		t.Run(mutation.name, func(t *testing.T) {
+			candidate := testPublicSnapshotInput(tournamentID)
+			candidate.LiveSeries[0].State = "completed"
+			candidate.LiveSeries[0].CurrentGame = clonePublicCurrentGameInput(input.LiveSeries[0].CurrentGame)
+			mutation.edit(candidate.LiveSeries[0].CurrentGame)
+			_, err := NewPublicSnapshot(tournamentID, candidate)
+			require.Error(t, err)
+		})
+	}
+}
+
+func clonePublicCurrentGameInput(value *PublicCurrentGameInput) *PublicCurrentGameInput {
+	if value == nil {
+		return nil
+	}
+	clone := *value
+	if value.StartedAt != nil {
+		startedAt := *value.StartedAt
+		clone.StartedAt = &startedAt
+	}
+	if value.EffectiveDeadline != nil {
+		deadline := *value.EffectiveDeadline
+		clone.EffectiveDeadline = &deadline
+	}
+	if value.FinishedAt != nil {
+		finishedAt := *value.FinishedAt
+		clone.FinishedAt = &finishedAt
+	}
+	if value.SolveTimeMS != nil {
+		solveTimeMS := *value.SolveTimeMS
+		clone.SolveTimeMS = &solveTimeMS
+	}
+	if value.ResultReason != nil {
+		resultReason := *value.ResultReason
+		clone.ResultReason = &resultReason
+	}
+	if value.WinnerDisplayName != nil {
+		winnerDisplayName := *value.WinnerDisplayName
+		clone.WinnerDisplayName = &winnerDisplayName
+	}
+	return &clone
 }
 
 func testPublicSnapshot(t *testing.T, tournamentID uuid.UUID) PublicSnapshot {

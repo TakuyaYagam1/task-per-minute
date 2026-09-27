@@ -5,7 +5,7 @@ import { ThemeToggle } from "../../../../lib/shared/ui";
 import "./fixture.css";
 
 export const metadata: Metadata = {
-  title: "Форматирование турнира",
+  title: "Форматирование соревнования",
 };
 
 export default function TournamentFormattingLayout({

@@ -330,28 +330,28 @@ test("spectator demo shows the tie-to-Golden result and the completed BO3 bracke
 
   await page.goto(spectatorURL, { waitUntil: "domcontentloaded" });
   const broadcast = page.getByTestId("tournament-broadcast");
-  const table = broadcast.getByRole("table", { name: "Публичная таблица турнира" });
+  const table = broadcast.getByRole("table", { name: "Публичная таблица соревнования" });
   await expect(table.getByRole("row").filter({ hasText: "Участник 04" })).toContainText("Тай-брейк не решен");
   await expect(table.getByRole("row").filter({ hasText: "Участник 05" })).toContainText("Тай-брейк не решен");
-  await broadcast.getByRole("tab", { name: "Swiss" }).click();
+  await broadcast.getByRole("tab", { name: "Квалификация" }).click();
   await expect(broadcast.getByTestId("swiss-round-1")).toBeVisible();
   const initialFetchCount = snapshotFetches.length;
 
   currentSnapshot = resolvedSnapshot();
-  await page.getByRole("button", { name: "Повторить синхронизацию" }).click();
+  await page.getByRole("button", { name: "Обновить трансляцию" }).click();
   await expect.poll(() => snapshotFetches[snapshotFetches.length - 1] ?? 0).toBe(10);
   expect(snapshotFetches.length).toBeGreaterThan(initialFetchCount);
   await broadcast.getByRole("tab", { name: "Таблица" }).click();
   await expect(table.getByRole("row").filter({ hasText: "Участник 05" })).toContainText("Прошел дальше");
   await expect(table.getByRole("row").filter({ hasText: "Участник 04" })).toContainText("Выбыл");
-  await expect(page.getByRole("region", { name: "Состояние турнира" })).toContainText("Ревизия сервера: 10");
+  await expect(page.getByTestId("public-realtime-summary")).toHaveAttribute("data-projection-revision", "10");
   const resolvedFetchCount = snapshotFetches.length;
 
   currentSnapshot = finalSnapshot();
   await page.reload({ waitUntil: "domcontentloaded" });
   await expect.poll(() => snapshotFetches[snapshotFetches.length - 1] ?? 0).toBe(11);
   expect(snapshotFetches.length).toBeGreaterThan(resolvedFetchCount);
-  await expect(page.getByRole("region", { name: "Состояние турнира" })).toContainText("Ревизия сервера: 11");
+  await expect(page.getByTestId("public-realtime-summary")).toHaveAttribute("data-projection-revision", "11");
   await broadcast.getByRole("tab", { name: "Плей-офф" }).click();
   const playoff = broadcast.getByRole("tabpanel");
   await expect(playoff.getByTestId("playoff-final")).toContainText("BO3");
@@ -385,8 +385,8 @@ test("operator demo keeps the operator boundary and server pause state visible",
   await expect(page.getByRole("heading", { name: /Сентябрьский контур.*Оператор/ })).toBeVisible();
   const summary = page.getByTestId("operator-realtime-summary");
   await expect(summary).toBeVisible();
-  await expect(summary).toContainText("Ревизия");
+  await expect(summary).toHaveAttribute("data-projection-revision", "9");
   await expect(summary).toContainText("Пауза");
-  await expect(page.getByRole("region", { name: "Управление турниром" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Турнирная позиция" })).toHaveCount(0);
+  await expect(page.getByRole("region", { name: "Управление соревнованием" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Позиция в соревновании" })).toHaveCount(0);
 });

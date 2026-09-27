@@ -3278,9 +3278,12 @@ type PublicLiveGame struct {
 	Position               int32                  `json:"position"`
 	ResultReason           *string                `json:"result_reason"`
 	SecondConnectionStatus PublicConnectionStatus `json:"second_connection_status"`
-	StartedAt              *time.Time             `json:"started_at"`
-	State                  GameState              `json:"state"`
-	WinnerDisplayName      *string                `json:"winner_display_name"`
+
+	// SolveTimeMs Server-authoritative elapsed milliseconds from game start to the accepted winning flag. Null unless an official solved result has a scoped accepted submission.
+	SolveTimeMs       *int64     `json:"solve_time_ms,omitempty"`
+	StartedAt         *time.Time `json:"started_at"`
+	State             GameState  `json:"state"`
+	WinnerDisplayName *string    `json:"winner_display_name"`
 }
 
 // PublicLiveSeries Allowlisted live series display data; participant and task data are excluded.

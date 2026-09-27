@@ -17,6 +17,7 @@ import {
   type Tournament,
   type TournamentContentSelection,
 } from "../../shared/api";
+import { catalogFormatLabel } from "../../entities/tournament";
 import { formatTournamentState } from "../../shared/lib";
 import {
   Button,
@@ -302,7 +303,7 @@ export const TournamentAdminPanel = ({
         onSessionExpired?.();
       }
       setTournamentsState("error");
-      setTournamentsError(problemMessage(error, "Не удалось загрузить список турниров"));
+      setTournamentsError(problemMessage(error, "Не удалось загрузить список соревнований"));
     } finally {
       if (tournamentsControllerRef.current === controller) {
         tournamentsControllerRef.current = null;
@@ -385,11 +386,11 @@ export const TournamentAdminPanel = ({
     }
     const trimmedName = name.trim();
     if (!trimmedName) {
-      setFormError("Введите название турнира");
+      setFormError("Введите название соревнования");
       return;
     }
     if (Array.from(trimmedName).length > MAX_TOURNAMENT_NAME_LENGTH) {
-      setFormError("Название турнира не должно быть длиннее 120 символов");
+      setFormError("Название соревнования не должно быть длиннее 120 символов");
       return;
     }
     if (!content) {
@@ -444,7 +445,7 @@ export const TournamentAdminPanel = ({
       if (error instanceof ApiError && error.status === 409) {
         setFormError(
           error.problem?.detail ||
-            "Список турниров изменился. Обновите данные и повторите создание.",
+            "Список соревнований изменился. Обновите данные и повторите создание.",
         );
       } else if (error instanceof ApiError && error.status === 422) {
         setFormError(
@@ -453,7 +454,7 @@ export const TournamentAdminPanel = ({
         );
         void loadContent();
       } else {
-        setFormError(problemMessage(error, "Не удалось создать турнир"));
+        setFormError(problemMessage(error, "Не удалось создать соревнование"));
       }
     } finally {
       if (createRunRef.current === createRunId) {
@@ -469,7 +470,7 @@ export const TournamentAdminPanel = ({
     () => [
       {
         key: "name",
-        header: "Турнир",
+        header: "Соревнование",
         cell: (tournament) => (
           <div className={styles.tournamentNameCell}>
             <strong>{tournament.name}</strong>
@@ -519,8 +520,7 @@ export const TournamentAdminPanel = ({
 
   const renderCreateForm = (): ReactNode => (
     <Panel
-      title="Новый турнир"
-      description="Создайте турнир на выбранной публикации контента."
+      title="Новое соревнование"
       className={styles.panel}
     >
       <form
@@ -532,7 +532,7 @@ export const TournamentAdminPanel = ({
         noValidate
       >
         <div className={styles.field}>
-          <label htmlFor="tournament-name">Название турнира</label>
+          <label htmlFor="tournament-name">Название соревнования</label>
           <input
             id="tournament-name"
             name="name"
@@ -565,41 +565,32 @@ export const TournamentAdminPanel = ({
             <option value="16">16 участников</option>
           </select>
         </div>
-        <div className={styles.revisionBlock}>
-          <div className={styles.revisionHeading}>
-            <span>Текущая публикация</span>
-            {contentState === "ready" && content ? (
-              <Status tone="success">Задачи опубликованы</Status>
+        {contentState === "loading" || contentState === "error" ? (
+          <div className={styles.revisionBlock}>
+            {contentState === "loading" ? (
+              <Message tone="loading" title="Проверяем публикацию">
+                Получаем опубликованные задачи.
+              </Message>
+            ) : null}
+            {contentState === "error" ? (
+              <Message
+                tone={contentEmpty ? "empty" : "error"}
+                title={contentEmpty ? "Публикации пока нет" : "Публикация недоступна"}
+              >
+                {contentError}
+                <button
+                  className={styles.inlineAction}
+                  type="button"
+                  onClick={() => void loadContent()}
+                >
+                  Обновить данные
+                </button>
+              </Message>
             ) : null}
           </div>
-          {contentState === "loading" ? (
-            <Message tone="loading" title="Проверяем публикацию">
-              Получаем опубликованные задачи.
-            </Message>
-          ) : null}
-          {contentState === "error" ? (
-            <Message
-              tone={contentEmpty ? "empty" : "error"}
-              title={contentEmpty ? "Публикации пока нет" : "Публикация недоступна"}
-            >
-              {contentError}
-              <button
-                className={styles.inlineAction}
-                type="button"
-                onClick={() => void loadContent()}
-              >
-                Обновить данные
-              </button>
-            </Message>
-          ) : null}
-          {contentState === "ready" && content ? (
-            <p className={styles.revisionDescription}>
-              Опубликовано {formatDateTime(content.published_at)}.
-            </p>
-          ) : null}
-        </div>
+        ) : null}
         {formError ? (
-          <Message id="tournament-form-error" tone="error" title="Не удалось создать турнир">
+          <Message id="tournament-form-error" tone="error" title="Не удалось создать соревнование">
             {formError}
           </Message>
         ) : null}
@@ -607,11 +598,11 @@ export const TournamentAdminPanel = ({
           type="submit"
           size="large"
           loading={creating}
-          loadingLabel="Создаем турнир"
+          loadingLabel="Создаем соревнование"
           disabled={contentState !== "ready" || !content}
           className={styles.submitButton}
         >
-          Создать турнир
+          Создать соревнование
         </Button>
       </form>
     </Panel>
@@ -619,14 +610,13 @@ export const TournamentAdminPanel = ({
 
   const renderTournamentList = (): ReactNode => (
     <Panel
-      title="Турниры"
-      description="Выберите турнир, чтобы открыть его рабочую область."
+      title="Список соревнований"
       className={`${styles.panel} ${styles.listPanel}`}
     >
       <div className={styles.listToolbar}>
         <span className={styles.listCount}>
           {tournamentsState === "ready"
-            ? `${tournaments.length} ${tournaments.length === 1 ? "турнир" : "турниров"}`
+            ? `Всего: ${tournaments.length}`
             : ""}
         </span>
         <Button
@@ -643,10 +633,9 @@ export const TournamentAdminPanel = ({
         columns={columns}
         rows={tournaments}
         rowKey="id"
-        ariaLabel="Список турниров"
-        caption="Турниры"
+        ariaLabel="Список соревнований"
         loading={tournamentsState === "loading"}
-        loadingMessage="Загружаем турниры"
+        loadingMessage="Загружаем соревнования"
         error={
           tournamentsState === "error"
             ? tournamentsError || "Неизвестная ошибка списка"
@@ -654,7 +643,7 @@ export const TournamentAdminPanel = ({
         }
         empty={
           tournamentsState === "ready" && tournaments.length === 0
-            ? "Турниров пока нет"
+            ? "Соревнований пока нет"
             : undefined
         }
         wrapperClassName={styles.tableRegion}
@@ -672,18 +661,17 @@ export const TournamentAdminPanel = ({
               type="button"
               onClick={() => onNavigate(null, "overview")}
             >
-              Назад к турнирам
+              К списку соревнований
             </button>
-            <p className={styles.breadcrumb}>Турниры / рабочая область</p>
-            <h2 id="tournament-detail-title">Турнир недоступен</h2>
+            <h2 id="tournament-detail-title">Соревнование недоступно</h2>
           </div>
           {tournamentsState === "loading" ? (
-            <Message tone="loading" title="Загружаем турнир">
-              Проверяем данные выбранного турнира.
+            <Message tone="loading" title="Загружаем соревнование">
+              Проверяем данные выбранного соревнования.
             </Message>
           ) : (
-            <Message tone="error" title="Турнир не найден">
-              {tournamentsError || "Список не содержит выбранный турнир."}
+            <Message tone="error" title="Соревнование не найдено">
+              {tournamentsError || "Список не содержит выбранное соревнование."}
             </Message>
           )}
         </section>
@@ -699,15 +687,14 @@ export const TournamentAdminPanel = ({
               onNavigate(null, "overview");
             }}
           >
-            Назад к турнирам
+            К списку соревнований
           </button>
-          <p className={styles.breadcrumb}>Турниры / рабочая область</p>
           <h2 id="tournament-detail-title">{selectedTournament.name}</h2>
           <p className={styles.detailMeta}>
             {formatTournamentState(selectedTournament.state)}
           </p>
         </div>
-        <nav className={styles.viewNav} aria-label="Разделы турнира">
+        <nav className={styles.viewNav} aria-label="Разделы соревнования">
           {(Object.keys(viewLabels) as TournamentAdminView[]).map((view) => (
             <button
               key={view}
@@ -731,8 +718,8 @@ export const TournamentAdminPanel = ({
                 tournament={selectedTournament}
               />
               <Panel
-                title="Обзор турнира"
-                description="Основные сведения о выбранном турнире и его текущем состоянии."
+                title="Обзор соревнования"
+                description="Основные сведения о выбранном соревновании и его текущем состоянии."
               >
                 <dl className={styles.overviewGrid}>
                   <div className={styles.overviewItem}>
@@ -743,18 +730,18 @@ export const TournamentAdminPanel = ({
                   </div>
                   <div className={styles.overviewItem}>
                     <dt>Формат</dt>
-                    <dd>{selectedTournament.preset}</dd>
+                    <dd>{catalogFormatLabel(selectedTournament.preset)}</dd>
                   </div>
                   <div className={styles.overviewItem}>
-                    <dt>Создан</dt>
+                    <dt>Создание</dt>
                     <dd>{formatDateTime(selectedTournament.created_at)}</dd>
                   </div>
                   <div className={styles.overviewItem}>
-                    <dt>Начат</dt>
+                    <dt>Начало</dt>
                     <dd>{formatDateTime(selectedTournament.started_at)}</dd>
                   </div>
                   <div className={styles.overviewItem}>
-                    <dt>Завершен</dt>
+                    <dt>Завершение</dt>
                     <dd>{formatDateTime(selectedTournament.finished_at)}</dd>
                   </div>
                 </dl>
@@ -826,13 +813,12 @@ export const TournamentAdminPanel = ({
   };
 
   return (
-    <section className={styles.root} aria-label="Управление турнирами">
-      <div className={styles.heading}>
-        <p className={styles.eyebrow}>Турниры</p>
-        <h2>
-          {selectedTournament ? "Рабочая область турнира" : "Турниры"}
-        </h2>
-      </div>
+    <section className={styles.root} aria-label="Управление соревнованиями">
+      {!selectedTournamentId ? (
+        <div className={styles.heading}>
+          <h2>Соревнования</h2>
+        </div>
+      ) : null}
       {selectedTournamentId ? (
         renderDetail()
       ) : (

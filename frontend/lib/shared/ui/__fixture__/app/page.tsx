@@ -120,9 +120,9 @@ export default function SharedUiFixture() {
         <Tabs
           ariaLabel="Разделы стенда"
           items={[
-            { id: "summary", label: "Сводка", panel: "Сводка турнира" },
+            { id: "summary", label: "Сводка", panel: "Сводка соревнования" },
             { id: "ranking", label: "Рейтинг", panel: "Рейтинг участников" },
-            { id: "rounds", label: "Раунды", panel: "Раунды турнира" },
+            { id: "rounds", label: "Раунды", panel: "Раунды соревнования" },
             { id: "archive", label: "Архив", panel: "Архив недоступен", disabled: true },
           ]}
         />

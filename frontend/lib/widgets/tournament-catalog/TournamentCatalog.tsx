@@ -14,7 +14,6 @@ import {
 } from "../../entities/tournament";
 import { Button, Message, Status } from "../../shared/ui";
 import {
-  CATALOG_PAGE_SIZE,
   type CatalogQuery,
   type TournamentCatalogState,
 } from "../../features/tournament-catalog";
@@ -104,7 +103,6 @@ const TournamentCard = ({
         </time>
         <span>{catalogCreatedLabel(item.createdAt)}</span>
       </div>
-      <span className={styles.cardAction}>Открыть обзор</span>
     </Link>
   </li>
 );
@@ -122,13 +120,8 @@ export const TournamentCatalog = ({
     <section className={styles.catalog} aria-labelledby="arena-catalog-title">
       <header className={styles.header}>
         <div>
-          <p className={styles.eyebrow}>Публичный каталог</p>
-          <h1 className={styles.title} id="arena-catalog-title">Турниры</h1>
-          <p className={styles.lead}>
-            Выберите соревнование для просмотра. Публичный просмотр доступен без входа.
-          </p>
+          <h1 className={styles.title} id="arena-catalog-title">Соревнования</h1>
         </div>
-        <span className={styles.pageSize}>До {CATALOG_PAGE_SIZE} турниров на странице</span>
       </header>
 
       <form
@@ -137,7 +130,7 @@ export const TournamentCatalog = ({
           event.preventDefault();
         }}
         role="search"
-        aria-label="Поиск турниров"
+        aria-label="Поиск соревнований"
       >
         <div className={styles.searchField}>
           <label htmlFor="tournament-catalog-search">Поиск</label>
@@ -186,7 +179,7 @@ export const TournamentCatalog = ({
 
       {isInitialLoading && (
         <Message tone="loading" title="Загрузка каталога">
-          <p>Получаем публичный список турниров.</p>
+          <p>Получаем публичный список соревнований.</p>
         </Message>
       )}
 
@@ -203,7 +196,7 @@ export const TournamentCatalog = ({
       )}
 
       {state.status === "empty" && (
-        <Message tone="empty" title="Турниры не найдены">
+        <Message tone="empty" title="Соревнования не найдены">
           <p>Измените поиск или фильтры.</p>
         </Message>
       )}
@@ -211,7 +204,7 @@ export const TournamentCatalog = ({
       {hasItems && (
         <div className={styles.results} aria-busy={state.status === "loading"}>
           <div className={styles.resultsHeader}>
-            <h2 className={styles.resultsTitle}>Найденные турниры</h2>
+            <h2 className={styles.resultsTitle}>Найденные соревнования</h2>
             <span>{state.items.length}</span>
           </div>
           <ul className={styles.grid}>

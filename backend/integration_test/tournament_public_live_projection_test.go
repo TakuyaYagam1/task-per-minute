@@ -21,6 +21,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/websocket"
 	tournamentws "github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/websocket/tournament"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
+	correctionrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/result/correction"
 	snapshotrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/snapshot"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 )
@@ -111,6 +112,13 @@ func TestTournamentPublicLiveProjectionThroughHTTPAndRealtime(t *testing.T) {
 		fixture := createResultAuditMigrationFixtureFromDraft(ctx, t, draft)
 		submissionID, _ := createAcceptedSubmission(ctx, t, fixture)
 		commit := createAtomicResultCommit(ctx, t, fixture, submissionID)
+		var startedAt, receivedAt time.Time
+		require.NoError(t, sharedPool.QueryRow(ctx, `
+			SELECT attempt.started_at, submission.received_at
+			FROM game_attempts AS attempt
+			JOIN submission_events AS submission
+				ON submission.attempt_id = attempt.id
+			WHERE attempt.id = $1 AND submission.id = $2`, fixture.attemptID, submissionID).Scan(&startedAt, &receivedAt))
 
 		body, read := readPublicProjection(ctx, t, fixture.draft.tournamentID)
 		game := publicGameForSeries(t, read.Snapshot, fixture.draft.seriesID)
@@ -119,6 +127,10 @@ func TestTournamentPublicLiveProjectionThroughHTTPAndRealtime(t *testing.T) {
 		require.NotNil(t, game.FinishedAt)
 		require.NotNil(t, game.ResultReason)
 		require.Equal(t, string(domain.GameResultReasonSolved), *game.ResultReason)
+		require.NotNil(t, game.SolveTimeMS)
+		require.NotNil(t, game.FinishedAt)
+		require.NotEqual(t, receivedAt.UTC(), game.FinishedAt.UTC())
+		require.Equal(t, receivedAt.UTC().Sub(startedAt.UTC()).Milliseconds(), *game.SolveTimeMS)
 		require.NotNil(t, game.WinnerDisplayName)
 		require.NotEmpty(t, read.Snapshot.OfficialResults)
 		official := read.Snapshot.OfficialResults[0]
@@ -127,6 +139,75 @@ func TestTournamentPublicLiveProjectionThroughHTTPAndRealtime(t *testing.T) {
 		require.Equal(t, "completed", official.State)
 		require.NotEmpty(t, official.WinnerDisplayName)
 		assertPublicRedaction(t, body)
+	})
+
+	t.Run("accepted submission at game start preserves true zero solve time", func(t *testing.T) {
+		ctx := context.Background()
+		TruncateTables(t, sharedPool)
+		t.Cleanup(func() { TruncateTables(t, sharedPool) })
+
+		fixture := createResultAuditMigrationFixture(ctx, t)
+		var startedAt time.Time
+		require.NoError(t, sharedPool.QueryRow(ctx, `SELECT started_at FROM game_attempts WHERE id = $1`, fixture.attemptID).Scan(&startedAt))
+		submissionID := insertPublicProjectionSubmission(ctx, t, fixture, startedAt)
+		createAtomicResultCommit(ctx, t, fixture, submissionID)
+
+		_, read := readPublicProjection(ctx, t, fixture.draft.tournamentID)
+		game := publicGameForSeries(t, read.Snapshot, fixture.draft.seriesID)
+		require.NotNil(t, game.SolveTimeMS)
+		require.Equal(t, int64(0), *game.SolveTimeMS)
+	})
+
+	t.Run("corrected official head without accepted submission does not reuse solved head timing", func(t *testing.T) {
+		ctx := context.Background()
+		TruncateTables(t, sharedPool)
+		t.Cleanup(func() { TruncateTables(t, sharedPool) })
+
+		fixture := createCorrectionRepositoryFixture(ctx, t)
+		corrections := correctionrepo.NewCorrectionPostgres(postgres.NewTxManager(sharedPool))
+		input := newCorrectionInput(
+			ctx, t,
+			fixture,
+			fixture.result,
+			fixture.projection,
+			1,
+			fixture.nextTime,
+		)
+		corrected, err := corrections.Rebuild(ctx, input)
+		require.NoError(t, err)
+		require.NotNil(t, corrected)
+		require.Equal(t, string(domain.GameResultReasonSurrender), corrected.ResultCommit.GameRevision.ResultReason)
+		reader := postgres.NewTxManager(sharedPool)
+		var (
+			found                bool
+			currentGameFinished  bool
+			currentGameReason    string
+			solveSubmissionFound bool
+		)
+		err = reader.ReadSnapshot(ctx, func(readCtx context.Context) error {
+			rows, queryErr := reader.Querier(readCtx).ListPublicTournamentReadSeries(
+				readCtx, fixture.resultFixture.draft.tournamentID,
+			)
+			if queryErr != nil {
+				return queryErr
+			}
+			for _, row := range rows {
+				if row.SeriesID != fixture.resultFixture.draft.seriesID {
+					continue
+				}
+				found = true
+				currentGameFinished = row.CurrentGameFinishedAt.Valid
+				currentGameReason = row.CurrentGameResultReason
+				solveSubmissionFound = row.CurrentGameSolveSubmissionReceivedAt.Valid
+				break
+			}
+			return nil
+		})
+		require.NoError(t, err)
+		require.True(t, found)
+		require.True(t, currentGameFinished)
+		require.Equal(t, string(domain.GameResultReasonSurrender), currentGameReason)
+		require.False(t, solveSubmissionFound)
 	})
 
 	t.Run("BO1 draft transitions from active to completed with automatic action", func(t *testing.T) {
@@ -276,6 +357,42 @@ func publicGameForSeries(t *testing.T, snapshot tournamentws.PublicSnapshot, ser
 	}
 	t.Fatalf("public series %s not found", seriesID)
 	return tournamentws.PublicCurrentGame{}
+}
+
+func insertPublicProjectionSubmission(
+	ctx context.Context,
+	t *testing.T,
+	fixture resultAuditMigrationFixture,
+	receivedAt time.Time,
+) uuid.UUID {
+	t.Helper()
+	submissionID := uuid.New()
+	_, err := sharedPool.Exec(ctx, `
+		UPDATE game_attempts
+		SET submission_event_sequence = submission_event_sequence + 1
+		WHERE id = $1`, fixture.attemptID)
+	require.NoError(t, err)
+	_, err = sharedPool.Exec(ctx, `
+		INSERT INTO submission_events (
+			id, tournament_id, roster_id, series_id, attempt_id, assignment_id,
+			participant_id, server_sequence, idempotency_key, status,
+			payload_digest, intent_digest, submitted_at, received_at, created_at
+		)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, 1, $8, 'accepted', $9, $10, $11, $11, $11)`,
+		submissionID,
+		fixture.draft.tournamentID,
+		fixture.draft.rosterID,
+		fixture.draft.seriesID,
+		fixture.attemptID,
+		fixture.assignmentID,
+		fixture.draft.participantIDs[0],
+		uuid.New(),
+		bytes.Repeat([]byte{20}, 32),
+		bytes.Repeat([]byte{21}, 32),
+		receivedAt,
+	)
+	require.NoError(t, err)
+	return submissionID
 }
 
 func requirePublicDraft(t *testing.T, snapshot tournamentws.PublicSnapshot) tournamentws.PublicDraft {

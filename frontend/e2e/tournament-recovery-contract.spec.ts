@@ -636,6 +636,46 @@ test("FE-041 accepts redacted current game and live draft projections", () => {
   expect(isPublicRecoverySnapshot(snapshot)).toBe(false);
 });
 
+test("FE-041 validates the optional authoritative solve time", () => {
+  const withSolveTime = (solveTimeMs: unknown): Record<string, unknown> => {
+    const snapshot = restSnapshot() as unknown as {
+      live_series: Array<Record<string, unknown>>;
+    };
+    const series = snapshot.live_series[0];
+    if (series === undefined) {
+      throw new Error("Live series fixture is missing");
+    }
+    series.current_game = {
+      category: "web",
+      effective_deadline: null,
+      finished_at: "2026-09-08T10:05:00Z",
+      first_connection_status: "connected",
+      position: 2,
+      result_reason: "solved",
+      second_connection_status: "unknown",
+      started_at: "2026-09-08T10:00:00Z",
+      state: "completed",
+      winner_display_name: "alice",
+    };
+    const currentGame = series.current_game;
+    (currentGame as Record<string, unknown>).solve_time_ms = solveTimeMs;
+    return snapshot as unknown as Record<string, unknown>;
+  };
+
+  expect(isPublicRecoverySnapshot(restSnapshot())).toBe(true);
+  expect(isPublicRecoverySnapshot(withSolveTime(42_000))).toBe(true);
+  expect(isPublicRecoverySnapshot(withSolveTime(0))).toBe(true);
+  expect(isPublicRecoverySnapshot(withSolveTime(-1))).toBe(false);
+
+  const withUnknownField = withSolveTime(42_000);
+  const currentGame = (withUnknownField.live_series as Array<Record<string, unknown>>)[0]?.current_game;
+  if (!currentGame || typeof currentGame !== "object") {
+    throw new Error("Current game fixture is missing");
+  }
+  (currentGame as Record<string, unknown>).unexpected = true;
+  expect(isPublicRecoverySnapshot(withUnknownField)).toBe(false);
+});
+
 test("fresh WebSocket connection accepts an initial zero sequence snapshot", () => {
   const state = openPublicRealtime(realtimeEnvelope(0, 1));
 
@@ -1355,7 +1395,7 @@ test("a newer server timestamp accepts a changed deadline", async ({ page }) => 
 
 test("mounted live panel stays server-authoritative in both themes and mobile width", async ({ page }) => {
   await page.goto(fixtureURL, { waitUntil: "domcontentloaded" });
-  await expect(page.getByRole("heading", { name: "Живой турнир" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Живое соревнование" })).toBeVisible();
   await expect(page.getByRole("status")).toHaveText("На связи");
 
   await expect.poll(async () => {
@@ -1643,7 +1683,7 @@ test("FE-013 spectator route mounts public recovery and keeps only the public cu
 
   await page.goto(`/arena/spectator/${arenaTournamentId}`, { waitUntil: "domcontentloaded" });
 
-  const livePanel = page.getByRole("region", { name: "Трансляция турнира" });
+  const livePanel = page.getByRole("region", { name: "Трансляция соревнования" });
   await expect(livePanel.getByText("Трансляция", { exact: true })).toBeVisible();
   await expect(page.getByTestId("public-realtime-summary")).toHaveAttribute(
     "data-projection-revision",
@@ -1749,7 +1789,7 @@ test("FE-013 public equal-cursor recovery refreshes the full match list without 
   let navigations = 0;
   page.on("framenavigated", () => { navigations += 1; });
 
-  const livePanel = page.getByRole("region", { name: "Трансляция турнира" });
+  const livePanel = page.getByRole("region", { name: "Трансляция соревнования" });
   await livePanel.getByRole("button", { name: "Обновить трансляцию" }).click();
 
   await expect.poll(() => snapshotRequests.length).toBe(2);
@@ -1781,8 +1821,8 @@ test("FE-038 public match center keeps the selected server match in a direct lin
   await expect(broadcast).toBeVisible();
   await expect(broadcast).toHaveAttribute("data-phase", "technical_pause");
   await expect(broadcast.getByTestId("broadcast-phase-title")).toHaveText("Техническая пауза");
-  await expect(broadcast.getByText("Подключение", { exact: true })).toBeVisible();
-  await expect(broadcast.getByRole("button", { name: /Swiss.*Раунд 1/ })).toHaveAttribute(
+  await expect(broadcast.getByRole("status")).toHaveCount(0);
+  await expect(broadcast.getByRole("button", { name: /Квалификация.*Раунд 1/ })).toHaveAttribute(
     "aria-pressed",
     "true",
   );
@@ -1854,7 +1894,7 @@ test("FE-039 public scoreboard renders the complete server-owned zero-state rost
 
   const broadcast = page.getByTestId("tournament-broadcast");
   await expect(broadcast).toBeVisible();
-  const table = broadcast.getByRole("table", { name: "Публичная таблица турнира" });
+  const table = broadcast.getByRole("table", { name: "Публичная таблица соревнования" });
   await expect(table.getByRole("row")).toHaveCount(17);
   await expect(table.getByRole("row").nth(1)).toContainText("Участник 01");
   await expect(table.getByRole("row").nth(1)).toContainText("Ожидает решения");
@@ -1979,7 +2019,7 @@ test("FE-039 public scoreboard applies cutoff, Golden, bye, and correction from 
 
   await page.goto(`/arena/spectator/${arenaTournamentId}`, { waitUntil: "domcontentloaded" });
 
-  const table = page.getByRole("table", { name: "Публичная таблица турнира" });
+  const table = page.getByRole("table", { name: "Публичная таблица соревнования" });
   const fourthAtCutoff = table.getByRole("row").filter({ hasText: "Участник 04" });
   const fifthAtCutoff = table.getByRole("row").filter({ hasText: "Участник 05" });
   const byeEntry = table.getByRole("row").filter({ hasText: "Участник 06" });
@@ -2172,10 +2212,10 @@ test("FE-040 public Swiss history and Single Elimination follow server snapshots
     waitUntil: "domcontentloaded",
   });
   const broadcast = page.getByTestId("tournament-broadcast");
-  await expect(broadcast.getByRole("tab", { name: "Swiss" })).toBeVisible();
+  await expect(broadcast.getByRole("tab", { name: "Квалификация" })).toBeVisible();
   await expect(broadcast.getByRole("tab", { name: "Плей-офф" })).toBeVisible();
 
-  await broadcast.getByRole("tab", { name: "Swiss" }).click();
+  await broadcast.getByRole("tab", { name: "Квалификация" }).click();
   await expect(broadcast.getByTestId("swiss-round-1")).toContainText("Завершена");
   await expect(broadcast.getByTestId("swiss-round-2")).toContainText("Идет");
   await expect(broadcast.getByTestId("swiss-round-3")).toContainText("Запланирована");
@@ -2258,11 +2298,11 @@ test("FE-038 public match center distinguishes every server tournament state in 
   });
 
   const cases: ReadonlyArray<readonly [PublicState, string, string]> = [
-    ["registration", "waiting", "Турнир ожидает старта"],
-    ["swiss", "live", "Турнир идет"],
+    ["registration", "waiting", "Соревнование ожидает старта"],
+    ["swiss", "live", "Соревнование идет"],
     ["technical_pause", "technical_pause", "Техническая пауза"],
-    ["cancelled", "cancelled", "Турнир отменен"],
-    ["completed", "completed", "Турнир завершен"],
+    ["cancelled", "cancelled", "Соревнование отменено"],
+    ["completed", "completed", "Соревнование завершено"],
   ];
 
   for (const [serverState, phase, title] of cases) {
@@ -2679,7 +2719,7 @@ test("FE-050 public terminal frame recovers the cancelled snapshot", async ({ pa
   await expect(state).toHaveAttribute("data-connection", "connected");
   await expect(state).toHaveAttribute("data-ready", "true");
   await expect(page.getByTestId("tournament-broadcast").getByTestId("broadcast-phase-title"))
-    .toHaveText("Турнир отменен");
+    .toHaveText("Соревнование отменено");
   await page.waitForTimeout(250);
   const socketsAfterRecovery = await page.evaluate(() => {
     const control = (window as unknown as {
@@ -2712,7 +2752,7 @@ test("FE-013 operator route mounts operator recovery and keeps only the operator
 
   await page.goto(`/arena/operator/${arenaTournamentId}`, { waitUntil: "domcontentloaded" });
 
-  const livePanel = page.getByRole("region", { name: "Состояние турнира" });
+  const livePanel = page.getByRole("region", { name: "Состояние соревнования" });
   await expect(livePanel.getByText("Оператор", { exact: true })).toBeVisible();
   await expect.poll(() => snapshotRequests.length).toBeGreaterThan(0);
   await expect(page.getByTestId("operator-realtime-summary")).toHaveAttribute(
@@ -2811,7 +2851,7 @@ test("FE-049 operator and spectator refresh preserve a double disconnect operato
   });
 
   await page.goto(`/arena/operator/${arenaTournamentId}`, { waitUntil: "domcontentloaded" });
-  const operatorRegion = page.getByRole("region", { name: "Управление турниром" });
+  const operatorRegion = page.getByRole("region", { name: "Управление соревнованием" });
   await expect(operatorRegion).toContainText("Техническая пауза");
   await page.reload({ waitUntil: "domcontentloaded" });
   await expect(operatorRegion).toContainText("Техническая пауза");
@@ -2960,7 +3000,13 @@ test("FE-011 operator route uses snapshot-first admin realtime and fences old so
     message: "Операторская сессия отклонена",
   });
   await expect(state).toHaveAttribute("data-connection", "rejected");
-  expect(authRefreshRequests).toEqual([`POST ${adminRefreshPath}`]);
+  expect(authRefreshRequests).toEqual([]);
+  expect(await page.evaluate(() => {
+    const control = (window as unknown as {
+      __operatorWebSocketControl: { get: () => unknown[] };
+    }).__operatorWebSocketControl;
+    return control.get().length;
+  })).toBe(2);
   expect(mutationRequests).toEqual([]);
 });
 

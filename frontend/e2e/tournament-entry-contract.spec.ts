@@ -89,7 +89,7 @@ const installPublicRoute = async (
       await fulfillJSON(route, body);
       return;
     }
-    await fulfillProblem(route, status, "Турнир не найден");
+    await fulfillProblem(route, status, "Соревнование не найдено");
   });
 };
 
@@ -159,12 +159,12 @@ test("Arena landing exposes the public catalog without a role picker", async ({ 
 
   await page.goto("/arena");
 
-  await expect(page.getByRole("heading", { name: "Турниры", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Соревнования", exact: true })).toBeVisible();
   await expect(page.getByRole("link", { name: /Сентябрьский контур/ })).toHaveAttribute(
     "href",
     /\/arena\/tournaments\/september-contour\?view=overview&return=/,
   );
-  await expect(page.getByLabel("Идентификатор турнира")).toHaveCount(0);
+  await expect(page.getByLabel("Идентификатор соревнования")).toHaveCount(0);
   await expect(page.getByRole("link", { name: "Участник", exact: true })).toHaveCount(0);
   await expect(page.getByRole("link", { name: "Оператор", exact: true })).toHaveCount(0);
   await expect(page.getByRole("link", { name: "Наблюдатель", exact: true })).toHaveCount(0);
@@ -179,7 +179,7 @@ test("direct participant link uses the participant API boundary", async ({ page 
   await page.goto(roleURL("participant", "?source=share&tab=overview"));
 
   await expect(page.getByTestId("arena-status")).toContainText("Доступ подтвержден");
-  await expect(page.getByRole("region", { name: "Контекст турнира" })).toContainText("Участник");
+  await expect(page.getByRole("region", { name: "Контекст соревнования" })).toContainText("Участник");
   await expect(page.getByRole("heading", { name: /Участник/ })).toBeVisible();
 
   expectOnlyPaths(evidence, [publicPath, participantPath, participantSnapshotPath]);
@@ -194,13 +194,13 @@ test("participant workspace preserves a validated public tournament return link"
   await installParticipantRoute(page, fixtureSet.participant.lobby);
 
   await page.goto(roleURL("participant", `?return=${encodeURIComponent(returnPath)}`));
-  await expect(page.getByRole("link", { name: "Вернуться к турниру" })).toHaveAttribute(
+  await expect(page.getByRole("link", { name: "Вернуться к соревнованию" })).toHaveAttribute(
     "href",
     returnPath,
   );
 
   await page.goto(roleURL("participant", `?return=${encodeURIComponent("https://evil.example")}`));
-  await expect(page.getByRole("link", { name: "Вернуться к турниру" })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "Вернуться к соревнованию" })).toHaveCount(0);
 });
 
 test("direct operator link uses the admin API boundary and shows the tournament name", async ({ page }) => {
@@ -251,7 +251,7 @@ test("successful role links preserve path and query parameters across reload", a
 
     expect(page.url()).toBe(loadedURL);
     await expect(page.getByTestId("arena-status")).toContainText("Доступ подтвержден");
-    await expect(page.getByRole("region", { name: "Контекст турнира" })).toBeVisible();
+    await expect(page.getByRole("region", { name: "Контекст соревнования" })).toBeVisible();
   }
 
   expectOnlyPaths(evidence, [
@@ -454,8 +454,8 @@ test("unknown tournament shows a controlled missing state without protected requ
 
   await page.goto(roleURL("spectator"));
 
-  await expect(page.locator("strong").filter({ hasText: "Турнир не найден" })).toBeVisible();
-  await expect(page.getByRole("link", { name: "Выбрать другой турнир" })).toBeVisible();
+  await expect(page.locator("strong").filter({ hasText: "Соревнование не найдено" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Выбрать другое соревнование" })).toBeVisible();
   await expect(page.getByRole("heading", { name: /Наблюдатель/ })).toHaveCount(0);
 
   expectOnlyPaths(evidence, [publicPath]);
@@ -476,17 +476,17 @@ test("completed tournaments are read-only after role authorization", async ({ pa
 
   await page.goto(roleURL("participant"));
   await expect(page.getByTestId("arena-status")).toContainText("Только чтение");
-  await expect(page.getByRole("heading", { name: /Участник.*Завершен/ })).toBeVisible();
-  await expect(page.getByText("Действия турнира отключены")).toBeVisible();
+  await expect(page.getByRole("heading", { name: /Участник.*Завершено/ })).toBeVisible();
+  await expect(page.getByText("Действия соревнования отключены")).toBeVisible();
   await expect(page.getByRole("button", { name: /Отправить|Пауза|Готов/ })).toHaveCount(0);
 
   await page.goto(roleURL("operator"));
   await expect(page.getByTestId("arena-status")).toContainText("Только чтение");
-  await expect(page.getByRole("heading", { name: /Сентябрьский контур.*Оператор.*Завершен/ })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /Сентябрьский контур.*Оператор.*Завершено/ })).toBeVisible();
 
   await page.goto(roleURL("spectator"));
   await expect(page.getByTestId("arena-status")).toContainText("Только чтение");
-  await expect(page.getByRole("heading", { name: /Наблюдатель.*Завершен/ })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /Наблюдатель.*Завершено/ })).toBeVisible();
   await expect(page.getByRole("button", { name: "Выйти" })).toHaveCount(0);
 
   expectOnlyPaths(evidence, [

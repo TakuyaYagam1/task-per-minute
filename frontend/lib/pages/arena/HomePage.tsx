@@ -146,30 +146,21 @@ export default function HomePage() {
         <div className={styles.shell}>
           <section className={`${styles.homeCard} card`} aria-labelledby="home-title">
             <div className={styles.intro}>
-              <p className={styles.eyebrow}>Платформа турниров CTF</p>
               <h1 className={styles.title} id="home-title">Task Per Minute</h1>
-              <h2 className={styles.subtitle}>CTF турнир</h2>
-              <p className={styles.introText}>
-                Войдите как участник, чтобы сохранить браузерную сессию и открыть назначение.
-              </p>
-              <div className={styles.introRule} aria-hidden="true" />
-              <p className={styles.introMeta}>
-                Введите никнейм, чтобы начать.
-              </p>
+              <h2 className={styles.subtitle}>CTF Соревнования</h2>
             </div>
 
             <section className={styles.joinPanel} aria-labelledby="join-title">
               <h2 className={styles.sectionTitle} id="join-title">Вход участника</h2>
-              <p className={styles.sectionCopy}>
-                Используйте никнейм, который будет виден в турнирных списках.
-              </p>
 
               {!currentPlayer ? (
                 <form onSubmit={handleJoin} className={styles.form}>
+                  <label className={styles.srOnly} htmlFor="nickname">
+                    Никнейм
+                  </label>
                   <input
                     id="nickname"
                     type="text"
-                    aria-label="Никнейм"
                     value={nickname}
                     onChange={(event) => setNickname(event.target.value)}
                     placeholder="Введите никнейм..."
@@ -203,15 +194,14 @@ export default function HomePage() {
                 </div>
               )}
 
-              <div className={styles.sessionState} aria-live="polite">
-                <span
-                  className={`${styles.stateDot} ${currentPlayer ? styles.stateDotReady : styles.stateDotWaiting}`}
-                  aria-hidden="true"
-                />
-                {currentPlayer ? "Игрок готов" : "Введите никнейм"}
-              </div>
+              {currentPlayer && (
+                <div className={styles.sessionState} aria-live="polite">
+                  <span className={`${styles.stateDot} ${styles.stateDotReady}`} aria-hidden="true" />
+                  Игрок готов
+                </div>
+              )}
 
-              <Link href="/arena" className={styles.arenaLink}>
+              <Link href="/arena" className={`${styles.arenaLink} btn btn-secondary`}>
                 Открыть Arena
               </Link>
             </section>

@@ -186,21 +186,21 @@ const pairingLifecycleMessage = (
   switch (state) {
     case "draft":
       return {
-        statusLabel: "Турнир не запущен",
-        title: "Подготовьте турнир к запуску",
-        detail: 'Откройте регистрацию, отметьте присутствующих участников, затем нажмите "Зафиксировать состав" и "Начать швейцарский этап".',
+        statusLabel: "Соревнование не запущено",
+        title: "Подготовьте соревнование к запуску",
+        detail: 'Откройте регистрацию, отметьте присутствующих участников, затем нажмите "Зафиксировать состав" и "Начать квалификацию".',
       };
     case "registration":
       return {
-        statusLabel: "Турнир не запущен",
-        title: "Сначала запустите турнир",
-        detail: 'Проверьте состав, затем нажмите "Зафиксировать состав" и "Начать швейцарский этап". После этого можно формировать пары.',
+        statusLabel: "Соревнование не запущено",
+        title: "Сначала запустите соревнование",
+        detail: 'Проверьте состав, затем нажмите "Зафиксировать состав" и "Начать квалификацию". После этого можно формировать пары.',
       };
     case "roster_locked":
       return {
-        statusLabel: "Турнир не запущен",
-        title: "Сначала запустите турнир",
-        detail: 'Нажмите "Начать швейцарский этап". После этого можно формировать пары.',
+        statusLabel: "Соревнование не запущено",
+        title: "Сначала запустите соревнование",
+        detail: 'Нажмите "Начать квалификацию". После этого можно формировать пары.',
       };
     case "swiss":
       return {
@@ -211,40 +211,40 @@ const pairingLifecycleMessage = (
     case "technical_pause":
       if (pausedFromState === "swiss") {
         return {
-          statusLabel: "Турнир приостановлен",
-          title: "Возобновите турнир",
-          detail: "Возобновите турнир, чтобы продолжить формирование пар.",
+          statusLabel: "Соревнование приостановлено",
+          title: "Возобновите соревнование",
+          detail: "Возобновите соревнование, чтобы продолжить формирование пар.",
         };
       }
       return {
         statusLabel: "Этап приостановлен",
-        title: "Возобновите турнир",
-        detail: "Сейчас турнир приостановлен. Новые пары можно формировать только во время швейцарского этапа.",
+        title: "Возобновите соревнование",
+        detail: "Сейчас соревнование приостановлено. Новые пары можно формировать только во время квалификации.",
       };
     case "golden":
     case "playoffs":
       return {
         statusLabel: "Этап завершен",
-        title: "Швейцарский этап завершен",
-        detail: "Турнир уже перешел к следующему этапу. Формировать новые пары здесь больше не нужно.",
+        title: "Квалификация завершена",
+        detail: "Соревнование уже перешло к следующему этапу. Формировать новые пары здесь больше не нужно.",
       };
     case "completed":
       return {
-        statusLabel: "Турнир завершен",
-        title: "Турнир завершен",
-        detail: "Формирование пар недоступно для завершенного турнира.",
+        statusLabel: "Соревнование завершено",
+        title: "Соревнование завершено",
+        detail: "Формирование пар недоступно для завершенного соревнования.",
       };
     case "cancelled":
       return {
-        statusLabel: "Турнир отменен",
-        title: "Турнир отменен",
-        detail: "Формирование пар недоступно для отмененного турнира.",
+        statusLabel: "Соревнование отменено",
+        title: "Соревнование отменено",
+        detail: "Формирование пар недоступно для отмененного соревнования.",
       };
     default:
       return {
         statusLabel: "Действие недоступно",
-        title: "Состояние турнира изменилось",
-        detail: "Обновите состояние турнира перед формированием пар.",
+        title: "Состояние соревнования изменилось",
+        detail: "Обновите состояние соревнования перед формированием пар.",
       };
   }
 };
@@ -470,13 +470,13 @@ export const SwissPairingEditor = ({
     if (!pairingStateAllowed) {
       setFormError(
         pairingLifecycle?.detail ||
-          "Обновите состояние турнира перед формированием пар.",
+          "Обновите состояние соревнования перед формированием пар.",
       );
       void onReloadTournaments();
       return;
     }
     if (categories.length === 0) {
-      setFormError("Выберите хотя бы одну категорию для Swiss раунда.");
+      setFormError("Выберите хотя бы одну категорию для раунда квалификации.");
       return;
     }
     if (pairingMode === "manual") {
@@ -512,7 +512,7 @@ export const SwissPairingEditor = ({
       }
       if (freshSnapshot.tournament.id !== selectedTournament.id) {
         setFormError(
-          "Данные относятся к другому турниру. Обновите данные и повторите попытку.",
+          "Данные относятся к другому соревнованию. Обновите данные и повторите попытку.",
         );
         void onReloadTournaments();
         return;
@@ -565,7 +565,7 @@ export const SwissPairingEditor = ({
       }
       if (error instanceof ApiError && error.status === 409) {
         setFormError(
-          `${problemMessage(error, "Состояние турнира изменилось.")} Результат предыдущего сохранения оставлен на экране. Перезагрузите данные и повторите попытку.`,
+          `${problemMessage(error, "Состояние соревнования изменилось.")} Результат предыдущего сохранения оставлен на экране. Перезагрузите данные и повторите попытку.`,
         );
       } else if (error instanceof ApiError && error.status === 422) {
         const repeatMessage = isRepeatProblem(error)
@@ -573,7 +573,7 @@ export const SwissPairingEditor = ({
           : "Не удалось принять ручную сетку. Проверьте пары, bye и состав участников.";
         setFormError(`${repeatMessage} ${problemMessage(error, "")}`.trim());
       } else {
-        setFormError(problemMessage(error, "Не удалось сформировать Swiss раунд"));
+        setFormError(problemMessage(error, "Не удалось сформировать раунд квалификации"));
       }
     } finally {
       if (submitControllerRef.current === controller) {
@@ -592,12 +592,12 @@ export const SwissPairingEditor = ({
 
   return (
     <Panel
-      title="Пары Swiss"
-      description="Сформируйте следующий раунд на основе актуальных данных турнира."
+      title="Пары квалификации"
+      description="Сформируйте следующий раунд на основе актуальных данных соревнования."
       className={styles.panel}
     >
       {showTournamentChooser ? <div className={styles.chooser}>
-        <label htmlFor="pairing-tournament-select">Турнир для формирования пар</label>
+        <label htmlFor="pairing-tournament-select">Соревнование для формирования пар</label>
         <select
           id="pairing-tournament-select"
           name="pairing_tournament"
@@ -605,7 +605,7 @@ export const SwissPairingEditor = ({
           onChange={(event) => onSelectTournament(event.target.value)}
           disabled={submitting}
         >
-          <option value="">Выберите турнир</option>
+          <option value="">Выберите соревнование</option>
           {tournaments.map((tournament) => (
             <option key={tournament.id} value={tournament.id}>
               {tournament.name}
@@ -615,19 +615,19 @@ export const SwissPairingEditor = ({
       </div> : null}
 
       {!selectedTournament && (
-        <Message tone="empty" title="Турнир не выбран">
-          Выберите турнир, чтобы загрузить состав и сформировать пары.
+        <Message tone="empty" title="Соревнование не выбрано">
+          Выберите соревнование, чтобы загрузить состав и сформировать пары.
         </Message>
       )}
 
       {selectedTournament && loadState === "loading" && (
-        <Message tone="loading" title="Загружаем состояние Swiss">
+        <Message tone="loading" title="Загружаем состояние квалификации">
           Получаем состав участников и настройки раунда.
         </Message>
       )}
 
       {selectedTournament && loadState === "error" && (
-        <Message tone="error" title="Данные Swiss недоступны">
+        <Message tone="error" title="Данные квалификации недоступны">
           {loadError || "Не удалось получить данные для формирования пар."}
           <button className={styles.inlineAction} type="button" onClick={handleReload}>
             Повторить загрузку
@@ -642,7 +642,7 @@ export const SwissPairingEditor = ({
               <div>
                 <h3 className={styles.title}>{selectedTournament.name}</h3>
                 <p className={styles.subtitle}>
-                  Следующий раунд определяется правилами турнира и не редактируется здесь.
+                  Следующий раунд определяется правилами соревнования и не редактируется здесь.
                 </p>
               </div>
               <Status tone={editingLocked || !pairingStateAllowed ? "disabled" : "info"}>
@@ -682,11 +682,11 @@ export const SwissPairingEditor = ({
                   Настройки раунда {roundNumber}
                 </h4>
                 <p className={styles.sectionDescription}>
-                  Категории берутся из политики swiss_default и могут быть уточнены перед отправкой.
+                  Категории берутся из настроек квалификации и могут быть уточнены перед отправкой.
                 </p>
               </div>
               <Status tone="info" size="small">
-                swiss_default: {CATEGORY_MODE_LABELS[configuration.swiss_default.mode]}
+                Настройки квалификации: {CATEGORY_MODE_LABELS[configuration.swiss_default.mode]}
               </Status>
             </div>
 

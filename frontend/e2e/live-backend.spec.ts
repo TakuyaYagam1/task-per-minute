@@ -88,6 +88,7 @@ test.describe('live backend smoke', () => {
       await page.goto('/admin');
       await page.getByPlaceholder('Введите пароль...').fill(adminPassword);
       await page.getByRole('button', { name: 'Войти' }).click();
+      await page.getByRole('button', { name: 'Задачи', exact: true }).click();
       await expect(page.getByText('Список задач')).toBeVisible({ timeout: 10000 });
 
       const cookies = await page.context().cookies();
@@ -95,6 +96,7 @@ test.describe('live backend smoke', () => {
       expect(cookies.some((cookie) => cookie.name === 'tpm_admin_refresh')).toBe(true);
       cleanupSession = await adminLogin(request, adminPassword);
 
+      await page.getByRole('button', { name: 'Создать задачу', exact: true }).click();
       await page.getByPlaceholder('Введите название...').fill(title);
       await page.getByPlaceholder('Опишите задачу...').fill('Live backend contract smoke task');
       await page.locator('select').first().selectOption('web');
@@ -104,7 +106,8 @@ test.describe('live backend smoke', () => {
       await page.getByPlaceholder('Подсказка 1').fill('one');
       await page.getByPlaceholder('Подсказка 2').fill('two');
       await page.getByPlaceholder('Подсказка 3').fill('three');
-      await page.getByRole('button', { name: /Создать задачу/ }).click();
+      await page.getByRole('dialog', { name: 'Создать задачу', exact: true })
+        .getByRole('button', { name: 'Создать задачу', exact: true }).click();
 
       await expect(page.getByText(title)).toBeVisible({ timeout: 10000 });
 

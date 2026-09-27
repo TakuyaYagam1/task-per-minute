@@ -465,7 +465,7 @@ test("participant submission controls preserve keyboard access, themes, scaling,
 
   await expect(page.getByTestId("participant-player-panel")).toBeVisible();
   await expect(page.getByTestId("server-countdown")).toHaveCount(0);
-  await expect(page.getByRole("heading", { name: "Состояние турнира" })).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Состояние соревнования" })).toHaveCount(0);
 
   const keyActions = [answerInput(page), submitButton(page)];
   for (const [label, theme] of [["Темная тема", "dark"], ["Светлая тема", "light"]] as const) {

@@ -381,8 +381,8 @@ const openAdminTournament = async (page: Page): Promise<void> => {
   await page.goto("/admin");
   await page.getByPlaceholder("Введите пароль...").fill("correct-password");
   await page.getByRole("button", { name: "Войти" }).click();
-  await page.getByRole("button", { name: "Турниры" }).click();
-  await expect(page.getByRole("heading", { name: "Новый турнир" })).toBeVisible();
+  await page.getByRole("button", { name: "Соревнования" }).click();
+  await expect(page.getByRole("heading", { name: "Новое соревнование" })).toBeVisible();
   await page.getByRole("button", { name: "Открыть" }).click();
   await page.getByRole("button", { name: "Проведение" }).click();
   await expect(page.getByTestId("operator-wave-control-panel")).toBeVisible();
@@ -528,7 +528,7 @@ test("unfinished previous round 409 блокирует повтор до refresh
   await openAdminTournament(page);
   const staleOpen = page.locator('[data-testid^="wave-open-"]').first();
   await staleOpen.click();
-  await expect(page.getByText("Состояние турнира устарело. Обновите данные перед повтором.")).toBeVisible();
+  await expect(page.getByText("Состояние соревнования устарело. Обновите данные перед повтором.")).toBeVisible();
   const actionCountAfterConflict = routes.getWaveActions().length;
   await expect(staleOpen).toBeDisabled();
   await staleOpen.click({ force: true });

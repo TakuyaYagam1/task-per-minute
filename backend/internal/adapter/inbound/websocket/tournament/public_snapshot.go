@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
+	usecase "github.com/TakuyaYagam1/task-per-minute/internal/port/inbound"
 )
 
 var ErrInvalidPublicSnapshot = errors.New("invalid tournament public snapshot")
@@ -96,6 +97,7 @@ type PublicCurrentGameInput struct {
 	StartedAt              *time.Time
 	EffectiveDeadline      *time.Time
 	FinishedAt             *time.Time
+	SolveTimeMS            *int64
 	ResultReason           *string
 	WinnerDisplayName      *string
 	FirstConnectionStatus  string
@@ -221,6 +223,7 @@ type PublicCurrentGame struct {
 	StartedAt              *time.Time `json:"started_at"`
 	EffectiveDeadline      *time.Time `json:"effective_deadline"`
 	FinishedAt             *time.Time `json:"finished_at"`
+	SolveTimeMS            *int64     `json:"solve_time_ms,omitempty"`
 	ResultReason           *string    `json:"result_reason"`
 	WinnerDisplayName      *string    `json:"winner_display_name"`
 	FirstConnectionStatus  string     `json:"first_connection_status"`
@@ -553,6 +556,7 @@ func currentGameFromInput(value *PublicCurrentGameInput) *PublicCurrentGame {
 		StartedAt:              cloneTime(value.StartedAt),
 		EffectiveDeadline:      cloneTime(value.EffectiveDeadline),
 		FinishedAt:             cloneTime(value.FinishedAt),
+		SolveTimeMS:            cloneInt64(value.SolveTimeMS),
 		ResultReason:           cloneString(value.ResultReason),
 		WinnerDisplayName:      cloneString(value.WinnerDisplayName),
 		FirstConnectionStatus:  value.FirstConnectionStatus,
@@ -571,6 +575,7 @@ func cloneCurrentGame(value *PublicCurrentGame) *PublicCurrentGame {
 		StartedAt:              cloneTime(value.StartedAt),
 		EffectiveDeadline:      cloneTime(value.EffectiveDeadline),
 		FinishedAt:             cloneTime(value.FinishedAt),
+		SolveTimeMS:            cloneInt64(value.SolveTimeMS),
 		ResultReason:           cloneString(value.ResultReason),
 		WinnerDisplayName:      cloneString(value.WinnerDisplayName),
 		FirstConnectionStatus:  value.FirstConnectionStatus,
@@ -589,7 +594,8 @@ func (g PublicCurrentGame) valid() bool {
 func validPublicCurrentGameIdentity(g PublicCurrentGame, state domain.GameState) bool {
 	return g.Position >= 1 && g.Position <= 3 && domain.Category(g.Category).IsValid() && state.IsValid() &&
 		validPublicConnectionStatus(g.FirstConnectionStatus) && validPublicConnectionStatus(g.SecondConnectionStatus) &&
-		validOptionalUTC(g.StartedAt) && validOptionalUTC(g.EffectiveDeadline) && validOptionalUTC(g.FinishedAt)
+		validOptionalUTC(g.StartedAt) && validOptionalUTC(g.EffectiveDeadline) && validOptionalUTC(g.FinishedAt) &&
+		(g.SolveTimeMS == nil || (*g.SolveTimeMS >= 0 && *g.SolveTimeMS <= usecase.MaxPublicSolveTimeMS))
 }
 
 func validPublicCurrentGameLifecycle(g PublicCurrentGame, state domain.GameState) bool {
@@ -613,15 +619,21 @@ func validPublicCurrentGameLifecycle(g PublicCurrentGame, state domain.GameState
 
 func validPublicCurrentGameResult(g PublicCurrentGame, state domain.GameState) bool {
 	if !state.IsTerminal() {
-		return g.ResultReason == nil && g.WinnerDisplayName == nil
+		return g.ResultReason == nil && g.WinnerDisplayName == nil && g.SolveTimeMS == nil
 	}
 	if g.ResultReason == nil || !domain.GameResultReason(*g.ResultReason).IsLegalFor(state) {
 		return false
 	}
 	if state == domain.GameStateCompleted {
-		return g.WinnerDisplayName != nil && validPublicDisplayName(*g.WinnerDisplayName)
+		if g.WinnerDisplayName == nil || !validPublicDisplayName(*g.WinnerDisplayName) {
+			return false
+		}
+		if *g.ResultReason != string(domain.GameResultReasonSolved) && g.SolveTimeMS != nil {
+			return false
+		}
+		return true
 	}
-	return g.WinnerDisplayName == nil
+	return g.WinnerDisplayName == nil && g.SolveTimeMS == nil
 }
 
 func (d PublicDraft) validate() error {

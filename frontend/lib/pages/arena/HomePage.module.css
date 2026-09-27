@@ -31,17 +31,10 @@
 .intro {
   display: flex;
   flex-direction: column;
+  align-items: center;
   justify-content: center;
   border-right: 1px solid var(--border);
-}
-
-.eyebrow {
-  margin: 0 0 0.8rem;
-  color: var(--secondary);
-  font-size: 0.75rem;
-  font-weight: 750;
-  letter-spacing: 0.09em;
-  text-transform: uppercase;
+  text-align: center;
 }
 
 .title {
@@ -55,44 +48,20 @@
 }
 
 .subtitle {
-  margin: 1rem 0 0;
+  margin: 0.8rem 0 0;
   color: var(--accent);
   font-size: 1.1rem;
   font-weight: 700;
 }
 
-.introText,
-.introMeta,
-.sectionCopy {
-  color: var(--secondary);
-  line-height: 1.55;
-}
-
-.introText {
-  max-width: 38ch;
-  margin: 1rem 0 0;
-}
-
-.introRule {
-  width: 4rem;
-  height: 1px;
-  margin: 1.5rem 0 0;
-  background: var(--border-strong);
-}
-
-.introMeta {
-  max-width: 36ch;
-  margin: 0.8rem 0 0;
-  color: var(--subtle);
-  font-size: 0.82rem;
-}
-
 .arenaLink {
   width: fit-content;
+  min-height: 44px;
+  padding: 0.65rem 1.1rem;
   color: var(--text);
   font-size: 0.85rem;
   font-weight: 700;
-  text-underline-offset: 0.2em;
+  text-decoration: none;
 }
 
 .arenaLink:hover {
@@ -114,18 +83,13 @@
   line-height: 1.2;
 }
 
-.sectionCopy {
-  margin: 0.55rem 0 1.5rem;
-  font-size: 0.86rem;
-}
-
 .form,
 .currentPlayer {
   display: grid;
   width: 100%;
   max-width: 24rem;
   gap: 0.75rem;
-  margin-inline: auto;
+  margin: 1.25rem auto 0;
 }
 
 .playerLabel {
@@ -206,13 +170,19 @@
   background: var(--success);
 }
 
-.stateDotWaiting {
-  background: var(--warning);
-}
-
 .arenaLink {
   align-self: center;
   margin-top: 1.5rem;
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
 .notificationWrap {

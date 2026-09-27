@@ -161,9 +161,9 @@ const loginAndOpenTournamentList = async (page: Page): Promise<void> => {
   await page.goto("/admin");
   await page.getByPlaceholder("Введите пароль...").fill("correct-password");
   await page.getByRole("button", { name: "Войти" }).click();
-  await expect(page.getByRole("button", { name: "Турниры" })).toBeVisible();
-  await page.getByRole("button", { name: "Турниры" }).click();
-  await expect(page.getByRole("heading", { name: "Новый турнир" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Соревнования" })).toBeVisible();
+  await page.getByRole("button", { name: "Соревнования" }).click();
+  await expect(page.getByRole("heading", { name: "Новое соревнование" })).toBeVisible();
 };
 
 test("показывает состояния загрузки списка турниров и контента", async ({ page }) => {
@@ -196,23 +196,23 @@ test("показывает состояния загрузки списка ту
 
   await loginAndOpenTournamentList(page);
   await expect(
-    page.getByRole("region", { name: "Новый турнир" }).getByText("Проверяем публикацию"),
+    page.getByRole("region", { name: "Новое соревнование" }).getByText("Проверяем публикацию"),
   ).toBeVisible();
   await expect(
-    page.getByRole("region", { name: "Турниры" }).getByText("Загружаем турниры"),
+    page.getByRole("region", { name: "Список соревнований" }).getByText("Загружаем соревнования"),
   ).toBeVisible();
 
   releaseContent?.();
   releaseList?.();
-  await expect(page.getByText("Турниров пока нет")).toBeVisible();
+  await expect(page.getByText("Соревнований пока нет")).toBeVisible();
 });
 
 test("показывает пустой список турниров", async ({ page }) => {
   await setupAdminRoutes(page);
   await loginAndOpenTournamentList(page);
 
-  await expect(page.getByText("0 турниров")).toBeVisible();
-  await expect(page.getByText("Турниров пока нет")).toBeVisible();
+  await expect(page.getByText("Всего: 0")).toBeVisible();
+  await expect(page.getByText("Соревнований пока нет")).toBeVisible();
 });
 
 test("открывает detail турнира, сохраняет подраздел и выбор при reload", async ({ page }) => {
@@ -227,7 +227,7 @@ test("открывает detail турнира, сохраняет подраз�
   await expect(page.getByRole("heading", { name: "Detail турнир" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Обзор" })).toHaveAttribute("aria-current", "page");
   await expect(page.getByText("Формат", { exact: true })).toBeVisible();
-  await expect(page.getByText(selected.preset, { exact: true })).toBeVisible();
+  await expect(page.getByText("Квалификация и плей-офф", { exact: true })).toBeVisible();
 
   await page.getByRole("button", { name: "Участники" }).click();
   await expect(page).toHaveURL(new RegExp(`[?&]tournament=${selected.id}(?:&|$)`));
@@ -262,14 +262,14 @@ test("показывает ошибку списка и доступен пов�
   });
 
   await loginAndOpenTournamentList(page);
-  await expect(page.getByRole("region", { name: "Турниры" }).getByRole("alert")).toContainText(
+  await expect(page.getByRole("region", { name: "Список соревнований" }).getByRole("alert")).toContainText(
     "Ошибка. Сервис списка временно недоступен",
   );
   const failedRequestCount = listRequests;
   expect(failedRequestCount).toBeGreaterThanOrEqual(1);
   listUnavailable = false;
-  await page.getByRole("region", { name: "Турниры" }).getByRole("button", { name: "Обновить список" }).click();
-  await expect(page.getByText("Турниров пока нет")).toBeVisible();
+  await page.getByRole("region", { name: "Список соревнований" }).getByRole("button", { name: "Обновить список" }).click();
+  await expect(page.getByText("Соревнований пока нет")).toBeVisible();
   expect(listRequests).toBe(failedRequestCount + 1);
 });
 
@@ -309,7 +309,7 @@ test("отображает серверные состояния, состав, 
     },
     {
       state: "swiss",
-      label: "Швейцарский этап",
+      label: "Квалификация",
       rosterSize: 3,
       plannedRosterSize: 8,
       startedAt: startedDate,
@@ -317,7 +317,7 @@ test("отображает серверные состояния, состав, 
     },
     {
       state: "golden",
-      label: "Золотой этап",
+      label: "Дополнительный отбор",
       rosterSize: 8,
       plannedRosterSize: 8,
       startedAt: startedDate,
@@ -342,7 +342,7 @@ test("отображает серверные состояния, состав, 
     },
     {
       state: "completed",
-      label: "Завершен",
+      label: "Завершено",
       rosterSize: 4,
       plannedRosterSize: 4,
       startedAt: startedDate,
@@ -350,7 +350,7 @@ test("отображает серверные состояния, состав, 
     },
     {
       state: "cancelled",
-      label: "Отменен",
+      label: "Отменено",
       rosterSize: 1,
       plannedRosterSize: 4,
       startedAt: startedDate,
@@ -375,7 +375,7 @@ test("отображает серверные состояния, состав, 
   await loginAndOpenTournamentList(page);
 
   const table = page
-    .getByRole("region", { name: "Список турниров" })
+    .getByRole("region", { name: "Список соревнований" })
     .getByRole("table");
   await expect(table.getByRole("row")).toHaveCount(stateCases.length + 1);
   for (const [index, item] of stateCases.entries()) {
@@ -407,12 +407,12 @@ test("создает турнир с актуальной ревизией и о
   });
 
   await loginAndOpenTournamentList(page);
-  await page.getByLabel("Название турнира").fill("Весенний турнир");
+  await page.getByLabel("Название соревнования").fill("Весенний турнир");
   await page.getByLabel("Плановый размер состава").selectOption("8");
-  await expect(
-    page.getByRole("region", { name: "Новый турнир" }).getByText(`Ревизия ${contentRevision}`, { exact: true }),
-  ).toBeVisible();
-  const createButton = page.getByRole("button", { name: "Создать турнир" });
+  const createPanel = page.getByRole("region", { name: "Новое соревнование" });
+  await expect(createPanel.getByText("Задачи опубликованы", { exact: true })).toHaveCount(0);
+  await expect(createPanel.getByText(/Опубликовано/)).toHaveCount(0);
+  const createButton = page.getByRole("button", { name: "Создать соревнование" });
   await expect(createButton).toBeEnabled();
   await Promise.all([
     page.waitForURL(new RegExp(`[?&]tournament=${createdID}(?:&|$)`)),
@@ -448,8 +448,8 @@ test("двойное нажатие отправляет один запрос �
   });
 
   await loginAndOpenTournamentList(page);
-  await page.getByLabel("Название турнира").fill("Двойной клик");
-  const createButton = page.getByRole("button", { name: "Создать турнир" });
+  await page.getByLabel("Название соревнования").fill("Двойной клик");
+  const createButton = page.getByRole("button", { name: "Создать соревнование" });
   await createButton.click({ clickCount: 2 });
   await expect.poll(() => createRequests.length).toBe(1);
   releaseCreate?.();
@@ -475,8 +475,8 @@ test("не возвращает пользователя в турнир пос�
   });
 
   await loginAndOpenTournamentList(page);
-  await page.getByLabel("Название турнира").fill("Поздний ответ");
-  await page.getByRole("button", { name: "Создать турнир" }).click();
+  await page.getByLabel("Название соревнования").fill("Поздний ответ");
+  await page.getByRole("button", { name: "Создать соревнование" }).click();
   await expect.poll(() => createRequests.length).toBe(1);
 
   const dialogPromise = page.waitForEvent("dialog").then(async (dialog) => {
@@ -485,7 +485,8 @@ test("не возвращает пользователя в турнир пос�
   });
   await page.getByRole("button", { name: "Задачи" }).click();
   await dialogPromise;
-  await expect(page.getByPlaceholder("Введите название...")).toBeVisible();
+  await page.getByRole("button", { name: "Создать задачу", exact: true }).click();
+  await expect(page.getByRole("dialog", { name: "Создать задачу" })).toBeVisible();
 
   releaseCreate?.();
   await expect(page).toHaveURL(/[?&]section=tasks(?:&|$)/);
@@ -501,13 +502,13 @@ test("409 показывает восстановимое сообщение и 
 
   await loginAndOpenTournamentList(page);
   const name = "Конфликтный турнир";
-  await page.getByLabel("Название турнира").fill(name);
-  await page.getByRole("button", { name: "Создать турнир" }).click();
-  await expect(page.getByRole("region", { name: "Новый турнир" }).getByRole("alert")).toContainText(
+  await page.getByLabel("Название соревнования").fill(name);
+  await page.getByRole("button", { name: "Создать соревнование" }).click();
+  await expect(page.getByRole("region", { name: "Новое соревнование" }).getByRole("alert")).toContainText(
     "Турнир уже был создан другим оператором",
   );
-  await expect(page.getByLabel("Название турнира")).toHaveValue(name);
-  await expect(page.getByRole("button", { name: "Создать турнир" })).toBeEnabled();
+  await expect(page.getByLabel("Название соревнования")).toHaveValue(name);
+  await expect(page.getByRole("button", { name: "Создать соревнование" })).toBeEnabled();
 });
 
 test("422 показывает сообщение о ревизии и сохраняет введенное название", async ({ page }) => {
@@ -519,13 +520,13 @@ test("422 показывает сообщение о ревизии и сохр�
 
   await loginAndOpenTournamentList(page);
   const name = "Устаревшая ревизия";
-  await page.getByLabel("Название турнира").fill(name);
-  await page.getByRole("button", { name: "Создать турнир" }).click();
-  await expect(page.getByRole("region", { name: "Новый турнир" }).getByRole("alert")).toContainText(
+  await page.getByLabel("Название соревнования").fill(name);
+  await page.getByRole("button", { name: "Создать соревнование" }).click();
+  await expect(page.getByRole("region", { name: "Новое соревнование" }).getByRole("alert")).toContainText(
     "Ревизия контента больше недоступна",
   );
-  await expect(page.getByLabel("Название турнира")).toHaveValue(name);
-  await expect(page.getByRole("button", { name: "Создать турнир" })).toBeEnabled();
+  await expect(page.getByLabel("Название соревнования")).toHaveValue(name);
+  await expect(page.getByRole("button", { name: "Создать соревнование" })).toBeEnabled();
 });
 
 test("список не создает горизонтальный overflow в темной и светлой теме на мобильной ширине", async ({ page }) => {
@@ -561,7 +562,7 @@ test("список не создает горизонтальный overflow в 
   }
   await expect(
     page
-      .getByRole("region", { name: "Список турниров" })
+      .getByRole("region", { name: "Список соревнований" })
       .getByRole("table")
       .getByText("Мобильный турнир", { exact: true }),
   ).toBeVisible();

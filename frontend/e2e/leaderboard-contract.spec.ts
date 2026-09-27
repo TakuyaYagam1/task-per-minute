@@ -28,6 +28,18 @@ test('leaderboard renders backend payload and user-facing fetch errors', async (
   await page.goto('/leaderboard');
   await expect(page.getByText('alice')).toBeVisible();
   await expect(page.getByText('bob')).toBeVisible();
+  const navigation = page.getByRole('navigation', { name: 'Навигация рейтинга' });
+  const homeLink = navigation.getByRole('link', { name: 'На главную' });
+  const arenaLink = navigation.getByRole('link', { name: 'Arena', exact: true });
+  await expect(homeLink).toHaveAttribute('href', '/');
+  await expect(arenaLink).toHaveAttribute('href', '/arena');
+  await expect(arenaLink).toHaveCSS('text-decoration-line', 'none');
+  await expect(arenaLink).toHaveCSS('min-height', '44px');
+  const homeBox = await homeLink.boundingBox();
+  const arenaBox = await arenaLink.boundingBox();
+  expect(homeBox).not.toBeNull();
+  expect(arenaBox).not.toBeNull();
+  expect(arenaBox?.x ?? 0).toBeGreaterThan(homeBox?.x ?? 0);
   await expect(page.getByText('Всего игроков')).toBeVisible();
   await expect(page.getByText('Всего побед')).toBeVisible();
   await expect(page.getByText('Победы').first()).toBeVisible();

@@ -169,7 +169,7 @@ export const Tabs = ({
     focusTab(nextValue);
   };
 
-  const tabListLabel = ariaLabel ?? ariaLabelProp ?? "Разделы турнира";
+  const tabListLabel = ariaLabel ?? ariaLabelProp ?? "Разделы соревнования";
 
   return (
     <div

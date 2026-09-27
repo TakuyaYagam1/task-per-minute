@@ -131,7 +131,7 @@ const stopFixture = async (): Promise<void> => {
 
 const openFixture = async (page: Page): Promise<void> => {
   await page.goto(fixtureURL, { waitUntil: "domcontentloaded" });
-  await expect(page.getByRole("heading", { name: "Общий формат турнира" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Общий формат соревнования" })).toBeVisible();
   await expect(page.locator("main[data-hydrated='true']")).toBeVisible();
 };
 
@@ -167,7 +167,7 @@ test.describe("tournament presentation formatting", () => {
     for (const category of ["Web", "Crypto", "Reverse", "Forensics", "Pwn"]) {
       await expect(page.getByText(category, { exact: true })).toBeVisible();
     }
-    for (const action of ["Открыть регистрацию", "Начать швейцарский этап", "Отправить флаг"]) {
+    for (const action of ["Открыть регистрацию", "Начать квалификацию", "Отправить флаг"]) {
       await expect(page.getByText(action, { exact: true })).toBeVisible();
     }
   });
@@ -175,12 +175,12 @@ test.describe("tournament presentation formatting", () => {
   test("switches state and result controls without exposing server codes", async ({ page }) => {
     await openFixture(page);
 
-    const tournamentGroup = page.getByRole("group", { name: "Состояние турнира" });
+    const tournamentGroup = page.getByRole("group", { name: "Состояние соревнования" });
     const registrationButton = tournamentGroup.getByRole("button", { name: "Регистрация", exact: true });
     await registrationButton.click();
-    await expect(page.getByTestId("tournament-status")).toContainText("Турнир: Регистрация");
+    await expect(page.getByTestId("tournament-status")).toContainText("Соревнование: Регистрация");
     await tournamentGroup.getByRole("button", { name: "Проверить неизвестное состояние" }).click();
-    await expect(page.getByTestId("tournament-status")).toContainText("Турнир: Состояние недоступно");
+    await expect(page.getByTestId("tournament-status")).toContainText("Соревнование: Состояние недоступно");
 
     const gameGroup = page.getByRole("group", { name: "Состояние игры" });
     await gameGroup.getByRole("button", { name: "Приостановлена", exact: true }).click();
@@ -243,7 +243,7 @@ test.describe("tournament presentation formatting", () => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.reload({ waitUntil: "domcontentloaded" });
     await expect(page.locator("html")).toHaveAttribute("lang", "ru");
-    await expect(page.getByRole("heading", { name: "Общий формат турнира" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Общий формат соревнования" })).toBeVisible();
     await expect(
       page.getByRole("heading", {
         name: "Международный чемпионат по кибербезопасности: зимний кубок операторов и участников",

@@ -63,7 +63,7 @@ export default function Page() {
         revision={7}
         role="participant"
         status={status}
-        title="Живой турнир"
+        title="Живое соревнование"
         tournamentId="00000000-0000-4000-8000-000000000001"
       >
         <p data-testid="action-count">Команд отправлено: {actionCount}</p>

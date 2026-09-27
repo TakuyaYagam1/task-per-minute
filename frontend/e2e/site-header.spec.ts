@@ -4,13 +4,19 @@ const assertHeaderLayout = async (
   page: Page,
   compact: boolean,
   expectLogout = false,
+  expectRating = true,
 ): Promise<void> => {
   const header = page.getByTestId("site-header");
   await expect(header).toHaveCount(1);
   await expect(header.getByRole("link", { name: "Arena", exact: true })).toBeVisible();
-  await expect(
-    header.getByRole("link", { name: compact ? "Рейтинг" : "Общий рейтинг", exact: true }),
-  ).toBeVisible();
+  if (expectRating) {
+    await expect(
+      header.getByRole("link", { name: compact ? "Рейтинг" : "Общий рейтинг", exact: true }),
+    ).toBeVisible();
+  } else {
+    await expect(header.getByRole("link", { name: "Рейтинг", exact: true })).toHaveCount(0);
+    await expect(header.getByRole("link", { name: "Общий рейтинг", exact: true })).toHaveCount(0);
+  }
   await expect(header.getByLabel("Тема интерфейса")).toHaveCount(1);
   if (expectLogout) {
     await expect(header.getByRole("button", { name: "Выйти" })).toBeVisible();
@@ -74,7 +80,7 @@ test.describe("site header", () => {
     await page.goto("/admin");
 
     await expect(page.getByPlaceholder("Введите пароль...")).toBeVisible();
-    await assertHeaderLayout(page, true);
+    await assertHeaderLayout(page, true, false, false);
   });
 
   test("uses the shared admin logout callback and shows pending state on mobile", async ({ page }) => {
@@ -124,7 +130,7 @@ test.describe("site header", () => {
     await page.getByRole("button", { name: "Войти" }).click();
 
     await expect(page.getByTestId("site-header").getByRole("button", { name: "Выйти" })).toBeVisible();
-    await assertHeaderLayout(page, true, true);
+    await assertHeaderLayout(page, true, true, false);
     await page.getByTestId("site-header").getByRole("button", { name: "Выйти" }).click();
     await expect(page.getByTestId("site-header").locator('button[aria-busy="true"]')).toBeVisible();
     releaseLogout?.();

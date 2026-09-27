@@ -73,17 +73,17 @@ const stateLabel = (value: OperatorRecoverySnapshot["tournament"]["state"]): str
     case "roster_locked":
       return "Состав закрыт";
     case "swiss":
-      return "Швейцарка";
+      return "Квалификация";
     case "golden":
-      return "Golden";
+      return "Дополнительный отбор";
     case "playoffs":
       return "Плей-офф";
     case "technical_pause":
       return "Техническая пауза";
     case "completed":
-      return "Завершен";
+      return "Завершено";
     case "cancelled":
-      return "Отменен";
+      return "Отменено";
   }
 };
 
@@ -130,10 +130,10 @@ const errorText = (error: unknown): string => {
       return "Сессия оператора истекла. Войдите снова.";
     }
     if (error.status === 403) {
-      return "Эта сессия не может изменять выбранный турнир.";
+      return "Эта сессия не может изменять выбранное соревнование.";
     }
     if (error.status === 404) {
-      return "Турнир или выбранный объект больше недоступен.";
+      return "Соревнование или выбранный объект больше недоступен.";
     }
     if (error.status === 409) {
       return "Данные устарели. Состояние обновлено, проверьте команду еще раз.";
@@ -240,11 +240,11 @@ const parseEvidenceIDs = (value: string): string[] =>
 const actionLabel = (action: OperatorAction): string => {
   switch (action) {
     case "pause":
-      return "Пауза турнира";
+      return "Пауза соревнования";
     case "resume":
-      return "Возобновить турнир";
+      return "Возобновить соревнование";
     case "cancel":
-      return "Отменить турнир";
+      return "Отменить соревнование";
     case "no-show":
       return "Неявка пары";
     case "operator-forfeit":
@@ -676,7 +676,7 @@ export const TournamentOperatorActions = ({
       setActionMessage({
         tone: "success",
         title: "Команда подтверждена",
-        body: "Действие выполнено. Данные турнира обновлены.",
+        body: "Действие выполнено. Данные соревнования обновлены.",
       });
       setConfirmed(false);
     } catch (error) {
@@ -714,7 +714,7 @@ export const TournamentOperatorActions = ({
 
   if (snapshotLoading && snapshot === null) {
     return (
-      <Panel title="Управление турниром" description="Загружаем состояние турнира.">
+      <Panel title="Управление соревнованием" description="Загружаем состояние соревнования.">
         <div className={styles.loadingState} role="status" aria-live="polite">
           <Status tone="loading">Загружаем данные</Status>
           <p className={styles.errorText}>Доступные действия появятся после загрузки.</p>
@@ -725,9 +725,9 @@ export const TournamentOperatorActions = ({
 
   if (snapshot === null) {
     return (
-      <Panel title="Управление турниром" description="Для управления нужны актуальные данные турнира.">
-        <Message tone="error" title="Не удалось загрузить турнир">
-          <p className={styles.errorText}>{snapshotError ?? "Не удалось получить состояние турнира."}</p>
+      <Panel title="Управление соревнованием" description="Для управления нужны актуальные данные соревнования.">
+        <Message tone="error" title="Не удалось загрузить соревнование">
+          <p className={styles.errorText}>{snapshotError ?? "Не удалось получить состояние соревнования."}</p>
           <Button size="small" variant="secondary" onClick={() => void loadSnapshot()}>
             Загрузить еще раз
           </Button>
@@ -740,12 +740,12 @@ export const TournamentOperatorActions = ({
     ? "Засчитайте игроку техническое поражение за нарушение. Укажите правило и подтверждающие записи."
     : action === "no-show"
       ? "Неявку можно зафиксировать, когда время подтверждения готовности истекло и хотя бы один игрок не готов."
-      : "Выберите действие и укажите причину. Она сохранится в истории турнира.";
+      : "Выберите действие и укажите причину. Она сохранится в истории соревнования.";
 
   return (
     <Panel
-      title="Управление турниром"
-      description="Приостановите турнир, продолжите его или разберите спорную ситуацию."
+      title="Управление соревнованием"
+      description="Приостановите соревнование, продолжите его или разберите спорную ситуацию."
       className={styles.panel}
     >
       <div className={styles.header}>
@@ -757,7 +757,7 @@ export const TournamentOperatorActions = ({
         </Status>
       </div>
 
-      <dl className={styles.snapshot} aria-label="Состояние турнира">
+      <dl className={styles.snapshot} aria-label="Состояние соревнования">
         <div className={styles.snapshotItem}>
           <dt className={styles.snapshotLabel}>Состояние</dt>
           <dd className={styles.snapshotValue}>{stateLabel(snapshot.tournament.state)}</dd>
@@ -929,7 +929,7 @@ export const TournamentOperatorActions = ({
             onChange={(event) => setConfirmed(event.target.checked)}
             disabled={submitting}
           />
-          <span>Подтверждаю, что команда соответствует актуальным данным турнира.</span>
+          <span>Подтверждаю, что команда соответствует актуальным данным соревнования.</span>
         </label>
 
         <div className={styles.submitRow}>
@@ -943,7 +943,7 @@ export const TournamentOperatorActions = ({
             Выполнить: {actionLabel(action)}
           </Button>
           <p className={styles.submitHint}>
-            {selectedActionAvailable ? "Действие сохранится в истории турнира." : "Действие сейчас недоступно."}
+            {selectedActionAvailable ? "Действие сохранится в истории соревнования." : "Действие сейчас недоступно."}
           </p>
         </div>
       </form>
@@ -1143,8 +1143,8 @@ export const TournamentOperatorActions = ({
 
       <Dialog
         open={cancelDialogOpen}
-        title="Подтвердить отмену турнира"
-        description="Отмена завершит турнир для всех игроков. Продолжить отмененный турнир нельзя."
+        title="Подтвердить отмену соревнования"
+        description="Отмена завершит соревнование для всех игроков. Продолжить отмененное соревнование нельзя."
         closeLabel="Закрыть подтверждение отмены"
         onOpenChange={setCancelDialogOpen}
         footer={

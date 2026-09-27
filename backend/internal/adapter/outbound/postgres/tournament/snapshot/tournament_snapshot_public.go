@@ -557,10 +557,15 @@ func publicTournamentReadCurrentGame(row sqlc.ListPublicTournamentReadSeriesRow)
 	startedAt := utcNullableTime(row.CurrentGameStartedAt)
 	finishedAt := utcNullableTime(row.CurrentGameFinishedAt)
 	deadline := utcNullableTime(row.CurrentGameEffectiveDeadline)
+	solveSubmissionReceivedAt := utcNullableTime(row.CurrentGameSolveSubmissionReceivedAt)
 	if err := validatePublicCurrentGameLifecycle(state, startedAt, finishedAt, deadline); err != nil {
 		return nil, err
 	}
 	resultReason, err := publicTournamentReadCurrentGameReason(row.CurrentGameResultReason, state)
+	if err != nil {
+		return nil, err
+	}
+	solveTimeMS, err := publicTournamentReadSolveTime(solveSubmissionReceivedAt, startedAt, state, resultReason)
 	if err != nil {
 		return nil, err
 	}
@@ -575,6 +580,7 @@ func publicTournamentReadCurrentGame(row sqlc.ListPublicTournamentReadSeriesRow)
 		StartedAt:              startedAt,
 		EffectiveDeadline:      deadline,
 		FinishedAt:             finishedAt,
+		SolveTimeMS:            solveTimeMS,
 		ResultReason:           resultReason,
 		WinnerDisplayName:      winnerDisplayName,
 		FirstConnectionStatus:  row.FirstConnectionStatus,
@@ -585,12 +591,48 @@ func publicTournamentReadCurrentGame(row sqlc.ListPublicTournamentReadSeriesRow)
 func publicTournamentReadAbsentCurrentGame(row sqlc.ListPublicTournamentReadSeriesRow) (*usecase.PublicCurrentGameView, error) {
 	if row.CurrentGameCategory != "" || row.CurrentGameState != "" ||
 		row.CurrentGameStartedAt.Valid || row.CurrentGameEffectiveDeadline.Valid ||
-		row.CurrentGameFinishedAt.Valid || row.CurrentGameResultReason != "" ||
+		row.CurrentGameFinishedAt.Valid || row.CurrentGameSolveSubmissionReceivedAt.Valid || row.CurrentGameResultReason != "" ||
 		row.CurrentGameWinnerDisplayName != nil || row.FirstConnectionStatus != "unknown" ||
 		row.SecondConnectionStatus != "unknown" {
 		return nil, tournamentSnapshotInvalidError("current game absence")
 	}
 	return nil, nil
+}
+
+func publicTournamentReadSolveTime(
+	receivedAt, startedAt *time.Time,
+	state domain.GameState,
+	reason *string,
+) (*int64, error) {
+	if receivedAt != nil && (state != domain.GameStateCompleted || reason == nil ||
+		*reason != string(domain.GameResultReasonSolved)) {
+		return nil, tournamentSnapshotInvalidError("current game solve time")
+	}
+	if receivedAt == nil || startedAt == nil {
+		return nil, nil
+	}
+	receivedSeconds := receivedAt.Unix()
+	startedSeconds := startedAt.Unix()
+	if receivedSeconds < startedSeconds {
+		return nil, tournamentSnapshotInvalidError("current game solve time")
+	}
+	elapsedSeconds := receivedSeconds - startedSeconds
+	elapsedNanos := receivedAt.Nanosecond() - startedAt.Nanosecond()
+	if elapsedNanos < 0 {
+		elapsedSeconds--
+		elapsedNanos += int(time.Second)
+	}
+	if elapsedSeconds < 0 {
+		return nil, tournamentSnapshotInvalidError("current game solve time")
+	}
+	if elapsedSeconds > usecase.MaxPublicSolveTimeMS/1000 {
+		return nil, nil
+	}
+	value := elapsedSeconds*1000 + int64(elapsedNanos)/int64(time.Millisecond)
+	if value > usecase.MaxPublicSolveTimeMS {
+		return nil, nil
+	}
+	return &value, nil
 }
 
 func validatePublicCurrentGameIdentity(row sqlc.ListPublicTournamentReadSeriesRow, state domain.GameState) error {

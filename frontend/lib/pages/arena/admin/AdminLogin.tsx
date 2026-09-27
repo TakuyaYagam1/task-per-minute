@@ -27,13 +27,9 @@ export function AdminLogin({
 }: AdminLoginProps) {
   return (
     <section className={styles.loginPanel} aria-labelledby="admin-login-title">
-      <p className={styles.shellEyebrow}>Закрытый раздел</p>
       <h1 id="admin-login-title" className={styles.loginTitle}>
         Вход администратора
       </h1>
-      <p className={styles.loginDescription}>
-        Введите пароль, чтобы продолжить работу с панелью управления.
-      </p>
       <form onSubmit={onSubmit} className={styles.form} noValidate>
         <div className={styles.inputGroup}>
           <label htmlFor="admin-password">Пароль администратора</label>

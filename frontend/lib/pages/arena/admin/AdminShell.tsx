@@ -199,7 +199,7 @@ export const useAdminNavigation = (
 const sectionLabels: Record<AdminSection, string> = {
   players: "Игроки",
   tasks: "Задачи",
-  tournaments: "Турниры",
+  tournaments: "Соревнования",
   audit: "Журнал",
 };
 
@@ -232,9 +232,6 @@ export function AdminShell({
         <div className={styles.shellIdentity}>
           <p className={styles.shellEyebrow}>Администрирование</p>
           <h1 className={styles.shellTitle}>Панель управления</h1>
-          <p className={styles.shellCurrentSection}>
-            Текущий раздел: {sectionLabels[navigation.section]}
-          </p>
         </div>
       </header>
       <nav className={styles.shellNav} aria-label="Разделы админ-панели">

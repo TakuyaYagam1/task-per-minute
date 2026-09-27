@@ -208,9 +208,15 @@ const activateTheme = async (
 const readThemeState = async (page: Page) => page.evaluate(() => {
   const rootStyles = getComputedStyle(document.documentElement);
   const bodyStyles = getComputedStyle(document.body);
-  const surfaceStyles = getComputedStyle(document.querySelector('.card') as HTMLElement);
-  const accentTextStyles = getComputedStyle(document.querySelector('h2') as HTMLElement);
-  const secondaryTextStyles = getComputedStyle(document.querySelector('p') as HTMLElement);
+  const surface = document.querySelector('main section');
+  const accentText = document.querySelector('main h2');
+  const secondaryText = document.querySelector('nav a');
+  if (!surface || !accentText || !secondaryText) {
+    throw new Error('Theme probe could not find home surface text elements');
+  }
+  const surfaceStyles = getComputedStyle(surface);
+  const accentTextStyles = getComputedStyle(accentText);
+  const secondaryTextStyles = getComputedStyle(secondaryText);
 
   return {
     tokens: {
@@ -420,6 +426,8 @@ for (const width of viewportWidths) {
       await installThemeProbe(page);
       await page.goto('/');
 
+      await expect(page.getByRole('heading', { name: 'Task Per Minute', exact: true })).toBeVisible();
+      await expect(page.getByRole('heading', { name: 'CTF Соревнования', exact: true })).toBeVisible();
       const initialProbe = await readThemeProbe(page);
       expect(initialProbe.initialTheme).toBe('dark');
       expect(initialProbe.initialStorageKeys).toEqual([]);

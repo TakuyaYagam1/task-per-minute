@@ -188,7 +188,7 @@ const installRoutes = async (
 
 const openOperator = async (page: Page): Promise<void> => {
   await page.goto(`/arena/operator/${tournamentId}`, { waitUntil: "domcontentloaded" });
-  await expect(page.getByRole("heading", { name: "Управление турниром" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Управление соревнованием" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Восстановление игр" })).toBeVisible();
   await page.evaluate(() => {
     document.cookie = "tpm_admin_access_csrf=recovery-contract-csrf; Path=/; SameSite=Lax";

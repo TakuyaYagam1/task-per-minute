@@ -56,8 +56,7 @@
   gap: 0.4rem;
 }
 
-.field label,
-.revisionHeading {
+.field label {
   color: var(--text);
   font-size: 0.83rem;
   font-weight: 760;
@@ -89,15 +88,6 @@
   padding-top: 1rem;
 }
 
-.revisionHeading {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.65rem;
-}
-
-.revisionDescription,
 .publicIdHint {
   margin: 0;
   color: var(--secondary);
@@ -114,13 +104,29 @@
   font-size: 0.78rem;
 }
 
-.inlineAction,
-.backButton {
+.inlineAction {
   border: 0;
   padding: 0;
   background: transparent;
   color: var(--accent);
   font: inherit;
+  cursor: pointer;
+}
+
+.backButton {
+  display: inline-flex;
+  justify-self: start;
+  min-height: 38px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-small);
+  padding: 0.55rem 0.75rem;
+  background: var(--surface-muted);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 760;
   cursor: pointer;
 }
 
@@ -133,9 +139,13 @@
   text-underline-offset: 3px;
 }
 
-.inlineAction:hover,
-.backButton:hover {
+.inlineAction:hover {
   color: var(--text);
+}
+
+.backButton:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
 }
 
 .submitButton {
@@ -189,20 +199,6 @@
   display: grid;
   min-width: 0;
   gap: 0.3rem;
-}
-
-.backButton {
-  justify-self: start;
-  font-size: 0.8rem;
-  font-weight: 760;
-  text-decoration: underline;
-  text-underline-offset: 3px;
-}
-
-.breadcrumb {
-  margin: 0.45rem 0 0;
-  color: var(--secondary);
-  font-size: 0.72rem;
 }
 
 .detailHeader h2 {

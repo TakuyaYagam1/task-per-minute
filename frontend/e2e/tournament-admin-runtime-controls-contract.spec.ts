@@ -359,7 +359,7 @@ const setOperatorAccessCSRF = async (page: Page): Promise<void> => {
 
 const openOperatorArena = async (page: Page): Promise<void> => {
   await page.goto(`/arena/operator/${tournamentId}`, { waitUntil: "domcontentloaded" });
-  await expect(page.getByRole("heading", { name: "Управление турниром" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Управление соревнованием" })).toBeVisible();
   await expect(page.getByText("Данные обновлены", { exact: true })).toBeVisible();
   await setOperatorAccessCSRF(page);
 };
@@ -370,7 +370,7 @@ const fillReasonAndConfirm = async (page: Page, reason: string): Promise<void> =
   await reasonField.focus();
   await reasonField.pressSequentially(reason);
   const confirmation = page.getByRole("checkbox", {
-    name: "Подтверждаю, что команда соответствует актуальным данным турнира.",
+    name: "Подтверждаю, что команда соответствует актуальным данным соревнования.",
     exact: true,
   });
   await confirmation.focus();
@@ -415,7 +415,7 @@ const submitActionByKeyboard = async (page: Page, name: string): Promise<void> =
 };
 
 const assertControlsFitViewport = async (page: Page): Promise<void> => {
-  const region = page.getByRole("region", { name: "Управление турниром" });
+  const region = page.getByRole("region", { name: "Управление соревнованием" });
   const controls = region.locator("button, input, select, textarea");
   const layout = await controls.evaluateAll((elements) => elements.map((element) => {
     const rect = element.getBoundingClientRect();
@@ -447,7 +447,7 @@ test("pause sends one exact command, has no optimistic success, and refreshes th
   await chooseActionByKeyboard(page, "pause");
   await fillReasonAndConfirm(page, "Платформенная пауза для проверки состояния");
 
-  const submit = page.getByRole("button", { name: "Выполнить: Пауза турнира" });
+  const submit = page.getByRole("button", { name: "Выполнить: Пауза соревнования" });
   await submit.focus();
   await expect(submit).toBeFocused();
   await submit.press("Enter");
@@ -467,7 +467,7 @@ test("pause sends one exact command, has no optimistic success, and refreshes th
 
   routes.releaseAction();
   await expect(page.getByText("Команда подтверждена", { exact: true })).toBeVisible();
-  await expect(page.getByRole("region", { name: "Управление турниром" })).toContainText("Техническая пауза");
+  await expect(page.getByRole("region", { name: "Управление соревнованием" })).toContainText("Техническая пауза");
 });
 
 test("stale operator command refetches the current snapshot and shows a warning", async ({ page }) => {
@@ -478,12 +478,12 @@ test("stale operator command refetches the current snapshot and shows a warning"
   await openOperatorArena(page);
   await chooseActionByKeyboard(page, "pause");
   await fillReasonAndConfirm(page, "Проверка устаревшей ревизии");
-  await submitActionByKeyboard(page, "Выполнить: Пауза турнира");
+  await submitActionByKeyboard(page, "Выполнить: Пауза соревнования");
 
   await expect(page.getByText("Данные устарели", { exact: true })).toBeVisible();
   await expect(page.getByRole("status").filter({ hasText: "Данные устарели" })).toContainText("Данные устарели");
   await expect(page.getByText("Другой оператор изменил состояние. Данные обновлены, проверьте команду перед повтором.", { exact: true })).toBeVisible();
-  await expect(page.getByRole("region", { name: "Управление турниром" })).toContainText("Техническая пауза");
+  await expect(page.getByRole("region", { name: "Управление соревнованием" })).toContainText("Техническая пауза");
   expect(routes.actionRequests).toHaveLength(0);
   expect(routes.waveActionRequests).toHaveLength(1);
   expect(routes.waveActionRequests[0]?.body.expected_projection_revision).toBe(9);
@@ -564,7 +564,7 @@ test("no-show and operator forfeit keep distinct evidence-bound 204 contracts", 
   expect(forfeit?.body).not.toHaveProperty("surrender");
   expect(forfeit?.headers["idempotency-key"]).toMatch(uuidPattern);
   expect(forfeit?.headers["x-csrf-token"]).toBe("operator-access-csrf");
-  await expect(page.getByText("Действие выполнено. Данные турнира обновлены.", { exact: true })).toBeVisible();
+  await expect(page.getByText("Действие выполнено. Данные соревнования обновлены.", { exact: true })).toBeVisible();
 });
 
 test("no-show selection distinguishes series sharing one wave", async ({ page }) => {
@@ -600,7 +600,7 @@ test("resume follows the server matrix and cancellation requires a dismissible d
   await expect(actionSelect.locator('option[value="resume"]')).not.toBeDisabled();
   await chooseActionByKeyboard(page, "resume");
   await fillReasonAndConfirm(page, "Инцидент устранен, authority восстановлен");
-  await submitActionByKeyboard(page, "Выполнить: Возобновить турнир");
+  await submitActionByKeyboard(page, "Выполнить: Возобновить соревнование");
 
   await expect.poll(() => routes.waveActionRequests.length).toBe(1);
   expect(routes.actionRequests).toHaveLength(0);
@@ -610,7 +610,7 @@ test("resume follows the server matrix and cancellation requires a dismissible d
     expected_projection_revision: 12,
     reason: "Инцидент устранен, authority восстановлен",
   });
-  await expect(page.getByRole("region", { name: "Управление турниром" })).toContainText("Швейцарка");
+  await expect(page.getByRole("region", { name: "Управление соревнованием" })).toContainText("Квалификация");
 
   routes.setActionPlan({ nextSnapshot: cancelledSnapshot(14) });
   await chooseActionByKeyboard(page, "cancel");
@@ -619,18 +619,18 @@ test("resume follows the server matrix and cancellation requires a dismissible d
   await cancellationReason.focus();
   await cancellationReason.pressSequentially("Турнир отменен решением главного судьи");
   const cancellationConfirmation = page.getByRole("checkbox", {
-    name: "Подтверждаю, что команда соответствует актуальным данным турнира.",
+    name: "Подтверждаю, что команда соответствует актуальным данным соревнования.",
     exact: true,
   });
   await cancellationConfirmation.focus();
   await page.keyboard.press("Space");
   await expect(cancellationConfirmation).toBeChecked();
-  const cancelSubmit = page.getByRole("button", { name: "Выполнить: Отменить турнир" });
+  const cancelSubmit = page.getByRole("button", { name: "Выполнить: Отменить соревнование" });
   await cancelSubmit.focus();
   await expect(cancelSubmit).toBeFocused();
   await cancelSubmit.press("Enter");
 
-  const dialog = page.getByRole("dialog", { name: "Подтвердить отмену турнира" });
+  const dialog = page.getByRole("dialog", { name: "Подтвердить отмену соревнования" });
   await expect(dialog).toBeVisible();
   const dismissCancellation = dialog.getByRole("button", { name: "Не отменять", exact: true });
   await dismissCancellation.focus();
@@ -659,7 +659,7 @@ test("resume follows the server matrix and cancellation requires a dismissible d
     expected_projection_revision: 13,
     reason: "Турнир отменен решением главного судьи",
   });
-  await expect(page.getByRole("region", { name: "Управление турниром" })).toContainText("Отменен");
+  await expect(page.getByRole("region", { name: "Управление соревнованием" })).toContainText("Отменено");
   await expect(page.getByText("Команда подтверждена", { exact: true })).toBeVisible();
 });
 
@@ -678,7 +678,7 @@ test("runtime controls remain usable in both themes, widths, and text scaling", 
       await page.evaluate(() => {
         document.documentElement.style.fontSize = "200%";
       });
-      await expect(page.getByRole("region", { name: "Управление турниром" })).toBeVisible();
+      await expect(page.getByRole("region", { name: "Управление соревнованием" })).toBeVisible();
       await expect.poll(() => page.evaluate(() => (
         document.documentElement.scrollWidth <= window.innerWidth
         && document.body.scrollWidth <= window.innerWidth

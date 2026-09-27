@@ -1,8 +1,8 @@
-import { expect, test, type Page, type Route } from '@playwright/test';
+import { expect, test, type Locator, type Page, type Route } from '@playwright/test';
 import { jsonHeaders, nowISO } from './support/common';
 import {
   adminSessionResponse,
-  fillAdminTaskForm,
+  fillAdminTaskForm as fillAdminTaskFormFields,
   type MockAdminTask,
   setupAdminValidationApi,
   taskResponse,
@@ -10,12 +10,45 @@ import {
 import { adminApi, ApiError } from '../lib/shared/api';
 
 const openTournamentTaskCatalog = async (page: Page): Promise<void> => {
-  const taskForm = page.getByPlaceholder('Введите название...');
-  if (!(await taskForm.isVisible().catch(() => false))) {
+  const createButton = page.getByRole('button', { name: 'Создать задачу', exact: true });
+  if (!(await createButton.isVisible().catch(() => false))) {
     await expect(page.getByRole('button', { name: 'Задачи' })).toBeVisible();
     await page.getByRole('button', { name: 'Задачи' }).click();
   }
-  await expect(taskForm).toBeVisible();
+  await expect(createButton).toBeVisible();
+};
+
+const openCreateTaskEditor = async (page: Page): Promise<Locator> => {
+  const trigger = page.getByRole('button', { name: 'Создать задачу', exact: true });
+  await expect(trigger).toBeVisible();
+  await trigger.click();
+  const editor = page.getByRole('dialog', { name: 'Создать задачу', exact: true });
+  await expect(editor).toBeVisible();
+  return editor;
+};
+
+const taskEditor = (page: Page): Locator => page.getByRole('dialog');
+
+const fillAdminTaskForm = async (
+  page: Page,
+  overrides: Parameters<typeof fillAdminTaskFormFields>[1] = {},
+): Promise<Locator> => {
+  const currentEditor = taskEditor(page);
+  if (await currentEditor.isVisible().catch(() => false)) {
+    const closeConfirmation = page.waitForEvent('dialog').then((dialog) => dialog.accept());
+    await Promise.all([
+      closeConfirmation,
+      currentEditor.getByRole('button', { name: 'Закрыть редактор задачи', exact: true }).click(),
+    ]);
+    await expect(currentEditor).toBeHidden();
+  }
+  const editor = await openCreateTaskEditor(page);
+  await fillAdminTaskFormFields(page, overrides);
+  return editor;
+};
+
+const submitCreateTask = async (page: Page): Promise<void> => {
+  await taskEditor(page).getByRole('button', { name: 'Создать задачу', exact: true }).click();
 };
 
 const loginAdminAndOpenTournamentTaskCatalog = async (
@@ -267,6 +300,7 @@ test('admin task lifecycle uses cookie auth, refresh retry, and source upload', 
 
   await expect(page.getByText('Пока нет созданных задач')).toBeVisible();
 
+  await openCreateTaskEditor(page);
   await page.getByPlaceholder('Введите название...').fill('Contract Task');
   await page.getByPlaceholder('Опишите задачу...').fill('Created through mocked backend');
   await page.locator('select').first().selectOption('forensics');
@@ -280,7 +314,7 @@ test('admin task lifecycle uses cookie auth, refresh retry, and source upload', 
     mimeType: 'application/zip',
     buffer: Buffer.from('PK\u0005\u0006contract'),
   });
-  await page.getByRole('button', { name: /Создать задачу/ }).click();
+  await submitCreateTask(page);
 
   const createToast = page.getByText('Задача успешно создана!');
   await expect(createToast).toBeVisible();
@@ -301,7 +335,7 @@ test('admin task lifecycle uses cookie auth, refresh retry, and source upload', 
       ),
     )
     .toBe(true);
-  await expect(page.getByText('Исходники загружены в SeaweedFS')).toBeVisible();
+  await expect(page.getByText('Исходники загружены', { exact: true })).toBeVisible();
   await expect(page.getByRole('link', { name: 'Скачать загруженный ZIP' })).toHaveAttribute(
     'href',
     'https://files.example/source.zip',
@@ -389,7 +423,7 @@ test('admin shows newly created task before list refresh completes', async ({ pa
     title: 'Realtime Task',
     description: 'Created task should appear without F5.',
   });
-  await page.getByRole('button', { name: /Создать задачу/ }).click();
+  await submitCreateTask(page);
 
   await refreshRequested;
   await expect(page.getByText('Realtime Task', { exact: true })).toBeVisible();
@@ -605,7 +639,8 @@ test('admin players section updates and deletes player stats', async ({ page }) 
   await expect(auditDialog.getByText('Обновление')).toBeVisible();
   await expect(auditDialog.getByText('clean_name').first()).toBeVisible();
   await expect(auditDialog.getByText('bad_name')).toBeVisible();
-  await expect(auditDialog.getByText('jti: delete-j')).toBeVisible();
+  await auditDialog.getByText('Технические данные').first().click();
+  await expect(auditDialog.getByText('delete-jti-1234567890')).toBeVisible();
 });
 
 test('admin players realtime SSE failures do not spam refresh', async ({ page }) => {
@@ -1131,6 +1166,7 @@ test('admin pwn task keeps raw host-port task_url on create and update', async (
 
   await expect(page.getByText('Пока нет созданных задач')).toBeVisible();
 
+  await openCreateTaskEditor(page);
   await page.getByPlaceholder('Введите название...').fill('Pwn Endpoint');
   await page.getByPlaceholder('Опишите задачу...').fill('Raw host-port target should reach backend unchanged.');
   await page.locator('select').first().selectOption('pwn');
@@ -1140,7 +1176,7 @@ test('admin pwn task keeps raw host-port task_url on create and update', async (
   await page.getByPlaceholder('Подсказка 1').fill('first');
   await page.getByPlaceholder('Подсказка 2').fill('second');
   await page.getByPlaceholder('Подсказка 3').fill('third');
-  await page.getByRole('button', { name: /Создать задачу/ }).click();
+  await submitCreateTask(page);
 
   await expect(page.getByText('Задача успешно создана!')).toBeVisible();
   await expect(page.getByText('Pwn Endpoint')).toBeVisible();
@@ -1166,7 +1202,7 @@ test('admin task form rejects non-decimal time limits before create', async ({ p
 
   await loginAdminAndOpenTournamentTaskCatalog(page);
   await fillAdminTaskForm(page, { timeLimit: '1e2' });
-  await page.getByRole('button', { name: /Создать задачу/ }).click();
+  await submitCreateTask(page);
 
   await expect(page.getByText('Лимит времени должен быть целым числом от 1 до 2147483647')).toBeVisible();
   expect(createCalls).toBe(0);
@@ -1191,7 +1227,7 @@ test('admin task form keeps valid decimal time_limit as number', async ({ page }
 
   await loginAdminAndOpenTournamentTaskCatalog(page);
   await fillAdminTaskForm(page, { timeLimit: '120' });
-  await page.getByRole('button', { name: /Создать задачу/ }).click();
+  await submitCreateTask(page);
 
   await expect(page.getByText('Задача успешно создана!')).toBeVisible();
   expect(createCalls).toBe(1);
@@ -1212,7 +1248,7 @@ test('admin task form allows empty positional hints', async ({ page }) => {
     taskUrl: '',
     hints: ['', '', ''],
   });
-  await page.getByRole('button', { name: /Создать задачу/ }).click();
+  await submitCreateTask(page);
 
   await expect(page.getByText('Задача успешно создана!')).toBeVisible();
   expect(createCalls).toBe(1);
@@ -1231,7 +1267,7 @@ test('admin task form preserves sparse hint slot indexes', async ({ page }) => {
   await fillAdminTaskForm(page, {
     hints: ['', '', 'third only'],
   });
-  await page.getByRole('button', { name: /Создать задачу/ }).click();
+  await submitCreateTask(page);
 
   await expect(page.getByText('Задача успешно создана!')).toBeVisible();
   expect(createCalls).toBe(1);
@@ -1246,15 +1282,15 @@ test('admin task form rejects whitespace-only required fields before create', as
   await loginAdminAndOpenTournamentTaskCatalog(page);
 
   await fillAdminTaskForm(page, { title: '   ' });
-  await page.getByRole('button', { name: /Создать задачу/ }).click();
+  await submitCreateTask(page);
   await expect(page.getByText('Название должно быть от 1 до 255 символов')).toBeVisible();
 
   await fillAdminTaskForm(page, { description: '   ' });
-  await page.getByRole('button', { name: /Создать задачу/ }).click();
+  await submitCreateTask(page);
   await expect(page.getByText('Описание не должно быть пустым')).toBeVisible();
 
   await fillAdminTaskForm(page, { flag: '   ' });
-  await page.getByRole('button', { name: /Создать задачу/ }).click();
+  await submitCreateTask(page);
   await expect(page.getByText('Флаг должен быть от 1 до 255 символов')).toBeVisible();
 
   expect(createCalls).toBe(0);
@@ -1344,7 +1380,7 @@ test('admin task form rejects invalid task_url before create', async ({ page }) 
       category: 'pwn',
       taskUrl,
     });
-    await page.getByRole('button', { name: /Создать задачу/ }).click();
+    await submitCreateTask(page);
     await expect(page.getByText('URL задания должен быть http(s) ссылкой или host:port')).toBeVisible();
   }
 
@@ -1439,6 +1475,7 @@ test('admin create refresh is reused for source upload in the same submit', asyn
 
   await expect(page.getByText('Пока нет созданных задач')).toBeVisible();
 
+  await openCreateTaskEditor(page);
   await page.getByPlaceholder('Введите название...').fill('Refresh Reuse Task');
   await page.getByPlaceholder('Опишите задачу...').fill('Create refresh should feed upload.');
   await page.locator('select').first().selectOption('forensics');
@@ -1452,7 +1489,7 @@ test('admin create refresh is reused for source upload in the same submit', asyn
     mimeType: 'application/zip',
     buffer: Buffer.from('PK\u0005\u0006contract'),
   });
-  await page.getByRole('button', { name: /Создать задачу/ }).click();
+  await submitCreateTask(page);
 
   await expect(page.getByText('Задача успешно создана!')).toBeVisible();
   await expect.poll(() => refreshCalls).toBe(1);
@@ -1518,6 +1555,7 @@ test('admin invalid source file clears previous selection and prevents stale upl
 
   await expect(page.getByText('Пока нет созданных задач')).toBeVisible();
 
+  await openCreateTaskEditor(page);
   await page.getByPlaceholder('Введите название...').fill('Invalid Source Guard');
   await page.getByPlaceholder('Опишите задачу...').fill('Invalid source should clear stale file');
   await page.locator('select').first().selectOption('forensics');
@@ -1543,7 +1581,7 @@ test('admin invalid source file clears previous selection and prevents stale upl
   await expect(page.getByText('Можно загружать только ZIP-архивы')).toBeVisible();
   await expect(page.getByText('source.zip')).toBeHidden();
 
-  await page.getByRole('button', { name: /Создать задачу/ }).click();
+  await submitCreateTask(page);
   await expect(page.getByText('Задача успешно создана!')).toBeVisible();
 
   expect(createCalls).toBe(1);
@@ -1646,7 +1684,7 @@ test('admin malformed successful REST responses do not persist invalid state', a
   await page.getByPlaceholder('Введите пароль...').fill('bad-shape');
   await page.getByRole('button', { name: 'Войти' }).click();
 
-  await expect(page.getByText('Ошибка подключения к серверу')).toBeVisible();
+  await expect(page.getByText('Ошибка соединения')).toBeVisible();
 
   await page.getByPlaceholder('Введите пароль...').fill('correct-password');
   await page.getByRole('button', { name: 'Войти' }).click();
@@ -1654,6 +1692,7 @@ test('admin malformed successful REST responses do not persist invalid state', a
 
   await expect(page.getByText('Не удалось загрузить задачи', { exact: true })).toBeVisible();
 
+  await openCreateTaskEditor(page);
   await page.getByPlaceholder('Введите название...').fill('Malformed Upload Guard');
   await page.getByPlaceholder('Опишите задачу...').fill('Malformed upload response should be a warning');
   await page.locator('select').first().selectOption('forensics');
@@ -1667,7 +1706,7 @@ test('admin malformed successful REST responses do not persist invalid state', a
     mimeType: 'application/zip',
     buffer: Buffer.from('PK\u0005\u0006contract'),
   });
-  await page.getByRole('button', { name: /Создать задачу/ }).click();
+  await submitCreateTask(page);
 
   await expect(
     page
@@ -2330,6 +2369,7 @@ test('malformed admin create and update responses keep previous valid task state
 
   await expect(page.getByText('Existing Contract Task')).toBeVisible();
 
+  await openCreateTaskEditor(page);
   await page.getByPlaceholder('Введите название...').fill('Malformed Created Task');
   await page.getByPlaceholder('Опишите задачу...').fill('Malformed create should be rejected.');
   await page.locator('select').first().selectOption('forensics');
@@ -2338,16 +2378,21 @@ test('malformed admin create and update responses keep previous valid task state
   await page.getByPlaceholder('Подсказка 1').fill('first');
   await page.getByPlaceholder('Подсказка 2').fill('second');
   await page.getByPlaceholder('Подсказка 3').fill('third');
-  await page.getByRole('button', { name: /Создать задачу/ }).click();
+  await submitCreateTask(page);
 
   await expect(page.getByText('Ошибка при создании задачи')).toBeVisible();
   await expect(page.getByText('Existing Contract Task')).toBeVisible();
   await expect(page.getByText('Malformed Created Task')).toBeHidden();
 
-  page.once('dialog', async (dialog) => {
+  const closeConfirmation = page.waitForEvent('dialog').then((dialog) => {
     expect(dialog.type()).toBe('confirm');
-    await dialog.accept();
+    return dialog.accept();
   });
+  await Promise.all([
+    closeConfirmation,
+    taskEditor(page).getByRole('button', { name: 'Закрыть редактор задачи', exact: true }).click(),
+  ]);
+  await expect(taskEditor(page)).toBeHidden();
   await page.locator('[title="Редактировать задачу"]').click();
   await page.getByPlaceholder('Введите название...').fill('Malformed Updated Task');
   await page.getByRole('button', { name: /Сохранить задачу/ }).click();

@@ -61,7 +61,8 @@ test('blocked browser storage does not crash the home page', async ({ page }) =>
   await page.goto('/');
 
   await expect(page.getByPlaceholder('Введите никнейм...')).toBeVisible();
-  await expect(page.getByText('Введите никнейм')).toBeVisible();
+  await expect(page.getByLabel('Никнейм')).toBeVisible();
+  await expect(page.getByText('Введите никнейм', { exact: true })).toHaveCount(0);
   expect(pageErrors).toEqual([]);
 });
 
@@ -102,7 +103,7 @@ test('malformed join response does not persist a player session', async ({ page 
   await page.getByPlaceholder('Введите никнейм...').fill('alice');
   await page.getByRole('button', { name: 'ПОДКЛЮЧИТЬСЯ' }).click();
 
-  await expect(page.getByText('Ошибка подключения к серверу')).toBeVisible();
+  await expect(page.getByText('Ошибка соединения')).toBeVisible();
   await expect(page.getByText('Игрок готов')).toBeHidden();
   await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('player_id'))).toBeNull();
   await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('username'))).toBeNull();
@@ -192,7 +193,51 @@ test('changing player clears the restore cache and calls logout', async ({ page 
 test('home exposes leaderboard and Arena navigation', async ({ page }) => {
   await page.goto('/');
 
+  await expect(page.getByRole('heading', { name: 'Task Per Minute', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'CTF Соревнования', exact: true })).toBeVisible();
+  await expect(page.getByText('Платформа турниров CTF', { exact: true })).toHaveCount(0);
+  await expect(page.getByText('CTF турнир', { exact: true })).toHaveCount(0);
+  await expect(page.getByText('Войдите как участник, чтобы сохранить браузерную сессию и открыть назначение.', { exact: true })).toHaveCount(0);
+  await expect(page.getByText('Используйте никнейм, который будет виден в турнирных списках.', { exact: true })).toHaveCount(0);
+  await expect(page.getByText('Введите никнейм, чтобы начать.', { exact: true })).toHaveCount(0);
+  await expect(page.getByLabel('Никнейм')).toHaveAttribute('placeholder', 'Введите никнейм...');
+
   await expect(page.getByRole('link', { name: 'Общий рейтинг' })).toHaveAttribute('href', '/leaderboard');
-  await expect(page.getByRole('link', { name: 'Открыть Arena' })).toHaveAttribute('href', '/arena');
-  await expect(page.getByRole('link')).toHaveCount(2);
+  const arenaLink = page.getByRole('link', { name: 'Открыть Arena' });
+  await expect(arenaLink).toHaveAttribute('href', '/arena');
+  await expect(arenaLink).toHaveCSS('border-style', 'solid');
+  await expect(arenaLink).toHaveCSS('text-decoration-line', 'none');
+  await expect(arenaLink).toHaveCSS('min-height', '44px');
+  await expect(page.getByRole('link')).toHaveCount(3);
+});
+
+test('home centers its branding and keeps the Arena action touch-sized on mobile', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 900 });
+  await page.goto('/');
+
+  const layout = await page.evaluate(() => {
+    const title = document.getElementById('home-title');
+    const intro = title?.parentElement;
+    const subtitle = intro?.querySelector<HTMLElement>('h2');
+    if (!(title instanceof HTMLElement) || !(intro instanceof HTMLElement) || !subtitle) {
+      throw new Error('Home branding layout is unavailable');
+    }
+
+    const pane = intro.getBoundingClientRect();
+    const titleRect = title.getBoundingClientRect();
+    const subtitleRect = subtitle.getBoundingClientRect();
+    return {
+      contentCenterY: (titleRect.top + subtitleRect.bottom) / 2,
+      paneCenterX: pane.left + pane.width / 2,
+      paneCenterY: pane.top + pane.height / 2,
+      titleCenterX: titleRect.left + titleRect.width / 2,
+    };
+  });
+
+  expect(Math.abs(layout.titleCenterX - layout.paneCenterX)).toBeLessThanOrEqual(1);
+  expect(Math.abs(layout.contentCenterY - layout.paneCenterY)).toBeLessThanOrEqual(1);
+
+  const arenaLink = page.getByRole('link', { name: 'Открыть Arena' });
+  const linkBox = await arenaLink.boundingBox();
+  expect(linkBox?.height ?? 0).toBeGreaterThanOrEqual(44);
 });

@@ -3508,6 +3508,11 @@ export interface components {
             position: number;
             readonly result_reason: string | null;
             second_connection_status: components["schemas"]["PublicConnectionStatus"];
+            /**
+             * Format: int64
+             * @description Server-authoritative elapsed milliseconds from game start to the accepted winning flag. Null unless an official solved result has a scoped accepted submission.
+             */
+            readonly solve_time_ms?: number | null;
             /** Format: date-time */
             readonly started_at: string | null;
             state: components["schemas"]["GameState"];

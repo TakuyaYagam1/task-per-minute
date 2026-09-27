@@ -238,9 +238,9 @@ const loginAndOpenAudit = async (page: Page): Promise<void> => {
   await page.getByPlaceholder("Введите пароль...").fill("correct-password");
   await page.getByRole("button", { name: "Войти" }).click();
   await page.getByRole("button", { name: "Журнал" }).click();
-  await expect(page.getByRole("heading", { name: "Журнал турнира" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Журнал соревнования" })).toBeVisible();
   await page.locator("#tournament-journal-select").selectOption(tournamentId);
-  await expect(page.getByRole("heading", { name: "Аудит и incident bundle" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "История соревнования" })).toBeVisible();
   await expect(page.getByText("Страница 1, событий: 3")).toBeVisible();
 };
 
@@ -249,13 +249,13 @@ test("FE-037 filters result, replay and correction events and walks two server p
   await installAdminRoutes(page, auditQueries);
   await loginAndOpenAudit(page);
 
-  await expect(page.getByText("Заменена")).toBeVisible();
-  await expect(page.getByText("Текущая revision")).toHaveCount(2);
-  await expect(page.getByText(oldRevisionId, { exact: true }).first()).toBeVisible();
+  await expect(page.getByText("Исправлено")).toBeVisible();
+  await expect(page.getByText("Действует")).toHaveCount(2);
+  await expect(page.getByText(tournament.name, { exact: true }).first()).toBeVisible();
 
   await page.getByRole("button", { name: "Следующая страница" }).click();
   await expect(page.getByText("Страница 2, событий: 1")).toBeVisible();
-  await expect(page.getByText("correction.committed", { exact: true })).toBeVisible();
+  await expect(page.getByText("Другое событие", { exact: true })).toBeVisible();
   const cursorQuery = auditQueries.at(-1);
   expect(cursorQuery?.get("cursor[audit_event_id]")).toBe(currentEventId);
   expect(cursorQuery?.get("cursor[revision_id]")).toBe(currentRevisionId);
@@ -264,24 +264,27 @@ test("FE-037 filters result, replay and correction events and walks two server p
   await page.getByRole("button", { name: "Предыдущая страница" }).click();
   await expect(page.getByText("Страница 1, событий: 3")).toBeVisible();
 
-  const eventType = page.getByLabel("Событие");
+  const technicalFilters = page.locator("details").filter({ hasText: "Технические фильтры" }).first();
+  await technicalFilters.locator("summary").click();
+  const eventCode = page.getByLabel("Код события");
   for (const [filter, visibleEvent] of [
     ["replay.requested", "replay.requested"],
     ["correction.committed", "correction.committed"],
     ["result.recorded", "result.recorded"],
   ] as const) {
-    await eventType.fill(filter);
+    await eventCode.fill(filter);
     await page.getByRole("button", { name: "Применить фильтры" }).click();
-    await expect(page.getByText(visibleEvent, { exact: true }).first()).toBeVisible();
+    await expect(page.getByText("Другое событие", { exact: true }).first()).toBeVisible();
+    expect(auditQueries.at(-1)?.get("event_type")).toBe(visibleEvent);
   }
 
-  await page.getByLabel("Тип entity").selectOption("series");
-  await page.getByLabel("Entity ID").fill(seriesId);
-  await page.getByLabel("Actor", { exact: true }).selectOption("operator");
-  await page.getByLabel("Actor ID").fill(actorId);
-  await page.getByLabel("Причина результата").fill("score_complete");
-  await page.getByLabel("От, серверное время").fill("2026-09-13T09:00");
-  await page.getByLabel("До, серверное время").fill("2026-09-13T12:00");
+  await page.getByLabel("Что изменилось").selectOption("series");
+  await page.getByLabel("ID записи").fill(seriesId);
+  await page.getByLabel("Кто выполнил", { exact: true }).selectOption("operator");
+  await page.getByLabel("ID администратора").fill(actorId);
+  await page.getByLabel("Причина результата").selectOption("score_complete");
+  await page.getByLabel("С даты, ваше время").fill("2026-09-13T09:00");
+  await page.getByLabel("По дату, ваше время").fill("2026-09-13T12:00");
   await page.getByRole("button", { name: "Применить фильтры" }).click();
 
   const fullQuery = auditQueries.at(-1);
@@ -306,10 +309,9 @@ test("сохраняет недоступный ID турнира в журна�
   await page.getByPlaceholder("Введите пароль...").fill("correct-password");
   await page.getByRole("button", { name: "Войти" }).click();
 
-  await expect(page.getByRole("heading", { name: "Журнал турнира" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Журнал соревнования" })).toBeVisible();
   await expect(page).toHaveURL(new RegExp(`[?&]tournament=${unavailableTournamentId}(?:&|$)`));
-  await expect(page.getByRole("alert").filter({ hasText: "Турнир недоступен" })).toBeVisible();
-  await expect(page.getByText(unavailableTournamentId, { exact: true })).toBeVisible();
+  await expect(page.getByRole("alert").filter({ hasText: "Соревнование недоступно" })).toBeVisible();
 });
 
 test("FE-037 downloads the permitted envelope without exposing closed content", async ({ page }) => {
@@ -320,9 +322,10 @@ test("FE-037 downloads the permitted envelope without exposing closed content", 
   await loginAndOpenAudit(page);
 
   const downloadPromise = page.waitForEvent("download");
-  await page.getByRole("button", { name: "Скачать incident bundle" }).click();
+  await page.getByRole("button", { name: "Скачать отчет" }).click();
   const download = await downloadPromise;
-  expect(download.suggestedFilename()).toBe(`incident-${tournamentId}-r8.json`);
+  expect(download.suggestedFilename()).toBe(`Отчет - ${tournament.name} - ${incidentBundle.generated_at.slice(0, 10)}.json`);
+  expect(download.suggestedFilename()).not.toContain(tournamentId);
   const downloadPath = await download.path();
   expect(downloadPath).toBeTruthy();
   const savedBundle = JSON.parse(await readFile(downloadPath ?? "", "utf8")) as Record<string, unknown>;
@@ -332,8 +335,10 @@ test("FE-037 downloads the permitted envelope without exposing closed content", 
   expect(savedBundle.sha256).toBe("ab".repeat(32));
   expect(savedBundle.canonical_content).toBe(incidentBundle.canonical_content);
 
-  await expect(page.getByText(tournamentId, { exact: true }).last()).toBeVisible();
-  await expect(page.getByText("8", { exact: true }).last()).toBeVisible();
+  await expect(page.getByText(tournament.name, { exact: true }).last()).toBeVisible();
+  const bundleTechnicalDetails = page.locator("details").filter({ hasText: "Версия данных" }).first();
+  await bundleTechnicalDetails.locator("summary").click();
+  await expect(bundleTechnicalDetails).toContainText("Версия данных: 8");
   await expect(page.getByText(secretText, { exact: false })).toHaveCount(0);
   expect(page.url()).not.toContain(secretText);
   expect(consoleMessages.join("\n")).not.toContain(secretText);
@@ -351,14 +356,14 @@ test("FE-037 shows safe refusals for player and anonymous export attempts", asyn
   await installAdminRoutes(page, auditQueries, () => mode);
   await loginAndOpenAudit(page);
 
-  await page.getByRole("button", { name: "Скачать incident bundle" }).click();
+  await page.getByRole("button", { name: "Скачать отчет" }).click();
   await expect(page.getByText("У этой сессии нет доступа к операторскому аудиту.")).toBeVisible();
 
   mode = "anonymous";
   const anonymousRefusal = page.waitForResponse(
     (response) => new URL(response.url()).pathname.endsWith("/incident-export"),
   );
-  await page.getByRole("button", { name: "Скачать incident bundle" }).click();
+  await page.getByRole("button", { name: "Скачать отчет" }).click();
   expect((await anonymousRefusal).status()).toBe(401);
   await expect(page.getByPlaceholder("Введите пароль...")).toBeVisible();
   await expect(page.getByText(secretText, { exact: false })).toHaveCount(0);
@@ -374,7 +379,7 @@ test("FE-037 remains usable in both themes at mobile width", async ({ page }) =>
   await page.getByRole("button", { name: "Светлая тема" }).click();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
   await expect(page.locator("#tournament-journal-select")).toHaveValue(tournamentId);
-  await expect(page.getByRole("button", { name: "Скачать incident bundle" })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "Скачать отчет" })).toBeEnabled();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 
   await page.getByRole("button", { name: "Темная тема" }).click();

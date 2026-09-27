@@ -396,6 +396,10 @@ const checkVisualState = async (
 
 const loginAdmin = async (page: Page, theme: 'dark' | 'light'): Promise<void> => {
   await page.goto('/admin');
+  await expect(page.getByText('Закрытый раздел', { exact: true })).toHaveCount(0);
+  await expect(
+    page.getByText('Введите пароль, чтобы продолжить работу с панелью управления.', { exact: true }),
+  ).toHaveCount(0);
   await setTheme(page, theme);
   await expect(page.getByRole('heading', { name: 'Вход администратора' })).toBeVisible();
 };
@@ -441,27 +445,33 @@ test('admin visual matrix covers loaded sections, themes, focus, and mobile over
       await page.getByRole('button', { name: 'Задачи', exact: true }).click();
       await assertActiveNavigationContrast(page, 'Задачи');
       await expect(page.getByText('Визуальная задача', { exact: true })).toBeVisible();
+      await page.getByRole('button', { name: 'Создать задачу', exact: true }).click();
+      const taskDialog = page.getByRole('dialog', { name: 'Создать задачу' });
+      await expect(taskDialog).toBeVisible();
       await checkVisualState(
         page,
         `${theme}-${viewport}-tasks`,
-        page.getByPlaceholder('Введите название...'),
+        taskDialog.getByPlaceholder('Введите название...'),
         true,
       );
+      await taskDialog.getByRole('button', { name: 'Закрыть редактор задачи' }).click();
+      await expect(taskDialog).toBeHidden();
 
-      await page.getByRole('button', { name: 'Турниры', exact: true }).click();
-      await assertActiveNavigationContrast(page, 'Турниры');
+      await page.getByRole('button', { name: 'Соревнования', exact: true }).click();
+      await assertActiveNavigationContrast(page, 'Соревнования');
       const tournamentRow = page.getByRole('row').filter({ hasText: visualTournament.name });
       await expect(tournamentRow).toBeVisible();
       await checkVisualState(
         page,
         `${theme}-${viewport}-tournaments`,
-        page.getByLabel('Название турнира'),
+        page.getByLabel('Название соревнования'),
         true,
       );
       await tournamentRow.getByRole('button', { name: 'Открыть', exact: true }).click();
-      await expect(page.getByRole('heading', { name: 'Рабочая область турнира' })).toBeVisible();
+      await expect(page.getByRole('heading', { name: visualTournament.name, exact: true })).toBeVisible();
+      await expect(page.getByRole('heading', { name: 'Рабочая область соревнования', exact: true })).toHaveCount(0);
 
-      const tournamentViews = page.getByRole('navigation', { name: 'Разделы турнира' });
+      const tournamentViews = page.getByRole('navigation', { name: 'Разделы соревнования' });
       await checkVisualState(
         page,
         `${theme}-${viewport}-tournament-overview`,
@@ -470,10 +480,10 @@ test('admin visual matrix covers loaded sections, themes, focus, and mobile over
       );
 
       await tournamentViews.getByRole('button', { name: 'Участники', exact: true }).click();
-      await expect(page.getByRole('heading', { name: 'Состав турнира' })).toBeVisible();
-      await expect(
-        page.getByRole('group', { name: /^Участник \d+$/ }),
-      ).toHaveCount(visualRoster.participants.length);
+      await expect(page.getByRole('heading', { name: 'Состав соревнования' })).toBeVisible();
+      for (const player of visualPlayers) {
+        await expect(page.getByRole('group', { name: player.username, exact: true })).toBeVisible();
+      }
       await checkVisualState(
         page,
         `${theme}-${viewport}-tournament-participants`,
@@ -483,7 +493,7 @@ test('admin visual matrix covers loaded sections, themes, focus, and mobile over
 
       await tournamentViews.getByRole('button', { name: 'Сетка и серии', exact: true }).click();
       await expect(page.getByRole('heading', { name: 'Конфигурация серий' })).toBeVisible();
-      await expect(page.getByRole('heading', { name: 'Пары Swiss' })).toBeVisible();
+      await expect(page.getByRole('heading', { name: 'Пары квалификации' })).toBeVisible();
       await expect(page.locator('[data-series-id]')).toHaveCount(visualConfiguration.series.length);
       await expect(page.getByRole('heading', { name: 'Настройки раунда 1' })).toBeVisible();
       await checkVisualState(
@@ -507,14 +517,15 @@ test('admin visual matrix covers loaded sections, themes, focus, and mobile over
       );
 
       await tournamentViews.getByRole('button', { name: 'Журнал', exact: true }).click();
-      const tournamentAudit = page.getByRole('region', { name: 'Аудит и incident bundle' });
+      const tournamentAudit = page.getByRole('region', { name: 'История соревнования' });
       await expect(tournamentAudit).toBeVisible();
-      await expect(tournamentAudit.getByText('result.recorded', { exact: true })).toBeVisible();
+      await expect(tournamentAudit.getByText('Другое событие', { exact: true })).toBeVisible();
       await expect(tournamentAudit.getByRole('list', { name: 'События аудита' })).toBeVisible();
+      await tournamentAudit.locator('details').filter({ hasText: 'Технические фильтры' }).locator('summary').click();
       await checkVisualState(
         page,
         `${theme}-${viewport}-tournament-audit`,
-        tournamentAudit.getByLabel('Entity ID'),
+        tournamentAudit.getByLabel('ID записи'),
         true,
       );
 
@@ -522,14 +533,14 @@ test('admin visual matrix covers loaded sections, themes, focus, and mobile over
         .getByRole('button', { name: 'Журнал', exact: true })
         .click();
       await assertActiveNavigationContrast(page, 'Журнал');
-      const adminAudit = page.locator('section[aria-label="Журнал турнира"]');
+      const adminAudit = page.locator('section[aria-label="Журнал соревнования"]');
       await expect(adminAudit).toBeVisible();
-      await expect(adminAudit.getByText('result.recorded', { exact: true })).toBeVisible();
+      await expect(adminAudit.getByText('Другое событие', { exact: true })).toBeVisible();
       await expect(adminAudit.getByRole('list', { name: 'События аудита' })).toBeVisible();
       await checkVisualState(
         page,
         `${theme}-${viewport}-audit`,
-        adminAudit.getByLabel('Турнир', { exact: true }),
+        adminAudit.getByLabel('Соревнование', { exact: true }),
         true,
       );
 

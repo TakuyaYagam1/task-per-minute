@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 
 import { useRegisteredSiteHeaderAuth } from "../../features/site-header";
 import { Button, ThemeToggle } from "../../shared/ui";
@@ -12,6 +13,8 @@ const themeStorageKey = "task-per-minute-theme";
 
 export function SiteHeader() {
   const auth = useRegisteredSiteHeaderAuth();
+  const pathname = usePathname();
+  const isAdminPath = pathname === "/admin" || pathname?.startsWith("/admin/");
 
   return (
     <header className={styles.header} data-testid="site-header">
@@ -28,10 +31,12 @@ export function SiteHeader() {
         </Link>
 
         <nav className={styles.actions} aria-label="Основная навигация">
-          <Link href="/leaderboard" className={styles.ratingLink}>
-            <span className={styles.ratingLabelWide}>Общий рейтинг</span>
-            <span className={styles.ratingLabelCompact}>Рейтинг</span>
-          </Link>
+          {!isAdminPath ? (
+            <Link href="/leaderboard" className={styles.ratingLink}>
+              <span className={styles.ratingLabelWide}>Общий рейтинг</span>
+              <span className={styles.ratingLabelCompact}>Рейтинг</span>
+            </Link>
+          ) : null}
           {auth?.onLogout && (
             <Button
               type="button"

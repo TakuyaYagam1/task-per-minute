@@ -45,17 +45,17 @@ const loadMessageFor = (error: unknown): string => {
       case 401:
         return "Сессия участника истекла. Войдите снова.";
       case 403:
-        return "Нет доступа к этой Golden группе.";
+        return "Нет доступа к этой группе дополнительного отбора.";
       case 429:
-        return "Слишком много запросов Golden. Повторите после паузы.";
+        return "Слишком много запросов дополнительного отбора. Повторите после паузы.";
       default:
-        return "Не удалось загрузить Golden. Повторите попытку.";
+        return "Не удалось загрузить дополнительный отбор. Повторите попытку.";
     }
   }
-  return "Не удалось загрузить Golden. Повторите попытку.";
+  return "Не удалось загрузить дополнительный отбор. Повторите попытку.";
 };
 
-const conflictMessage = "Попытка Golden изменилась. Показаны свежие данные.";
+const conflictMessage = "Попытка дополнительного отбора изменилась. Показаны свежие данные.";
 
 export const useParticipantGolden = (
   tournamentId: string,
@@ -149,7 +149,7 @@ export const useParticipantGolden = (
         if (result.status === "success") {
           setSnapshot(result.value);
           setActionStatus("accepted");
-          setActionMessage("Готовность Golden подтверждена.");
+          setActionMessage("Готовность к дополнительному отбору подтверждена.");
           return;
         }
         if (result.status === "conflict") {
@@ -168,7 +168,7 @@ export const useParticipantGolden = (
           return;
         }
         setActionStatus("error");
-        setActionMessage("Не удалось подтвердить готовность Golden.");
+        setActionMessage("Не удалось подтвердить готовность к дополнительному отбору.");
       })
       .finally(() => {
         if (actionId === actionRef.current) {
@@ -215,7 +215,7 @@ export const useParticipantGolden = (
           setSnapshot(result.value);
           if (result.value.submitted) {
             setActionStatus("accepted");
-            setActionMessage("Решение Golden принято.");
+            setActionMessage("Решение дополнительного отбора принято.");
           } else {
             setActionStatus("incorrect");
             setActionMessage("Ответ неверный. Попытка сохранена.");
@@ -238,7 +238,7 @@ export const useParticipantGolden = (
           return;
         }
         setActionStatus("error");
-        setActionMessage("Не удалось отправить ответ Golden.");
+        setActionMessage("Не удалось отправить ответ дополнительного отбора.");
       })
       .finally(() => {
         if (actionId === actionRef.current) {

@@ -227,15 +227,6 @@ const pausedSnapshot = (fixtureSet: FixtureSet): ParticipantSnapshot => {
   };
 };
 
-const readCountdownSeconds = async (page: Page): Promise<number> => {
-  const countdown = await page.getByTestId("server-countdown").textContent();
-  const parts = (countdown ?? "0:00").split(":").map(Number);
-  if (parts.length !== 2 || parts.some((part) => !Number.isFinite(part))) {
-    throw new Error(`Unexpected server countdown: ${countdown ?? "<empty>"}`);
-  }
-  return (parts[0] ?? 0) * 60 + (parts[1] ?? 0);
-};
-
 const expectNoProvisioningUI = async (page: Page): Promise<void> => {
   for (const locator of [page.getByRole("heading"), page.getByRole("button"), page.getByRole("status")]) {
     await expect(locator.filter({ hasText: provisioningCopyPattern })).toHaveCount(0);
@@ -283,8 +274,8 @@ test("FE-018 shows the server-delivered task and current series context", async 
     assignment.getByText("Дедлайн задания", { exact: true }).locator(".."),
   ).toContainText(expectedTaskDeadline);
   await expect(
-    page.getByText("Стадия", { exact: true }).locator("..").getByText("Швейцарский этап", { exact: true }),
-  ).toContainText("Швейцарский этап");
+    page.getByText("Стадия", { exact: true }).locator("..").getByText("Квалификация", { exact: true }),
+  ).toContainText("Квалификация");
   await expect(
     page.getByText("Раунд", { exact: true }).locator("..").getByText("Раунд 2", { exact: true }),
   ).toContainText("Раунд 2");
@@ -294,8 +285,7 @@ test("FE-018 shows the server-delivered task and current series context", async 
   await expect(
     page.getByText("Счет серии", { exact: true }).locator("..").getByText("1:0", { exact: true }),
   ).toContainText("1:0");
-  await expect(page.getByTestId("server-countdown")).toBeVisible();
-  await expect.poll(() => readCountdownSeconds(page)).toBeGreaterThan(0);
+  await expect(page.getByTestId("server-countdown")).toHaveCount(0);
   await expectNoProvisioningUI(page);
 });
 
@@ -349,6 +339,9 @@ test("FE-018 keeps one immutable task id and version for both players", async ({
 test("FE-018 removes superseded assignment content after authoritative refresh", async ({ page }) => {
   const fixtureSet = createTournamentFixtureSet();
   let current = deliveredSnapshot(fixtureSet, 9);
+  await page.routeWebSocket(`**${publicPath}/participant/realtime*`, (socket) => {
+    socket.close({ code: 1008, reason: "Test reconnect" });
+  });
   await installParticipantRoutes(page, fixtureSet, () => current);
 
   await page.goto(participantURL, { waitUntil: "domcontentloaded" });
@@ -357,7 +350,8 @@ test("FE-018 removes superseded assignment content after authoritative refresh",
   await expect(assignment).toHaveAttribute("data-assignment-state", "delivered");
 
   current = supersededSnapshot(fixtureSet);
-  await page.getByRole("button", { name: "Повторить синхронизацию" }).click();
+  await page.getByTestId("participant-recovery-fallback")
+    .getByRole("button", { name: "Повторить", exact: true }).click();
 
   await expect(page.getByTestId("participant-player-panel")).toHaveAttribute("data-state", "waiting");
   await expect(assignment).toHaveAttribute("data-assignment-state", "superseded");
@@ -367,19 +361,25 @@ test("FE-018 removes superseded assignment content after authoritative refresh",
   await expectNoProvisioningUI(page);
 });
 
-test("FE-018 anchors the 180-second deadline to server time across reload and themes", async ({ page }) => {
+test("FE-018 preserves the published 180-second deadline across clock changes, reload and themes", async ({ page }) => {
   const fixtureSet = createTournamentFixtureSet();
   await page.clock.install({ time: serverTimestamp });
   await installParticipantRoutes(page, fixtureSet, deliveredSnapshot(fixtureSet));
 
   await page.goto(participantURL, { waitUntil: "domcontentloaded" });
-  await expect(page.getByTestId("server-countdown")).toBeVisible();
-  await expect.poll(() => readCountdownSeconds(page)).toBeGreaterThanOrEqual(170);
+  const assignment = page.getByRole("region", { name: "Задание для игры" });
+  const deadline = assignment.getByText("Дедлайн задания", { exact: true }).locator("..");
+  const expectedDeadline = await page.evaluate((value) => new Intl.DateTimeFormat("ru-RU", {
+    dateStyle: "short",
+    timeStyle: "short",
+  }).format(Date.parse(value)), gameDeadline);
+  expect(Date.parse(gameDeadline) - Date.parse(serverTimestamp)).toBe(180_000);
+  await expect(deadline).toContainText(expectedDeadline);
 
   await page.clock.setSystemTime("2026-09-15T10:10:00Z");
   await page.reload({ waitUntil: "domcontentloaded" });
-  await expect(page.getByTestId("server-countdown")).toBeVisible();
-  await expect.poll(() => readCountdownSeconds(page)).toBeGreaterThanOrEqual(170);
+  await expect(deadline).toContainText(expectedDeadline);
+  await expect(page.getByTestId("server-countdown")).toHaveCount(0);
 
   await page.getByRole("button", { name: "Светлая тема" }).click();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
@@ -399,6 +399,6 @@ test("FE-018 suppresses stale ready-window timing while the assigned game is pau
   await expect(assignment).toHaveAttribute("data-assignment-state", "delivered");
   await expect(
     assignment.getByText("Дедлайн задания", { exact: true }).locator(".."),
-  ).toContainText("Приостановлен сервером");
+  ).toContainText("Приостановлен");
   await expect(page.getByTestId("server-countdown")).toHaveCount(0);
 });

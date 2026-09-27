@@ -160,10 +160,16 @@ export default function LeaderboardPage() {
 
   return (
     <main className={styles.container}>
-      <Link href="/" className={styles.homeLink}>
-        <span aria-hidden="true">&larr;</span>
-        На главную
-      </Link>
+      <nav className={styles.pageNav} aria-label="Навигация рейтинга">
+        <Link href="/" className={styles.homeLink}>
+          <span aria-hidden="true">&lt;-</span>
+          На главную
+        </Link>
+        <Link href="/arena" className={styles.arenaLink}>
+          Arena
+          <span aria-hidden="true">-&gt;</span>
+        </Link>
+      </nav>
       <div className={styles.header}>
         <h1 className={styles.title}>Общий рейтинг</h1>
         <p className={styles.subtitle}>Рейтинг лучших игроков в CTF дуэлях</p>

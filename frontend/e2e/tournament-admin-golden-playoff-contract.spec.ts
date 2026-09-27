@@ -481,15 +481,16 @@ const loginAndSelectTournament = async (page: Page): Promise<ReturnType<Page["ge
   await page.goto("/admin", { waitUntil: "domcontentloaded" });
   await page.getByPlaceholder("Введите пароль...").fill("correct-password");
   await page.getByRole("button", { name: "Войти" }).click();
-  await expect(page.getByRole("heading", { name: "Новый турнир" })).toBeVisible();
-  await page.getByRole("button", { name: "Турниры" }).click();
+  await expect(page.getByRole("heading", { name: "Новое соревнование" })).toBeVisible();
+  await page.getByRole("button", { name: "Соревнования" }).click();
   const row = page.getByRole("row").filter({ hasText: "Golden playoff контракт" });
   await expect(row).toBeVisible();
   await row.getByRole("button", { name: "Открыть" }).click();
+  await expect(page.getByRole("heading", { name: "Golden playoff контракт", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Проведение" }).click();
   const panel = page.getByTestId("operator-golden-playoff-control-panel");
   await expect(panel).toBeVisible();
-  await expect(panel.getByText(tournamentId, { exact: true })).toBeVisible();
+  await expect(page).toHaveURL(new RegExp(`[?&]tournament=${tournamentId}(?:&|$)`));
   return panel;
 };
 
@@ -502,7 +503,7 @@ test("управляет Golden и отображает официальный b
   const harness = await installRoutes(page, { initialPhase: "swiss" });
   const panel = await loginAndSelectTournament(page);
 
-  await expect(panel).toContainText("Golden группы не сформированы");
+  await expect(panel).toContainText("Группы еще не сформированы");
   await expect(panel.getByTestId("golden-start-lifecycle")).toBeEnabled();
   await expect(panel.getByTestId("golden-open-runtime")).toBeDisabled();
   await expect(panel.getByTestId("golden-start-playoffs")).toBeEnabled();
@@ -513,7 +514,7 @@ test("управляет Golden и отображает официальный b
     action: "start_golden",
     confirmed: true,
     expected_projection_revision: 9,
-    reason: "Оператор подтвердил переход в Golden",
+    reason: "Оператор подтвердил переход в дополнительный отбор",
   });
   expectMutationHeaders(harness.actionRequests[0]!);
   await expect(panel.getByTestId("golden-open-runtime")).toBeEnabled();
@@ -526,9 +527,9 @@ test("управляет Golden и отображает официальный b
     expected_runtime_revision: 0,
   });
   expectMutationHeaders(harness.openRequests[0]!);
-  await expect(panel).toContainText("Диапазон допуска: позиции 1-2");
-  await expect(panel).toContainText(firstParticipantId);
-  await expect(panel).toContainText(secondParticipantId);
+  await expect(panel).toContainText("Группа за места 1-2");
+  await expect(panel).toContainText("Участник 1");
+  await expect(panel).toContainText("Участник 2");
   await expect(panel.getByText("Готов к старту", { exact: true })).toBeVisible();
   await expect(panel.getByTestId(`golden-start-attempt-${groupId}`)).toBeEnabled();
 
@@ -543,7 +544,7 @@ test("управляет Golden и отображает официальный b
   await expect(panel.getByTestId("golden-start-playoffs")).toBeDisabled();
 
   harness.setPhase("golden-completed");
-  await panel.getByRole("button", { name: "Обновить Golden" }).click();
+  await panel.getByRole("button", { name: "Обновить данные" }).first().click();
   await expect(panel.getByText("Завершен", { exact: true })).toBeVisible();
   await expect(panel.getByTestId("golden-start-playoffs")).toBeEnabled();
 
@@ -578,14 +579,14 @@ test("управляет Golden и отображает официальный b
   await expect(bracket).not.toContainText(/нижн|lower/i);
 
   harness.setPhase("playoffs-final");
-  await panel.getByRole("button", { name: "Обновить Golden" }).click();
+  await panel.getByRole("button", { name: "Обновить данные" }).first().click();
   await expect(matches).toHaveCount(3);
   await expect(matches.nth(2)).toHaveAttribute("data-stage", "final");
   await expect(matches.nth(2)).toContainText("Финал - BO3");
   await expect(matches.nth(2)).toContainText("2:1");
 
   harness.setPhase("completed");
-  await panel.getByRole("button", { name: "Обновить Golden" }).click();
+  await panel.getByRole("button", { name: "Обновить данные" }).click();
   await expect(panel.getByTestId("server-champion")).toContainText("Алиса");
   await expect(panel.getByTestId("golden-start-lifecycle")).toBeDisabled();
   await expect(panel.getByTestId("golden-start-playoffs")).toBeDisabled();
@@ -608,11 +609,11 @@ test("409 stale Golden refreshes state and keeps runtime command blocked until r
   });
   expectMutationHeaders(harness.openRequests[0]!);
   await expect(panel.getByRole("alert")).toContainText(
-    "Состояние Golden устарело. Обновите данные перед повтором.",
+    "Состояние дополнительного отбора изменилось. Обновите данные перед повтором.",
   );
   await expect(open).toBeDisabled();
 
-  await panel.getByRole("button", { name: "Обновить Golden" }).click();
+  await panel.getByRole("button", { name: "Обновить данные" }).first().click();
   await expect(open).toBeDisabled();
   await expect(panel.getByTestId(`golden-start-attempt-${groupId}`)).toBeEnabled();
   expect(harness.openRequests).toHaveLength(1);
