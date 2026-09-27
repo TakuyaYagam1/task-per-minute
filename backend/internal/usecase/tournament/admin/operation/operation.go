@@ -18,6 +18,7 @@ type RevisionConflictError struct {
 	ExpectedRevision int64
 	CurrentRevision  int64
 	CurrentState     domain.TournamentState
+	Detail           string
 }
 
 func (e *RevisionConflictError) Error() string { return "tournament projection revision conflict" }

@@ -24,6 +24,7 @@ type PairingRouteOptions = {
   projectionRevision?: number;
   round?: SwissRound;
   roster?: Roster;
+  tournamentState?: Tournament["state"];
 };
 
 const playerId = (index: number): string =>
@@ -56,7 +57,11 @@ const participant = (
   updated_at: baseDate,
 });
 
-const tournament = (size: number, revision = 2): Tournament => ({
+const tournament = (
+  size: number,
+  revision = 2,
+  state: Tournament["state"] = "swiss",
+): Tournament => ({
   content_revision: contentRevision,
   created_at: baseDate,
   finished_at: null,
@@ -69,8 +74,10 @@ const tournament = (size: number, revision = 2): Tournament => ({
   revision,
   roster_id: rosterId,
   roster_size: size,
-  started_at: baseDate,
-  state: "swiss",
+  started_at: state === "draft" || state === "registration" || state === "roster_locked"
+    ? null
+    : baseDate,
+  state,
   updated_at: baseDate,
 });
 
@@ -193,7 +200,11 @@ const swissRound = (size: number, revision = 6): SwissRound => {
   };
 };
 
-const snapshot = (size: number, projectionRevision: number): Snapshot => ({
+const snapshot = (
+  size: number,
+  projectionRevision: number,
+  state: Tournament["state"] = "swiss",
+): Snapshot => ({
   next_cursor: {
     audit_sequence: projectionRevision,
     authority_revision: projectionRevision,
@@ -203,7 +214,7 @@ const snapshot = (size: number, projectionRevision: number): Snapshot => ({
   recovery_controls: [],
   roster: roster(size),
   series: [],
-  tournament: tournament(size, projectionRevision),
+  tournament: tournament(size, projectionRevision, state),
   waves: [],
 });
 
@@ -234,6 +245,7 @@ const setupPairingRoutes = async (
   const currentRoster = options.roster ?? roster(size);
   const currentConfiguration = options.configuration ?? configuration(size);
   const responseRound = options.round ?? swissRound(size);
+  const tournamentState = options.tournamentState ?? "swiss";
   const pairingRequests: PairingRequest[] = [];
   const snapshotRequests: number[] = [];
   let snapshotCall = 0;
@@ -267,7 +279,7 @@ const setupPairingRoutes = async (
     }
     if (path === "/api/v1/admin/tournaments" && method === "GET") {
       await fulfillJSON(route, 200, {
-        items: [tournament(size)],
+        items: [tournament(size, 2, tournamentState)],
         next_cursor: null,
       });
       return;
@@ -283,7 +295,11 @@ const setupPairingRoutes = async (
     if (path === `/api/v1/admin/tournaments/${tournamentId}/snapshot` && method === "GET") {
       snapshotCall += 1;
       snapshotRequests.push(options.projectionRevision ?? 9);
-      await fulfillJSON(route, 200, snapshot(size, options.projectionRevision ?? 9));
+      await fulfillJSON(
+        route,
+        200,
+        snapshot(size, options.projectionRevision ?? 9, tournamentState),
+      );
       return;
     }
     if (path === `/api/v1/admin/tournaments/${tournamentId}/pairings` && method === "POST") {
@@ -325,9 +341,30 @@ const openPairingEditor = async (page: Page): Promise<ReturnType<typeof pairingR
   const region = pairingRegion(page);
   await expect(region).toBeVisible();
   await expect(page).toHaveURL(new RegExp(`[?&]tournament=${tournamentId}(?:&|$)`));
-  await expect(region.getByText(/Текущая ревизия/)).toBeVisible();
+  await expect(region).toContainText("Следующий раунд");
+  await expect(region).toContainText("Присутствуют");
+  await expect(region.getByRole("heading", { name: /Настройки раунда/ })).toBeVisible();
+  await expect(region.getByRole("button", { name: "Сформировать пары" })).toBeVisible();
   return region;
 };
+
+for (const [state, hint] of [
+  ["registration", 'Проверьте состав, затем нажмите "Зафиксировать состав" и "Начать швейцарский этап". После этого можно формировать пары.'],
+  ["roster_locked", 'Нажмите "Начать швейцарский этап". После этого можно формировать пары.'],
+] as const) {
+  test(`не отправляет пары до запуска турнира в состоянии ${state}`, async ({ page }) => {
+    const { pairingRequests } = await setupPairingRoutes(page, 4, {
+      tournamentState: state,
+    });
+    const region = await openPairingEditor(page);
+    const submit = region.getByRole("button", { name: "Сформировать пары" });
+
+    await expect(submit).toBeDisabled();
+    await expect(region).toContainText("Турнир не запущен");
+    await expect(region).toContainText(hint);
+    expect(pairingRequests).toHaveLength(0);
+  });
+}
 
 test("отправляет automatic план и отображает полный ответ Swiss сервера", async ({ page }) => {
   const round = swissRound(4);
@@ -348,8 +385,8 @@ test("отправляет automatic план и отображает полны
   await expect(region).toContainText("Серверный план раунда 1");
   await expect(region).toContainText("Игрок 1");
   await expect(region).toContainText("Игрок 4");
-  await expect(region).toContainText("Ревизия раунда");
-  await expect(region).toContainText("6");
+  await expect(region).toContainText("Статус блокировки");
+  await expect(region.getByText("Нет", { exact: true })).toBeVisible();
   await expect(region).toContainText("Standings");
 });
 
@@ -496,8 +533,8 @@ test("сохраняет прежний server result после 409 и дает
   const submit = region.getByRole("button", { name: "Сформировать пары" });
   await submit.click();
   await expect.poll(() => pairingRequests.length).toBe(1);
-  await expect(region).toContainText("Ревизия раунда");
-  await expect(region).toContainText("8");
+  await expect(region).toContainText("Серверный план раунда 1");
+  await expect(region).toContainText("Статус блокировки");
 
   await submit.click();
   await expect.poll(() => pairingRequests.length).toBe(2);

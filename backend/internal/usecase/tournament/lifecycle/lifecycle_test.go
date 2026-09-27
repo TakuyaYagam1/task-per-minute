@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	lifecycleusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/lifecycle"
@@ -207,6 +208,29 @@ type lifecycleRepositoryState struct {
 	mu      sync.Mutex
 	records map[uuid.UUID]lifecycleusecase.LifecycleTournamentRecord
 	active  *uuid.UUID
+}
+
+func TestLifecycleActiveSlotConflictPreservesSpecificError(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, time.August, 28, 21, 0, 0, 0, time.UTC)
+	id := uuid.MustParse("41000000-0000-0000-0000-000000000110")
+	record := lifecycleLifecycleTournamentRecord(id, domain.TournamentStateRosterLocked, 3, now)
+	repository := tournamentmocks.NewMockTournamentLifecycleRepository(t)
+	repository.EXPECT().GetTournament(mock.Anything, id).Return(lifecycleCloneTournamentRecord(record), nil)
+	repository.EXPECT().TransitionTournament(mock.Anything, mock.Anything).
+		Return(nil, false, errors.Join(lifecycleusecase.ErrActiveTournamentConflict, domain.ErrConflict))
+	clock := lifecycleNewFixedTournamentClock(t, now, 1)
+	useCase := lifecycleusecase.NewTournamentLifecycleUseCase(repository, clock)
+
+	updated, changed, err := useCase.Transition(t.Context(), lifecycleusecase.TournamentLifecycleCommand{
+		TournamentID: id, ExpectedRevision: record.Revision, NextState: domain.TournamentStateSwiss,
+	})
+
+	require.Nil(t, updated)
+	require.False(t, changed)
+	require.ErrorIs(t, err, lifecycleusecase.ErrActiveTournamentConflict)
+	require.ErrorIs(t, err, domain.ErrConflict)
 }
 
 func newLifecycleRepository(

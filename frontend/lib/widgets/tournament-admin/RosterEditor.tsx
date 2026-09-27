@@ -548,7 +548,7 @@ export const RosterEditor = ({
       return;
     }
     if (checkedInPlayerIds.length < MIN_ROSTER_SIZE) {
-      setControlError("Для блокировки состава отметьте минимум 4 игроков как присутствующих.");
+      setControlError("Для фиксации состава отметьте минимум 4 игроков как присутствующих.");
       return;
     }
 
@@ -571,7 +571,7 @@ export const RosterEditor = ({
       setUnlockConfirmed(false);
       setUnlockReason("");
       await onReloadTournaments();
-      setRosterNotice("Состав заблокирован. Исполнение можно начинать только после успешной проверки.");
+      setRosterNotice("Состав зафиксирован. Турнир можно начинать только после успешной проверки.");
     } catch (error) {
       if (error instanceof ApiError && error.status === 401) {
         onSessionExpired?.();
@@ -582,7 +582,7 @@ export const RosterEditor = ({
       setControlError(
         error instanceof ApiError && error.status === 409
           ? `${rosterErrorMessage(error, "Серверное состояние изменилось.")} Перезагрузите данные и запустите проверку заново.`
-          : rosterErrorMessage(error, "Не удалось заблокировать состав турнира"),
+          : rosterErrorMessage(error, "Не удалось зафиксировать состав турнира"),
       );
     } finally {
       setLockingRoster(false);
@@ -628,7 +628,7 @@ export const RosterEditor = ({
       setUnlockConfirmed(false);
       setUnlockReason("");
       await onReloadTournaments();
-      setRosterNotice("Состав разблокирован. Перед новой блокировкой потребуется повторная проверка.");
+      setRosterNotice("Состав разблокирован. Перед новой фиксацией потребуется повторная проверка.");
     } catch (error) {
       if (error instanceof ApiError && error.status === 401) {
         onSessionExpired?.();
@@ -745,7 +745,7 @@ export const RosterEditor = ({
                   Разблокировать состав
                 </h4>
                 <p className={styles.sectionDescription}>
-                  Разблокировка отменит серверную фиксацию. Перед новой блокировкой потребуется повторная проверка.
+                  Разблокировка отменит серверную фиксацию. Перед новой фиксацией потребуется повторная проверка.
                 </p>
               </div>
               <div className={styles.checkboxField}>
@@ -955,7 +955,7 @@ export const RosterEditor = ({
                   ))}
                 </ol>
                 {!preflightReport.passed && (
-                  <Message tone="warning" title="Блокировка недоступна">
+                  <Message tone="warning" title="Фиксация недоступна">
                     Исправьте указанные проблемы и запустите проверку повторно.
                   </Message>
                 )}
@@ -967,13 +967,13 @@ export const RosterEditor = ({
                 type="button"
                 onClick={() => void handleLockRoster()}
                 loading={lockingRoster}
-                loadingLabel="Блокируем состав"
+                loadingLabel="Фиксируем состав"
                 disabled={!canLockRoster}
               >
-                Заблокировать состав
+                Зафиксировать состав
               </Button>
               <span className={styles.hint}>
-                Блокировка доступна только после успешной проверки и при наличии минимум 4 присутствующих игроков.
+                Фиксация доступна только после успешной проверки и при наличии минимум 4 присутствующих игроков.
               </span>
             </div>
           </section>

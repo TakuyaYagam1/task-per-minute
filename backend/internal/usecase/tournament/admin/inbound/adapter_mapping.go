@@ -25,7 +25,10 @@ func adminInboundError(err error) error {
 	}
 	var conflict *RevisionConflictError
 	if errors.As(err, &conflict) {
-		return &inbound.AdminRevisionConflictError{ExpectedRevision: conflict.ExpectedRevision, CurrentRevision: conflict.CurrentRevision, CurrentState: conflict.CurrentState}
+		return &inbound.AdminRevisionConflictError{
+			ExpectedRevision: conflict.ExpectedRevision, CurrentRevision: conflict.CurrentRevision,
+			CurrentState: conflict.CurrentState, Detail: conflict.Detail,
+		}
 	}
 	return err
 }

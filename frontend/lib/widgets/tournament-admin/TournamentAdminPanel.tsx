@@ -34,6 +34,7 @@ import { SeriesConfigurationEditor } from "./SeriesConfigurationEditor";
 import { SwissPairingEditor } from "./SwissPairingEditor";
 import { TournamentAuditPanel } from "./TournamentAuditPanel";
 import type { AdminRequestRunner } from "./TournamentContentManager";
+import { TournamentStartControls } from "./TournamentStartControls";
 import { WaveControlPanel } from "./WaveControlPanel";
 import styles from "./TournamentAdminPanel.module.css";
 
@@ -721,35 +722,44 @@ export const TournamentAdminPanel = ({
         </nav>
         <div className={styles.viewContent}>
           {activeView === "overview" ? (
-            <Panel
-              title="Обзор турнира"
-              description="Основные сведения о выбранном турнире и его текущем состоянии."
-            >
-              <dl className={styles.overviewGrid}>
-                <div className={styles.overviewItem}>
-                  <dt>Состав</dt>
-                  <dd>
-                    {selectedTournament.roster_size} / {selectedTournament.planned_roster_size}
-                  </dd>
-                </div>
-                <div className={styles.overviewItem}>
-                  <dt>Формат</dt>
-                  <dd>{selectedTournament.preset}</dd>
-                </div>
-                <div className={styles.overviewItem}>
-                  <dt>Создан</dt>
-                  <dd>{formatDateTime(selectedTournament.created_at)}</dd>
-                </div>
-                <div className={styles.overviewItem}>
-                  <dt>Начат</dt>
-                  <dd>{formatDateTime(selectedTournament.started_at)}</dd>
-                </div>
-                <div className={styles.overviewItem}>
-                  <dt>Завершен</dt>
-                  <dd>{formatDateTime(selectedTournament.finished_at)}</dd>
-                </div>
-              </dl>
-            </Panel>
+            <div className={styles.editorStack}>
+              <TournamentStartControls
+                onNavigate={(view) => onNavigate(selectedTournament.id, view)}
+                onReloadTournaments={loadTournaments}
+                onSessionExpired={onSessionExpired}
+                onTournamentUpdated={handleTournamentUpdated}
+                tournament={selectedTournament}
+              />
+              <Panel
+                title="Обзор турнира"
+                description="Основные сведения о выбранном турнире и его текущем состоянии."
+              >
+                <dl className={styles.overviewGrid}>
+                  <div className={styles.overviewItem}>
+                    <dt>Состав</dt>
+                    <dd>
+                      {selectedTournament.roster_size} / {selectedTournament.planned_roster_size}
+                    </dd>
+                  </div>
+                  <div className={styles.overviewItem}>
+                    <dt>Формат</dt>
+                    <dd>{selectedTournament.preset}</dd>
+                  </div>
+                  <div className={styles.overviewItem}>
+                    <dt>Создан</dt>
+                    <dd>{formatDateTime(selectedTournament.created_at)}</dd>
+                  </div>
+                  <div className={styles.overviewItem}>
+                    <dt>Начат</dt>
+                    <dd>{formatDateTime(selectedTournament.started_at)}</dd>
+                  </div>
+                  <div className={styles.overviewItem}>
+                    <dt>Завершен</dt>
+                    <dd>{formatDateTime(selectedTournament.finished_at)}</dd>
+                  </div>
+                </dl>
+              </Panel>
+            </div>
           ) : null}
           {activeView === "participants" ? (
             <RosterEditor

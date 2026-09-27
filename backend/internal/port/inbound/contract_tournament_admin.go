@@ -17,6 +17,7 @@ type AdminRevisionConflictError struct {
 	ExpectedRevision int64
 	CurrentRevision  int64
 	CurrentState     domain.TournamentState
+	Detail           string
 }
 
 func (e *AdminRevisionConflictError) Error() string { return ErrAdminRevisionConflict.Error() }

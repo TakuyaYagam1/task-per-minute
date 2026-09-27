@@ -472,6 +472,9 @@ func (w *LifecycleWorkflow) actionError(
 	if err == nil || errors.Is(err, domain.ErrValidation) || errors.Is(err, domain.ErrTournamentNotFound) {
 		return err
 	}
+	if errors.Is(err, lifecycleusecase.ErrActiveTournamentConflict) {
+		return lifecycleConflictWithDetail(command, authority, lifecycleusecase.ActiveTournamentConflictDetail)
+	}
 	if errors.Is(err, domain.ErrConflict) || errors.Is(err, domain.ErrTournamentTransition) ||
 		errors.Is(err, lifecycleusecase.ErrTournamentGuardedTransition) ||
 		errors.Is(err, tournamentpause.ErrTournamentPauseGraphPartial) ||
@@ -500,10 +503,19 @@ func lifecycleRecord(
 }
 
 func lifecycleConflict(command TournamentActionCommand, authority LifecycleAuthority) error {
+	return lifecycleConflictWithDetail(command, authority, "")
+}
+
+func lifecycleConflictWithDetail(
+	command TournamentActionCommand,
+	authority LifecycleAuthority,
+	detail string,
+) error {
 	return &RevisionConflictError{
 		ExpectedRevision: command.ExpectedProjectionRevision,
 		CurrentRevision:  authority.ProjectionRevision,
 		CurrentState:     authority.Tournament.State,
+		Detail:           detail,
 	}
 }
 

@@ -30,3 +30,20 @@ func TestInboundAdapterMapsReplayRevisionConflict(t *testing.T) {
 	require.Equal(t, int64(3), mapped.ExpectedRevision)
 	require.Equal(t, int64(4), mapped.CurrentRevision)
 }
+
+func TestInboundAdapterPreservesRevisionConflictDetail(t *testing.T) {
+	t.Parallel()
+
+	service := tournamentadminmocks.NewMockAdminService(t)
+	service.EXPECT().ReplayGame(mock.Anything, mock.Anything).Return(&adminoperation.RevisionConflictError{
+		ExpectedRevision: 3,
+		CurrentRevision:  4,
+		Detail:           "another tournament is already active",
+	}).Once()
+
+	err := inbound.NewInboundAdapter(service).ReplayGame(context.Background(), contract.AdminReplayCommand{})
+
+	var mapped *contract.AdminRevisionConflictError
+	require.ErrorAs(t, err, &mapped)
+	require.Equal(t, "another tournament is already active", mapped.Detail)
+}

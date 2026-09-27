@@ -11,6 +11,7 @@ export {
   type TournamentJournalSectionProps,
 } from "./TournamentJournalSection";
 export { WaveControlPanel } from "./WaveControlPanel";
+export { TournamentStartControls } from "./TournamentStartControls";
 export {
   TournamentContentManager,
   type AdminRequestRunner,

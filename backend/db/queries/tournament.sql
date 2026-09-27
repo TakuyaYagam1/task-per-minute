@@ -421,7 +421,9 @@ JOIN rosters AS roster ON roster.id = participant.roster_id
 WHERE participant.roster_id = sqlc.arg(roster_id)
     AND participant.attendance = 'checked_in'
 ORDER BY participant.player_id
-ON CONFLICT (player_id) DO NOTHING
+ON CONFLICT (player_id) DO UPDATE
+SET updated_at = participant_reservations.updated_at
+WHERE participant_reservations.tournament_id = EXCLUDED.tournament_id
 RETURNING player_id;
 
 -- name: LockTournamentRosterCAS :one

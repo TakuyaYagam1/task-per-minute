@@ -47,7 +47,11 @@ func writeTournamentAdminError(w http.ResponseWriter, r *http.Request, err error
 			errmap.HandleError(w, r, domain.ErrInternal)
 			return
 		}
-		detail, instance, requestID := tournamentProblemContext(r, "projection revision conflict")
+		detailText := conflict.Detail
+		if detailText == "" {
+			detailText = "projection revision conflict"
+		}
+		detail, instance, requestID := tournamentProblemContext(r, detailText)
 		payload := api.ProjectionRevisionProblem{
 			Type: "about:blank", Title: http.StatusText(http.StatusConflict),
 			Status: int32(http.StatusConflict), Detail: &detail, Instance: &instance, RequestId: &requestID,

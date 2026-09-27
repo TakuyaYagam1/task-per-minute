@@ -79,7 +79,7 @@ func (r *TournamentLifecyclePostgres) TransitionTournament(
 				return nil
 			}
 			if isUniqueViolation(err, tournamentActiveConstraint) {
-				return domain.WrapError(err, domain.ErrConflict)
+				return activeTournamentConflict(err)
 			}
 			return fmt.Errorf("TournamentPostgres - Transition - Querier.UpdateTournamentCAS: %w", err)
 		}
@@ -100,6 +100,10 @@ func (r *TournamentLifecyclePostgres) TransitionTournament(
 		return nil, false, err
 	}
 	return record, changed, nil
+}
+
+func activeTournamentConflict(err error) error {
+	return errors.Join(lifecycleusecase.ErrActiveTournamentConflict, domain.WrapError(err, domain.ErrConflict))
 }
 
 func validateTournamentTransitionInput(in lifecycleusecase.TournamentLifecycleTransitionInput) error {

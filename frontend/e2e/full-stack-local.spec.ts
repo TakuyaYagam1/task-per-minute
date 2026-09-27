@@ -1749,9 +1749,9 @@ test.describe('local compose full stack e2e', () => {
       await expect(rosterRegion.getByRole('group')).toHaveCount(4);
 
       for (const [index, player] of players.slice(0, 4).entries()) {
-        const group = rosterRegion.getByRole('group', { name: `Участник ${index + 1}` });
+        const group = rosterRegion.getByRole('group').nth(index);
         await group.getByRole('combobox', { name: 'Игрок' }).selectOption(player.id);
-        await group.getByRole('spinbutton', { name: 'Seed / позиция' }).fill(String(index + 1));
+        await group.getByRole('spinbutton', { name: 'Позиция' }).fill(String(index + 1));
       }
 
       const firstTournamentRefresh = page.waitForResponse(
@@ -1809,19 +1809,19 @@ test.describe('local compose full stack e2e', () => {
       await expect(rosterRegion).toBeVisible({ timeout: 15_000 });
       await expect(rosterRegion.getByRole('group')).toHaveCount(4);
       for (const [index, participant] of savedParticipants.entries()) {
-        const group = rosterRegion.getByRole('group', { name: `Участник ${index + 1}` });
+        const group = rosterRegion.getByRole('group').nth(index);
         await expect(group.getByRole('combobox', { name: 'Игрок' })).toHaveValue(
           participant.player_id,
         );
-        await expect(group.getByRole('spinbutton', { name: 'Seed / позиция' })).toHaveValue(
+        await expect(group.getByRole('spinbutton', { name: 'Позиция' })).toHaveValue(
           String(index + 1),
         );
       }
 
-      await rosterRegion.getByRole('group', { name: 'Участник 1' })
-        .getByRole('combobox', { name: 'Посещаемость' })
+      await rosterRegion.getByRole('group').nth(0)
+        .getByRole('combobox', { name: 'Участие' })
         .selectOption('checked_in');
-      await rosterRegion.getByRole('group', { name: 'Участник 2' })
+      await rosterRegion.getByRole('group').nth(1)
         .getByRole('combobox', { name: 'Игрок' })
         .selectOption(players[4].id);
 
@@ -1942,7 +1942,7 @@ test.describe('local compose full stack e2e', () => {
       ).toBe(true);
       await expect(rosterRegion.getByText('Проверка пройдена', { exact: true })).toBeVisible();
       await expect(
-        rosterRegion.getByRole('button', { name: 'Заблокировать состав' }),
+        rosterRegion.getByRole('button', { name: 'Зафиксировать состав' }),
       ).toBeEnabled();
 
       const browserLockResponse = page.waitForResponse(
@@ -1951,7 +1951,7 @@ test.describe('local compose full stack e2e', () => {
             `/api/v1/admin/tournaments/${tournament.id}/roster/lock` &&
           response.request().method() === 'POST',
       );
-      await rosterRegion.getByRole('button', { name: 'Заблокировать состав' }).click();
+      await rosterRegion.getByRole('button', { name: 'Зафиксировать состав' }).click();
       const browserLockedRoster = await readRosterResponse(
         await browserLockResponse,
         tournament.id,

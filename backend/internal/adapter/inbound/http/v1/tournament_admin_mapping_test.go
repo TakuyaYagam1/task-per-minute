@@ -244,6 +244,23 @@ func TestWriteTournamentAdminErrorMapsValidatedRevisionConflict(t *testing.T) {
 	require.Equal(t, "/api/v1/tournaments/example/actions", *payload.Instance)
 }
 
+func TestWriteTournamentAdminErrorUsesRevisionConflictDetail(t *testing.T) {
+	t.Parallel()
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/tournaments/example/actions", nil)
+	writeTournamentAdminError(recorder, request, &inbound.AdminRevisionConflictError{
+		ExpectedRevision: 1, CurrentRevision: 1, CurrentState: domain.TournamentStateRosterLocked,
+		Detail: "another tournament is already active",
+	})
+
+	require.Equal(t, http.StatusConflict, recorder.Code)
+	var payload api.ProjectionRevisionProblem
+	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &payload))
+	require.NotNil(t, payload.Detail)
+	require.Equal(t, "another tournament is already active", *payload.Detail)
+}
+
 func TestWriteTournamentAdminErrorRejectsMalformedRevisionConflict(t *testing.T) {
 	t.Parallel()
 
