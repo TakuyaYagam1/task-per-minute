@@ -12,6 +12,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/http/v1/response"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	usecase "github.com/TakuyaYagam1/task-per-minute/internal/port/inbound"
+	readinessusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/readiness"
 )
 
 func (s *Server) GetParticipantLobby(
@@ -377,6 +378,11 @@ func participantIdentityFromRequest(
 }
 
 func writeParticipantError(w http.ResponseWriter, r *http.Request, err error) {
+	if errors.Is(err, readinessusecase.ErrReadinessAuthorityConflict) ||
+		errors.Is(err, readinessusecase.ErrReadinessConflict) {
+		errmap.HandleError(w, r, domain.ErrConflict)
+		return
+	}
 	var conflict *usecase.RevisionConflictError
 	if errors.As(err, &conflict) {
 		if conflict.ExpectedRevision < 1 || conflict.CurrentRevision < 1 {

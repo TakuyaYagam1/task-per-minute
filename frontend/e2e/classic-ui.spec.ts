@@ -129,7 +129,7 @@ const waitForRoleSurface = async (page: Page, role: Role): Promise<void> => {
 
   if (role === "operator") {
     await expect(page.getByRole("heading", { name: "Управление турниром" }).last()).toBeVisible();
-    await expect(page.getByText("Снимок подтвержден", { exact: true })).toBeVisible();
+    await expect(page.getByText("Данные обновлены", { exact: true })).toBeVisible();
     return;
   }
 

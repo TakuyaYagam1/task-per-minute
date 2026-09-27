@@ -2,7 +2,7 @@
   display: grid;
   gap: 1.25rem;
   overflow-wrap: anywhere;
-  width: min(100%, 62rem);
+  width: 100%;
   min-width: 0;
   border: 1px solid var(--border);
   border-radius: var(--radius);

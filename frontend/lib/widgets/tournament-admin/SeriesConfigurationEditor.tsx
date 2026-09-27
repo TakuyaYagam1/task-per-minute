@@ -98,10 +98,10 @@ const lockedReason = (
   isFinalSeries: boolean,
 ): string => {
   if (isFinalSeries) {
-    return "Финальная серия BO3 неизменяема: серверный план доступен только для просмотра.";
+    return "Финальная серия BO3 доступна только для просмотра.";
   }
   if (series.locked) {
-    return "Серия уже заблокирована сервером.";
+    return "Серия уже заблокирована.";
   }
   if (series.started) {
     return "Серия уже началась и больше не принимает изменения.";
@@ -119,10 +119,10 @@ const staleMessage =
   "Состояние конфигурации устарело. Перезагрузите данные перед повторной отправкой.";
 
 const cutoffMessage =
-  "Сервер отклонил изменение: серия уже заблокирована, начата, использована или раскрыта.";
+  "Изменение недоступно: серия уже заблокирована, начата, использована или раскрыта.";
 
 const reserveCutoffMessage =
-  "Серверный резерв больше нельзя менять: турнир уже начался или конфигурация перешла в работу.";
+  "Резерв больше нельзя менять: турнир уже начался или настройки уже используются.";
 
 const reserveCountFromValue = (value: string): ReserveCount | null => {
   if (value === "0") {
@@ -225,7 +225,7 @@ export const SeriesConfigurationEditor = ({
         const nextReserveCount = reserveCountFromNumber(nextConfiguration.reserve_count);
         if (nextReserveCount === null) {
           setLoadState("error");
-          setLoadError("Сервер вернул недопустимое количество резервов.");
+          setLoadError("Получено недопустимое количество резервов.");
           return null;
         }
         setConfiguration(nextConfiguration);
@@ -467,7 +467,7 @@ export const SeriesConfigurationEditor = ({
       if (reloaded && mountedRef.current) {
         dirtyReserveRef.current = false;
         onDirtyChange?.(dirtySeriesIdsRef.current.size > 0);
-        setReserveNotice("Резерв сохранен. Конфигурация обновлена с сервера.");
+        setReserveNotice("Резерв сохранен.");
       }
     } catch (error) {
       if (controller.signal.aborted || isAbortError(error)) {
@@ -608,7 +608,7 @@ export const SeriesConfigurationEditor = ({
           onDirtyChange?.(dirtySeriesIdsRef.current.size > 0 || dirtyReserveRef.current);
           setNotices((current) => ({
             ...current,
-            [series.id]: "Настройки серии сохранены. Конфигурация обновлена с сервера.",
+            [series.id]: "Настройки серии сохранены.",
           }));
         }
       } catch (error) {
@@ -696,13 +696,13 @@ export const SeriesConfigurationEditor = ({
 
       {selectedTournament && loadState === "loading" && (
         <Message tone="loading" title="Загружаем конфигурацию серий">
-          Получаем актуальные серии и официальные пулы категорий с сервера.
+          Загружаем серии и официальные пулы категорий.
         </Message>
       )}
 
       {selectedTournament && loadState === "error" && (
         <Message tone="error" title="Конфигурация серий недоступна">
-          {loadError || "Сервер не вернул конфигурацию серий."}
+          {loadError || "Не удалось получить конфигурацию серий."}
           <button
             className={styles.inlineAction}
             type="button"
@@ -755,8 +755,8 @@ export const SeriesConfigurationEditor = ({
               {reserveEditingClosed && !reserveError && (
                 <Message tone="warning" title="Изменение резерва закрыто">
                   {selectedTournament.started_at
-                    ? "Турнир уже начался. Количество резервов остается серверным и доступно только для просмотра."
-                    : "Сервер уже перевел конфигурацию в работу. Количество резервов доступно только для просмотра."}
+                    ? "Турнир уже начался. Количество резервов доступно только для просмотра."
+                    : "Настройки уже используются. Количество резервов доступно только для просмотра."}
                 </Message>
               )}
 
@@ -868,10 +868,10 @@ export const SeriesConfigurationEditor = ({
 
                     <div className={styles.plan}>
                       <span className={styles.planLabel}>
-                        Серверный план {isFinalSeries ? "финальной BO3 серии" : "серии"}
+                        План {isFinalSeries ? "финальной BO3 серии" : "серии"}
                       </span>
                       {pool ? (
-                        <ul className={styles.planList} aria-label={`Серверный план серии ${index + 1}`}>
+                        <ul className={styles.planList} aria-label={`План серии ${index + 1}`}>
                           {categoryPlan.map((category) => (
                             <li key={category}>{formatCategory(category)}</li>
                           ))}
@@ -894,7 +894,7 @@ export const SeriesConfigurationEditor = ({
 
                     {!isLocked && canUnlock && (
                       <Message tone="warning" title="Сохранение с разблокировкой">
-                        При сохранении сервер атомарно разблокирует серию и перестроит ее конфигурацию с переданными доказательствами.
+                        При сохранении серия откроется для изменений и будет настроена заново по указанным данным.
                       </Message>
                     )}
 
@@ -929,7 +929,7 @@ export const SeriesConfigurationEditor = ({
 
                         {draft.mode === "draft" ? (
                           <Message tone="info" title="Полный драфт">
-                            При сохранении сервер получит весь официальный пул {pool.format.toUpperCase()}.
+                            При сохранении будет использован весь официальный пул {pool.format.toUpperCase()}.
                           </Message>
                         ) : (
                           <div className={styles.field}>
@@ -1019,7 +1019,7 @@ export const SeriesConfigurationEditor = ({
               </>
             ) : (
               <Message tone="empty" title="Серии не найдены">
-                Сервер не вернул ни одной Series для выбранного турнира.
+                Для выбранного турнира нет серий.
                 <button
                   className={styles.inlineAction}
                   type="button"

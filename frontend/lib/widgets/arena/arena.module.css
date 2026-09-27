@@ -1,6 +1,6 @@
 .shell {
   min-height: 100vh;
-  padding: clamp(4.75rem, 9vw, 6.5rem) 1rem 2.5rem;
+  padding: 1.5rem 1rem 2.5rem;
   background: var(--bg);
   color: var(--text);
 }
@@ -11,86 +11,6 @@
   margin: 0 auto;
 }
 
-.topbar {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  border-bottom: 1px solid var(--border);
-  padding-bottom: 1rem;
-}
-
-.brandBlock {
-  display: grid;
-  min-width: 0;
-  gap: 0.18rem;
-}
-
-.brand {
-  display: inline-flex;
-  width: fit-content;
-  max-width: 100%;
-  align-items: center;
-  gap: 0.65rem;
-  color: var(--text);
-  font-size: clamp(1.15rem, 3vw, 1.45rem);
-  font-weight: 800;
-  letter-spacing: -0.02em;
-  text-decoration: none;
-}
-
-.brand:hover {
-  color: var(--accent-strong);
-}
-
-.brand:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 4px;
-}
-
-.brandLogo {
-  display: block;
-  width: 4rem;
-  height: 2.5rem;
-  flex: 0 0 auto;
-  border-radius: var(--radius-small);
-  object-fit: contain;
-}
-
-.utilityNav {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 0.45rem;
-}
-
-.utilityLink {
-  color: var(--text);
-  text-decoration: none;
-}
-
-.utilityLink {
-  border: 1px solid var(--border);
-  border-radius: var(--radius-small);
-  padding: 0.45rem 0.7rem;
-  background: var(--surface-muted);
-  color: var(--secondary);
-  font-size: 0.8rem;
-  transition:
-    border-color var(--motion),
-    background-color var(--motion),
-    color var(--motion);
-}
-
-.utilityLink:hover,
-.utilityLink:focus-visible {
-  border-color: var(--accent);
-  background: var(--accent-soft);
-  color: var(--text);
-}
-
-.utilityLink:focus-visible,
 .stateAction:focus-visible {
   outline: 2px solid var(--accent-strong);
   outline-offset: 3px;
@@ -238,18 +158,15 @@
     padding-left: 0.75rem;
   }
 
-  .topbar,
   .context {
     align-items: stretch;
     flex-direction: column;
   }
 
-  .utilityNav,
   .contextAside {
     justify-content: flex-start;
   }
 
-  .utilityLink,
   .stateAction {
     min-height: 44px;
     align-items: center;
@@ -266,11 +183,4 @@
   .overviewHeader {
     flex-direction: column;
   }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .utilityLink {
-    transition: none;
-  }
-
 }

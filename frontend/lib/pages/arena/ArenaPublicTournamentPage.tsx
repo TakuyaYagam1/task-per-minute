@@ -150,8 +150,8 @@ const PublicBroadcastContent = ({
   if (noPublicState) {
     if (context.recoveryError?.kind === "not_found") {
       return (
-        <Message tone="info" title="Публичное состояние еще не опубликовано">
-          <p>Сервер пока не опубликовал матчи и результаты для этого турнира.</p>
+        <Message tone="info" title="Матчи еще не опубликованы">
+          <p>Матчи и результаты появятся после старта турнира.</p>
           <Button type="button" size="small" variant="secondary" onClick={context.retry}>
             Проверить снова
           </Button>
@@ -164,7 +164,7 @@ const PublicBroadcastContent = ({
           tone={context.recoveryError.kind === "rate_limited" || context.recoveryError.kind === "transport"
             ? "warning"
             : "error"}
-          title="Не удалось загрузить публичное состояние"
+          title="Не удалось загрузить матчи"
         >
           <p>Матчи и таблица временно недоступны. Повторите попытку.</p>
           <Button type="button" size="small" variant="secondary" onClick={context.retry}>
@@ -173,7 +173,7 @@ const PublicBroadcastContent = ({
         </Message>
       );
     }
-    return <Status tone="loading">Загрузка публичного состояния</Status>;
+    return <Status tone="loading">Загрузка матчей</Status>;
   }
 
   return (
@@ -183,7 +183,7 @@ const PublicBroadcastContent = ({
           tone={context.recoveryError.kind === "rate_limited" || context.recoveryError.kind === "transport"
             ? "warning"
             : "error"}
-          title="Публичное состояние могло устареть"
+          title="Данные могли устареть"
         >
           <p>Показываем последние подтвержденные данные.</p>
           <Button type="button" size="small" variant="secondary" onClick={context.retry}>
@@ -382,7 +382,7 @@ export const ArenaPublicTournamentPage = ({
 
         {loadState.status === "loading" && loadState.item === null && (
           <Message tone="loading" title="Загрузка турнира">
-            <p>Получаем публичные сведения и состояние просмотра.</p>
+            <p>Открываем страницу турнира.</p>
           </Message>
         )}
 
@@ -409,7 +409,7 @@ export const ArenaPublicTournamentPage = ({
           <>
             <header className={styles.header}>
               <div className={styles.heading}>
-                <p className={styles.eyebrow}>Публичный просмотр</p>
+                <p className={styles.eyebrow}>Трансляция турнира</p>
                 <h1 className={styles.title}>{loadState.item.name}</h1>
               </div>
               <Status tone={loadState.item.group === "live" ? "live" : "info"}>

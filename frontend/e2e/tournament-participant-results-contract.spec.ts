@@ -115,7 +115,7 @@ test("participant sees authoritative BO1 and BO3 2:0 results without a phantom t
   const result = page.getByTestId("participant-series-result");
   await expect(result).toContainText("Серия BO1");
   await expect(page.getByTestId("participant-series-score")).toHaveText("1:0");
-  await expect(result).toContainText(ids.bo1Result);
+  await expect(result).toHaveAttribute("data-result-revision", ids.bo1Result);
   await expect(page.getByTestId("participant-series-game-1-1")).toContainText("Вы");
 
   const slots = baseSeries.slots;
@@ -147,7 +147,7 @@ test("participant sees authoritative BO1 and BO3 2:0 results without a phantom t
     winner_id: tournamentFixtureIds.firstParticipant,
   };
   current = recoveryWithSeries(fixtureSet.participant.recovery, bo3Series, 21);
-  await page.getByRole("button", { name: "Повторить синхронизацию" }).click();
+  await page.reload({ waitUntil: "domcontentloaded" });
 
   await expect(result).toContainText("Серия BO3");
   await expect(page.getByTestId("participant-series-score")).toHaveText("2:0");
@@ -211,7 +211,7 @@ test("participant sees BO3 2:1 game history and corrected current revision", asy
     state: "completed",
     winner_id: tournamentFixtureIds.secondParticipant,
   }, 31);
-  await page.getByRole("button", { name: "Повторить синхронизацию" }).click();
+  await page.reload({ waitUntil: "domcontentloaded" });
 
   await expect(page.getByTestId("participant-series-score")).toHaveText("1:2");
   await expect(result).toHaveAttribute("data-result-revision", ids.correctedResult);
@@ -250,7 +250,8 @@ test("participant keeps pre-game no-show and cancellation nullable", async ({ pa
 
   const result = page.getByTestId("participant-series-result");
   await expect(result).toContainText("Неявка");
-  await expect(page.getByTestId("participant-series-game-1-1")).toContainText("ПобедительНе опубликован");
+  await expect(page.getByTestId("participant-series-game-1-1")).toContainText("Победитель");
+  await expect(page.getByTestId("participant-series-game-1-1")).toContainText("Не опубликован");
   await expect(page.getByTestId("participant-assignment-state")).toHaveAttribute("data-assignment-state", "superseded");
 
   current = recoveryWithSeries(fixtureSet.participant.recovery, {
@@ -263,9 +264,10 @@ test("participant keeps pre-game no-show and cancellation nullable", async ({ pa
     state: "cancelled",
     winner_id: null,
   }, 41);
-  await page.getByRole("button", { name: "Повторить синхронизацию" }).click();
+  await page.reload({ waitUntil: "domcontentloaded" });
 
   await expect(page.getByTestId("participant-series-empty-history")).toBeVisible();
-  await expect(result).toContainText("Сыгранных игр нет");
-  await expect(result).toContainText("ПобедительНе опубликован");
+  await expect(result).toContainText("Сыгранных игр пока нет");
+  await expect(result).toContainText("Победитель");
+  await expect(result).toContainText("Не опубликован");
 });

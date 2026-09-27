@@ -152,7 +152,9 @@ const arenaPublicPath = `/api/v1/tournaments/${arenaTournamentId}`;
 const arenaPublicSnapshotPath = `${arenaPublicPath}/snapshot`;
 const arenaParticipantLobbyPath = `${arenaPublicPath}/participant/lobby`;
 const arenaParticipantSnapshotPath = `${arenaPublicPath}/participant/snapshot`;
+const arenaParticipantRealtimePath = `${arenaPublicPath}/participant/realtime`;
 const arenaOperatorSnapshotPath = `/api/v1/admin/tournaments/${arenaTournamentId}/snapshot`;
+const adminRefreshPath = "/api/v1/admin/refresh";
 
 const fulfillJSON = async (
   route: Route,
@@ -278,6 +280,16 @@ const installOperatorWebSocketStub = async (page: Page): Promise<void> => {
   });
 };
 
+const installParticipantWebSocketRejection = async (page: Page): Promise<void> => {
+  await page.routeWebSocket(arenaParticipantRealtimePath, (socket) => {
+    socket.send(JSON.stringify({
+      code: "tournament.forbidden",
+      message: "Participant access rejected",
+      type: "tournament.rejected",
+    }));
+  });
+};
+
 const participantRecoveryWithDeadline = (
   projectionRevision: number,
   serverTimestamp: string,
@@ -324,6 +336,10 @@ const participantRecoveryWithDeadline = (
         },
     wave: {
       ...recovery.wave,
+      members: recovery.wave.members.map((member) => ({
+        ...member,
+        ready: false,
+      })),
       paused_at: null,
       ready_window: {
         consumed_at: null,
@@ -1340,7 +1356,7 @@ test("a newer server timestamp accepts a changed deadline", async ({ page }) => 
 test("mounted live panel stays server-authoritative in both themes and mobile width", async ({ page }) => {
   await page.goto(fixtureURL, { waitUntil: "domcontentloaded" });
   await expect(page.getByRole("heading", { name: "Живой турнир" })).toBeVisible();
-  await expect(page.getByRole("status")).toHaveText("Сервер на связи");
+  await expect(page.getByRole("status")).toHaveText("На связи");
 
   await expect.poll(async () => {
     const text = await page.getByTestId("server-countdown").textContent();
@@ -1370,7 +1386,7 @@ test("mounted live panel stays server-authoritative in both themes and mobile wi
   await page.getByRole("button", { name: "Показать устаревшее состояние" }).click();
   await expect(page.getByRole("status")).toHaveText("Данные устарели");
   await expect(command).toBeDisabled();
-  await expect(page.getByText("Команды временно недоступны.")).toBeVisible();
+  await expect(page.getByText("Не удалось обновить данные. Повторите попытку.")).toBeVisible();
 
   await page.getByRole("button", { name: "Светлая" }).click();
   const lightBackground = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
@@ -1381,13 +1397,13 @@ test("mounted live panel stays server-authoritative in both themes and mobile wi
   expect(commandBox?.width).toBeGreaterThan(300);
 
   await page.getByRole("button", { name: "Завершить отсчет" }).click();
-  await expect(page.getByRole("status")).toHaveText("Ждем сервер");
+  await expect(page.getByRole("status")).toHaveText("Ожидаем подтверждения");
   await expect(command).toBeDisabled();
-  await expect(page.getByText("Локальное время не объявляет результат.")).toBeVisible();
+  await expect(page.getByText("Время истекло. Ожидаем результат.")).toBeVisible();
   await expect(page.getByText(/побед|техническое поражение/i)).toHaveCount(0);
 });
 
-test("FE-013 participant route anchors its countdown to snapshot HTTP Date and deadline", async ({ page }) => {
+test("FE-013 participant route renders the readiness deadline from the snapshot", async ({ page }) => {
   const fixtureSet = createTournamentFixtureSet();
   const serverTimestamp = "2026-09-13T10:00:00Z";
   const deadline = "2026-09-13T10:01:00Z";
@@ -1407,14 +1423,12 @@ test("FE-013 participant route anchors its countdown to snapshot HTTP Date and d
 
   await page.goto(`/arena/participant/${arenaTournamentId}`, { waitUntil: "domcontentloaded" });
 
-  const countdown = page.getByTestId("server-countdown");
-  await expect(countdown).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Состояние турнира" })).toBeVisible();
-
-  const [minutes, seconds] = (await countdown.textContent() ?? "0:00").split(":").map(Number);
-  const remainingSeconds = (minutes * 60) + seconds;
-  expect(remainingSeconds).toBeGreaterThan(0);
-  expect(remainingSeconds).toBeLessThanOrEqual(60);
+  const playerPanel = page.getByTestId("participant-player-panel");
+  await expect(playerPanel).toBeVisible();
+  const deadlineLabel = playerPanel.locator('[data-ready-window-state="open"]');
+  await expect(deadlineLabel).toBeVisible();
+  await expect(deadlineLabel).toContainText("До");
+  await expect(playerPanel.getByTestId("participant-ready-button")).toBeEnabled();
   expect(new URL(snapshotURL).search).toBe("");
 });
 
@@ -1427,6 +1441,7 @@ test("FE-013 participant route retries with no cursor after a cursor conflict", 
 
   await page.clock.install({ time: serverTimestamp });
   await installArenaAccessRoutes(page, fixtureSet);
+  await installParticipantWebSocketRejection(page);
   await page.route(`**${arenaParticipantSnapshotPath}*`, async (route) => {
     expect(route.request().method()).toBe("GET");
     const requestURL = new URL(route.request().url());
@@ -1448,12 +1463,16 @@ test("FE-013 participant route retries with no cursor after a cursor conflict", 
   await page.goto(`/arena/participant/${arenaTournamentId}`, {
     waitUntil: "domcontentloaded",
   });
-  await expect(page.getByTestId("server-countdown")).toBeVisible();
+  await expect(page.getByTestId("participant-player-panel")).toBeVisible();
+  await expect(page.getByTestId("participant-recovery-fallback")).toBeVisible();
   snapshotRequests.length = 0;
-  await page.getByRole("button", { name: "Повторить синхронизацию" }).click();
+  await page.getByRole("button", { name: "Повторить", exact: true }).click();
 
   await expect.poll(() => snapshotRequests.length).toBe(2);
-  await expect(page.getByText(/Ревизия сервера: 10/)).toBeVisible();
+  await expect(page.getByTestId("participant-player-panel")).toHaveAttribute(
+    "data-projection-revision",
+    "10",
+  );
   expect(cursorRejected).toBe(true);
   expect(snapshotRequests[0]?.searchParams.get("cursor[projection_revision]")).toBe("9");
   expect(snapshotRequests[0]?.searchParams.get("cursor[participant_view_revision]")).toBe("5");
@@ -1470,6 +1489,7 @@ test("FE-013 participant route retries once without a cursor after an unknown sc
 
   await page.clock.install({ time: serverTimestamp });
   await installArenaAccessRoutes(page, fixtureSet);
+  await installParticipantWebSocketRejection(page);
   await page.route(`**${arenaParticipantSnapshotPath}*`, async (route) => {
     expect(route.request().method()).toBe("GET");
     const requestURL = new URL(route.request().url());
@@ -1495,13 +1515,17 @@ test("FE-013 participant route retries once without a cursor after an unknown sc
   await page.goto(`/arena/participant/${arenaTournamentId}`, {
     waitUntil: "domcontentloaded",
   });
-  await expect(page.getByTestId("server-countdown")).toBeVisible();
+  await expect(page.getByTestId("participant-player-panel")).toBeVisible();
+  await expect(page.getByTestId("participant-recovery-fallback")).toBeVisible();
   snapshotRequests.length = 0;
 
-  await page.getByRole("button", { name: "Повторить синхронизацию" }).click();
+  await page.getByRole("button", { name: "Повторить", exact: true }).click();
 
   await expect.poll(() => snapshotRequests.length).toBe(2);
-  await expect(page.getByText(/Ревизия сервера: 10/)).toBeVisible();
+  await expect(page.getByTestId("participant-player-panel")).toHaveAttribute(
+    "data-projection-revision",
+    "10",
+  );
   expect(snapshotRequests[0]?.searchParams.get("cursor[projection_revision]")).toBe("9");
   expect(snapshotRequests[1]?.search).toBe("");
 });
@@ -1515,6 +1539,7 @@ test("FE-013 unknown schema retry stops after one fresh response and keeps stale
 
   await page.clock.install({ time: serverTimestamp });
   await installArenaAccessRoutes(page, fixtureSet);
+  await installParticipantWebSocketRejection(page);
   await page.route(`**${arenaParticipantSnapshotPath}*`, async (route) => {
     expect(route.request().method()).toBe("GET");
     const requestURL = new URL(route.request().url());
@@ -1540,14 +1565,18 @@ test("FE-013 unknown schema retry stops after one fresh response and keeps stale
   await page.goto(`/arena/participant/${arenaTournamentId}`, {
     waitUntil: "domcontentloaded",
   });
-  await expect(page.getByTestId("server-countdown")).toBeVisible();
+  await expect(page.getByTestId("participant-player-panel")).toBeVisible();
+  await expect(page.getByTestId("participant-recovery-fallback")).toBeVisible();
   snapshotRequests.length = 0;
 
-  await page.getByRole("button", { name: "Повторить синхронизацию" }).click();
+  await page.getByRole("button", { name: "Повторить", exact: true }).click();
 
   await expect.poll(() => snapshotRequests.length).toBe(2);
-  await expect(page.getByText("Данные устарели", { exact: true })).toBeVisible();
-  await expect(page.getByText(/Ревизия сервера: 9/)).toBeVisible();
+  await expect(page.getByTestId("participant-recovery-fallback")).toBeVisible();
+  await expect(page.getByTestId("participant-player-panel")).toHaveAttribute(
+    "data-projection-revision",
+    "9",
+  );
   expect(snapshotRequests[1]?.search).toBe("");
 });
 
@@ -1559,6 +1588,7 @@ test("FE-013 mounted participant recovery exposes stale status while its deadlin
 
   await page.clock.install({ time: serverTimestamp });
   await installArenaAccessRoutes(page, fixtureSet);
+  await installParticipantWebSocketRejection(page);
   await page.route(`**${arenaParticipantSnapshotPath}*`, async (route) => {
     expect(route.request().method()).toBe("GET");
     const requestURL = new URL(route.request().url());
@@ -1575,14 +1605,21 @@ test("FE-013 mounted participant recovery exposes stale status while its deadlin
   await page.goto(`/arena/participant/${arenaTournamentId}`, {
     waitUntil: "domcontentloaded",
   });
-  await expect(page.getByTestId("server-countdown")).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Состояние турнира" })).toBeVisible();
+  await expect(page.getByTestId("participant-player-panel")).toBeVisible();
+  await expect(page.getByTestId("participant-recovery-fallback")).toBeVisible();
 
-  await page.getByRole("button", { name: "Повторить синхронизацию" }).click();
+  await page.getByRole("button", { name: "Повторить", exact: true }).click();
 
-  await expect(page.getByText("Данные устарели", { exact: true })).toBeVisible();
-  await expect(page.getByText("Команды временно недоступны.")).toBeVisible();
-  await expect(page.getByTestId("server-countdown")).not.toHaveText("0:00");
+  await expect(page.getByTestId("participant-recovery-fallback")).toBeVisible();
+  await expect(page.getByTestId("participant-player-panel")).toHaveAttribute(
+    "data-state",
+    "assigned",
+  );
+  await expect(page.getByTestId("participant-player-panel")).toHaveAttribute(
+    "data-projection-revision",
+    "9",
+  );
+  await expect(page.getByTestId("server-countdown")).toHaveCount(0);
 });
 
 test("FE-013 spectator route mounts public recovery and keeps only the public cursor", async ({ page }) => {
@@ -1606,9 +1643,12 @@ test("FE-013 spectator route mounts public recovery and keeps only the public cu
 
   await page.goto(`/arena/spectator/${arenaTournamentId}`, { waitUntil: "domcontentloaded" });
 
-  const livePanel = page.getByRole("region", { name: "Состояние турнира" });
-  await expect(livePanel.getByText("Публичный просмотр", { exact: true })).toBeVisible();
-  await expect(livePanel.getByText(/Ревизия сервера: 9/)).toBeVisible();
+  const livePanel = page.getByRole("region", { name: "Трансляция турнира" });
+  await expect(livePanel.getByText("Трансляция", { exact: true })).toBeVisible();
+  await expect(page.getByTestId("public-realtime-summary")).toHaveAttribute(
+    "data-projection-revision",
+    "9",
+  );
   await expect.poll(() => snapshotRequests.length).toBeGreaterThan(0);
   const initialRequestCount = snapshotRequests.length;
   expect(snapshotRequests.every((requestURL) => requestURL.search === "")).toBe(true);
@@ -1626,7 +1666,7 @@ test("FE-013 spectator route mounts public recovery and keeps only the public cu
   expect(headingBox.x).toBeGreaterThanOrEqual(0);
   expect(headingBox.x + headingBox.width).toBeLessThanOrEqual(390);
 
-  await page.getByRole("button", { name: "Повторить синхронизацию" }).click();
+  await page.getByRole("button", { name: "Обновить трансляцию" }).click();
   await expect.poll(() => snapshotRequests.length).toBe(initialRequestCount + 1);
   const retryURL = snapshotRequests.at(-1);
   expect(retryURL?.searchParams.get("cursor[projection_revision]")).toBe("9");
@@ -1634,7 +1674,89 @@ test("FE-013 spectator route mounts public recovery and keeps only the public cu
   expect(retryURL?.searchParams.get("cursor[participant_view_revision]")).toBeNull();
   expect(retryURL?.searchParams.get("cursor[authority_revision]")).toBeNull();
   expect(retryURL?.searchParams.get("cursor[audit_sequence]")).toBeNull();
-  await expect(livePanel.getByText(/Ревизия сервера: 10/)).toBeVisible();
+  await expect(page.getByTestId("public-realtime-summary")).toHaveAttribute(
+    "data-projection-revision",
+    "10",
+  );
+});
+
+test("FE-013 public equal-cursor recovery refreshes the full match list without reload", async ({ page }) => {
+  const fixtureSet = createTournamentFixtureSet();
+  const serverTimestamp = "2026-09-15T10:00:00Z";
+  const snapshotRequests: URL[] = [];
+  const initialSnapshot = publicRecovery(9, 14);
+  initialSnapshot.bracket.matches = [];
+  initialSnapshot.live_series = [];
+  initialSnapshot.swiss_rounds = [];
+  const refreshedSnapshot = publicRecovery(9, 14);
+  refreshedSnapshot.bracket.matches = [];
+  refreshedSnapshot.live_series = [
+    {
+      ...refreshedSnapshot.live_series[0]!,
+      first_display_name: "Чарли",
+      second_display_name: "Дана",
+      series_id: tournamentFixtureIds.bo1Series,
+      format: "bo1",
+      state: "active",
+      score: { first_wins: 0, second_wins: 0 },
+    },
+    {
+      ...refreshedSnapshot.live_series[0]!,
+      first_display_name: "Ева",
+      second_display_name: "Федор",
+      series_id: tournamentFixtureIds.bo3Series,
+    },
+  ];
+  refreshedSnapshot.swiss_rounds = [{ round_number: 1, state: "active", bye: null }];
+
+  await page.clock.install({ time: serverTimestamp });
+  await installOperatorWebSocketStub(page);
+  await installArenaAccessRoutes(page, fixtureSet);
+  await page.route(`**${arenaPublicSnapshotPath}*`, async (route) => {
+    expect(route.request().method()).toBe("GET");
+    const requestURL = new URL(route.request().url());
+    snapshotRequests.push(requestURL);
+    await fulfillJSON(
+      route,
+      requestURL.search === "" ? initialSnapshot : refreshedSnapshot,
+      { date: new Date(serverTimestamp).toUTCString() },
+    );
+  });
+
+  await page.goto(`/arena/spectator/${arenaTournamentId}`, { waitUntil: "domcontentloaded" });
+  const broadcast = page.getByTestId("tournament-broadcast");
+  const initialRealtime = publicRealtimeMessage(14, 9, firstEventId, arenaTournamentId);
+  initialRealtime.payload.envelope.public.bracket = [];
+  initialRealtime.payload.envelope.public.live_series = [];
+  initialRealtime.payload.envelope.public.swiss_rounds = [];
+  await expect.poll(async () => {
+    const sockets = await page.evaluate(() => {
+      const control = (window as unknown as {
+        __operatorWebSocketControl?: { get: () => Array<{ url: string; sent: string[] }> };
+      }).__operatorWebSocketControl;
+      return control?.get() ?? [];
+    });
+    return sockets.length;
+  }).toBe(1);
+  await page.evaluate((message) => {
+    const control = (window as unknown as {
+      __operatorWebSocketControl: { emit: (index: number, value: unknown) => void };
+    }).__operatorWebSocketControl;
+    control.emit(0, message);
+  }, initialRealtime);
+  await expect(page.getByTestId("public-realtime-summary")).toHaveAttribute("data-connection", "connected");
+  await expect(broadcast.getByText("Матчи пока не опубликованы.", { exact: true })).toBeVisible();
+  let navigations = 0;
+  page.on("framenavigated", () => { navigations += 1; });
+
+  const livePanel = page.getByRole("region", { name: "Трансляция турнира" });
+  await livePanel.getByRole("button", { name: "Обновить трансляцию" }).click();
+
+  await expect.poll(() => snapshotRequests.length).toBe(2);
+  await expect(broadcast.getByRole("button", { name: /Чарли.*Дана/ })).toBeVisible();
+  expect(snapshotRequests.at(-1)?.searchParams.get("cursor[projection_revision]")).toBe("9");
+  expect(snapshotRequests.at(-1)?.searchParams.get("cursor[event_sequence]")).toBe("14");
+  expect(navigations).toBe(0);
 });
 
 test("FE-038 public match center keeps the selected server match in a direct link", async ({ page }) => {
@@ -1682,7 +1804,7 @@ test("FE-038 public match center keeps the selected server match in a direct lin
   await broadcast.getByRole("tab", { name: "Плей-офф" }).click();
   await expect(broadcast.getByRole("tabpanel")).toContainText("Полуфинал");
   await expect(broadcast.getByTestId("server-countdown")).toHaveCount(0);
-  await expect(broadcast.getByText("До серверного дедлайна")).toHaveCount(0);
+  await expect(broadcast.getByText(/серверного дедлайна/i)).toHaveCount(0);
 
   await page.getByRole("button", { name: "Темная тема" }).click();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
@@ -1869,7 +1991,7 @@ test("FE-039 public scoreboard applies cutoff, Golden, bye, and correction from 
   await expect(byeEntry.getByRole("cell").nth(4)).toHaveText("1");
 
   currentSnapshot = resolvedSnapshot;
-  await page.getByRole("button", { name: "Повторить синхронизацию" }).click();
+  await page.getByRole("button", { name: "Обновить трансляцию" }).click();
 
   const qualifiedAfterGolden = table.getByRole("row").filter({ hasText: "Участник 05" });
   const eliminatedAfterGolden = table.getByRole("row").filter({ hasText: "Участник 04" });
@@ -1885,8 +2007,9 @@ test("FE-039 public scoreboard applies cutoff, Golden, bye, and correction from 
   await expect(correctedEntry.getByRole("cell").nth(2)).toHaveText("2");
   await expect(correctedEntry.getByRole("cell").nth(3)).toHaveText("1");
   await expect(byeEntry.getByRole("cell").nth(4)).toHaveText("1");
-  await expect(page.getByRole("region", { name: "Состояние турнира" })).toContainText(
-    "Ревизия сервера: 10",
+  await expect(page.getByTestId("public-realtime-summary")).toHaveAttribute(
+    "data-projection-revision",
+    "10",
   );
 });
 
@@ -2089,12 +2212,12 @@ test("FE-040 public Swiss history and Single Elimination follow server snapshots
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 
   currentSnapshot = finalTwoZero;
-  await page.getByRole("button", { name: "Повторить синхронизацию" }).click();
+  await page.getByRole("button", { name: "Обновить трансляцию" }).click();
   await expect(broadcast.getByTestId("playoff-final")).toContainText("2:0");
   await expect(broadcast.getByTestId("playoff-final")).toContainText("Чемпион: Алиса");
 
   currentSnapshot = finalTwoOne;
-  await page.getByRole("button", { name: "Повторить синхронизацию" }).click();
+  await page.getByRole("button", { name: "Обновить трансляцию" }).click();
   await expect(broadcast.getByTestId("playoff-final")).toContainText("2:1");
   await expect(broadcast.getByTestId("playoff-final")).toContainText("Чемпион: Алиса");
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
@@ -2591,8 +2714,11 @@ test("FE-013 operator route mounts operator recovery and keeps only the operator
 
   const livePanel = page.getByRole("region", { name: "Состояние турнира" });
   await expect(livePanel.getByText("Оператор", { exact: true })).toBeVisible();
-  await expect(livePanel.getByText(/Ревизия сервера: 9/)).toBeVisible();
   await expect.poll(() => snapshotRequests.length).toBeGreaterThan(0);
+  await expect(page.getByTestId("operator-realtime-summary")).toHaveAttribute(
+    "data-projection-revision",
+    "9",
+  );
   const initialRequestCount = snapshotRequests.length;
   expect(snapshotRequests.every((requestURL) => requestURL.search === "")).toBe(true);
 
@@ -2609,7 +2735,7 @@ test("FE-013 operator route mounts operator recovery and keeps only the operator
   expect(headingBox.x).toBeGreaterThanOrEqual(0);
   expect(headingBox.x + headingBox.width).toBeLessThanOrEqual(390);
 
-  await page.getByRole("button", { name: "Повторить синхронизацию" }).click();
+  await page.getByRole("button", { name: "Повторить", exact: true }).click();
   await expect.poll(() => snapshotRequests.length).toBe(initialRequestCount + 1);
   const retryURL = snapshotRequests.at(-1);
   expect(retryURL?.searchParams.get("cursor[projection_revision]")).toBe("9");
@@ -2617,7 +2743,10 @@ test("FE-013 operator route mounts operator recovery and keeps only the operator
   expect(retryURL?.searchParams.get("cursor[audit_sequence]")).toBe("14");
   expect(retryURL?.searchParams.get("cursor[event_sequence]")).toBeNull();
   expect(retryURL?.searchParams.get("cursor[participant_view_revision]")).toBeNull();
-  await expect(livePanel.getByText(/Ревизия сервера: 10/)).toBeVisible();
+  await expect(page.getByTestId("operator-realtime-summary")).toHaveAttribute(
+    "data-projection-revision",
+    "10",
+  );
 });
 
 test("FE-049 operator and spectator refresh preserve a double disconnect operator pause", async ({ page }) => {
@@ -2702,16 +2831,26 @@ test("FE-011 operator route uses snapshot-first admin realtime and fences old so
   const fixtureSet = createTournamentFixtureSet();
   const serverTimestamp = "2026-09-15T10:00:00Z";
   const mutationRequests: string[] = [];
+  const authRefreshRequests: string[] = [];
 
   page.on("request", (request) => {
     const requestURL = new URL(request.url());
     if (requestURL.pathname.startsWith("/api/") && request.method() !== "GET") {
-      mutationRequests.push(`${request.method()} ${requestURL.pathname}`);
+      const requestDescription = `${request.method()} ${requestURL.pathname}`;
+      if (requestURL.pathname === adminRefreshPath) {
+        authRefreshRequests.push(requestDescription);
+      } else {
+        mutationRequests.push(requestDescription);
+      }
     }
   });
 
   await installOperatorWebSocketStub(page);
   await installArenaAccessRoutes(page, fixtureSet);
+  await page.route(`**${adminRefreshPath}`, async (route) => {
+    expect(route.request().method()).toBe("POST");
+    await route.fulfill({ status: 204, body: "" });
+  });
   await page.route(`**${arenaOperatorSnapshotPath}*`, async (route) => {
     expect(route.request().method()).toBe("GET");
     await fulfillJSON(
@@ -2756,7 +2895,6 @@ test("FE-011 operator route uses snapshot-first admin realtime and fences old so
   await expect(state).toHaveAttribute("data-projection-revision", "10");
   await expect(state).toContainText("Соединение");
   await expect(state).toContainText("На связи");
-  await expect(page.getByText(/Ревизия сервера: 10/)).toBeVisible();
 
   await page.evaluate(() => {
     const control = (window as unknown as {
@@ -2822,10 +2960,11 @@ test("FE-011 operator route uses snapshot-first admin realtime and fences old so
     message: "Операторская сессия отклонена",
   });
   await expect(state).toHaveAttribute("data-connection", "rejected");
+  expect(authRefreshRequests).toEqual([`POST ${adminRefreshPath}`]);
   expect(mutationRequests).toEqual([]);
 });
 
-test("FE-013 route awaits the server at zero without local result, including light mobile view", async ({ page }) => {
+test("FE-013 participant route never derives an official result from local time", async ({ page }) => {
   const fixtureSet = createTournamentFixtureSet();
   const serverTimestamp = "2026-09-15T10:00:00Z";
   const deadline = "2026-09-15T10:00:02Z";
@@ -2850,27 +2989,25 @@ test("FE-013 route awaits the server at zero without local result, including lig
   });
 
   await page.goto(`/arena/participant/${arenaTournamentId}`, { waitUntil: "domcontentloaded" });
-  await expect(page.getByTestId("server-countdown")).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Состояние турнира" })).toBeVisible();
+  const playerPanel = page.getByTestId("participant-player-panel");
+  await expect(playerPanel).toBeVisible();
+  await expect(playerPanel).toHaveAttribute("data-state", "assigned");
 
   await page.clock.fastForward(3_000);
-  await expect(page.getByText("Ждем сервер", { exact: true })).toBeVisible();
-  await expect(
-    page.getByText("Локальное время не объявляет результат. Ждем подтверждение сервера."),
-  ).toBeVisible();
-  await expect(page.getByText("Официальный итог опубликован сервером.")).toHaveCount(0);
+  await expect(playerPanel).toHaveAttribute("data-state", "assigned");
+  await expect(playerPanel.getByTestId("participant-ready-button")).toBeEnabled();
+  await expect(playerPanel.getByTestId("participant-runtime-status")).toHaveCount(0);
   await expect(page.getByLabel("Официальный итог")).toHaveCount(0);
   expect(mutationRequests).toEqual([]);
 
   await page.getByRole("button", { name: "Светлая тема" }).click();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
   await page.setViewportSize({ width: 390, height: 844 });
-  await expect(page.getByTestId("server-countdown")).toBeVisible();
-  const countdownBox = await page.getByTestId("server-countdown").boundingBox();
-  expect(countdownBox).not.toBeNull();
-  if (countdownBox === null) {
-    throw new Error("Server countdown is missing from the mobile Arena route");
+  const panelBox = await playerPanel.boundingBox();
+  expect(panelBox).not.toBeNull();
+  if (panelBox === null) {
+    throw new Error("Participant player panel is missing from the mobile Arena route");
   }
-  expect(countdownBox.x).toBeGreaterThanOrEqual(0);
-  expect(countdownBox.x + countdownBox.width).toBeLessThanOrEqual(390);
+  expect(panelBox.x).toBeGreaterThanOrEqual(0);
+  expect(panelBox.x + panelBox.width).toBeLessThanOrEqual(390);
 });

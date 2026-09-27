@@ -463,20 +463,9 @@ test("participant submission controls preserve keyboard access, themes, scaling,
   await page.emulateMedia({ reducedMotion: "reduce" });
   await openParticipantPlay(page, fixtureSet, () => current);
 
-  const countdown = page.getByTestId("server-countdown");
-  await expect(countdown).toHaveCount(1);
-  const countdownSemantics = await countdown.evaluate((element) => ({
-    ancestorLive: element.closest("[aria-live]")?.getAttribute("aria-live") ?? null,
-    ancestorRole: element.closest('[role="status"], [role="alert"]')?.getAttribute("role") ?? null,
-    ariaLive: element.getAttribute("aria-live"),
-    role: element.getAttribute("role"),
-  }));
-  expect(countdownSemantics).toEqual({
-    ancestorLive: null,
-    ancestorRole: null,
-    ariaLive: null,
-    role: null,
-  });
+  await expect(page.getByTestId("participant-player-panel")).toBeVisible();
+  await expect(page.getByTestId("server-countdown")).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Состояние турнира" })).toHaveCount(0);
 
   const keyActions = [answerInput(page), submitButton(page)];
   for (const [label, theme] of [["Темная тема", "dark"], ["Светлая тема", "light"]] as const) {

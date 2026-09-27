@@ -1,5 +1,6 @@
 import "./globals.css";
-import { ThemeToggle } from "@/shared/ui";
+import { SiteHeaderAuthProvider } from "@/features/site-header";
+import { SiteHeader } from "@/widgets/site-header";
 
 const themeStorageKey = "task-per-minute-theme";
 const themeBootstrapScript = `
@@ -35,8 +36,10 @@ export default function RootLayout({
         <script dangerouslySetInnerHTML={{ __html: themeBootstrapScript }} />
       </head>
       <body>
-        <ThemeToggle storageKey={themeStorageKey} />
-        {children}
+        <SiteHeaderAuthProvider>
+          <SiteHeader />
+          {children}
+        </SiteHeaderAuthProvider>
       </body>
     </html>
   );

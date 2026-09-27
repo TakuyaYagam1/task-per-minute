@@ -15,6 +15,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	inbound "github.com/TakuyaYagam1/task-per-minute/internal/port/inbound"
 	inboundmocks "github.com/TakuyaYagam1/task-per-minute/internal/port/inbound/mocks"
+	readinessusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/readiness"
 )
 
 func TestSubmitParticipantDraftActionCurrentErrorMapping(t *testing.T) {
@@ -109,4 +110,41 @@ func TestSubmitParticipantDraftActionCurrentErrorMapping(t *testing.T) {
 			require.Equal(t, *test.wantBody.CurrentState, *body.CurrentState)
 		})
 	}
+}
+
+func TestSetParticipantReadyMapsReadinessConflictToHTTP409(t *testing.T) {
+	t.Parallel()
+
+	tournamentID := uuid.New()
+	waveID := uuid.New()
+	playerID := uuid.New()
+	commandID := uuid.New()
+	participant := inboundmocks.NewMockTournamentParticipantUseCase(t)
+	participant.EXPECT().
+		SetReady(mock.Anything, mock.Anything).
+		Return(inbound.ReadinessEvent{}, readinessusecase.ErrReadinessAuthorityConflict).
+		Once()
+	server := New(Dependencies{TournamentParticipant: participant})
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/tournaments/"+tournamentID.String()+"/participant/waves/"+waveID.String()+"/ready",
+		strings.NewReader(`{"expected_projection_revision":6,"ready":true}`),
+	)
+	request.Header.Set("Content-Type", "application/json")
+
+	serveWithPlayer(t, playerID, recorder, request, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		server.SetParticipantReady(
+			w,
+			r,
+			tournamentID,
+			waveID,
+			api.SetParticipantReadyParams{IdempotencyKey: commandID},
+		)
+	}))
+
+	require.Equal(t, http.StatusConflict, recorder.Code)
+	var body api.ProblemDetails
+	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &body))
+	require.Equal(t, int32(http.StatusConflict), body.Status)
 }

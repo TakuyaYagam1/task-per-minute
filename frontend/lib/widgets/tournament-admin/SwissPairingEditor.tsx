@@ -23,6 +23,7 @@ type SwissPairingEditorProps = Readonly<{
   selectedTournament: Tournament | null;
   selectedTournamentId: string;
   onSelectTournament: (id: string) => void;
+  onNavigateToConduct?: () => void;
   onReloadTournaments: () => Promise<void>;
   onSessionExpired?: () => void;
   onDirtyChange?: (dirty: boolean) => void;
@@ -249,6 +250,7 @@ const pairingLifecycleMessage = (
 };
 
 export const SwissPairingEditor = ({
+  onNavigateToConduct,
   onReloadTournaments,
   onSelectTournament,
   onSessionExpired,
@@ -510,7 +512,7 @@ export const SwissPairingEditor = ({
       }
       if (freshSnapshot.tournament.id !== selectedTournament.id) {
         setFormError(
-          "Сервер вернул состояние другого турнира. Обновите данные и повторите попытку.",
+          "Данные относятся к другому турниру. Обновите данные и повторите попытку.",
         );
         void onReloadTournaments();
         return;
@@ -551,7 +553,7 @@ export const SwissPairingEditor = ({
         return;
       }
       setSavedRound(configuredRound);
-      setNotice(`Раунд ${configuredRound.round_number} сформирован сервером.`);
+      setNotice(`Раунд ${configuredRound.round_number} сформирован. Следующий шаг - в разделе "Проведение" открыть готовность и дождаться участников.`);
       onDirtyChange?.(false);
       await onReloadTournaments();
     } catch (error) {
@@ -567,8 +569,8 @@ export const SwissPairingEditor = ({
         );
       } else if (error instanceof ApiError && error.status === 422) {
         const repeatMessage = isRepeatProblem(error)
-          ? "Повторные пары запрещены сервером. Выберите участников, которые еще не встречались."
-          : "Сервер отклонил ручную сетку. Проверьте пары, bye и состав участников.";
+          ? "Повторные пары запрещены. Выберите участников, которые еще не встречались."
+          : "Не удалось принять ручную сетку. Проверьте пары, bye и состав участников.";
         setFormError(`${repeatMessage} ${problemMessage(error, "")}`.trim());
       } else {
         setFormError(problemMessage(error, "Не удалось сформировать Swiss раунд"));
@@ -591,7 +593,7 @@ export const SwissPairingEditor = ({
   return (
     <Panel
       title="Пары Swiss"
-      description="Сформируйте следующий раунд на основе актуального серверного состояния турнира."
+      description="Сформируйте следующий раунд на основе актуальных данных турнира."
       className={styles.panel}
     >
       {showTournamentChooser ? <div className={styles.chooser}>
@@ -626,7 +628,7 @@ export const SwissPairingEditor = ({
 
       {selectedTournament && loadState === "error" && (
         <Message tone="error" title="Данные Swiss недоступны">
-          {loadError || "Сервер не вернул данные для формирования пар."}
+          {loadError || "Не удалось получить данные для формирования пар."}
           <button className={styles.inlineAction} type="button" onClick={handleReload}>
             Повторить загрузку
           </button>
@@ -640,7 +642,7 @@ export const SwissPairingEditor = ({
               <div>
                 <h3 className={styles.title}>{selectedTournament.name}</h3>
                 <p className={styles.subtitle}>
-                  Следующий раунд определяется конфигурацией сервера и не редактируется локально.
+                  Следующий раунд определяется правилами турнира и не редактируется здесь.
                 </p>
               </div>
               <Status tone={editingLocked || !pairingStateAllowed ? "disabled" : "info"}>
@@ -663,7 +665,7 @@ export const SwissPairingEditor = ({
 
           {editingLocked && (
             <Message tone="warning" title="Раунд доступен только для просмотра">
-              Конфигурация или серверный раунд уже заблокированы, начаты или использованы.
+              Раунд уже заблокирован, начат или использован.
             </Message>
           )}
 
@@ -700,7 +702,7 @@ export const SwissPairingEditor = ({
                 />
                 <span>
                   <strong>Автоматически</strong>
-                  <small>Пары и bye полностью выбирает сервер.</small>
+                  <small>Пары и bye подбираются автоматически.</small>
                 </span>
               </label>
               <label className={styles.radioOption}>
@@ -759,7 +761,7 @@ export const SwissPairingEditor = ({
 
             {pairingMode === "automatic" ? (
               <Message tone="info" title="Автоматический план">
-                Локальные пары не создаются. После отправки здесь отобразится полный план, который вернул сервер.
+                Пары появятся здесь после отправки запроса.
               </Message>
             ) : (
               <section className={styles.manualEditor} aria-labelledby="manual-pairing-title">
@@ -768,12 +770,12 @@ export const SwissPairingEditor = ({
                     Ручная сетка
                   </h5>
                   <p className={styles.sectionDescription}>
-                    Доступны только участники со статусом «На месте». Повторные встречи дополнительно проверяет сервер.
+                    Доступны только участники со статусом &quot;На месте&quot;. Повторные встречи проверяются при сохранении.
                   </p>
                 </div>
                 {eligibleParticipants.length === 0 ? (
                   <Message tone="empty" title="Нет присутствующих участников">
-                    Отметьте участников как «На месте» в редакторе состава.
+                    Отметьте участников как &quot;На месте&quot; в редакторе состава.
                   </Message>
                 ) : (
                   <>
@@ -859,8 +861,18 @@ export const SwissPairingEditor = ({
               </Message>
             )}
             {notice && (
-              <Message tone="success" title="Раунд сохранен">
+              <Message tone="success" title="Раунд готов">
                 {notice}
+                {onNavigateToConduct ? (
+                  <Button
+                    className={styles.nextStepButton}
+                    type="button"
+                    size="small"
+                    onClick={onNavigateToConduct}
+                  >
+                    Перейти к проведению
+                  </Button>
+                ) : null}
               </Message>
             )}
 
@@ -890,10 +902,10 @@ export const SwissPairingEditor = ({
               <div className={styles.sectionHeading}>
                 <div>
                   <h4 id="swiss-result-title" className={styles.sectionTitle}>
-                    Серверный план раунда {savedRound.round_number}
+                    План раунда {savedRound.round_number}
                   </h4>
                   <p className={styles.sectionDescription}>
-                    Показаны все пары, bye и standings из последнего принятого ответа сервера.
+                    Показаны пары, bye и таблица раунда.
                   </p>
                 </div>
                 <Status tone={savedRound.locked ? "disabled" : "success"}>
@@ -937,10 +949,10 @@ export const SwissPairingEditor = ({
                 </div>
               </div>
               <div className={styles.standings}>
-                <h5 className={styles.subheading}>Standings</h5>
+                <h5 className={styles.subheading}>Таблица раунда</h5>
                 <div className={styles.tableWrap}>
                   <table>
-                    <caption className={styles.srOnly}>Standings раунда {savedRound.round_number}</caption>
+                    <caption className={styles.srOnly}>Таблица раунда {savedRound.round_number}</caption>
                     <thead>
                       <tr>
                         <th scope="col">Место</th>

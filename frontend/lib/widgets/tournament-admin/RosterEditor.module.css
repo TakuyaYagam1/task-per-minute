@@ -137,6 +137,11 @@
   color: var(--text);
 }
 
+.nextStepButton {
+  display: block;
+  margin-top: 0.8rem;
+}
+
 .preflight,
 .unlockPanel {
   display: grid;
@@ -154,6 +159,24 @@
 
 .unlockPanel {
   border-top: 3px solid var(--warning);
+}
+
+.unlockSummary {
+  color: var(--text);
+  cursor: pointer;
+  font-size: 0.86rem;
+  font-weight: 760;
+}
+
+.unlockSummary::marker {
+  color: var(--warning);
+}
+
+.unlockContent {
+  display: grid;
+  min-width: 0;
+  gap: 0.85rem;
+  padding-top: 0.85rem;
 }
 
 .preflightHeader {
@@ -366,6 +389,51 @@
   opacity: 0.76;
 }
 
+.readOnlyRow {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 1rem;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-small);
+  padding: 0.85rem 1rem;
+  background: var(--surface-muted);
+}
+
+.readOnlyName {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--text);
+  font-size: 0.86rem;
+}
+
+.readOnlyMeta {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.8rem;
+  margin: 0;
+}
+
+.readOnlyMeta div {
+  display: grid;
+  gap: 0.15rem;
+  min-width: 5rem;
+}
+
+.readOnlyMeta dt {
+  color: var(--secondary);
+  font-size: 0.7rem;
+}
+
+.readOnlyMeta dd {
+  margin: 0;
+  color: var(--text);
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
 .row legend {
   max-width: 100%;
   overflow-wrap: anywhere;
@@ -441,6 +509,15 @@
   .fields,
   .preflightSummary {
     grid-template-columns: 1fr;
+  }
+
+  .readOnlyRow {
+    grid-template-columns: 1fr;
+    gap: 0.7rem;
+  }
+
+  .readOnlyMeta {
+    justify-content: flex-start;
   }
 
   .actions button,

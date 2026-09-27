@@ -83,23 +83,27 @@ const series = (index: number, state: "planned" | "active" | "completed" | "canc
 };
 
 const wave = (
-  state: "planned" | "ready_window_open" | "ready" | "active" | "completed" | "superseded",
+  state: "planned" | "ready_window_open" | "ready" | "active" | "completed" | "ready_window_expired" | "superseded",
   readiness = false,
+  readyMembers?: number,
 ) => {
   const waveId = id(200);
+  const memberReady = (memberIndex: number): boolean => (
+    readyMembers === undefined ? readiness : memberIndex < readyMembers
+  );
   return {
     id: waveId,
     members: Array.from({ length: 8 }, (_, index) => [
       {
         participant_id: id(100 + index * 2),
-        readiness_revision: readiness ? 2 : 1,
-        ready: readiness,
+        readiness_revision: memberReady(index * 2) ? 2 : 1,
+        ready: memberReady(index * 2),
         series_id: id(300 + index),
       },
       {
         participant_id: id(101 + index * 2),
-        readiness_revision: readiness ? 2 : 1,
-        ready: readiness,
+        readiness_revision: memberReady(index * 2 + 1) ? 2 : 1,
+        ready: memberReady(index * 2 + 1),
         series_id: id(300 + index),
       },
     ]).flat(),
@@ -114,17 +118,27 @@ const wave = (
           state: "open",
           wave_id: waveId,
         }
-      : state === "active"
+      : state === "ready_window_expired"
         ? {
-            consumed_at: baseDate,
+            consumed_at: null,
             deadline,
             id: id(600),
             opened_at: baseDate,
             revision_id: id(700),
-            state: "consumed",
+            state: "expired",
             wave_id: waveId,
           }
-        : null,
+        : state === "active"
+          ? {
+              consumed_at: baseDate,
+              deadline,
+              id: id(600),
+              opened_at: baseDate,
+              revision_id: id(700),
+              state: "consumed",
+              wave_id: waveId,
+            }
+          : null,
     revision: 1,
     revision_id: id(800),
     started_at: state === "active" ? baseDate : null,
@@ -181,19 +195,22 @@ const operatorSnapshot = (
 const realtimeWave = (
   snapshot: ReturnType<typeof operatorSnapshot>,
   state = snapshot.waves[0]?.state ?? "planned",
-  readiness = snapshot.waves[0]?.members.every((member) => member.ready) ?? false,
+  readiness: boolean | number = snapshot.waves[0]?.members.every((member) => member.ready) ?? false,
 ) => {
   const currentWave = snapshot.waves[0];
   if (!currentWave) {
     throw new Error("realtime fixture requires a Wave");
   }
   return {
-    members: currentWave.members.map((member) => ({
-      participant_id: member.participant_id,
-      readiness_revision: readiness ? 2 : member.readiness_revision,
-      ready: readiness,
-      series_id: member.series_id,
-    })),
+    members: currentWave.members.map((member, index) => {
+      const ready = typeof readiness === "number" ? index < readiness : readiness;
+      return {
+        participant_id: member.participant_id,
+        readiness_revision: ready ? 2 : member.readiness_revision,
+        ready,
+        series_id: member.series_id,
+      };
+    }),
     state,
     wave_id: currentWave.id,
     ...(currentWave.ready_window?.deadline ? { window_deadline: currentWave.ready_window.deadline } : {}),
@@ -204,7 +221,7 @@ const realtimeFrame = (
   snapshot: ReturnType<typeof operatorSnapshot>,
   sequence: number,
   state = snapshot.waves[0]?.state ?? "planned",
-  readiness = snapshot.waves[0]?.members.every((member) => member.ready) ?? false,
+  readiness: boolean | number = snapshot.waves[0]?.members.every((member) => member.ready) ?? false,
 ) => ({
   type: "tournament.operator",
   payload: {
@@ -242,7 +259,7 @@ const sendRealtimeFrame = (
   snapshot: ReturnType<typeof operatorSnapshot>,
   sequence: number,
   state?: ReturnType<typeof realtimeWave>["state"],
-  readiness?: boolean,
+  readiness?: boolean | number,
 ): void => {
   socket.send(JSON.stringify(realtimeFrame(snapshot, sequence, state, readiness)));
 };
@@ -384,9 +401,9 @@ test("показывает одну Wave с 8 Series, всеми 16 участн
   await expect(page.getByTestId("operator-wave")).toHaveCount(1);
   await expect(page.getByTestId("operator-match")).toHaveCount(8);
   await expect(page.getByTestId("operator-wave-board").getByText("Участник", { exact: true })).toHaveCount(16);
-  await expect(page.getByTestId("operator-wave-board").getByText("Series ID:", { exact: false })).toHaveCount(8);
+  await expect(page.getByTestId("operator-wave-board").locator("[data-series-id]")).toHaveCount(8);
   await expect(page.getByText("Связь потеряна", { exact: true }).first()).toBeVisible();
-  await expect(page.getByTestId("operator-wave-connection")).toContainText("Realtime на связи");
+  await expect(page.getByTestId("operator-wave-connection")).toContainText("Обновляется автоматически");
   await expect(page.getByTestId("operator-wave-board")).toContainText("0:0");
   expect(routes.getSnapshotCount()).toBeGreaterThan(0);
 });
@@ -405,7 +422,7 @@ test("открывает и запускает волну с текущей ре
   );
 
   await openAdminTournament(page);
-  await expect(page.getByTestId("operator-wave-connection")).toContainText("Realtime на связи");
+  await expect(page.getByTestId("operator-wave-connection")).toContainText("Обновляется автоматически");
   const connectionsBeforeOpen = realtimeConnections;
   const openButton = page.locator('[data-testid^="wave-open-"]').first();
   await expect(openButton).toBeEnabled();
@@ -449,6 +466,53 @@ test("открывает и запускает волну с текущей ре
   }
   await expect(page.getByTestId("operator-match")).toHaveCount(8);
   await expect(page.getByTestId("operator-match").getByText("Идет", { exact: true })).toHaveCount(8);
+});
+
+test("после открытия готовности объясняет ожидание даже при частичной готовности", async ({ page }) => {
+  const partialSnapshot = operatorSnapshot(1, wave("ready_window_open", false, 4));
+  const routes = await setupRoutes(page);
+  routes.setSnapshot(partialSnapshot);
+  await page.context().routeWebSocket(
+    (url) => url.pathname === `/api/v1/admin/tournaments/${tournamentId}/realtime`,
+    async (socket: WebSocketRoute) => {
+      sendRealtimeFrame(socket, partialSnapshot, 1, "ready_window_open", 4);
+    },
+  );
+
+  await openAdminTournament(page);
+  await expect(page.getByText("Ожидаем подтверждения участников. Запуск станет доступен после полной готовности пары.")).toBeVisible();
+});
+
+test("после полной готовности в открытом окне сообщает о переходе к запуску", async ({ page }) => {
+  const readySnapshot = operatorSnapshot(1, wave("ready_window_open", true));
+  const routes = await setupRoutes(page);
+  routes.setSnapshot(readySnapshot);
+  await page.context().routeWebSocket(
+    (url) => url.pathname === `/api/v1/admin/tournaments/${tournamentId}/realtime`,
+    async (socket: WebSocketRoute) => {
+      sendRealtimeFrame(socket, readySnapshot, 1, "ready_window_open", true);
+    },
+  );
+
+  await openAdminTournament(page);
+  await expect(page.getByText("Все участники подтвердили готовность. Дождитесь перехода волны к запуску.")).toBeVisible();
+});
+
+test("для истекшего окна готовности подсказывает обновить данные и проверить неявку", async ({ page }) => {
+  const expiredSnapshot = operatorSnapshot(1, wave("ready_window_expired"));
+  const routes = await setupRoutes(page);
+  routes.setSnapshot(expiredSnapshot);
+  await page.context().routeWebSocket(
+    (url) => url.pathname === `/api/v1/admin/tournaments/${tournamentId}/realtime`,
+    async (socket: WebSocketRoute) => {
+      sendRealtimeFrame(socket, expiredSnapshot, 1, "ready_window_expired", false);
+    },
+  );
+
+  await openAdminTournament(page);
+  await expect(page.getByText("Окно готовности истекло. Обновите данные и проверьте участников, которые не подтвердили готовность.")).toBeVisible();
+  await expect(page.locator('[data-testid^="wave-open-"]').first()).toBeDisabled();
+  await expect(page.locator('[data-testid^="wave-start-"]').first()).toBeDisabled();
 });
 
 test("unfinished previous round 409 блокирует повтор до refresh", async ({ page }) => {

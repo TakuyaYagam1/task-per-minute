@@ -43,6 +43,7 @@ const applyTheme = (theme: Theme) => {
 
 type ThemeToggleProps = {
   storageKey: string;
+  variant?: "floating" | "inline";
 };
 
 const MoonIcon = () => (
@@ -79,7 +80,7 @@ const SunIcon = () => (
   </svg>
 );
 
-export const ThemeToggle = ({ storageKey }: ThemeToggleProps) => {
+export const ThemeToggle = ({ storageKey, variant = "floating" }: ThemeToggleProps) => {
   const [theme, setTheme] = useState<Theme>(DEFAULT_THEME);
 
   useEffect(() => {
@@ -102,7 +103,11 @@ export const ThemeToggle = ({ storageKey }: ThemeToggleProps) => {
   };
 
   return (
-    <div className={styles.toggle} role="group" aria-label="Тема интерфейса">
+    <div
+      className={`${styles.toggle} ${variant === "inline" ? styles.inline : ""}`}
+      role="group"
+      aria-label="Тема интерфейса"
+    >
       <button
         className={styles.button}
         type="button"

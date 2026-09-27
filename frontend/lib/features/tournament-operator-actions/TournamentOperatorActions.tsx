@@ -136,10 +136,10 @@ const errorText = (error: unknown): string => {
       return "Турнир или выбранный объект больше недоступен.";
     }
     if (error.status === 409) {
-      return "Снимок устарел. Состояние обновлено, проверьте команду еще раз.";
+      return "Данные устарели. Состояние обновлено, проверьте команду еще раз.";
     }
     if (error.status > 0) {
-      return `Сервер отклонил команду (HTTP ${error.status}).`;
+      return `Команда отклонена (HTTP ${error.status}).`;
     }
   }
   return "Не удалось выполнить команду. Проверьте соединение и повторите попытку.";
@@ -507,7 +507,7 @@ export const TournamentOperatorActions = ({
           setActionMessage({
             tone: "warning",
             title: "Резерв недоступен",
-            body: "Сервер не предложил допустимый кандидат для этого назначения.",
+            body: "Для этого назначения нет подходящего кандидата.",
           });
           return;
         }
@@ -552,7 +552,7 @@ export const TournamentOperatorActions = ({
       setActionMessage({
         tone: "success",
         title: "Восстановление подтверждено",
-        body: "Серверный снимок перечитан. Новая попытка отображается только после подтверждения сервера.",
+        body: "Состояние обновлено. Новая попытка появится после подтверждения.",
       });
       setRecoveryConfirmed(false);
       setRecoveryReason("");
@@ -568,8 +568,8 @@ export const TournamentOperatorActions = ({
         }
         setActionMessage({
           tone: "warning",
-          title: "Снимок устарел",
-          body: "Другой оператор изменил восстановление. Снимок обновлен, проверьте разрешенный путь перед повтором.",
+          title: "Данные устарели",
+          body: "Другой оператор изменил восстановление. Данные обновлены, проверьте доступный вариант перед повтором.",
         });
         return;
       }
@@ -646,7 +646,7 @@ export const TournamentOperatorActions = ({
           setActionMessage({
             tone: "warning",
             title: "Нужно добавить доказательства",
-            body: "Укажите rule_id и хотя бы один evidence ID. Сервер не принимает пустой список evidence IDs.",
+            body: "Укажите rule_id и хотя бы один evidence ID.",
           });
           return;
         }
@@ -691,8 +691,8 @@ export const TournamentOperatorActions = ({
         }
         setActionMessage({
           tone: "warning",
-          title: "Снимок устарел",
-          body: "Другой оператор изменил состояние. Снимок обновлен, проверьте команду перед повтором.",
+          title: "Данные устарели",
+          body: "Другой оператор изменил состояние. Данные обновлены, проверьте команду перед повтором.",
         });
         return;
       }
@@ -765,7 +765,7 @@ export const TournamentOperatorActions = ({
       </dl>
 
       {snapshotError && (
-        <Message tone="warning" title="Снимок требует внимания">
+        <Message tone="warning" title="Данные требуют внимания">
           <p className={styles.errorText}>{snapshotError}</p>
         </Message>
       )}
@@ -890,7 +890,7 @@ export const TournamentOperatorActions = ({
                   disabled={submitting}
                   placeholder="Один UUID на строку"
                 />
-                <p className={styles.hint}>Сервер требует хотя бы один уникальный UUID доказательства.</p>
+                <p className={styles.hint}>Укажите хотя бы один уникальный UUID доказательства.</p>
               </div>
             </>
           )}
@@ -929,7 +929,7 @@ export const TournamentOperatorActions = ({
             onChange={(event) => setConfirmed(event.target.checked)}
             disabled={submitting}
           />
-          <span>Подтверждаю, что команда соответствует текущему авторитетному снимку.</span>
+          <span>Подтверждаю, что команда соответствует актуальным данным турнира.</span>
         </label>
 
         <div className={styles.submitRow}>
@@ -1063,7 +1063,7 @@ export const TournamentOperatorActions = ({
                   reserveCandidates.length === 0 ? (
                     <Message tone="warning" title="Резерв исчерпан">
                       <p className={styles.errorText}>
-                        Сервер не предложил кандидатов. Нельзя вручную вводить задачу или менять категорию.
+                        Подходящих кандидатов нет. Задачу и категорию нельзя указать вручную.
                       </p>
                     </Message>
                   ) : (
@@ -1174,7 +1174,7 @@ export const TournamentOperatorActions = ({
         }
       >
         <p className={styles.errorText}>
-          Причина: {reason.trim()}. После ответа сервера будет загружен новый авторитетный снимок.
+          Причина: {reason.trim()}. После выполнения загрузятся свежие данные.
         </p>
       </Dialog>
     </Panel>

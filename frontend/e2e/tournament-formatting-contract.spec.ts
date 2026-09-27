@@ -200,7 +200,7 @@ test.describe("tournament presentation formatting", () => {
     await errorGroup.getByRole("button", { name: "Слишком много запросов. Повторите позже" }).click();
     await expect(page.getByTestId("server-error")).toContainText("Слишком много запросов. Повторите позже");
     await errorGroup.getByRole("button", { name: "Проверить неизвестную ошибку" }).click();
-    await expect(page.getByTestId("server-error")).toContainText("Неизвестная ошибка сервера");
+    await expect(page.getByTestId("server-error")).toContainText("Не удалось выполнить действие");
 
     const text = await page.locator("body").innerText();
     for (const rawCode of ["draft", "registration", "active", "rate_limited", "unknown"]) {

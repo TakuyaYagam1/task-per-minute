@@ -66,25 +66,25 @@ const isExpired = (expiresAt: string): boolean => {
 
 const sourceFileMessageFor = (error: unknown): string => {
   if (error instanceof ParticipantSourceFileURLPolicyError) {
-    return "Сервер вернул ссылку на архив с недопустимым адресом.";
+    return "Ссылка на архив недоступна.";
   }
   if (error instanceof ParticipantSourceFileExpiredError) {
     return "Ссылка на архив уже истекла. Запросите новую ссылку.";
   }
   if (error instanceof ParticipantAssignmentChangedError) {
-    return "Назначение изменилось. Обновите состояние турнира и повторите попытку.";
+    return "Задание изменилось. Обновите матч и повторите попытку.";
   }
   if (error instanceof ParticipantSourceFileUnavailableError) {
-    return "Архив для этого назначения недоступен.";
+    return "Архив для этого задания недоступен.";
   }
   if (error instanceof ApiError) {
     switch (error.status) {
       case 401:
         return "Сессия участника истекла. Войдите снова.";
       case 403:
-        return "Сервер запретил скачивание архива для этого назначения.";
+        return "Скачивание архива недоступно для этого задания.";
       case 404:
-        return "Архив для этого назначения не найден.";
+        return "Архив для этого задания не найден.";
       default:
         return "Не удалось получить ссылку на архив. Повторите попытку.";
     }

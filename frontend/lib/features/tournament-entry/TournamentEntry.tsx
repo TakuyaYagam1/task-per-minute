@@ -127,14 +127,14 @@ const conflictNotice = (reason: TournamentAdmissionConflictReason): Notice => {
       };
     case "conflict":
       return {
-        body: "Сервер отклонил действие из-за изменения состояния турнира.",
-        title: "Состояние изменилось",
+        body: "Данные турнира изменились. Обновите страницу и повторите попытку.",
+        title: "Данные изменились",
         tone: "warning",
       };
   }
   return {
-    body: "Сервер отклонил действие из-за изменения состояния турнира.",
-    title: "Состояние изменилось",
+    body: "Данные турнира изменились. Обновите страницу и повторите попытку.",
+    title: "Данные изменились",
     tone: "warning",
   };
 };
@@ -150,7 +150,7 @@ const apiNotice = (error: unknown, operation: string): Notice => {
     }
     if (error.status === 403) {
       return {
-        body: "Сервер не разрешил это действие для текущей сессии.",
+        body: "У этой сессии нет доступа к действию.",
         title: "Доступ запрещен",
         tone: "error",
       };
@@ -172,7 +172,7 @@ const apiNotice = (error: unknown, operation: string): Notice => {
   }
   if (error instanceof ApiContractError) {
     return {
-      body: "Сервер вернул неподдерживаемое состояние. Обновите страницу.",
+      body: "Не удалось загрузить данные турнира. Обновите страницу.",
       title: "Ошибка данных",
       tone: "error",
     };
@@ -298,7 +298,7 @@ export const TournamentEntry = ({
       setView(null);
       setWorkspaceReady(false);
       setNotice({
-        body: "Сервер вернул данные другого турнира или игрока.",
+        body: "Данные матча не совпали с текущим игроком. Обновите страницу.",
         title: "Ошибка данных",
         tone: "error",
       });
@@ -646,15 +646,15 @@ export const TournamentEntry = ({
       if (lobby.tournament_id !== tournamentId || lobby.participant_id !== participantId) {
         setWorkspaceReady(false);
         setNotice({
-          body: "Сервер не подтвердил состав текущего турнира.",
-          title: "Рабочая область недоступна",
+          body: "Не удалось подтвердить ваш матч. Обновите статус и попробуйте снова.",
+          title: "Матч пока недоступен",
           tone: "error",
         });
         return;
       }
       setWorkspaceReady(true);
       setNotice({
-        body: "Рабочая область участника доступна.",
+        body: "Участие подтверждено. Откройте страницу матча, чтобы увидеть следующий шаг.",
         title: "Участие подтверждено",
         tone: "success",
       });
@@ -728,7 +728,7 @@ export const TournamentEntry = ({
       ) : (
         <div className={styles.contentStack}>
           <Message tone="info" title="Регистрация недоступна">
-            Состояние турнира: {formatTournamentState(state)}.
+            Сейчас турнир: {formatTournamentState(state)}.
           </Message>
           {phase === "error" && (
             <Button
@@ -778,8 +778,8 @@ export const TournamentEntry = ({
         {view.status === "checked_in" && (
           <p className={styles.copy}>
             {workspacePublicationReady
-              ? "Участие подтверждено. Рабочая область доступна."
-              : "Участие подтверждено. Ожидайте старта турнира."}
+              ? "Откройте страницу матча, чтобы увидеть следующий шаг."
+              : "Участие подтверждено. Страница матча откроется после старта турнира."}
           </p>
         )}
         {view.status === "withdrawn" && (
@@ -808,11 +808,11 @@ export const TournamentEntry = ({
           )}
           {view.status === "checked_in" && workspacePublicationReady && workspaceReady && (
             <Link className={styles.primaryLink} href={workspaceHref}>
-              Перейти к участию
+              Открыть мой матч
             </Link>
           )}
           {view.status === "checked_in" && !workspacePublicationReady && (
-            <Status tone="info">Рабочая область откроется после старта турнира</Status>
+            <Status tone="info">Матч откроется после старта турнира</Status>
           )}
           {view.status === "registered" && workspacePublicationReady && !workspaceReady && (
             <Button
@@ -822,12 +822,12 @@ export const TournamentEntry = ({
               disabled={busyAction !== null && busyAction !== "workspace"}
               onClick={handleWorkspaceCheck}
             >
-              Проверить доступ
+              Проверить матч
             </Button>
           )}
           {view.status === "registered" && workspacePublicationReady && workspaceReady && (
             <Link className={styles.primaryLink} href={workspaceHref}>
-              Перейти к участию
+              Открыть мой матч
             </Link>
           )}
           {canCancel && (

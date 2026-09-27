@@ -95,9 +95,9 @@ const draftTokenFor = (view: ParticipantPlayerView | null): string => {
 const defaultMessageFor = (status: ParticipantDraftResult["status"]): string => {
   switch (status) {
     case "accepted":
-      return "Ход принят сервером.";
+      return "Ход принят.";
     case "conflict":
-      return "Драфт изменился. Сверяем историю с сервером.";
+      return "Драфт изменился. Обновляем историю.";
     case "rate_limited":
       return "Слишком много ходов. Повторите после паузы.";
   }
@@ -157,8 +157,8 @@ export const useParticipantDraft = ({
     };
     setState({
       message: draft.currentAction === "ban"
-        ? "Передаем бан серверу."
-        : "Передаем выбор серверу.",
+        ? "Передаем бан."
+        : "Передаем выбор.",
       status: "submitting",
     });
 
@@ -172,14 +172,12 @@ export const useParticipantDraft = ({
           status: result.status,
         });
       })
-      .catch((error: unknown) => {
+      .catch(() => {
         if (requestId !== requestRef.current || requestToken !== tokenRef.current) {
           return;
         }
         setState({
-          message: error instanceof Error
-            ? error.message
-            : "Не удалось передать ход серверу. Повторите попытку.",
+          message: "Не удалось передать ход. Повторите попытку.",
           status: "error",
         });
       })

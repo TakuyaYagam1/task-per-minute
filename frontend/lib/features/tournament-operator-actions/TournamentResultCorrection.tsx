@@ -143,8 +143,8 @@ const rejectionText = (code: string | null, status: number): string => {
       return "Завершенный или отмененный турнир нельзя исправить. История остается доступна.";
     default:
       return status === 409
-        ? "Команда конфликтует с текущим состоянием. Сервер не применил частичных изменений."
-        : `Сервер отклонил коррекцию (HTTP ${status}).`;
+        ? "Данные турнира изменились. Частичные изменения не применены."
+        : `Коррекция отклонена (HTTP ${status}).`;
   }
 };
 
@@ -272,7 +272,7 @@ export const TournamentResultCorrection = ({
       setMessage({
         tone: "success",
         title: "Коррекция применена",
-        body: `Новая проекция подтверждена. Заменено проекций: ${evidence.supersessions.length}, освобождено резервов: ${evidence.unlock_intents.length}.`,
+        body: `Исправление применено. Обновлено связанных данных: ${evidence.supersessions.length}, освобождено резервов: ${evidence.unlock_intents.length}.`,
       });
     } catch (error) {
       if (error instanceof ApiError) {
@@ -327,13 +327,13 @@ export const TournamentResultCorrection = ({
         <Message tone="warning" title="Коррекция закрыта">
           <p className={styles.messageText}>
             {terminalTournament
-              ? "В terminal tournament результат не меняется. Используйте журнал аудита и разрешенные terminal-команды."
+              ? "Завершенный или отмененный турнир нельзя исправить. Используйте журнал турнира."
               : rejectionText(blockedCode, 409)}
           </p>
         </Message>
       ) : candidates.length === 0 ? (
         <Message tone="info" title="Нет результата для коррекции">
-          <p className={styles.messageText}>В текущем снимке нет завершенной попытки с официальной ревизией.</p>
+          <p className={styles.messageText}>В текущих данных нет завершенной попытки с подтвержденным результатом.</p>
         </Message>
       ) : selected !== null && (
         <form className={styles.form} onSubmit={(event) => void submit(event)}>
@@ -485,7 +485,7 @@ export const TournamentResultCorrection = ({
               onChange={(event) => setConfirmed(event.target.checked)}
               disabled={submitting}
             />
-            <span>Подтверждаю коррекцию результата и атомарную перестройку зависимых проекций.</span>
+            <span>Подтверждаю исправление результата и обновление связанных данных.</span>
           </label>
 
           <div className={styles.submitRow}>
@@ -494,8 +494,8 @@ export const TournamentResultCorrection = ({
             </Button>
             <p className={styles.submitHint}>
               {blockedCode === null
-                ? "Preflight не изменяет состояние. Финальная команда отправляет полный набор intents одной транзакцией."
-                : "Измените форму или дождитесь нового авторитетного снимка перед повтором."}
+                ? "Проверка только готовит действие. После подтверждения изменения применяются вместе."
+                : "Измените форму или дождитесь свежих данных перед повтором."}
             </p>
           </div>
         </form>

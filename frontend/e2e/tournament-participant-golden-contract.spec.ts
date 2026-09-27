@@ -122,7 +122,7 @@ test("participant completes server-owned Golden readiness, task and placement fl
   await page.goto(participantURL);
   const panel = page.getByTestId("participant-golden-panel");
   await expect(panel).toHaveAttribute("data-golden-state", "prepared");
-  await expect(panel).toContainText("Это не BO1-серия");
+  await expect(panel).toContainText("Это общая группа с единым распределением мест, а не BO1-серия.");
   await expect(panel.getByText("Материалы попытки")).toHaveCount(0);
 
   await panel.getByRole("button", { name: "Готов к Golden", exact: true }).click();
@@ -189,7 +189,7 @@ test("participant completes server-owned Golden readiness, task and placement fl
   await expect(goldenActionStatus).toHaveAttribute("aria-live", "assertive");
   await goldenInput.fill("flag{golden_acceptance}");
   await goldenInput.press("Enter");
-  await expect(panel).toContainText("Решение Golden принято сервером");
+  await expect(panel).toContainText("Решение Golden принято.");
   expect(mutationBodies[1]).toEqual({
     attempt_id: tournamentFixtureIds.attempt,
     expected_runtime_revision: 3,
@@ -198,11 +198,11 @@ test("participant completes server-owned Golden readiness, task and placement fl
   });
 
   current = { ...current, position: 2, runtime_revision: 4, state: "completed" };
-  await panel.getByRole("button", { name: "Обновить Golden" }).click();
+  await panel.getByRole("button", { name: "Обновить данные" }).click();
   await expect(panel).toHaveAttribute("data-golden-state", "completed");
   await expect(panel.getByTestId("participant-golden-position")).toContainText("2");
   await expect(panel.getByTestId("participant-golden-position")).toContainText(
-    "Следующий этап определяет только серверный lobby",
+    "Следующий этап появится после обновления результата.",
   );
 
   await page.getByRole("button", { name: "Светлая тема" }).click();
@@ -246,14 +246,14 @@ test("Golden no-show and technical pause stay taskless and server-controlled", a
 
   await page.goto(participantURL);
   const panel = page.getByTestId("participant-golden-panel");
-  await expect(panel).toContainText("зафиксировал no-show");
+  await expect(panel).toContainText("Материалы не выданы");
   await expect(panel.getByLabel("Ответ Golden")).toHaveCount(0);
   await expect(panel.getByRole("heading", { name: "Golden проверка" })).toHaveCount(0);
 
   current = { ...current, runtime_revision: 4, state: "technical_pause" };
-  await panel.getByRole("button", { name: "Обновить Golden" }).click();
+  await panel.getByRole("button", { name: "Обновить данные" }).click();
   await expect(panel).toContainText("Техническая пауза");
-  await expect(panel.getByTestId("participant-golden-timer")).toHaveText("Остановлен сервером");
+  await expect(panel.getByTestId("participant-golden-timer")).toHaveText("Остановлен");
   await expect(panel.getByRole("button", { name: "Отправить ответ", exact: true })).toHaveCount(0);
 });
 

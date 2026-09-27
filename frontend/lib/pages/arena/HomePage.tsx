@@ -114,7 +114,7 @@ export default function HomePage() {
       return;
     }
     if (result.kind !== "aborted") {
-      showNotification("Ошибка подключения к серверу");
+      showNotification("Ошибка соединения");
     }
   };
 
@@ -154,11 +154,8 @@ export default function HomePage() {
               </p>
               <div className={styles.introRule} aria-hidden="true" />
               <p className={styles.introMeta}>
-                Нужен только никнейм. Данные сессии подтверждает сервер.
+                Введите никнейм, чтобы начать.
               </p>
-              <Link href="/leaderboard" className={styles.leaderboardLink}>
-                Общий рейтинг
-              </Link>
             </div>
 
             <section className={styles.joinPanel} aria-labelledby="join-title">

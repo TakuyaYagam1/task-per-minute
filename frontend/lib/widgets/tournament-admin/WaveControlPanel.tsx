@@ -373,7 +373,7 @@ const WaveCard = ({
           </article>
         ))}
         {seriesList.length === 0 ? (
-          <p className={styles.muted}>Серии еще не назначены сервером.</p>
+          <p className={styles.muted}>Для этой волны пока нет матчей.</p>
         ) : null}
       </div>
 
@@ -478,6 +478,30 @@ export const WaveControlPanel = ({
     () => (snapshot?.series ?? []).filter((series) => !representedSeriesIds.has(series.id)),
     [representedSeriesIds, snapshot],
   );
+  const nextActionableWave = waves.find((wave) => (
+    wave.state === "planned" ||
+    wave.state === "ready_window_open" ||
+    wave.state === "ready" ||
+    wave.state === "active"
+  ));
+  const nextExpiredWave = [...waves].reverse().find((wave) => wave.state === "ready_window_expired");
+  const nextWave = nextActionableWave ?? nextExpiredWave;
+  const nextWaveAllReady = nextWave !== undefined && nextWave.members.length > 0 && nextWave.members.every((member) => member.ready);
+  const readinessGuidance = nextWave === undefined
+    ? null
+    : nextWave.state === "planned"
+      ? "Откройте готовность, чтобы участники могли подтвердить участие."
+      : nextWave.state === "ready_window_open"
+        ? nextWaveAllReady
+          ? "Все участники подтвердили готовность. Дождитесь перехода волны к запуску."
+          : "Ожидаем подтверждения участников. Запуск станет доступен после полной готовности пары."
+        : nextWave.state === "ready_window_expired"
+          ? "Окно готовности истекло. Обновите данные и проверьте участников, которые не подтвердили готовность."
+          : nextWave.state === "active"
+            ? "Волна запущена. Следите за матчами и готовьте следующий раунд после их завершения."
+            : nextWaveAllReady
+              ? "Все участники готовы. Можно запускать волну."
+              : "Ожидаем подтверждения участников. Запуск станет доступен после полной готовности пары.";
 
   const handleAction = useCallback(async (wave: Wave, action: WaveAction): Promise<void> => {
     if (commandInFlightRef.current || operatorRecovery === null) {
@@ -558,11 +582,11 @@ export const WaveControlPanel = ({
 
       {status === "connecting" && !snapshot ? (
         <Message tone="loading" title="Загружаем состояние">
-          Получаем серверный снимок турнира.
+          Получаем актуальные данные турнира.
         </Message>
       ) : null}
       {status === "stale" && !snapshot ? (
-        <Message tone="error" title="Снимок недоступен">
+        <Message tone="error" title="Данные турнира недоступны">
           <button className={styles.linkButton} type="button" onClick={refresh}>Обновить данные</button>
         </Message>
       ) : null}
@@ -577,6 +601,11 @@ export const WaveControlPanel = ({
 
       {operatorRecovery ? (
         <>
+          {readinessGuidance ? (
+            <Message tone="info" title="Следующий шаг">
+              {readinessGuidance}
+            </Message>
+          ) : null}
           <div className={styles.board} data-testid="operator-wave-board">
             {waves.map((wave, index) => (
               <WaveCard
@@ -612,7 +641,7 @@ export const WaveControlPanel = ({
 
       {operatorRecovery && waves.length === 0 ? (
         <Message tone="empty" title="Волн пока нет">
-          Сервер не вернул активных или завершенных волн для этого турнира.
+          В этом турнире пока нет активных или завершенных волн.
         </Message>
       ) : null}
     </Panel>

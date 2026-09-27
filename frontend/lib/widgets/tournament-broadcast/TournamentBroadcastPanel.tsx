@@ -140,7 +140,7 @@ const CONNECTION_LABELS: Readonly<Record<PublicConnectionStatus, string>> = {
   connecting: "Подключение",
   connected: "На связи",
   reconnecting: "Переподключение",
-  recovering: "Синхронизация",
+  recovering: "Обновление данных",
   rejected: "Доступ отклонен",
   error: "Данные устарели",
 };
@@ -209,9 +209,9 @@ const resultReasonLabel = (value: unknown): string | null => {
     case "surrender":
       return "Сдача";
     case "operator_forfeit":
-      return "Решение сервера";
+      return "Решение организатора";
     case "cancelled":
-      return "Отменено сервером";
+      return "Отменено";
     case "technical_failure":
     case "task_failure":
     case "common_platform_failure":
@@ -226,9 +226,9 @@ const resultReasonLabel = (value: unknown): string | null => {
       return "Неявка участника";
     case "series_cancelled":
     case "tournament_cancelled":
-      return "Отменено сервером";
+      return "Отменено";
     case "operator_correction":
-      return "Исправление сервера";
+      return "Исправлено";
     default:
       return null;
   }
@@ -586,7 +586,7 @@ const GameCountdown = ({
     >
       {countdown.status === "running"
         ? formatCountdown(countdown.remainingMs)
-        : "Ожидает подтверждения сервера"}
+        : "Ожидает подтверждения"}
     </span>
   );
 };
@@ -625,13 +625,13 @@ const CurrentGamePanel = ({
         <span className={styles.gameState}>{game?.state ? formatSeriesState(game.state) : "Не опубликована"}</span>
       </div>
       {game === null ? (
-        <p className={styles.empty}>Текущая игра еще не опубликована сервером.</p>
+        <p className={styles.empty}>Текущая игра пока не опубликована.</p>
       ) : (
         <>
           <dl className={styles.gameFacts}>
             <div>
               <dt>Категория</dt>
-              <dd data-testid="broadcast-game-category">{game.category ?? "Не объявлена"}</dd>
+              <dd data-testid="broadcast-game-category">{game.category ?? "Категория пока не объявлена"}</dd>
             </div>
             <div>
               <dt>Дедлайн</dt>
@@ -659,7 +659,7 @@ const CurrentGamePanel = ({
             </div>
           </dl>
           <div className={styles.gameCountdown}>
-            <span>До серверного дедлайна</span>
+            <span>До конца</span>
             {validDeadline && validServerTimestamp ? (
               <GameCountdown
                 deadline={validDeadline}
@@ -667,12 +667,12 @@ const CurrentGamePanel = ({
                 serverTimestamp={validServerTimestamp}
               />
             ) : (
-              <span data-testid="broadcast-game-countdown">Ожидает серверного дедлайна</span>
+              <span data-testid="broadcast-game-countdown">Срок пока не объявлен</span>
             )}
           </div>
           {(game.finishedAt || game.winnerName || resultReasonLabel(game.resultReason)) && (
             <p className={styles.gameOutcome}>
-              {game.winnerName ? `Победитель: ${game.winnerName}` : "Результат ожидает подтверждения сервера"}
+              {game.winnerName ? `Победитель: ${game.winnerName}` : "Результат пока не подтвержден"}
               {resultReasonLabel(game.resultReason) ? ` - ${resultReasonLabel(game.resultReason)}` : ""}
             </p>
           )}
@@ -697,7 +697,7 @@ const DraftPanel = ({
       <div>
         <h4 id="broadcast-draft-title">Драфт {draft.format ? formatSeriesFormat(draft.format) : ""}</h4>
       </div>
-      <span className={styles.gameState}>{draft.state ? formatSeriesState(draft.state) : "Синхронизация"}</span>
+      <span className={styles.gameState}>{draft.state ? formatSeriesState(draft.state) : "Обновление данных"}</span>
     </div>
     <dl className={styles.draftFacts}>
       <div>
@@ -726,7 +726,7 @@ const DraftPanel = ({
       </div>
     </dl>
     {draft.autoActionPending && (
-      <p className={styles.draftNotice}>Сервер готовит автоматическое действие.</p>
+      <p className={styles.draftNotice}>Следующий ход будет выбран автоматически.</p>
     )}
     {draft.actions.length > 0 && (
       <ol className={styles.draftActions} aria-label="Опубликованные ходы драфта">
@@ -758,7 +758,7 @@ const OfficialResultPanel = ({ result }: Readonly<{ result: Record<string, unkno
         <div>
           <h4 id="broadcast-official-result-title">Официальный результат</h4>
         </div>
-        <span className={styles.officialBadge}>Подтвержден сервером</span>
+        <span className={styles.officialBadge}>Официальный результат</span>
       </div>
       <p className={styles.officialScore}>{firstWins}:{secondWins}</p>
       {winnerName && <p className={styles.officialWinner}>Победитель: {winnerName}</p>}
@@ -1007,7 +1007,7 @@ export const TournamentBroadcastPanel = ({
 
       <div className={styles.phase}>
         <strong data-testid="broadcast-phase-title">{phaseCopy.title}</strong>
-        <span>{tournamentState ? stageLabel(tournamentState) : "Состояние загружается"}</span>
+        <span>{tournamentState ? stageLabel(tournamentState) : "Загрузка..."}</span>
         {startedAt && <span>Старт: {formatArenaDateTime(startedAt)}</span>}
         {finishedAt && <span>Финиш: {formatArenaDateTime(finishedAt)}</span>}
       </div>
@@ -1015,11 +1015,11 @@ export const TournamentBroadcastPanel = ({
       {showMatchCenter && <div className={styles.matchCenter}>
         <section className={styles.schedule} aria-labelledby="schedule-title">
           <div className={styles.sectionHeading}>
-            <h3 id="schedule-title">Матчи сервера</h3>
+            <h3 id="schedule-title">Матчи</h3>
             <span>{matches.length}</span>
           </div>
           {matches.length === 0 ? (
-            <p className={styles.empty}>Сервер пока не опубликовал матчи для просмотра.</p>
+            <p className={styles.empty}>Матчи пока не опубликованы.</p>
           ) : (
             <ul className={styles.matchList}>
               {matches.map((match) => (
@@ -1090,13 +1090,13 @@ export const TournamentBroadcastPanel = ({
           ) : (
             <div className={styles.selectedEmpty}>
               <h3 id="selected-match-title">Матч еще не выбран</h3>
-              <p>Здесь появятся только опубликованные сервером пары и результаты.</p>
+              <p>Здесь появятся опубликованные пары и результаты.</p>
             </div>
           )}
         </section>
       </div>}
 
-      {showProjections && <section className={styles.projections} aria-label="Публичные проекции турнира">
+      {showProjections && <section className={styles.projections} aria-label="Данные турнира">
         {showProjectionTabs && <div className={styles.tabs} role="tablist" aria-label="Таблица и этапы турнира">
           {projectionTabs.map((tab) => (
             <button
@@ -1129,7 +1129,7 @@ export const TournamentBroadcastPanel = ({
             role="tabpanel"
           >
             {scoreboard.length === 0 ? (
-              <p className={styles.empty}>Сервер пока не опубликовал состав таблицы.</p>
+              <p className={styles.empty}>Таблица пока не опубликована.</p>
             ) : (
               <table aria-label="Публичная таблица турнира" className={styles.table}>
                 <thead>
@@ -1183,7 +1183,7 @@ export const TournamentBroadcastPanel = ({
             role="tabpanel"
           >
             {swissRounds.length === 0 ? (
-              <p className={styles.empty}>Сервер пока не опубликовал Swiss-туры.</p>
+              <p className={styles.empty}>Раунды пока не опубликованы.</p>
             ) : (
               swissRounds.map((round) => {
                 const roundMatches = swissMatches.get(round.roundNumber) ?? [];
@@ -1236,7 +1236,7 @@ export const TournamentBroadcastPanel = ({
                 <span>{qualifiedEntries.length}</span>
               </div>
               {qualifiedEntries.length === 0 ? (
-                <p className={styles.empty}>Сервер пока не определил Top 4.</p>
+                <p className={styles.empty}>Top 4 пока не определен.</p>
               ) : (
                 <ol className={styles.topFourList}>
                   {qualifiedEntries.map((entry) => (

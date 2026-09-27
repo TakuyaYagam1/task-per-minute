@@ -10,6 +10,7 @@ const tournamentId = tournamentFixtureIds.tournament;
 const publicPath = `/api/v1/tournaments/${tournamentId}`;
 const participantLobbyPath = `${publicPath}/participant/lobby`;
 const participantSnapshotPath = `${publicPath}/participant/snapshot`;
+const participantRealtimePath = `${publicPath}/participant/realtime`;
 const participantReadyPath = `${publicPath}/participant/waves/${tournamentFixtureIds.bo3Wave}/ready`;
 const participantURL = `/arena/participant/${tournamentId}`;
 const serverTimestamp = "2026-09-15T10:00:00Z";
@@ -251,10 +252,10 @@ test("participant waiting, assignment, and direct task context stay on the tourn
       )),
     },
   });
-  await page.getByRole("button", { name: "Повторить синхронизацию" }).click();
+  await page.reload({ waitUntil: "domcontentloaded" });
 
   await expect(page.getByTestId("participant-player-panel")).toHaveAttribute("data-state", "assigned");
-  await expect(page.getByRole("link", { name: "Открыть назначенное задание" })).toHaveAttribute("href", taskURL);
+  await expect(page.getByRole("link", { name: "Открыть задание" })).toHaveAttribute("href", taskURL);
   expect(page.url()).toContain(`/arena/participant/${tournamentId}`);
   const participantData = page.getByLabel("Данные участника");
   await expect(participantData.getByText("Очки")).toBeVisible();
@@ -285,9 +286,16 @@ test("participant opens readiness only for the current window and ignores the ol
       window_id: tournamentFixtureIds.readyWindow,
     });
   });
+  await page.routeWebSocket(participantRealtimePath, (socket) => {
+    socket.send(JSON.stringify({
+      code: "tournament.forbidden",
+      message: "Participant access rejected",
+      type: "tournament.rejected",
+    }));
+  });
   await page.goto(participantURL);
 
-  await expect(page.getByRole("region", { name: "Готовность к раунду", exact: true })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Следующее действие", exact: true })).toBeVisible();
   const readyButton = page.getByRole("button", { name: "Подтвердить готовность", exact: true });
   await expect(readyButton).toBeEnabled();
   const oldKey = await page.getByTestId("participant-player-panel").getAttribute("data-ready-key");
@@ -302,11 +310,11 @@ test("participant opens readiness only for the current window and ignores the ol
     "00000000-0000-4000-8000-000000000199",
     "00000000-0000-4000-8000-000000000198",
   );
-  await page.getByRole("button", { name: "Повторить синхронизацию" }).click();
+  await page.getByRole("button", { name: "Повторить", exact: true }).click();
   await expect.poll(async () => page.getByTestId("participant-player-panel").getAttribute("data-ready-key")).not.toBe(oldKey);
   releaseOldRequest?.();
   await pendingClick;
-  await expect(page.getByText("Готовность подтверждена сервером.")).toHaveCount(0);
+  await expect(page.getByText("Готовность подтверждена.", { exact: true })).toHaveCount(0);
   await expect(readyButton).toBeEnabled();
 });
 
@@ -317,7 +325,7 @@ test("participant keeps the action disabled after the ready window closes", asyn
   await page.goto(participantURL);
 
   await expect(page.getByTestId("participant-ready-button")).toBeDisabled();
-  await expect(page.getByText("Действие откроется только в активном окне готовности.")).toBeVisible();
+  await expect(page.getByText("Кнопка станет доступна, когда откроется окно готовности.")).toBeVisible();
 });
 
 test("participant renders bye, eliminated, and completed as separate states", async ({ page }) => {
@@ -357,7 +365,7 @@ test("participant renders bye, eliminated, and completed as separate states", as
       status: "eliminated",
     },
   });
-  await page.getByRole("button", { name: "Повторить синхронизацию" }).click();
+  await page.reload({ waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("participant-player-panel")).toHaveAttribute("data-state", "eliminated");
 
   current = withRecovery(fixtureSet.participant.recovery, {
@@ -369,7 +377,7 @@ test("participant renders bye, eliminated, and completed as separate states", as
       status: "completed",
     },
   });
-  await page.getByRole("button", { name: "Повторить синхронизацию" }).click();
+  await page.reload({ waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("participant-player-panel")).toHaveAttribute("data-state", "completed");
   await expect(page.getByText("Турнир завершен")).toBeVisible();
 });
@@ -419,6 +427,27 @@ test("participant reports a ready rate limit without retrying the command", asyn
   expect(readyRequests).toBe(1);
 });
 
+test("participant hides raw readiness errors returned by the server", async ({ page }) => {
+  const fixtureSet = createTournamentFixtureSet();
+  let readyRequests = 0;
+  await installAccess(page, fixtureSet);
+  await installSnapshot(page, readyRecovery(fixtureSet.participant.recovery));
+  await page.route(`**${participantReadyPath}`, async (route) => {
+    readyRequests += 1;
+    await fulfillProblem(route, 500, "internal error");
+  });
+  await page.goto(participantURL);
+  await page.getByTestId("participant-ready-button").click();
+
+  const readinessError = page.getByTestId("participant-player-panel")
+    .getByRole("alert")
+    .filter({ hasText: "Не удалось подтвердить готовность. Повторите попытку." });
+  await expect(readinessError).toBeVisible();
+  await expect(readinessError).toContainText("Не удалось подтвердить готовность");
+  await expect(readinessError).not.toContainText("internal error");
+  expect(readyRequests).toBe(1);
+});
+
 test("participant keeps the last valid view while recovery becomes stale", async ({ page }) => {
   const fixtureSet = createTournamentFixtureSet();
   let initial = true;
@@ -436,8 +465,8 @@ test("participant keeps the last valid view while recovery becomes stale", async
   });
   await page.goto(participantURL);
   await expect(page.getByTestId("participant-player-panel")).toHaveAttribute("data-state", "assigned");
-  await page.getByRole("button", { name: "Повторить синхронизацию" }).click();
-  await expect(page.getByText("Данные устарели", { exact: true })).toBeVisible();
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await expect(page.getByTestId("participant-recovery-fallback")).toBeVisible();
   await expect(page.getByTestId("participant-player-panel")).toHaveAttribute("data-state", "assigned");
 });
 
@@ -462,7 +491,7 @@ test("participant lobby keeps keyboard access and long Cyrillic copy across resp
   await page.goto(participantURL);
   await expect(page.getByRole("region", { name: "Турнирная позиция" })).toBeVisible();
   await expect(page.getByRole("region", { name: "Задание для игры" })).toContainText(longCopy);
-  await expect(page.getByRole("region", { name: "Готовность к раунду", exact: true })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Следующее действие", exact: true })).toBeVisible();
 
   const readyButton = page.getByRole("button", { name: "Подтвердить готовность", exact: true });
   for (const [label, theme] of [["Темная тема", "dark"], ["Светлая тема", "light"]] as const) {
@@ -488,4 +517,41 @@ test("participant lobby keeps keyboard access and long Cyrillic copy across resp
 
   await readyButton.focus();
   await expect(readyButton).toBeFocused();
+});
+
+test("participant panel fills the arena content width across viewports", async ({ page }) => {
+  const fixtureSet = createTournamentFixtureSet();
+  await installAccess(page, fixtureSet);
+  await installSnapshot(page, readyRecovery(fixtureSet.participant.recovery));
+  await page.goto(participantURL);
+
+  await expect(page.getByTestId("participant-player-panel")).toBeVisible();
+
+  for (const [width, height] of [[390, 844], [768, 1024], [1440, 900]] as const) {
+    await page.setViewportSize({ width, height });
+    const geometry = await page.evaluate(() => {
+      const rectFor = (selector: string): { left: number; right: number } => {
+        const element = document.querySelector<HTMLElement>(selector);
+        if (element === null) {
+          throw new Error(`Missing geometry target: ${selector}`);
+        }
+        const rect = element.getBoundingClientRect();
+        return { left: rect.left, right: rect.right };
+      };
+
+      return {
+        header: rectFor("[data-testid=arena-shell] section[aria-label='Контекст турнира']"),
+        main: rectFor("[data-testid=arena-shell] main"),
+        panel: rectFor("[data-testid=participant-player-panel]"),
+        summary: rectFor("[data-testid=arena-shell] main article[aria-label]"),
+        documentWidth: document.documentElement.scrollWidth,
+        viewportWidth: window.innerWidth,
+      };
+    });
+    expect(geometry.panel.left).toBeGreaterThanOrEqual(geometry.main.left - 1);
+    expect(Math.abs(geometry.panel.right - geometry.main.right)).toBeLessThanOrEqual(1);
+    expect(Math.abs(geometry.panel.right - geometry.header.right)).toBeLessThanOrEqual(1);
+    expect(Math.abs(geometry.panel.right - geometry.summary.right)).toBeLessThanOrEqual(1);
+    expect(geometry.documentWidth).toBeLessThanOrEqual(geometry.viewportWidth);
+  }
 });

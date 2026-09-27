@@ -9,6 +9,7 @@ import {
   type RoleAwareRecoveryState,
   type TournamentLiveRole,
 } from "../../shared/api";
+import { Button, Message } from "../../shared/ui";
 import { useServerCountdown } from "./use-server-countdown";
 import { useOperatorTournamentRealtime } from "./use-operator-tournament-realtime";
 import { useParticipantTournamentRealtime } from "./use-participant-tournament-realtime";
@@ -177,7 +178,7 @@ const publicConnectionLabel = (
     case "reconnecting":
       return "Восстанавливаем";
     case "recovering":
-      return "Синхронизируем";
+      return "Обновляем данные";
     case "connected":
       return "На связи";
     case "rejected":
@@ -224,6 +225,25 @@ const CountdownPanel = ({
     >
       {children}
     </TournamentLivePanel>
+  );
+};
+
+const ParticipantRecoveryFallback = ({
+  onRetry,
+  status,
+}: Readonly<{
+  onRetry: () => void;
+  status: TournamentLiveConnectionStatus;
+}>) => {
+  if (status !== "stale" && status !== "rejected") {
+    return null;
+  }
+
+  return (
+    <Message data-testid="participant-recovery-fallback" tone="warning" title="Матч не обновился">
+      <p>Не удалось обновить данные матча. Проверьте соединение и повторите попытку.</p>
+      <Button onClick={onRetry} type="button" variant="secondary">Повторить</Button>
+    </Message>
   );
 };
 
@@ -286,26 +306,34 @@ export const TournamentRecoveryPanel = ({
     ? recoverPublicTournament(recovery.snapshot)
     : null;
   const publicRealtimeCursor = publicRealtime.state?.cursor;
+  const publicRecoveryMatchesRealtime = publicRecoveryState !== null &&
+    publicRealtimeCursor !== undefined &&
+    comparePublicRecoveryCursor(publicRecoveryState.cursor, publicRealtimeCursor) === 0;
   const publicBroadcastState = publicRecoveryState !== null && (
-    publicRealtime.status !== "connected" && (
-      publicRealtime.refreshing ||
-      publicRealtime.recoveryAuthoritative ||
-      publicRealtimeCursor === undefined ||
-      comparePublicRecoveryCursor(publicRealtimeCursor, publicRecoveryState.cursor) < 0
-    )
+    (
+      publicRealtime.status !== "connected" && (
+        publicRealtime.refreshing ||
+        publicRealtime.recoveryAuthoritative ||
+        publicRealtimeCursor === undefined ||
+        comparePublicRecoveryCursor(publicRealtimeCursor, publicRecoveryState.cursor) < 0
+      )
+    ) ||
+    publicRecoveryMatchesRealtime
   )
     ? publicRecoveryState
     : publicRealtime.state;
   const panelRevision = operatorRealtime.state?.projectionRevision ??
     (liveRole === "public" ? publicBroadcastState?.cursor.projection_revision : undefined) ??
     recovery?.cursor.projection_revision;
+  const operatorProjectionRevision = operatorRealtime.state?.projectionRevision ??
+    (liveRole === "operator" ? recovery?.cursor.projection_revision : undefined);
   const operatorState = liveRole === "operator" ? (
     <dl
-      aria-label="Состояние realtime оператора"
+      aria-label="Состояние соединения"
       className={styles.telemetry}
       data-connection={operatorRealtime.status}
       data-paused={operatorRealtime.paused ? "true" : "false"}
-      data-projection-revision={operatorRealtime.state?.projectionRevision ?? ""}
+      data-projection-revision={operatorProjectionRevision ?? ""}
       data-ready={operatorRealtime.ready ? "true" : "false"}
       data-testid="operator-realtime-summary"
     >
@@ -329,7 +357,7 @@ export const TournamentRecoveryPanel = ({
   ) : null;
   const publicState = liveRole === "public" ? (
     <dl
-      aria-label="Состояние realtime публичного просмотра"
+      aria-label="Состояние трансляции"
       className={styles.telemetry}
       data-connection={publicRealtime.status}
       data-projection-revision={publicBroadcastState?.cursor.projection_revision ?? ""}
@@ -374,6 +402,15 @@ export const TournamentRecoveryPanel = ({
 
   if (contentOnly) {
     return <>{roleSlot}</>;
+  }
+
+  if (liveRole === "participant") {
+    return (
+      <>
+        <ParticipantRecoveryFallback onRetry={retryAll} status={panelStatus} />
+        {roleSlot}
+      </>
+    );
   }
 
   if (recovery && deadline) {

@@ -31,7 +31,7 @@ const errorText = (error: unknown): string => {
       return "Не удалось загрузить каталог. Проверьте соединение.";
     }
   }
-  return "Сервер вернул неожиданный ответ каталога. Повторите попытку.";
+  return "Не удалось загрузить каталог. Повторите попытку.";
 };
 
 const errorStatus = (error: unknown): CatalogLoadState["status"] =>

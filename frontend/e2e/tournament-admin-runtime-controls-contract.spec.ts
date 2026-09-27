@@ -350,13 +350,18 @@ const installRoutes = async (
   };
 };
 
-const openOperatorArena = async (page: Page): Promise<void> => {
-  await page.goto(`/arena/operator/${tournamentId}`, { waitUntil: "domcontentloaded" });
+const setOperatorAccessCSRF = async (page: Page): Promise<void> => {
   await page.evaluate(() => {
     document.cookie = "tpm_admin_access_csrf=operator-access-csrf; Path=/; SameSite=Lax";
   });
+  await expect.poll(() => page.evaluate(() => document.cookie)).toContain("tpm_admin_access_csrf=operator-access-csrf");
+};
+
+const openOperatorArena = async (page: Page): Promise<void> => {
+  await page.goto(`/arena/operator/${tournamentId}`, { waitUntil: "domcontentloaded" });
   await expect(page.getByRole("heading", { name: "Управление турниром" })).toBeVisible();
-  await expect(page.getByText("Снимок подтвержден", { exact: true })).toBeVisible();
+  await expect(page.getByText("Данные обновлены", { exact: true })).toBeVisible();
+  await setOperatorAccessCSRF(page);
 };
 
 const fillReasonAndConfirm = async (page: Page, reason: string): Promise<void> => {
@@ -365,7 +370,7 @@ const fillReasonAndConfirm = async (page: Page, reason: string): Promise<void> =
   await reasonField.focus();
   await reasonField.pressSequentially(reason);
   const confirmation = page.getByRole("checkbox", {
-    name: "Подтверждаю, что команда соответствует текущему авторитетному снимку.",
+    name: "Подтверждаю, что команда соответствует актуальным данным турнира.",
     exact: true,
   });
   await confirmation.focus();
@@ -378,7 +383,7 @@ const chooseActionByKeyboard = async (
   page: Page,
   value: string,
 ): Promise<void> => {
-  const actionSelect = page.getByRole("combobox", { name: "Команда оператора", exact: true });
+  const actionSelect = page.getByRole("combobox", { name: "Действие", exact: true });
   await actionSelect.focus();
   await expect(actionSelect).toBeFocused();
   const options = await actionSelect.locator("option").evaluateAll((elements) => elements.map((element) => {
@@ -475,9 +480,9 @@ test("stale operator command refetches the current snapshot and shows a warning"
   await fillReasonAndConfirm(page, "Проверка устаревшей ревизии");
   await submitActionByKeyboard(page, "Выполнить: Пауза турнира");
 
-  await expect(page.getByText("Снимок устарел", { exact: true })).toBeVisible();
-  await expect(page.getByRole("status").filter({ hasText: "Снимок устарел" })).toContainText("Снимок устарел");
-  await expect(page.getByText("Другой оператор изменил состояние. Снимок обновлен, проверьте команду перед повтором.", { exact: true })).toBeVisible();
+  await expect(page.getByText("Данные устарели", { exact: true })).toBeVisible();
+  await expect(page.getByRole("status").filter({ hasText: "Данные устарели" })).toContainText("Данные устарели");
+  await expect(page.getByText("Другой оператор изменил состояние. Данные обновлены, проверьте команду перед повтором.", { exact: true })).toBeVisible();
   await expect(page.getByRole("region", { name: "Управление турниром" })).toContainText("Техническая пауза");
   expect(routes.actionRequests).toHaveLength(0);
   expect(routes.waveActionRequests).toHaveLength(1);
@@ -489,13 +494,14 @@ test("no-show and operator forfeit keep distinct evidence-bound 204 contracts", 
   const routes = await installRoutes(page, oneReady);
 
   await openOperatorArena(page);
-  const actionSelect = page.getByRole("combobox", { name: "Команда оператора", exact: true });
+  const actionSelect = page.getByRole("combobox", { name: "Действие", exact: true });
   const noShowOption = actionSelect.locator('option[value="no-show"]');
   await expect.soft(noShowOption, "FE-033 requires a one-ready participant no-show candidate after the deadline").not.toHaveAttribute("disabled");
 
   routes.setSnapshot(noShowSnapshot(10, false));
   await page.reload({ waitUntil: "domcontentloaded" });
-  await expect(page.getByText("Снимок подтвержден", { exact: true })).toBeVisible();
+  await expect(page.getByText("Данные обновлены", { exact: true })).toBeVisible();
+  await setOperatorAccessCSRF(page);
   await chooseActionByKeyboard(page, "no-show");
   await fillReasonAndConfirm(page, "Подтвержденная неявка после окна готовности");
   await submitActionByKeyboard(page, "Выполнить: Неявка пары");
@@ -522,12 +528,13 @@ test("no-show and operator forfeit keep distinct evidence-bound 204 contracts", 
 
   routes.setSnapshot(forfeitSnapshot(11));
   await page.reload({ waitUntil: "domcontentloaded" });
-  await expect(page.getByText("Снимок подтвержден", { exact: true })).toBeVisible();
+  await expect(page.getByText("Данные обновлены", { exact: true })).toBeVisible();
+  await setOperatorAccessCSRF(page);
   await chooseActionByKeyboard(page, "operator-forfeit");
-  await page.getByLabel("rule_id", { exact: true }).fill("rule.match.integrity");
-  await page.getByLabel("Evidence IDs", { exact: true }).fill("00000000-0000-4000-8000-000000000999");
+  await page.getByLabel("Нарушенное правило", { exact: true }).fill("rule.match.integrity");
+  await page.getByLabel("ID подтверждающих записей из журнала", { exact: true }).fill("00000000-0000-4000-8000-000000000999");
   await fillReasonAndConfirm(page, "Нарушение правила целостности матча");
-  await submitActionByKeyboard(page, "Выполнить: Операторский форфейт");
+  await submitActionByKeyboard(page, "Выполнить: Техническое поражение");
 
   await expect.poll(() => routes.forfeitRequests.length).toBe(1);
   const forfeit = routes.forfeitRequests[0];
@@ -557,7 +564,7 @@ test("no-show and operator forfeit keep distinct evidence-bound 204 contracts", 
   expect(forfeit?.body).not.toHaveProperty("surrender");
   expect(forfeit?.headers["idempotency-key"]).toMatch(uuidPattern);
   expect(forfeit?.headers["x-csrf-token"]).toBe("operator-access-csrf");
-  await expect(page.getByText("Операторский форфейт выполнено. Отображается новый авторитетный снимок.", { exact: true })).toBeVisible();
+  await expect(page.getByText("Действие выполнено. Данные турнира обновлены.", { exact: true })).toBeVisible();
 });
 
 test("no-show selection distinguishes series sharing one wave", async ({ page }) => {
@@ -565,7 +572,7 @@ test("no-show selection distinguishes series sharing one wave", async ({ page })
 
   await openOperatorArena(page);
   await chooseActionByKeyboard(page, "no-show");
-  const candidateSelect = page.getByLabel("Открытое окно неявки", { exact: true });
+  const candidateSelect = page.getByLabel("Матч с неявкой", { exact: true });
   await expect(candidateSelect.locator("option")).toHaveCount(2);
   await candidateSelect.focus();
   await expect(candidateSelect).toBeFocused();
@@ -588,7 +595,7 @@ test("resume follows the server matrix and cancellation requires a dismissible d
   routes.setActionPlan({ nextSnapshot: activeSnapshot(13) });
 
   await openOperatorArena(page);
-  const actionSelect = page.getByRole("combobox", { name: "Команда оператора", exact: true });
+  const actionSelect = page.getByRole("combobox", { name: "Действие", exact: true });
   await expect(actionSelect.locator('option[value="pause"]')).toBeDisabled();
   await expect(actionSelect.locator('option[value="resume"]')).not.toBeDisabled();
   await chooseActionByKeyboard(page, "resume");
@@ -612,7 +619,7 @@ test("resume follows the server matrix and cancellation requires a dismissible d
   await cancellationReason.focus();
   await cancellationReason.pressSequentially("Турнир отменен решением главного судьи");
   const cancellationConfirmation = page.getByRole("checkbox", {
-    name: "Подтверждаю, что команда соответствует текущему авторитетному снимку.",
+    name: "Подтверждаю, что команда соответствует актуальным данным турнира.",
     exact: true,
   });
   await cancellationConfirmation.focus();

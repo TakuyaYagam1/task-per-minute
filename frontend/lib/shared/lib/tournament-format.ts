@@ -73,9 +73,9 @@ export const CONNECTION_STATE_LABELS = {
   connected: "На связи",
   recovering: "Восстановление связи",
   reconnected: "Связь восстановлена",
-  live: "Сервер на связи",
+  live: "На связи",
   stale: "Данные устарели",
-  awaiting_server: "Ожидаем сервер",
+  awaiting_server: "Ожидаем подтверждения",
   disconnected: "Связь потеряна",
   rejected: "Соединение отклонено",
   closed: "Соединение закрыто",
@@ -144,31 +144,31 @@ export const CATEGORY_LABELS = {
 } as const satisfies Readonly<Record<string, string>>;
 
 export const ERROR_LABELS = {
-  transport: "Не удалось связаться с сервером",
+  transport: "Не удалось обновить данные. Проверьте соединение",
   unauthorized: "Сессия истекла. Войдите снова",
   forbidden: "Недостаточно прав для этого действия",
   not_found: "Турнир или ресурс не найден",
-  conflict: "Состояние изменилось. Обновите данные",
+  conflict: "Данные изменились. Обновите страницу",
   validation: "Проверьте введенные данные",
   rate_limited: "Слишком много запросов. Повторите позже",
-  http: "Сервер временно недоступен",
+  http: "Не удалось загрузить данные",
   bad_request: "Некорректный запрос",
   request_entity_too_large: "Запрос слишком большой",
   unsupported_media_type: "Неподдерживаемый формат данных",
-  unexpected_server_problem: "Сервер временно недоступен",
+  unexpected_server_problem: "Не удалось загрузить данные",
   tournament_revision_conflict: "Версия турнира устарела. Обновите данные",
   projection_revision_conflict: "Версия данных устарела. Обновите данные",
-  golden_runtime_conflict: "Состояние золотого этапа изменилось. Обновите данные",
+  golden_runtime_conflict: "Данные золотого этапа изменились. Обновите данные",
   invalid_request: "Проверьте запрос",
-  internal_server_error: "Сервер временно недоступен",
-  network_error: "Не удалось связаться с сервером",
+  internal_server_error: "Не удалось загрузить данные",
+  network_error: "Не удалось обновить данные. Проверьте соединение",
   validation_failed: "Проверьте введенные данные",
   "validation failed": "Проверьте введенные данные",
   "not found": "Турнир или ресурс не найден",
   "rate limited": "Слишком много запросов. Повторите позже",
   "request entity too large": "Запрос слишком большой",
   "unsupported media type": "Неподдерживаемый формат данных",
-  "unexpected server problem": "Сервер временно недоступен",
+  "unexpected server problem": "Не удалось загрузить данные",
 } as const satisfies Readonly<Record<string, string>>;
 
 export const PREFLIGHT_CODE_LABELS = {
@@ -201,10 +201,10 @@ export const PREFLIGHT_CODE_LABELS = {
 
 export const UNKNOWN_STATE_LABEL = "Состояние недоступно";
 export const UNKNOWN_CONNECTION_LABEL = "Состояние соединения недоступно";
-export const UNKNOWN_ERROR_LABEL = "Неизвестная ошибка сервера";
+export const UNKNOWN_ERROR_LABEL = "Не удалось выполнить действие";
 export const UNKNOWN_ACTION_LABEL = "Действие недоступно";
 export const UNKNOWN_RESULT_REASON_LABEL = "Причина результата недоступна";
-export const UNKNOWN_CATEGORY_LABEL = "Категория недоступна";
+export const UNKNOWN_CATEGORY_LABEL = "Категория пока не указана";
 export const UNKNOWN_FORMAT_LABEL = "Формат недоступен";
 export const UNKNOWN_DATE_TIME_LABEL = "Дата недоступна";
 export const UNKNOWN_DURATION_LABEL = "Время недоступно";

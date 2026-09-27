@@ -64,11 +64,11 @@ const actionAllowed = (view: ParticipantPlayerView | null): boolean => {
 const defaultMessageFor = (status: ParticipantSubmissionResult["status"]): string => {
   switch (status) {
     case "accepted":
-      return "Ответ принят сервером. Официальный результат определит сервер.";
+      return "Ответ принят. Итог появится после официального решения.";
     case "incorrect":
-      return "Ответ неверный. Сервер сохранил попытку; проверьте решение и повторите.";
+      return "Ответ неверный. Попытка сохранена. Проверьте решение и повторите.";
     case "conflict":
-      return "Состояние игры изменилось. Сверяем данные с сервером.";
+      return "Данные игры изменились. Обновляем матч.";
     case "rate_limited":
       return "Слишком много попыток. Повторите после паузы.";
   }
@@ -116,7 +116,7 @@ export const useParticipantSubmission = ({
       submittedFlag,
       tournamentId: view.tournamentId,
     };
-    setState({ message: "Проверяем ответ сервером.", status: "pending" });
+    setState({ message: "Проверяем ответ.", status: "pending" });
 
     void onSubmit(intent)
       .then((result) => {

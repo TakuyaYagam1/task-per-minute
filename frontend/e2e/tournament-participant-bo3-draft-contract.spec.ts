@@ -389,8 +389,8 @@ test("FE-022 keeps automatic server action evidence after refresh and never crea
   );
   await page.reload();
   await expect(page.getByTestId("participant-draft-action-1")).toHaveAttribute("data-automatic", "true");
-  await expect(page.getByTestId("participant-draft-action-1")).toContainText(/автоматически сервером/i);
-  await expect(page.getByTestId("participant-draft-action-1")).toContainText(/доказательством/i);
+  await expect(page.getByTestId("participant-draft-action-1")).toContainText("Автоматический ход");
+  await expect(page.getByTestId("participant-draft-action-1")).toContainText("Решение подтверждено");
   await expect(actionButtons(page, "ban")).toHaveCount(0);
   await page.waitForTimeout(400);
   expect(posts).toBe(0);

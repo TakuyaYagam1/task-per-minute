@@ -166,6 +166,48 @@ func TestReadyCommandAndPreStartDisconnect(t *testing.T) {
 	})
 }
 
+func TestReadinessCommandsRejectExpiredWindow(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 8, 30, 12, 0, 10, 0, time.UTC)
+	authority := readinessFixture(t, now)
+	participantID := authority.Wave.Members[0].ParticipantID
+	command := readiness.ReadyCommand{
+		Scope: authority.Scope, CommandID: task036ID(200),
+		ActorParticipantID: participantID, ParticipantID: participantID,
+		ExpectedWaveRevisionID:   authority.Wave.RevisionID,
+		ExpectedWindowRevisionID: authority.Wave.ReadyWindow.RevisionID,
+	}
+	state, repository := newReadinessRepository(t, authority, 1, 0)
+	_, changed, err := readiness.NewReadinessUseCase(
+		repository,
+		newFixedClock(t, now.Add(21*time.Second), 1),
+	).MarkReady(t.Context(), command)
+	require.False(t, changed)
+	require.ErrorIs(t, err, readiness.ErrReadinessAuthorityConflict)
+	require.Equal(t, 0, state.commitCount())
+
+	clearedAuthority := cloneReadinessAuthority(authority)
+	clearedAuthority.Wave.Members[0].Ready = true
+	clearedAuthority.Events = []readiness.ReadinessEvent{{
+		CommandID: task036ID(201), Scope: authority.Scope, ParticipantID: participantID,
+		Type: readiness.ReadinessEventReady, OccurredAt: now,
+	}}
+	clearState, clearRepository := newReadinessRepository(t, clearedAuthority, 1, 0)
+	clearCommand := readiness.DisconnectReadinessCommand{
+		Scope: authority.Scope, CommandID: task036ID(202), ParticipantID: participantID,
+		ExpectedWaveRevisionID:   authority.Wave.RevisionID,
+		ExpectedWindowRevisionID: authority.Wave.ReadyWindow.RevisionID,
+	}
+	_, changed, err = readiness.NewReadinessUseCase(
+		clearRepository,
+		newFixedClock(t, now.Add(21*time.Second), 1),
+	).ClearOnDisconnect(t.Context(), clearCommand)
+	require.False(t, changed)
+	require.ErrorIs(t, err, readiness.ErrReadinessAuthorityConflict)
+	require.Equal(t, 0, clearState.commitCount())
+}
+
 type readinessRepositoryState struct {
 	mu        sync.Mutex
 	authority readiness.ReadinessAuthority

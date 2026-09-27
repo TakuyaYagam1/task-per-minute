@@ -1959,21 +1959,22 @@ test.describe('local compose full stack e2e', () => {
       );
       expect(browserLockedRoster.locked).toBe(true);
       expect(browserLockedRoster.execution_started).toBe(false);
+      await rosterRegion.getByText('Изменить зафиксированный состав', { exact: true }).click();
       await expect(
-        rosterRegion.getByRole('button', { name: 'Разблокировать состав' }),
+        rosterRegion.getByRole('button', { name: 'Открыть состав для изменений' }),
       ).toBeVisible();
 
       await rosterRegion
-        .getByLabel('Причина разблокировки')
+        .getByLabel('Причина изменения')
         .fill('Проверка управляемого возврата перед стартом');
-      await rosterRegion.getByLabel('Подтверждаю разблокировку состава').check();
+      await rosterRegion.getByLabel('Подтверждаю открытие состава для изменений').check();
       const browserUnlockResponse = page.waitForResponse(
         (response) =>
           new URL(response.url()).pathname ===
             `/api/v1/admin/tournaments/${tournament.id}/roster/unlock` &&
           response.request().method() === 'POST',
       );
-      await rosterRegion.getByRole('button', { name: 'Разблокировать состав' }).click();
+      await rosterRegion.getByRole('button', { name: 'Открыть состав для изменений' }).click();
       const browserUnlockedRoster = await readRosterResponse(
         await browserUnlockResponse,
         tournament.id,
@@ -2182,7 +2183,7 @@ test.describe('local compose full stack e2e', () => {
       expect([...pairedParticipantIDs].sort()).toEqual(
         [...configuredRound.roster_participant_ids].sort(),
       );
-      await expect(pairingRegion.getByText('Серверный план раунда 1')).toBeVisible();
+      await expect(pairingRegion.getByText('План раунда 1')).toBeVisible();
       await expect(pairingRegion.getByText('Сохранен', { exact: true })).toBeVisible();
       await expect(pairingRegion.getByText('Повтор', { exact: true })).toHaveCount(0);
 
@@ -6741,8 +6742,24 @@ test.describe('local compose full stack e2e', () => {
       return fixture.context;
     };
 
+    let readinessCheckedThroughUI = false;
     for (const member of wave.members.filter((candidate) => candidate.series_id !== null)) {
       const context = contextForParticipant(member.participant_id);
+      if (!readinessCheckedThroughUI) {
+        const matchPage = await context.newPage();
+        await matchPage.goto(`/arena/participant/${primaryTournament.id}`);
+        const readyButton = matchPage.getByTestId('participant-ready-button');
+        await expect(readyButton).toBeEnabled();
+        const readinessResponse = matchPage.waitForResponse((response) =>
+          response.request().method() === 'POST' &&
+          response.url().endsWith(`/participant/waves/${wave.id}/ready`),
+        );
+        await readyButton.click();
+        expect((await readinessResponse).status()).toBe(200);
+        await expect(matchPage.getByText('Готовность подтверждена.', { exact: true })).toBeVisible();
+        readinessCheckedThroughUI = true;
+        continue;
+      }
       const participant = await readParticipantSnapshotViaApi(context, primaryTournament.id);
       const csrfToken = (await context.cookies()).find(
         (cookie) => cookie.name === 'tpm_player_csrf',
@@ -6785,7 +6802,7 @@ test.describe('local compose full stack e2e', () => {
     expect(assignedSnapshot.assignment?.active_snapshot.task_id).toMatch(/^[0-9a-f-]{36}$/i);
 
     await restoredPrimaryPage.reload({ waitUntil: 'domcontentloaded' });
-    const workspaceLink = restoredPrimaryPage.getByRole('link', { name: 'Перейти к участию' });
+    const workspaceLink = restoredPrimaryPage.getByRole('link', { name: 'Открыть мой матч' });
     await expect(workspaceLink).toBeVisible({ timeout: 30_000 });
     await workspaceLink.click();
     await expect(restoredPrimaryPage).toHaveURL(

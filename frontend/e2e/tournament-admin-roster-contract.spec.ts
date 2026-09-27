@@ -153,7 +153,7 @@ const preflight = (
   tournament_id: tournamentID,
 });
 
-const tournament = (rosterSize: number) => ({
+const tournament = (rosterSize: number, state: "draft" | "roster_locked" = "draft") => ({
   content_revision: contentRevision,
   created_at: baseDate,
   finished_at: null,
@@ -167,7 +167,7 @@ const tournament = (rosterSize: number) => ({
   roster_id: rosterID,
   roster_size: rosterSize,
   started_at: null,
-  state: "draft",
+  state,
   updated_at: baseDate,
 });
 
@@ -247,7 +247,10 @@ const setupRosterRoutes = async (
     }
     if (path === "/api/v1/admin/tournaments" && method === "GET") {
       await fulfillJSON(route, 200, {
-        items: [tournament(initialRoster.participants.length)],
+        items: [tournament(
+          initialRoster.participants.length,
+          initialRoster.locked ? "roster_locked" : "draft",
+        )],
         next_cursor: null,
       });
       return;
@@ -268,7 +271,10 @@ const setupRosterRoutes = async (
         recovery_controls: [],
         roster: initialRoster,
         series: [],
-        tournament: tournament(initialRoster.participants.length),
+        tournament: tournament(
+          initialRoster.participants.length,
+          initialRoster.locked ? "roster_locked" : "draft",
+        ),
         waves: [],
       });
       return;
@@ -562,7 +568,7 @@ test("изменяет attendance, заменяет и удаляет участ
   ).toHaveValue(players[0].id);
 });
 
-test("сохраняет draft при русском 409 reservation conflict и блокирует редактирование locked roster", async ({ page }) => {
+test("сохраняет draft при русском 409 и показывает следующий шаг для зафиксированного состава", async ({ page }) => {
   const players = [
     player(0, "Алиса"),
     player(1, "Боб"),
@@ -599,10 +605,15 @@ test("сохраняет draft при русском 409 reservation conflict и
   ], { locked: true, locked_at: baseDate }), { players });
   await openRoster(page);
   const lockedRegion = rosterRegion(page);
-  await expect(lockedRegion.getByRole("button", { name: /Добавить участника/i })).toBeDisabled();
-  await expect(lockedRegion.getByRole("button", { name: /Сохранить состав/i })).toBeDisabled();
-  await expect(lockedRegion.getByRole("button", { name: "Удалить" }).first()).toBeDisabled();
-  await expect(attendanceControl(rosterGroup(page, 1))).toBeDisabled();
+  await expect(lockedRegion.getByRole("button", { name: /Добавить участника/i })).toHaveCount(0);
+  await expect(lockedRegion.getByRole("button", { name: /Сохранить состав/i })).toHaveCount(0);
+  await expect(lockedRegion.getByRole("button", { name: "Удалить" })).toHaveCount(0);
+  await expect(lockedRegion).toContainText("На месте");
+  await lockedRegion.getByRole("button", { name: "Перейти к запуску" }).click();
+  await expect(page).toHaveURL(new RegExp(`[?&]tournament=${tournamentID}(?:&|$)`));
+  await expect(page).toHaveURL(new RegExp(`[?&]view=overview(?:&|$)`));
+  await expect(page.getByTestId("tournament-start-controls")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Начать швейцарский этап" })).toBeVisible();
 });
 
 test("показывает успешный preflight и блокирует состав только с актуальным отчетом", async ({ page }) => {
@@ -680,6 +691,8 @@ test("показывает успешный preflight и блокирует со
   expect(preflightRequests[0].body).toEqual({ expected_projection_revision: 9 });
   expect(preflightRequests[0].key).toMatch(/^[0-9a-f-]{36}$/i);
   await expect(region).toContainText("Проверка пройдена");
+  await expect(region).toContainText("Состав участников заполнен");
+  await expect(region).not.toContainText("Проверка 1");
   await expect(region).toContainText("tournament.preflight.structure.roster_complete");
   await expect(region).toContainText("Состав заполнен до планового размера.");
   await expect(region).toContainText("participants=4");
@@ -699,8 +712,9 @@ test("показывает успешный preflight и блокирует со
     preflight_revision_id: report.id,
   });
   expect(lockRequests[0].key).toMatch(/^[0-9a-f-]{36}$/i);
-  await expect(region).toContainText("Только просмотр");
-  await expect(region.getByRole("button", { name: /Сохранить состав/i })).toBeDisabled();
+  await expect(region).toContainText("Состав зафиксирован");
+  await expect(region.getByRole("button", { name: "Перейти к запуску" })).toBeVisible();
+  await expect(region.getByRole("button", { name: /Сохранить состав/i })).toHaveCount(0);
 });
 
 test("показывает точные причины capacity и task failure и оставляет блокировку недоступной", async ({ page }) => {
@@ -732,6 +746,9 @@ test("показывает точные причины capacity и task failure 
   const region = rosterRegion(page);
   await region.getByRole("button", { name: "Запустить проверку" }).click();
   await expect(region).toContainText("Проверка не пройдена");
+  await expect(region).toContainText("Емкость системы проверена");
+  await expect(region).toContainText("Все задания на месте");
+  await expect(region).not.toContainText("Проверка 1");
   await expect(region).toContainText("Недостаточная емкость исполнения: доступно 2 из 4 слотов.");
   await expect(region).toContainText("available_slots=2");
   await expect(region).toContainText("Недостаточно задач для категории web.");
@@ -780,7 +797,7 @@ test("сбрасывает отчет после stale 409 lock и требуе�
   await expect(region).toContainText("Емкости исполнения достаточно.");
 });
 
-test("требует подтверждение и причину для unlock и скрывает unlock после начала исполнения", async ({ page }) => {
+test("требует подтверждение и причину для изменения состава и скрывает форму после начала турнира", async ({ page }) => {
   const players = [
     player(0, "Алиса"),
     player(1, "Боб"),
@@ -810,17 +827,18 @@ test("требует подтверждение и причину для unlock 
   await openRoster(page);
 
   const region = rosterRegion(page);
-  const unlock = region.getByRole("button", { name: "Разблокировать состав" });
+  await region.getByText("Изменить зафиксированный состав", { exact: true }).click();
+  const unlock = region.getByRole("button", { name: "Открыть состав для изменений" });
   await expect(unlock).toBeVisible();
   await expect(unlock).toBeDisabled();
-  await region.getByLabel("Причина разблокировки").fill("  Исправление состава  ");
-  await region.getByLabel("Подтверждаю разблокировку состава").check();
+  await region.getByLabel("Причина изменения").fill("  Исправление состава  ");
+  await region.getByLabel("Подтверждаю открытие состава для изменений").check();
   await expect(unlock).toBeEnabled();
   await unlock.click();
   await expect.poll(() => unlockRequests.length).toBe(1);
   expect(unlockRequests[0].key).toMatch(/^[0-9a-f-]{36}$/i);
   await expect(region).toContainText("Можно редактировать");
-  await expect(region.getByRole("button", { name: "Разблокировать состав" })).toHaveCount(0);
+  await expect(region.getByRole("button", { name: "Открыть состав для изменений" })).toHaveCount(0);
 
   await page.reload();
   await setupRosterRoutes(page, roster(
@@ -834,8 +852,8 @@ test("требует подтверждение и причину для unlock 
   ), { players });
   await openRoster(page);
   const executingRegion = rosterRegion(page);
-  await expect(executingRegion).toContainText("Исполнение турнира уже началось");
-  await expect(executingRegion.getByRole("button", { name: "Разблокировать состав" })).toHaveCount(0);
+  await expect(executingRegion).toContainText("Турнир уже начался");
+  await expect(executingRegion.getByText("Изменить зафиксированный состав", { exact: true })).toHaveCount(0);
 });
 
 test("сохраняет читаемый roster editor в обеих темах и на мобильной ширине", async ({ page }) => {

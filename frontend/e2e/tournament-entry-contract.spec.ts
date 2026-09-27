@@ -9,6 +9,7 @@ const participantPath = `${publicPath}/participant/lobby`;
 const participantSnapshotPath = `${publicPath}/participant/snapshot`;
 const publicSnapshotPath = `${publicPath}/snapshot`;
 const operatorPath = `/api/v1/admin/tournaments/${tournamentId}/snapshot`;
+const adminPlayersPath = "/api/v1/admin/players";
 const adminRefreshPath = "/api/v1/admin/refresh";
 const playerLogoutPath = "/api/v1/players/logout";
 const adminLogoutPath = "/api/v1/admin/logout";
@@ -178,7 +179,7 @@ test("direct participant link uses the participant API boundary", async ({ page 
   await page.goto(roleURL("participant", "?source=share&tab=overview"));
 
   await expect(page.getByTestId("arena-status")).toContainText("Доступ подтвержден");
-  await expect(page.getByTestId("arena-tournament-id")).toHaveText(tournamentId);
+  await expect(page.getByRole("region", { name: "Контекст турнира" })).toContainText("Участник");
   await expect(page.getByRole("heading", { name: /Участник/ })).toBeVisible();
 
   expectOnlyPaths(evidence, [publicPath, participantPath, participantSnapshotPath]);
@@ -213,7 +214,7 @@ test("direct operator link uses the admin API boundary and shows the tournament 
   await expect(page.getByTestId("arena-status")).toContainText("Доступ подтвержден");
   await expect(page.getByRole("heading", { name: /Сентябрьский контур.*Оператор/ })).toBeVisible();
 
-  expectOnlyPaths(evidence, [publicPath, operatorPath]);
+  expectOnlyPaths(evidence, [publicPath, operatorPath, adminPlayersPath]);
   expect(evidence.apiPaths.some((path) => path.includes("/participant/"))).toBe(false);
   expectNoAuthorization(evidence);
 });
@@ -250,7 +251,7 @@ test("successful role links preserve path and query parameters across reload", a
 
     expect(page.url()).toBe(loadedURL);
     await expect(page.getByTestId("arena-status")).toContainText("Доступ подтвержден");
-    await expect(page.getByTestId("arena-tournament-id")).toHaveText(tournamentId);
+    await expect(page.getByRole("region", { name: "Контекст турнира" })).toBeVisible();
   }
 
   expectOnlyPaths(evidence, [
@@ -258,6 +259,7 @@ test("successful role links preserve path and query parameters across reload", a
     participantPath,
     participantSnapshotPath,
     operatorPath,
+    adminPlayersPath,
     publicSnapshotPath,
   ]);
   expectNoAuthorization(evidence);
@@ -441,7 +443,7 @@ test("operator logout calls the admin logout API and clears the admin session", 
   expect(logoutCSRF).toBe(csrfToken);
   await expect.poll(() => page.evaluate(() => document.cookie.includes("tpm_admin_refresh_csrf="))).toBe(false);
 
-  expectOnlyPaths(evidence, [publicPath, operatorPath, adminLogoutPath]);
+  expectOnlyPaths(evidence, [publicPath, operatorPath, adminPlayersPath, adminLogoutPath]);
   expectNoAuthorization(evidence);
 });
 

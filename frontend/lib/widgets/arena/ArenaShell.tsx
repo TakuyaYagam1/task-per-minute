@@ -1,8 +1,10 @@
-import Image from "next/image";
+"use client";
+
 import Link from "next/link";
 import type { ReactNode } from "react";
 
-import { Button, Message, Panel, Status } from "../../shared/ui";
+import { useSiteHeaderAuth } from "../../features/site-header";
+import { Message, Panel, Status } from "../../shared/ui";
 
 import type {
   ArenaAccessMessage,
@@ -83,59 +85,27 @@ export const ArenaShell = ({
 }: ArenaShellProps) => {
   const hasTournamentContext = Boolean(tournamentId);
 
+  useSiteHeaderAuth(onLogout, logoutPending);
+
   return (
     <div className={styles.shell} data-testid="arena-shell">
       <div className={styles.container}>
-        <header>
-          <div className={styles.topbar}>
-            <div className={styles.brandBlock}>
-              <Link href="/" className={styles.brand} title="На главную">
-                <Image
-                  src="/task.png"
-                  alt=""
-                  width={64}
-                  height={40}
-                  className={styles.brandLogo}
-                />
-                <span>Arena</span>
-              </Link>
+        {hasTournamentContext && (
+          <section className={styles.context} aria-label="Контекст турнира">
+            <div className={styles.contextDetails}>
+              <strong>{tournamentName || "Турнир"}</strong>
             </div>
-            <nav className={styles.utilityNav} aria-label="Основная навигация">
-              <Link href="/leaderboard" className={styles.utilityLink}>Общий рейтинг</Link>
-            </nav>
-          </div>
-
-          {hasTournamentContext && (
-            <>
-              <section className={styles.context} aria-label="Контекст турнира">
-                <div className={styles.contextDetails}>
-                  <strong>{tournamentName || "Турнир"}</strong>
-                </div>
-                <div className={styles.contextAside}>
-                  {role && <span className={styles.roleName}>{ROLE_LABELS[role]}</span>}
-                  <Status
-                    tone={STATUS_TONES[accessStatus]}
-                    data-testid="arena-status"
-                  >
-                    {tournamentStateLabel ?? STATUS_LABELS[accessStatus]}
-                  </Status>
-                  {onLogout && (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="small"
-                      loading={logoutPending}
-                      loadingLabel="Выход"
-                      onClick={onLogout}
-                    >
-                      Выйти
-                    </Button>
-                  )}
-                </div>
-              </section>
-            </>
-          )}
-        </header>
+            <div className={styles.contextAside}>
+              {role && <span className={styles.roleName}>{ROLE_LABELS[role]}</span>}
+              <Status
+                tone={STATUS_TONES[accessStatus]}
+                data-testid="arena-status"
+              >
+                {tournamentStateLabel ?? STATUS_LABELS[accessStatus]}
+              </Status>
+            </div>
+          </section>
+        )}
 
         <main className={styles.content}>
           {accessMessage && (

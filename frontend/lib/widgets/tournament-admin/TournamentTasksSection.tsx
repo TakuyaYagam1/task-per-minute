@@ -82,7 +82,7 @@ export const TournamentTasksSection = ({
       setContentState("error");
       setContentError(
         unavailable
-          ? "Опубликованной ревизии пока нет. Для создания турнира потребуется публикация."
+          ? "Опубликованных задач пока нет. Сначала опубликуйте задачи."
           : problemMessage(error, "Не удалось получить текущую публикацию контента"),
       );
     } finally {

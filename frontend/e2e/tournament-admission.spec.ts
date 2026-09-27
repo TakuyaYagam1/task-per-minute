@@ -249,7 +249,7 @@ test(
 
   await page.goto(detailURL());
   await expect(page.getByTestId("tournament-admission-status")).toContainText("Участие подтверждено");
-  const workspaceLink = page.getByRole("link", { name: "Перейти к участию" });
+  const workspaceLink = page.getByRole("link", { name: "Открыть мой матч" });
   await expect(workspaceLink).toHaveAttribute(
     "href",
     new RegExp(`/arena/participant/${tournamentId}\\?return=`),
@@ -268,8 +268,8 @@ test("checked in prestart status waits for publication before offering participa
   });
 
   await page.goto(detailURL());
-  await expect(page.getByText("Участие подтверждено. Ожидайте старта турнира.")).toBeVisible();
-  await expect(page.getByRole("link", { name: "Перейти к участию" })).toHaveCount(0);
+  await expect(page.getByText("Участие подтверждено. Страница матча откроется после старта турнира.")).toBeVisible();
+  await expect(page.getByRole("link", { name: "Открыть мой матч" })).toHaveCount(0);
 });
 
 test("checked in player can withdraw before the registration roster is locked", async ({ page }) => {
@@ -315,10 +315,10 @@ test("registered status requires a confirmed participant lobby before opening wo
   });
 
   await page.goto(detailURL());
-  await expect(page.getByRole("button", { name: "Проверить доступ", exact: true })).toBeVisible();
-  await expect(page.getByRole("link", { name: "Перейти к участию" })).toHaveCount(0);
-  await page.getByRole("button", { name: "Проверить доступ", exact: true }).click();
-  await expect(page.getByRole("link", { name: "Перейти к участию" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Проверить матч", exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Открыть мой матч" })).toHaveCount(0);
+  await page.getByRole("button", { name: "Проверить матч", exact: true }).click();
+  await expect(page.getByRole("link", { name: "Открыть мой матч" })).toBeVisible();
   expect(lobbyCalls).toBe(1);
 });
 
@@ -425,7 +425,7 @@ test("wrong admission identity is rejected without exposing a workspace link", a
 
   await page.goto(detailURL());
   await expect(page.getByTestId("tournament-entry-message")).toContainText("Ошибка данных");
-  await expect(page.getByRole("link", { name: "Перейти к участию" })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "Открыть мой матч" })).toHaveCount(0);
 });
 
 test("a stale admission response cannot replace a newer status after navigation", async ({ page }) => {

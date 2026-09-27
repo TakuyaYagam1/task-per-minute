@@ -166,7 +166,7 @@ export const TournamentStartControls = ({
         if (snapshot.tournament.id !== tournament.id) {
           setActionUnavailable(false);
           setStale(true);
-          setCommandError("Снимок относится к другому турниру. Обновите данные перед повтором.");
+          setCommandError("Данные относятся к другому турниру. Обновите данные перед повтором.");
           return;
         }
 
@@ -184,7 +184,7 @@ export const TournamentStartControls = ({
         if (!isProjectionRevision(projectionRevision)) {
           setActionUnavailable(false);
           setStale(true);
-          setCommandError("Серверный снимок не содержит пригодной версии данных. Обновите данные перед повтором.");
+          setCommandError("Не удалось получить актуальные данные для перехода. Обновите данные перед повтором.");
           return;
         }
 
@@ -330,15 +330,17 @@ export const TournamentStartControls = ({
       ) : null}
 
       {action ? (
-        <Button
-          size="large"
-          loading={busyAction === action}
-          loadingLabel={action === "open_registration" ? "Открываем регистрацию" : "Запускаем швейцарский этап"}
-          disabled={stale}
-          onClick={() => void handleLifecycleAction(action)}
-        >
-          {actionLabel(action)}
-        </Button>
+        <div className={styles.actionRow}>
+          <Button
+            size="large"
+            loading={busyAction === action}
+            loadingLabel={action === "open_registration" ? "Открываем регистрацию" : "Запускаем швейцарский этап"}
+            disabled={stale}
+            onClick={() => void handleLifecycleAction(action)}
+          >
+            {actionLabel(action)}
+          </Button>
+        </div>
       ) : null}
     </Panel>
   );

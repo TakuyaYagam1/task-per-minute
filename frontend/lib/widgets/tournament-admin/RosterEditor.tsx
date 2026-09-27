@@ -13,7 +13,7 @@ import {
   type ReplaceRosterRequest,
   type Tournament,
 } from "../../shared/api";
-import { formatTournamentState } from "../../shared/lib";
+import { formatTournamentState, PREFLIGHT_CODE_LABELS } from "../../shared/lib";
 import { Button, Message, Panel, Status, TechnicalDetails } from "../../shared/ui";
 
 import styles from "./RosterEditor.module.css";
@@ -23,6 +23,7 @@ type RosterEditorProps = Readonly<{
   selectedTournament: Tournament | null;
   selectedTournamentId: string;
   onSelectTournament: (id: string) => void;
+  onNavigateToOverview?: () => void;
   onReloadTournaments: () => Promise<void>;
   onSessionExpired?: () => void;
   onDirtyChange?: (dirty: boolean) => void;
@@ -92,6 +93,7 @@ const rosterErrorMessage = (error: unknown, fallback: string): string => {
 };
 
 export const RosterEditor = ({
+  onNavigateToOverview,
   onReloadTournaments,
   onSessionExpired,
   onSelectTournament,
@@ -421,7 +423,7 @@ export const RosterEditor = ({
       if (error instanceof ApiError && error.status === 409) {
         resetPreflight();
         setRosterError(
-          `${error.problem?.detail || "Серверное состояние изменилось."} Ваши изменения сохранены в форме. Перезагрузите данные перед новой попыткой.`,
+          `${error.problem?.detail || "Данные турнира изменились."} Ваши изменения сохранены в форме. Перезагрузите данные перед новой попыткой.`,
         );
       } else {
         setRosterError(
@@ -523,7 +525,7 @@ export const RosterEditor = ({
       setPreflightState("error");
       setPreflightError(
         error instanceof ApiError && error.status === 409
-          ? `${rosterErrorMessage(error, "Серверное состояние изменилось.")} Обновите данные и повторите проверку.`
+          ? `${rosterErrorMessage(error, "Данные турнира изменились.")} Обновите данные и повторите проверку.`
           : rosterErrorMessage(error, "Не удалось проверить готовность к старту"),
       );
     } finally {
@@ -571,7 +573,7 @@ export const RosterEditor = ({
       setUnlockConfirmed(false);
       setUnlockReason("");
       await onReloadTournaments();
-      setRosterNotice("Состав зафиксирован. Турнир можно начинать только после успешной проверки.");
+      setRosterNotice(null);
     } catch (error) {
       if (error instanceof ApiError && error.status === 401) {
         onSessionExpired?.();
@@ -581,7 +583,7 @@ export const RosterEditor = ({
       }
       setControlError(
         error instanceof ApiError && error.status === 409
-          ? `${rosterErrorMessage(error, "Серверное состояние изменилось.")} Перезагрузите данные и запустите проверку заново.`
+          ? `${rosterErrorMessage(error, "Данные турнира изменились.")} Перезагрузите данные и запустите проверку заново.`
           : rosterErrorMessage(error, "Не удалось зафиксировать состав турнира"),
       );
     } finally {
@@ -635,7 +637,7 @@ export const RosterEditor = ({
       }
       setControlError(
         error instanceof ApiError && error.status === 409
-          ? `${rosterErrorMessage(error, "Серверное состояние изменилось.")} Обновите данные перед повторной попыткой.`
+          ? `${rosterErrorMessage(error, "Данные турнира изменились.")} Обновите данные перед повторной попыткой.`
           : rosterErrorMessage(error, "Не удалось разблокировать состав турнира"),
       );
     } finally {
@@ -728,76 +730,85 @@ export const RosterEditor = ({
           </div>
 
           {rosterEditingLocked && (
-            <Message tone="warning" title="Состав недоступен для изменений">
+            <Message
+              tone={roster.execution_started ? "warning" : "success"}
+              title={roster.execution_started ? "Турнир уже начался" : "Состав зафиксирован"}
+            >
               {roster.execution_started
-                ? "Исполнение турнира уже началось. Изменение и сохранение состава отключены."
-                : "Состав зафиксирован на сервере. Изменение и сохранение состава отключены."}
+                ? "Состав больше нельзя менять после начала турнира."
+                : "Перейдите в раздел \"Обзор\", чтобы запустить швейцарский этап."
+              }
+              {!roster.execution_started && onNavigateToOverview ? (
+                <Button
+                  className={styles.nextStepButton}
+                  type="button"
+                  size="small"
+                  onClick={onNavigateToOverview}
+                >
+                  Перейти к запуску
+                </Button>
+              ) : null}
             </Message>
           )}
 
           {roster.locked && !roster.execution_started && (
-            <section
-              className={styles.unlockPanel}
-              aria-labelledby="roster-unlock-title"
-            >
-              <div>
-                <h4 id="roster-unlock-title" className={styles.sectionTitle}>
-                  Разблокировать состав
-                </h4>
+            <details className={styles.unlockPanel}>
+              <summary className={styles.unlockSummary}>Изменить зафиксированный состав</summary>
+              <div className={styles.unlockContent}>
                 <p className={styles.sectionDescription}>
-                  Разблокировка отменит серверную фиксацию. Перед новой фиксацией потребуется повторная проверка.
+                  Откройте состав для изменений. После этого его потребуется проверить и зафиксировать заново.
                 </p>
+                <div className={styles.checkboxField}>
+                  <input
+                    id="roster-unlock-confirmed"
+                    type="checkbox"
+                    checked={unlockConfirmed}
+                    disabled={unlockingRoster || lockingRoster}
+                    onChange={(event) => {
+                      setUnlockConfirmed(event.target.checked);
+                      setControlError(null);
+                    }}
+                  />
+                  <label htmlFor="roster-unlock-confirmed">
+                    Подтверждаю открытие состава для изменений
+                  </label>
+                </div>
+                <div className={styles.unlockField}>
+                  <label htmlFor="roster-unlock-reason">Причина изменения</label>
+                  <textarea
+                    id="roster-unlock-reason"
+                    value={unlockReason}
+                    maxLength={MAX_UNLOCK_REASON_LENGTH}
+                    onChange={(event) => {
+                      setUnlockReason(event.target.value);
+                      setControlError(null);
+                    }}
+                    placeholder="Укажите причину"
+                    disabled={unlockingRoster || lockingRoster}
+                    required
+                  />
+                  <span className={styles.fieldHint}>
+                    {unlockReason.length} / {MAX_UNLOCK_REASON_LENGTH}
+                  </span>
+                </div>
+                <Button
+                  type="button"
+                  variant="danger"
+                  onClick={() => void handleUnlockRoster()}
+                  loading={unlockingRoster}
+                  loadingLabel="Открываем состав"
+                  disabled={
+                    !unlockConfirmed ||
+                    unlockReason.trim().length === 0 ||
+                    unlockingRoster ||
+                    lockingRoster ||
+                    savingRoster
+                  }
+                >
+                  Открыть состав для изменений
+                </Button>
               </div>
-              <div className={styles.checkboxField}>
-                <input
-                  id="roster-unlock-confirmed"
-                  type="checkbox"
-                  checked={unlockConfirmed}
-                  disabled={unlockingRoster || lockingRoster}
-                  onChange={(event) => {
-                    setUnlockConfirmed(event.target.checked);
-                    setControlError(null);
-                  }}
-                />
-                <label htmlFor="roster-unlock-confirmed">
-                  Подтверждаю разблокировку состава
-                </label>
-              </div>
-              <div className={styles.unlockField}>
-                <label htmlFor="roster-unlock-reason">Причина разблокировки</label>
-                <textarea
-                  id="roster-unlock-reason"
-                  value={unlockReason}
-                  maxLength={MAX_UNLOCK_REASON_LENGTH}
-                  onChange={(event) => {
-                    setUnlockReason(event.target.value);
-                    setControlError(null);
-                  }}
-                  placeholder="Укажите причину"
-                  disabled={unlockingRoster || lockingRoster}
-                  required
-                />
-                <span className={styles.fieldHint}>
-                  {unlockReason.length} / {MAX_UNLOCK_REASON_LENGTH}
-                </span>
-              </div>
-              <Button
-                type="button"
-                variant="danger"
-                onClick={() => void handleUnlockRoster()}
-                loading={unlockingRoster}
-                loadingLabel="Разблокируем состав"
-                disabled={
-                  !unlockConfirmed ||
-                  unlockReason.trim().length === 0 ||
-                  unlockingRoster ||
-                  lockingRoster ||
-                  savingRoster
-                }
-              >
-                Разблокировать состав
-              </Button>
-            </section>
+            </details>
           )}
 
           {rosterNotice && (
@@ -834,33 +845,34 @@ export const RosterEditor = ({
             </Message>
           )}
 
-          <div className={styles.actions}>
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={handleAddParticipant}
-              disabled={rosterEditingLocked || savingRoster}
-            >
-              Добавить участника
-            </Button>
-            <Button
-              type="button"
-              onClick={() => void handleSaveRoster()}
-              loading={savingRoster}
-              loadingLabel="Сохраняем состав"
-              disabled={rosterEditingLocked || rosterState !== "ready"}
-            >
-              Сохранить состав
-            </Button>
-            <span className={styles.hint}>
-              Максимум 16 участников. После изменений сохраните состав.
-            </span>
-          </div>
+          {!rosterEditingLocked ? <>
+            <div className={styles.actions}>
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={handleAddParticipant}
+                disabled={savingRoster}
+              >
+                Добавить участника
+              </Button>
+              <Button
+                type="button"
+                onClick={() => void handleSaveRoster()}
+                loading={savingRoster}
+                loadingLabel="Сохраняем состав"
+                disabled={rosterState !== "ready"}
+              >
+                Сохранить состав
+              </Button>
+              <span className={styles.hint}>
+                Максимум 16 участников. После изменений сохраните состав.
+              </span>
+            </div>
 
-          <section
-            className={styles.preflight}
-            aria-labelledby="roster-preflight-title"
-          >
+            <section
+              className={styles.preflight}
+              aria-labelledby="roster-preflight-title"
+            >
             <div className={styles.preflightHeader}>
               <div>
                 <h4 id="roster-preflight-title" className={styles.sectionTitle}>
@@ -896,7 +908,7 @@ export const RosterEditor = ({
 
             {preflightState === "error" && (
               <Message tone="error" title="Проверка не выполнена">
-                {preflightError || "Сервер не вернул отчет проверки."}
+                {preflightError || "Проверка не вернула результат."}
                 <button
                   className={styles.inlineAction}
                   type="button"
@@ -936,12 +948,17 @@ export const RosterEditor = ({
                         <Status tone={check.passed ? "success" : "error"} size="small">
                           {check.passed ? "Пройдено" : "Ошибка"}
                         </Status>
-                        <span>Проверка {index + 1}</span>
+                        <span>{PREFLIGHT_CODE_LABELS[check.code] ?? `Проверка ${index + 1}`}</span>
                       </div>
-                      <p className={styles.preflightExplanation}>{check.explanation}</p>
-                      {check.evidence.length > 0 && (
-                        <TechnicalDetails>
-                          <p>Код проверки: <code>{check.code}</code></p>
+                      <p className={styles.preflightExplanation}>
+                        {check.passed
+                          ? "Готово. Это условие выполнено."
+                          : "Исправьте этот пункт и запустите проверку повторно."}
+                      </p>
+                      <TechnicalDetails>
+                        <p>Подробности: {check.explanation}</p>
+                        <p>Код проверки: <code>{check.code}</code></p>
+                        {check.evidence.length > 0 && (
                           <ul className={styles.preflightEvidence}>
                             {check.evidence.map((evidence, evidenceIndex) => (
                               <li key={`${check.code}-evidence-${evidenceIndex}`}>
@@ -949,8 +966,8 @@ export const RosterEditor = ({
                               </li>
                             ))}
                           </ul>
-                        </TechnicalDetails>
-                      )}
+                        )}
+                      </TechnicalDetails>
                     </li>
                   ))}
                 </ol>
@@ -976,12 +993,40 @@ export const RosterEditor = ({
                 Фиксация доступна только после успешной проверки и при наличии минимум 4 присутствующих игроков.
               </span>
             </div>
-          </section>
+            </section>
+          </> : null}
 
           {draftParticipants.length === 0 ? (
             <Message tone="empty" title="Состав пуст">
               Добавьте активного игрока, чтобы сформировать состав турнира.
             </Message>
+          ) : rosterEditingLocked ? (
+            <div className={styles.list} aria-label="Состав турнира">
+              {draftParticipants.map((participant, index) => {
+                const player = playerById.get(participant.playerId);
+                const participantName = player?.username || `Участник ${index + 1}`;
+                return (
+                  <div
+                    className={styles.readOnlyRow}
+                    key={participant.id}
+                    role="group"
+                    aria-label={participantName}
+                  >
+                    <strong className={styles.readOnlyName}>{participantName}</strong>
+                    <dl className={styles.readOnlyMeta}>
+                      <div>
+                        <dt>Позиция</dt>
+                        <dd>{participant.seed}</dd>
+                      </div>
+                      <div>
+                        <dt>Участие</dt>
+                        <dd>{ATTENDANCE_LABELS[participant.attendance]}</dd>
+                      </div>
+                    </dl>
+                  </div>
+                );
+              })}
+            </div>
           ) : (
             <div className={styles.list} aria-label="Редактируемый состав">
               {draftParticipants.map((participant, index) => {

@@ -150,7 +150,10 @@ func (handler *TerminalDeadlineHandler) HandleDeadline(
 		deadline.Validate() != nil {
 		return false, domain.ErrValidation
 	}
-	now := handler.clock.Now().Round(0).UTC()
+	// PostgreSQL TIMESTAMPTZ stores microseconds. Keep the recovery timestamp at
+	// that precision so terminal evidence and the Swiss round proof compare the
+	// same value after a write and read round trip.
+	now := handler.clock.Now().Round(0).UTC().Truncate(time.Microsecond)
 	if !validRecoveryTime(now) {
 		return false, domain.ErrValidation
 	}
@@ -350,7 +353,8 @@ func planReadyWindowExpiry(
 		return ordered[left].Scope.SeriesID.String() < ordered[right].Scope.SeriesID.String()
 	})
 	resolutions := make([]noshowusecase.NoShowResolution, 0, len(ordered))
-	var action domain.NormalNoShowAction
+	// A ready window covers independent Series, so attendance outcomes may use
+	// different actions in one Wave. Keep each Series resolution and evidence.
 	for index := range ordered {
 		authority := ordered[index]
 		planner := &readyWindowPlanner{authority: authority}
@@ -375,10 +379,6 @@ func planReadyWindowExpiry(
 		if !changed || resolution == nil {
 			return nil, ErrInvalidDeadlinePlan
 		}
-		if action != "" && action != resolution.Action {
-			return nil, fmt.Errorf("%w: inconsistent Wave no-show actions", ErrInvalidDeadlinePlan)
-		}
-		action = resolution.Action
 		resolutions = append(resolutions, *resolution)
 	}
 	return resolutions, nil

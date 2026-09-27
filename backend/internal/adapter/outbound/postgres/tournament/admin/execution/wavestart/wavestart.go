@@ -189,6 +189,7 @@ func EnsureSwissRoundLockProof(
 	lockedAt time.Time,
 	origins ...SwissRoundProofOrigin,
 ) error {
+	lockedAt = normalizeSwissRoundProofTime(lockedAt)
 	if proof.Validate() != nil || !domain.IsValidServerTime(lockedAt) {
 		return domain.ErrConflict
 	}
@@ -434,4 +435,8 @@ func nullableUUIDValue(value uuid.UUID) uuid.NullUUID {
 
 func tstz(value time.Time) pgtype.Timestamptz {
 	return pgtype.Timestamptz{Time: value, Valid: true}
+}
+
+func normalizeSwissRoundProofTime(value time.Time) time.Time {
+	return value.UTC().Truncate(time.Microsecond)
 }

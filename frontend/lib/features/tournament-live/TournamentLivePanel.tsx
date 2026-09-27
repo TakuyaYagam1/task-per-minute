@@ -40,20 +40,20 @@ const roleLabels: Record<TournamentLiveRole, string> = {
 
 const statusLabels: Record<TournamentLiveConnectionStatus, string> = {
   connecting: "Подключаемся",
-  recovering: "Синхронизируемся",
-  live: "Сервер на связи",
+  recovering: "Обновляем данные",
+  live: "На связи",
   stale: "Данные устарели",
-  awaiting_server: "Ждем сервер",
-  rejected: "Соединение отклонено",
+  awaiting_server: "Ожидаем подтверждения",
+  rejected: "Не удалось подключиться",
 };
 
 const statusMessages: Record<TournamentLiveConnectionStatus, string> = {
-  connecting: "Проверяем доступ к текущему состоянию турнира.",
-  recovering: "Получаем подтвержденный снимок состояния.",
-  live: "Отображается подтвержденное состояние турнира.",
-  stale: "Команды временно недоступны. Получаем актуальное состояние с сервера.",
-  awaiting_server: "Локальное время не объявляет результат. Ждем подтверждение сервера.",
-  rejected: "Сервер отклонил realtime-соединение. Проверьте доступ и повторите попытку.",
+  connecting: "Загружаем данные турнира.",
+  recovering: "Обновляем данные турнира.",
+  live: "Показываем подтвержденные данные турнира.",
+  stale: "Не удалось обновить данные. Повторите попытку.",
+  awaiting_server: "Время истекло. Ожидаем результат.",
+  rejected: "Не удалось подключиться к трансляции. Проверьте доступ и повторите попытку.",
 };
 
 const effectiveStatus = (
@@ -65,7 +65,7 @@ const effectiveStatus = (
 export const TournamentLivePanel = ({
   role,
   status,
-  title = "Состояние турнира",
+  title,
   countdown,
   actions = [],
   onRetry,
@@ -73,13 +73,15 @@ export const TournamentLivePanel = ({
 }: TournamentLivePanelProps) => {
   const displayStatus = effectiveStatus(status, countdown);
   const commandsEnabled = displayStatus === "live" && (countdown?.commandsEnabled ?? true);
+  const panelTitle = title ?? (role === "public" ? "Трансляция турнира" : "Состояние турнира");
+  const panelRole = role === "public" ? "Трансляция" : roleLabels[role];
 
   return (
     <section className={styles.panel} aria-labelledby="tournament-live-title">
       <div className={styles.headingRow}>
         <div>
-          <h2 className={styles.title} id="tournament-live-title">{title}</h2>
-          <p className={styles.role}>{roleLabels[role]}</p>
+          <h2 className={styles.title} id="tournament-live-title">{panelTitle}</h2>
+          <p className={styles.role}>{panelRole}</p>
         </div>
         <span
           className={styles.status}
@@ -96,13 +98,13 @@ export const TournamentLivePanel = ({
       </p>
 
       {countdown !== undefined && (
-        <div className={styles.countdown} aria-label="Серверный отсчет">
-          <span className={styles.countdownLabel}>До серверного дедлайна</span>
+        <div className={styles.countdown} aria-label="Отсчет до конца">
+          <span className={styles.countdownLabel}>До конца</span>
           <strong className={styles.countdownValue} data-testid="server-countdown">
             {formatCountdown(countdown.remainingMs)}
           </strong>
           {countdown.status === "awaiting_server" && (
-            <p className={styles.waiting}>Время вышло. Ожидаем событие от сервера.</p>
+            <p className={styles.waiting}>Время вышло. Ожидаем подтверждение.</p>
           )}
         </div>
       )}
@@ -125,7 +127,7 @@ export const TournamentLivePanel = ({
           ))}
           {onRetry !== undefined && (
             <button className={styles.action} onClick={onRetry} type="button">
-              Повторить синхронизацию
+              {role === "public" ? "Обновить трансляцию" : "Повторить"}
             </button>
           )}
         </div>

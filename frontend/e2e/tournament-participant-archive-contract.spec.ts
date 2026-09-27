@@ -365,7 +365,7 @@ test("does not place a locked hint in the DOM and reveals only the refreshed ser
     tournamentFixtureIds.firstParticipant,
     { hints: [revealedHint], projectionRevision: current.projection_revision + 1, sourceFileAvailable: false },
   );
-  await page.getByRole("button", { name: "Повторить синхронизацию" }).click();
+  await page.reload({ waitUntil: "domcontentloaded" });
   const hintSummary = page.locator("summary").filter({ hasText: "Подсказки (1)" });
   await expect(hintSummary).toBeVisible();
   await expect(page.getByText(revealedHint, { exact: true })).toHaveCount(0);

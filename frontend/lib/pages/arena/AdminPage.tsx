@@ -18,6 +18,7 @@ import {
   useTimedNotification,
 } from "../../shared/lib";
 import { TechnicalDetails, ViewportPortal } from "../../shared/ui";
+import { useSiteHeaderAuth } from "../../features/site-header";
 import {
   TournamentAdminPanel,
   TournamentJournalSection,
@@ -440,7 +441,7 @@ export default function AdminPage() {
         setLoginFormError("Неверный пароль");
       } else {
         setLoginFormError(
-          apiErrorMessage(error, "Ошибка подключения к серверу"),
+          apiErrorMessage(error, "Ошибка соединения"),
         );
       }
     } finally {
@@ -490,6 +491,11 @@ export default function AdminPage() {
       }
     }
   };
+
+  useSiteHeaderAuth(
+    session || logoutPending ? handleLogout : undefined,
+    logoutPending,
+  );
 
   const fetchPlayers = useCallback(
     async (options: { silent?: boolean } = {}) => {
@@ -1363,8 +1369,6 @@ export default function AdminPage() {
     <AdminShell
       navigation={navigation}
       onNavigate={navigate}
-      onLogout={() => void handleLogout()}
-      logoutPending={logoutPending}
     >
       {notification && (
         <ViewportPortal>

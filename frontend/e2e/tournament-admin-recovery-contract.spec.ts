@@ -188,26 +188,29 @@ const installRoutes = async (
 
 const openOperator = async (page: Page): Promise<void> => {
   await page.goto(`/arena/operator/${tournamentId}`, { waitUntil: "domcontentloaded" });
+  await expect(page.getByRole("heading", { name: "Управление турниром" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Восстановление игр" })).toBeVisible();
   await page.evaluate(() => {
     document.cookie = "tpm_admin_access_csrf=recovery-contract-csrf; Path=/; SameSite=Lax";
   });
-  await expect(page.getByRole("heading", { name: "Управление турниром" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Восстановление игр" })).toBeVisible();
 };
 
 const confirmRecovery = async (page: Page, reason: string): Promise<void> => {
   await page.getByLabel("Причина восстановления").fill(reason);
-  await page.getByLabel("Подтверждаю путь восстановления и доказательства из текущего серверного снимка.").check();
+  await page.getByLabel("Я проверил причину остановки и подтверждаю выбранное действие.").check();
 };
 
 test("replay sends exact server evidence with fresh identities and never offers ordinary draw replay", async ({ page }) => {
   const routes = await installRoutes(page, replaySnapshot());
   await openOperator(page);
 
-  await expect(page.getByText("no-solve - нет решения")).toBeVisible();
+  await expect(page.getByText("Никто не решил задачу")).toBeVisible();
   await expect(page.getByText("Сбой платформы")).toBeVisible();
-  await expect(page.getByText("forensics", { exact: true })).toBeVisible();
-  await expect(page.getByText(tournamentFixtureIds.bo3GameTwo, { exact: true })).toBeVisible();
+  await expect(page.getByText("Forensics", { exact: true })).toBeVisible();
+  await expect(page.getByRole("radio", {
+    name: "Переиграть Forensics - Участник 1 / Участник 2, игра 2",
+    exact: true,
+  })).toBeChecked();
   await confirmRecovery(page, "Повтор после подтвержденного no-solve");
   await page.getByRole("button", { name: "Повторить игру" }).click();
 
@@ -244,7 +247,7 @@ test("replay sends exact server evidence with fresh identities and never offers 
   await page.route(`**${snapshotPath}*`, async (route) => {
     await fulfillJSON(route, operatorSnapshot());
   });
-  await expect(page.getByText("Обычная жеребьевка не создает replay.")).toBeVisible();
+  await expect(page.getByText("Сейчас нет игр, которым нужна переигровка или замена задачи.")).toBeVisible();
 });
 
 test("reserve assignment uses only server candidates and preserves source revisions", async ({ page }) => {
@@ -254,11 +257,10 @@ test("reserve assignment uses only server candidates and preserves source revisi
   };
   const routes = await installRoutes(page, reserveSnapshot(9, [candidate]));
   await openOperator(page);
-  await expect(page.getByText("Резерв исчерпан", { exact: true })).toBeVisible();
-  await expect(page.getByLabel("Кандидат из серверного резерва")).toHaveValue(
+  await expect(page.getByLabel("Задача для замены")).toHaveValue(
     `${candidate.task_id}:${candidate.version}`,
   );
-  await expect(page.getByText("Категория остается crypto.")).toBeVisible();
+  await expect(page.getByText("Категория: Crypto.")).toBeVisible();
   await confirmRecovery(page, "Назначение из серверного резерва");
   await page.getByRole("button", { name: "Назначить резерв" }).click();
 
@@ -304,7 +306,7 @@ test("reserve assignment uses only server candidates and preserves source revisi
 test("an exhausted reserve with no candidates stays disabled", async ({ page }) => {
   await installRoutes(page, reserveSnapshot(9, []));
   await openOperator(page);
-  await expect(page.getByText("Сервер не предложил кандидатов.")).toBeVisible();
+  await expect(page.getByText("Подходящих кандидатов нет. Задачу и категорию нельзя указать вручную.")).toBeVisible();
   await expect(page.getByRole("button", { name: "Назначить резерв" })).toBeDisabled();
 });
 

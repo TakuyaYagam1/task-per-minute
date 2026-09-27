@@ -296,7 +296,7 @@ const syncFromServer = async (
   snapshotRequests: URL[],
 ): Promise<void> => {
   const before = snapshotRequests.length;
-  await page.getByRole("button", { name: "Повторить синхронизацию" }).click();
+  await page.reload({ waitUntil: "domcontentloaded" });
   await expect.poll(() => snapshotRequests.length).toBeGreaterThan(before);
 };
 
@@ -402,7 +402,7 @@ test("FE-023 participant mutations refresh recovery without replacing the realti
   await expect.poll(() => connections.length).toBe(1);
   const snapshotsBeforeMutation = snapshotRequests.length;
   await page.getByTestId("participant-ready-button").click();
-  await expect(page.getByText("Готовность подтверждена сервером.")).toBeVisible();
+  await expect(page.getByText("Готовность подтверждена.", { exact: true })).toBeVisible();
   await expect.poll(() => snapshotRequests.length).toBeGreaterThan(snapshotsBeforeMutation);
   await page.waitForTimeout(250);
 
@@ -510,8 +510,8 @@ for (const failure of ["invalid frame", "rejection"] as const) {
       socket.send(participantRealtimeFrame(tournamentFixtureIds.resume, 9, sockets.length));
     });
     await openParticipant(page, fixtureSet, () => current, snapshotRequests, mutationRequests, false);
-    const status = page.locator('[role="status"][data-state]');
-    await expect(status).toHaveAttribute("data-state", "live");
+    const fallback = page.getByTestId("participant-recovery-fallback");
+    await expect(fallback).toHaveCount(0);
     expect(sockets).toHaveLength(1);
     const originalSocket = sockets[0]!;
     const snapshotsBeforeFailure = snapshotRequests.length;
@@ -525,12 +525,11 @@ for (const failure of ["invalid frame", "rejection"] as const) {
     expect(pageErrors).toEqual([]);
     const reason = failure === "rejection" ? "participant realtime rejected" : "invalid participant realtime frame";
     expect(closes).toEqual([{ code: 1000, reason }]);
-    const expectedStatus = failure === "rejection" ? "rejected" : "stale";
-    await expect(status).toHaveAttribute("data-state", expectedStatus);
+    await expect(fallback).toBeVisible();
 
     originalSocket.send(participantRealtimeFrame(tournamentFixtureIds.resume, 99, 99));
     await page.clock.fastForward(2_000);
-    await expect(status).toHaveAttribute("data-state", expectedStatus);
+    await expect(fallback).toBeVisible();
     expect(sockets).toHaveLength(1);
     expect(snapshotRequests).toHaveLength(snapshotsBeforeFailure);
     expect(closes).toEqual([{ code: 1000, reason }]);
@@ -538,10 +537,10 @@ for (const failure of ["invalid frame", "rejection"] as const) {
 
     if (failure === "invalid frame") {
       // Invalid data stops automatic retries; an explicit retry can still recover.
-      await page.getByRole("button", { name: "Повторить синхронизацию" }).click();
+      await page.getByRole("button", { name: "Повторить", exact: true }).click();
       await expect.poll(() => sockets.length).toBe(2);
       expect(new URL(sockets[1]!.url()).searchParams.get("resume_id")).toBe(tournamentFixtureIds.resume);
-      await expect(status).toHaveAttribute("data-state", "live");
+      await expect(fallback).toHaveCount(0);
       expect(snapshotRequests.length).toBeGreaterThan(snapshotsBeforeFailure);
     }
     expect(mutationRequests).toEqual([]);
@@ -560,7 +559,7 @@ test("FE-023 disconnect freezes both participants and reconnect resumes only fro
 
   await page.clock.install({ time: serverTimestamp });
   await openParticipant(page, fixtureSet, () => current, snapshotRequests, mutationRequests);
-  await expect(page.getByTestId("server-countdown")).toBeVisible();
+  await expect(page.getByTestId("server-countdown")).toHaveCount(0);
   await expect(page.getByTestId("participant-submit-button")).toBeEnabled();
 
   current = snapshotFor(fixtureSet, {
@@ -637,7 +636,7 @@ test("FE-023 disconnect freezes both participants and reconnect resumes only fro
   await expect(runtimeStatus).toHaveAttribute("data-game-revision", "6");
   await expect(page.getByTestId("participant-runtime-reconnect").locator("li"))
     .toHaveAttribute("data-state", "reconnected");
-  await expect(page.getByTestId("server-countdown")).toBeVisible();
+  await expect(page.getByTestId("server-countdown")).toHaveCount(0);
   await expect(page.getByTestId("participant-submit-button")).toBeEnabled();
   expect(mutationRequests).toEqual([]);
 });
@@ -708,7 +707,6 @@ test("FE-023 expiry waits for the server before publishing the disconnect winner
   await expect(officialResult(page)).toBeVisible();
   await expect(officialResult(page)).toContainText("Проигрыш по решению оператора");
   await expect(officialResult(page)).toContainText("Боб");
-  await expect(officialResult(page)).toContainText(tournamentFixtureIds.resume);
   expect(mutationRequests).toEqual([]);
 });
 
@@ -747,7 +745,6 @@ test("FE-023 terminal technical loss is read from series when runtime is null", 
   await expect(officialResult(page)).toContainText("Игры");
   await expect(officialResult(page)).toContainText("Проигрыш по решению оператора");
   await expect(officialResult(page)).toContainText("Боб");
-  await expect(officialResult(page)).toContainText(disconnectResultRevision);
   expect(mutationRequests).toEqual([]);
 });
 
@@ -826,8 +823,7 @@ test("FE-023 double disconnect stays paused and becomes a server-published techn
   await expect(page.getByTestId("participant-runtime-status")).toHaveAttribute("data-game-state", "void");
   await expect(officialResult(page)).toBeVisible();
   await expect(officialResult(page)).toContainText("Отключение участника");
-  await expect(officialResult(page)).toContainText("Победитель не опубликован сервером");
-  await expect(officialResult(page)).toContainText(tournamentFixtureIds.resume);
+  await expect(officialResult(page)).toContainText("Победитель не определен");
   expect(mutationRequests).toEqual([]);
 });
 
@@ -920,7 +916,7 @@ test("FE-023 reconnect during an operator pause remains paused until the server 
   });
   await syncFromServer(page, snapshotRequests);
   await expect(page.getByTestId("participant-runtime-status")).toHaveAttribute("data-paused", "false");
-  await expect(page.getByTestId("server-countdown")).toBeVisible();
+  await expect(page.getByTestId("server-countdown")).toHaveCount(0);
   await expect(page.getByTestId("participant-submit-button")).toBeEnabled();
   expect(mutationRequests).toEqual([]);
 });

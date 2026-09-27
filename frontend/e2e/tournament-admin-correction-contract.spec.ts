@@ -171,15 +171,23 @@ const installBaseRoutes = async (
 
 const openCorrection = async (page: Page): Promise<void> => {
   await page.goto(`/arena/operator/${tournamentId}`, { waitUntil: "domcontentloaded" });
+  await expect(page.getByRole("heading", { name: "Исправить результат" })).toBeVisible();
   await page.evaluate(() => {
     document.cookie = "tpm_admin_access_csrf=correction-contract-csrf; Path=/; SameSite=Lax";
   });
-  await expect(page.getByRole("heading", { name: "Коррекция результата" })).toBeVisible();
 };
 
 const confirmCorrection = async (page: Page): Promise<void> => {
   await page.getByLabel("Объяснение").fill("Исправление подтверждено протоколом судьи");
-  await page.getByLabel("Подтверждаю коррекцию результата и атомарную перестройку зависимых проекций.").check();
+  await page.getByLabel("Подтверждаю исправление результата и обновление связанных данных.").check();
+};
+
+const openTechnicalDetails = async (page: Page): Promise<void> => {
+  const details = page.locator("details").filter({ hasText: "Технические данные" });
+  await expect(details).toHaveCount(1);
+  if (await details.getAttribute("open") === null) {
+    await details.locator("summary").click();
+  }
 };
 
 test("FE-036 sends preflight authority and the complete correction with one idempotency key", async ({ page }) => {
@@ -201,7 +209,7 @@ test("FE-036 sends preflight authority and the complete correction with one idem
   await confirmCorrection(page);
   await page.getByRole("button", { name: "Подтвердить коррекцию" }).click();
 
-  await expect(page.getByText("Новая проекция подтверждена.")).toBeVisible();
+  await expect(page.getByText(/Исправление применено/)).toBeVisible();
   expect(preflightRequests).toHaveLength(1);
   expect(correctionRequests).toHaveLength(1);
   const preflight = preflightRequests[0];
@@ -215,6 +223,7 @@ test("FE-036 sends preflight authority and the complete correction with one idem
     source_result_revision: tournamentFixtureIds.scoreRevision,
   });
   expect(requestBody(correction)).toEqual(preparedRequest());
+  await openTechnicalDetails(page);
   await expect(page.getByText(projectionRevisionId, { exact: true })).toBeVisible();
 });
 
@@ -239,16 +248,18 @@ test("FE-036 explains stale and incomplete intent rejection without optimistic s
   await openCorrection(page);
   await confirmCorrection(page);
   await page.getByRole("button", { name: "Подтвердить коррекцию" }).click();
-  await expect(page.getByText("Проекция изменилась.")).toBeVisible();
+  await expect(page.getByText("Данные изменились. Проверьте обновленный результат и подтвердите исправление еще раз.")).toBeVisible();
   expect(finalCalls).toBe(0);
+  await openTechnicalDetails(page);
   await expect(page.getByText(tournamentFixtureIds.scoreRevision, { exact: true })).toBeVisible();
 
   rejection = "incomplete_unlock";
   await page.getByLabel("Объяснение").fill("Повтор после нового server snapshot");
-  await page.getByLabel("Подтверждаю коррекцию результата и атомарную перестройку зависимых проекций.").check();
+  await page.getByLabel("Подтверждаю исправление результата и обновление связанных данных.").check();
   await page.getByRole("button", { name: "Подтвердить коррекцию" }).click();
-  await expect(page.getByText("Набор unlock intents неполный.")).toBeVisible();
+  await expect(page.getByText("Не удалось подготовить связанные матчи к исправлению. Прежний результат сохранен.")).toBeVisible();
   expect(finalCalls).toBe(1);
+  await openTechnicalDetails(page);
   await expect(page.getByText(tournamentFixtureIds.scoreRevision, { exact: true })).toBeVisible();
 });
 
@@ -266,7 +277,7 @@ test("FE-036 closes correction after cutoff and in terminal state on light mobil
   await confirmCorrection(page);
   await page.getByRole("button", { name: "Подтвердить коррекцию" }).click();
   await expect(page.getByText("Коррекция закрыта", { exact: true })).toBeVisible();
-  await expect(page.getByText("Коррекция закрыта после старта зависимой волны.")).toBeVisible();
+  await expect(page.getByText("Следующие матчи уже начались. Исправление недоступно. Приостановите турнир и изучите историю.")).toBeVisible();
   await expect(page.getByRole("button", { name: "Подтвердить коррекцию" })).toHaveCount(0);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
 

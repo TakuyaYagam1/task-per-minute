@@ -119,7 +119,11 @@ const messageFor = (
       return {
         tone: "loading",
         title: "Проверяем доступ",
-        description: "Подключаемся к турниру и проверяем текущий контур.",
+        description: role === "participant"
+          ? "Открываем страницу участника и проверяем матч."
+          : role === "spectator"
+            ? "Открываем трансляцию турнира."
+            : "Открываем панель турнира.",
       };
     case "unauthorized":
       return {
@@ -127,8 +131,8 @@ const messageFor = (
         title: "Требуется вход",
         description:
           role === "participant"
-            ? "Войдите как участник, чтобы открыть этот контур турнира."
-            : "Войдите как оператор, чтобы открыть этот контур турнира.",
+            ? "Войдите как участник, чтобы открыть страницу матча."
+            : "Войдите как оператор, чтобы открыть панель турнира.",
         action: {
           href: buildArenaLoginHref(
             role === "participant" ? "participant" : "operator",
@@ -142,13 +146,13 @@ const messageFor = (
         tone: "error",
         title: "Доступ запрещен",
         description:
-          "Сессия распознана, но этой роли не разрешен доступ к выбранному турниру.",
+          "Сессия распознана, но доступа к выбранному турниру нет.",
       };
     case "missing":
       return {
         tone: "error",
         title: "Турнир не найден",
-        description: "Проверьте идентификатор турнира или выберите другой контур.",
+        description: "Проверьте ссылку или выберите другой турнир.",
         action: { href: "/arena", label: "Выбрать другой турнир" },
       };
     case "transport":
@@ -165,7 +169,7 @@ const messageFor = (
       return {
         tone: "info",
         title: "Турнир завершен",
-        description: "Итоговое состояние зафиксировано. Доступен только просмотр.",
+        description: "Итог турнира зафиксирован. Доступен только просмотр.",
       };
     case "ready":
       return undefined;
@@ -284,7 +288,7 @@ export const ArenaRolePage = ({ returnPath, role, tournamentId }: ArenaRolePageP
       intent.key.tournamentId !== tournamentId
     ) {
       return {
-        message: "Назначение изменилось. Обновите состояние турнира.",
+        message: "Матч изменился. Обновите его и повторите попытку.",
         status: "conflict",
       };
     }
@@ -313,7 +317,7 @@ export const ArenaRolePage = ({ returnPath, role, tournamentId }: ArenaRolePageP
     }
 
     return {
-      message: "Окно готовности или назначение уже изменились. Сверяем данные с сервером.",
+      message: "Окно готовности или матч уже изменились. Обновляем данные.",
       status: "conflict",
     };
   }, [tournamentId]);
@@ -326,7 +330,7 @@ export const ArenaRolePage = ({ returnPath, role, tournamentId }: ArenaRolePageP
       intent.submittedFlag.trim().length === 0
     ) {
       return {
-        message: "Ответ не соответствует текущему назначению.",
+        message: "Ответ не относится к текущему матчу.",
         status: "conflict",
       };
     }
@@ -358,7 +362,7 @@ export const ArenaRolePage = ({ returnPath, role, tournamentId }: ArenaRolePageP
     }
 
     return {
-      message: "Состояние игры изменилось. Сверяем данные с сервером.",
+      message: "Данные игры изменились. Обновляем матч.",
       status: "conflict",
     };
   }, [tournamentId]);
@@ -368,7 +372,7 @@ export const ArenaRolePage = ({ returnPath, role, tournamentId }: ArenaRolePageP
   ): Promise<ParticipantSurrenderResult> => {
     if (intent.tournamentId !== tournamentId) {
       return {
-        message: "Сдача не относится к текущему турниру.",
+        message: "Сдача не относится к текущему матчу.",
         status: "conflict",
       };
     }
@@ -397,7 +401,7 @@ export const ArenaRolePage = ({ returnPath, role, tournamentId }: ArenaRolePageP
     }
 
     return {
-      message: "Состояние игры изменилось. Сверяем данные с сервером.",
+      message: "Данные игры изменились. Обновляем матч.",
       status: "conflict",
     };
   }, [tournamentId]);
@@ -410,7 +414,7 @@ export const ArenaRolePage = ({ returnPath, role, tournamentId }: ArenaRolePageP
       (intent.action !== "ban" && intent.action !== "pick")
     ) {
       return {
-        message: "Ход не относится к текущему турниру.",
+        message: "Ход не относится к текущему матчу.",
         status: "conflict",
       };
     }
@@ -442,7 +446,7 @@ export const ArenaRolePage = ({ returnPath, role, tournamentId }: ArenaRolePageP
     }
 
     return {
-      message: "Драфт уже изменился. Сверяем данные с сервером.",
+      message: "Драфт уже изменился. Обновляем историю.",
       status: "conflict",
     };
   }, [tournamentId]);

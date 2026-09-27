@@ -346,7 +346,7 @@ export const TournamentAdminPanel = ({
       setContentState("error");
       setContentError(
         unavailable
-          ? "Опубликованной ревизии пока нет. Для создания турнира потребуется публикация."
+          ? "Опубликованных задач пока нет. Сначала опубликуйте задачи."
           : problemMessage(error, "Не удалось получить текущую публикацию контента"),
       );
     } finally {
@@ -767,6 +767,7 @@ export const TournamentAdminPanel = ({
               selectedTournament={selectedTournament}
               selectedTournamentId={selectedTournament.id}
               onSelectTournament={(id) => onNavigate(id || null, "participants")}
+              onNavigateToOverview={() => onNavigate(selectedTournament.id, "overview")}
               onReloadTournaments={loadTournaments}
               onSessionExpired={onSessionExpired}
               onDirtyChange={reportRosterDirty}
@@ -789,6 +790,7 @@ export const TournamentAdminPanel = ({
                 selectedTournament={selectedTournament}
                 selectedTournamentId={selectedTournament.id}
                 onSelectTournament={(id) => onNavigate(id || null, "bracket")}
+                onNavigateToConduct={() => onNavigate(selectedTournament.id, "conduct")}
                 onReloadTournaments={loadTournaments}
                 onSessionExpired={onSessionExpired}
                 onDirtyChange={reportSwissDirty}

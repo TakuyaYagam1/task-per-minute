@@ -63,9 +63,9 @@ const surrenderAllowed = (view: ParticipantPlayerView | null): boolean => {
 const defaultMessageFor = (status: ParticipantSurrenderResult["status"]): string => {
   switch (status) {
     case "accepted":
-      return "Сдача принята сервером. Официальный результат обновится после синхронизации.";
+      return "Сдача принята. Официальный итог обновится после проверки.";
     case "conflict":
-      return "Состояние игры изменилось. Сверяем данные с сервером.";
+      return "Данные игры изменились. Обновляем матч.";
     case "rate_limited":
       return "Слишком много попыток. Повторите после паузы.";
   }
@@ -123,7 +123,7 @@ export const useParticipantSurrender = ({
       seriesId: assignment.seriesId,
       tournamentId: view.tournamentId,
     };
-    setState({ message: "Отправляем сдачу серверу.", status: "pending" });
+    setState({ message: "Отправляем сдачу.", status: "pending" });
 
     void onSurrender(intent)
       .then((result) => {

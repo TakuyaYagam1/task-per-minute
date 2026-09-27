@@ -371,7 +371,7 @@ test("отправляет automatic план и отображает полны
   const { pairingRequests, snapshotRequests } = await setupPairingRoutes(page, 4, { round });
   const region = await openPairingEditor(page);
 
-  await expect(region.getByText("Локальные пары не создаются", { exact: false })).toBeVisible();
+  await expect(region.getByText("Пары появятся здесь после отправки запроса.", { exact: false })).toBeVisible();
   await region.getByRole("button", { name: "Сформировать пары" }).click();
   await expect.poll(() => pairingRequests.length).toBe(1);
   expect(snapshotRequests.length).toBeGreaterThanOrEqual(2);
@@ -382,12 +382,15 @@ test("отправляет automatic план и отображает полны
     category_mode: "random",
     categories: ["web", "crypto"],
   });
-  await expect(region).toContainText("Серверный план раунда 1");
+  await expect(region).toContainText("План раунда 1");
   await expect(region).toContainText("Игрок 1");
   await expect(region).toContainText("Игрок 4");
   await expect(region).toContainText("Статус блокировки");
   await expect(region.getByText("Нет", { exact: true })).toBeVisible();
-  await expect(region).toContainText("Standings");
+  await expect(region).toContainText("Таблица раунда");
+  await expect(region.getByRole("button", { name: "Перейти к проведению" })).toBeVisible();
+  await region.getByRole("button", { name: "Перейти к проведению" }).click();
+  await expect(page).toHaveURL(new RegExp(`[?&]view=conduct(?:&|$)`));
 });
 
 test("берет следующий тур с сервера и показывает пары без повторных соперников", async ({ page }) => {
@@ -449,7 +452,7 @@ test("берет следующий тур с сервера и показыва
     [participantId(1), participantId(3)],
   ]);
   expect(nextRound.pairings.every((pairing) => pairing.repeated === false)).toBe(true);
-  await expect(region).toContainText("Серверный план раунда 2");
+  await expect(region).toContainText("План раунда 2");
 });
 
 test("собирает manual пары с одним bye для нечетного состава", async ({ page }) => {
@@ -510,7 +513,7 @@ test("оставляет manual draft после серверного 422 о п�
   await region.getByLabel("Пара 2 - второй участник").selectOption(participantId(3));
   await region.getByRole("button", { name: "Сформировать пары" }).click();
   await expect.poll(() => pairingRequests.length).toBe(1);
-  await expect(region.getByRole("alert")).toContainText("Повторные пары запрещены сервером");
+  await expect(region.getByRole("alert")).toContainText("Повторные пары запрещены");
   await expect(region.getByLabel("Пара 1 - первый участник")).toHaveValue(participantId(0));
   await expect(region.getByLabel("Пара 2 - второй участник")).toHaveValue(participantId(3));
 });
@@ -533,14 +536,14 @@ test("сохраняет прежний server result после 409 и дает
   const submit = region.getByRole("button", { name: "Сформировать пары" });
   await submit.click();
   await expect.poll(() => pairingRequests.length).toBe(1);
-  await expect(region).toContainText("Серверный план раунда 1");
+  await expect(region).toContainText("План раунда 1");
   await expect(region).toContainText("Статус блокировки");
 
   await submit.click();
   await expect.poll(() => pairingRequests.length).toBe(2);
   await expect(region.getByRole("alert")).toContainText("Ревизия турнира устарела");
   await expect(region.getByRole("alert")).toContainText("Результат предыдущего сохранения оставлен на экране");
-  await expect(region).toContainText("Серверный план раунда 1");
+  await expect(region).toContainText("План раунда 1");
   await expect(region).toContainText("Игрок 4");
 });
 

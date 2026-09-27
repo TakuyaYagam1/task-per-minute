@@ -1,0 +1,146 @@
+.header {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  width: 100%;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  box-shadow: var(--shadow-small);
+}
+
+.inner {
+  display: flex;
+  min-height: 4rem;
+  width: min(100%, 1120px);
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.8rem;
+  margin: 0 auto;
+  padding: 0.55rem 1rem;
+}
+
+.brand {
+  display: inline-flex;
+  min-width: 0;
+  flex: 0 1 auto;
+  align-items: center;
+  gap: 0.55rem;
+  color: var(--text);
+  font-size: 1.05rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  text-decoration: none;
+}
+
+.brand:hover {
+  color: var(--accent-strong);
+}
+
+.brand:focus-visible,
+.ratingLink:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.logo {
+  display: block;
+  width: 3rem;
+  height: 1.875rem;
+  flex: 0 0 auto;
+  border-radius: var(--radius-small);
+  object-fit: contain;
+}
+
+.actions {
+  display: flex;
+  min-width: 0;
+  flex: 0 1 auto;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.45rem;
+}
+
+.ratingLink {
+  display: inline-flex;
+  min-height: 2.25rem;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-small);
+  padding: 0.35rem 0.7rem;
+  background: var(--surface-muted);
+  color: var(--secondary);
+  font-size: 0.8rem;
+  font-weight: 700;
+  white-space: nowrap;
+  text-decoration: none;
+  transition:
+    border-color var(--motion),
+    background-color var(--motion),
+    color var(--motion);
+}
+
+.ratingLink:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--text);
+}
+
+.ratingLabelCompact {
+  display: none;
+}
+
+@media (max-width: 560px) {
+  .inner {
+    min-height: 3.5rem;
+    gap: 0.45rem;
+    padding: 0.45rem 0.75rem;
+  }
+
+  .brand {
+    gap: 0.4rem;
+    font-size: 0.95rem;
+    min-height: 44px;
+  }
+
+  .logo {
+    width: 2.6rem;
+    height: 1.65rem;
+  }
+
+  .actions {
+    gap: 0.3rem;
+  }
+
+  .ratingLink {
+    min-height: 44px;
+    padding-right: 0.55rem;
+    padding-left: 0.55rem;
+  }
+
+  .ratingLabelWide {
+    display: none;
+  }
+
+  .ratingLabelCompact {
+    display: inline;
+  }
+}
+
+@media (max-width: 360px) {
+  .inner {
+    flex-wrap: wrap;
+  }
+
+  .actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ratingLink {
+    transition: none;
+  }
+}

@@ -294,7 +294,7 @@ export const GoldenPlayoffControlPanel = ({
       if (error instanceof ApiError && error.status === 409) {
         await loadState();
         setStale(true);
-        setCommandError("Состояние изменилось на сервере. Обновите данные перед повтором.");
+        setCommandError("Состояние турнира изменилось. Обновите данные перед повтором.");
       } else {
         setCommandError(problemMessage(error, "Не удалось изменить этап турнира"));
       }
@@ -541,7 +541,7 @@ export const GoldenPlayoffControlPanel = ({
             <Message tone="empty" title="Группы еще не сформированы">
               {currentState === "golden"
                 ? "Нажмите кнопку подготовки групп, чтобы распределить участников."
-                : "Сервер еще не вернул группы для выбранного турнира."}
+                : "Группы для выбранного турнира пока не готовы."}
             </Message>
           ) : null}
         </>
@@ -624,8 +624,8 @@ export const GoldenPlayoffControlPanel = ({
       ) : null}
       {currentState === "completed" && scoreboard !== null ? (
         <section className={styles.champion} data-testid="server-champion" aria-label="Чемпион турнира">
-          <span>Чемпион по итоговому scoreboard</span>
-          <strong>{champion?.display_name ?? "Чемпион не определен сервером"}</strong>
+          <span>Победитель по итоговой таблице</span>
+          <strong>{champion?.display_name ?? "Чемпион пока не определен"}</strong>
           {champion ? <small>Место 1, очки: {champion.points}</small> : null}
         </section>
       ) : null}

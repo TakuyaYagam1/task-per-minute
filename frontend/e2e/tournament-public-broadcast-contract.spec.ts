@@ -314,18 +314,21 @@ const publicSnapshot = (mode: SnapshotMode): Record<string, unknown> => {
 const publicRealtimeFrame = (
   mode: SnapshotMode,
   occurredAt: string,
+  cursorOverride?: Readonly<{ projectionRevision: number; eventSequence: number }>,
 ): Record<string, unknown> => {
   const snapshot = publicSnapshot(mode);
   const cursor = snapshot.next_cursor as Record<string, unknown>;
+  const projectionRevision = cursorOverride?.projectionRevision ?? cursor.projection_revision;
+  const eventSequence = cursorOverride?.eventSequence ?? cursor.event_sequence;
   const scoreboard = snapshot.scoreboard as Record<string, unknown>;
   const bracket = snapshot.bracket as Record<string, unknown>;
   const tournament = snapshot.tournament as Record<string, unknown>;
   const publicProjection: Record<string, unknown> = {
     bracket: bracket.matches,
-    last_sequence: cursor.event_sequence,
+    last_sequence: eventSequence,
     live_series: snapshot.live_series,
     official_results: snapshot.official_results,
-    revision: cursor.projection_revision,
+    revision: projectionRevision,
     scoreboard: scoreboard.entries,
     swiss_rounds: snapshot.swiss_rounds,
     tournament: Object.fromEntries(
@@ -343,10 +346,10 @@ const publicRealtimeFrame = (
       envelope: {
         event_id: firstRevisionId,
         occurred_at: occurredAt,
-        projection_revision: cursor.projection_revision,
+        projection_revision: projectionRevision,
         public: publicProjection,
         schema_version: 1,
-        sequence: cursor.event_sequence,
+        sequence: eventSequence,
         tournament_id: tournamentId,
       },
     },
@@ -460,7 +463,7 @@ test("FE-041 public match center binds selected series, game timers, and passive
   await expect(broadcast.getByTestId("broadcast-draft-turn")).toHaveText("2");
   await expect(broadcast.getByTestId("broadcast-draft-current-actor")).toHaveText("Дана");
   await expect(broadcast.getByTestId("broadcast-draft-current-action")).toHaveText("Выбор");
-  await expect(broadcast.getByTestId("broadcast-draft")).toContainText("автоматическое действие");
+  await expect(broadcast.getByTestId("broadcast-draft")).toContainText("Следующий ход будет выбран автоматически.");
   await expect(broadcast.getByTestId("broadcast-draft-action-1")).toHaveAttribute("data-automatic", "true");
 
   mode = "completed-bo1";
@@ -542,7 +545,10 @@ test("FE-041 keeps official result server-only and covers fullscreen, themes, an
 
 test("FE-041 anchors countdown to the latest public websocket timestamp", async ({ page }) => {
   await page.clock.install({ time: serverTimestamp });
-  await installSocketStub(page, publicRealtimeFrame("live", "2026-09-15T10:01:00Z"));
+  await installSocketStub(page, publicRealtimeFrame("live", "2026-09-15T10:01:00Z", {
+    eventSequence: 10,
+    projectionRevision: 10,
+  }));
   await installArenaRoutes(page, () => "live");
 
   await page.goto(`/arena/spectator/${tournamentId}?match=series:${firstSeriesId}`, {
@@ -641,7 +647,7 @@ test("FE-047 falls back to fresh public REST snapshots after terminal realtime c
 
   const requestsBeforeUnmount = snapshotRequests;
   await page.getByRole("link", { name: "Arena", exact: true }).click();
-  await expect(page).toHaveURL(/\/arena(?:\?.*)?$/);
+  await expect(page).toHaveURL(/\/(?:\?.*)?$/);
   await page.clock.runFor(20_000);
   expect(snapshotRequests).toBe(requestsBeforeUnmount);
 });

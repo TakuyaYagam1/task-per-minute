@@ -44,9 +44,9 @@ const keyToken = (key: ParticipantReadinessKey): string => [
 const defaultMessageFor = (status: ParticipantReadyResult["status"]): string => {
   switch (status) {
     case "accepted":
-      return "Готовность подтверждена сервером.";
+      return "Готовность подтверждена.";
     case "conflict":
-      return "Состояние изменилось. Обновляем данные турнира.";
+      return "Данные изменились. Обновляем матч.";
     case "rate_limited":
       return "Слишком много попыток. Повторите после паузы.";
   }
@@ -122,14 +122,12 @@ export const useParticipantReadiness = ({
           status: result.status === "accepted" ? "accepted" : "error",
         });
       })
-      .catch((error: unknown) => {
+      .catch(() => {
         if (request !== requestRef.current || requestToken !== tokenRef.current) {
           return;
         }
         setState({
-          message: error instanceof Error
-            ? error.message
-            : "Не удалось подтвердить готовность. Повторите попытку.",
+          message: "Не удалось подтвердить готовность. Повторите попытку.",
           ready: false,
           status: "error",
         });

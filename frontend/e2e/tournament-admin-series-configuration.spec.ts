@@ -466,7 +466,7 @@ test.describe('FE-031 per-Series category configuration', () => {
         },
       },
     ]);
-    await expect(reservePanel).toContainText('Конфигурация обновлена с сервера');
+    await expect(reservePanel).toContainText('Резерв сохранен');
   });
 
   test('keeps the reserve draft after a stale top-level configuration revision', async ({ page }) => {
@@ -503,7 +503,7 @@ test.describe('FE-031 per-Series category configuration', () => {
     await region.getByRole('button', { name: 'Сохранить резерв' }).click();
 
     await expect.poll(() => configurationPatches.length).toBe(1);
-    await expect(region.getByRole('alert')).toContainText('Серверный резерв больше нельзя менять');
+    await expect(region.getByRole('alert')).toContainText('Резерв больше нельзя менять');
     await expect(reserveSelect).toBeDisabled();
     await expect(region.getByRole('button', { name: 'Сохранить резерв' })).toBeDisabled();
   });
@@ -662,7 +662,7 @@ test.describe('FE-031 per-Series category configuration', () => {
     await swiss.getByRole('button', { name: 'Сохранить серию 1' }).click();
 
     await expect.poll(() => seriesPatches.length).toBe(1);
-    await expect(swiss.getByRole('alert')).toContainText('Сервер отклонил изменение');
+    await expect(swiss.getByRole('alert')).toContainText('Изменение недоступно');
     await expect(swiss.getByRole('alert')).toContainText('Серия уже началась');
     await expect(swiss.getByLabel('Режим серии 1')).toHaveValue('admin');
     await expect(swiss.getByLabel('Категория серии 1')).toHaveValue('crypto');

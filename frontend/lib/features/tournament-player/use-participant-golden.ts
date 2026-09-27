@@ -45,17 +45,17 @@ const loadMessageFor = (error: unknown): string => {
       case 401:
         return "Сессия участника истекла. Войдите снова.";
       case 403:
-        return "Сервер не разрешил доступ к этой Golden группе.";
+        return "Нет доступа к этой Golden группе.";
       case 429:
         return "Слишком много запросов Golden. Повторите после паузы.";
       default:
-        return "Не удалось получить состояние Golden. Повторите попытку.";
+        return "Не удалось загрузить Golden. Повторите попытку.";
     }
   }
-  return "Не удалось получить состояние Golden. Повторите попытку.";
+  return "Не удалось загрузить Golden. Повторите попытку.";
 };
 
-const conflictMessage = "Golden попытка уже изменилась. Показано актуальное состояние сервера.";
+const conflictMessage = "Попытка Golden изменилась. Показаны свежие данные.";
 
 export const useParticipantGolden = (
   tournamentId: string,
@@ -131,7 +131,7 @@ export const useParticipantGolden = (
     inFlightRef.current = true;
     const actionId = ++actionRef.current;
     setActionStatus("pending");
-    setActionMessage("Подтверждаем готовность сервером.");
+    setActionMessage("Подтверждаем готовность.");
     void goldenApi.ready(
       tournamentId,
       {
@@ -149,7 +149,7 @@ export const useParticipantGolden = (
         if (result.status === "success") {
           setSnapshot(result.value);
           setActionStatus("accepted");
-          setActionMessage("Готовность Golden подтверждена сервером.");
+          setActionMessage("Готовность Golden подтверждена.");
           return;
         }
         if (result.status === "conflict") {
@@ -196,7 +196,7 @@ export const useParticipantGolden = (
     inFlightRef.current = true;
     const actionId = ++actionRef.current;
     setActionStatus("pending");
-    setActionMessage("Проверяем ответ сервером.");
+    setActionMessage("Проверяем ответ.");
     void goldenApi.submit(
       tournamentId,
       {
@@ -215,10 +215,10 @@ export const useParticipantGolden = (
           setSnapshot(result.value);
           if (result.value.submitted) {
             setActionStatus("accepted");
-            setActionMessage("Решение Golden принято сервером.");
+            setActionMessage("Решение Golden принято.");
           } else {
             setActionStatus("incorrect");
-            setActionMessage("Ответ неверный. Сервер сохранил попытку.");
+            setActionMessage("Ответ неверный. Попытка сохранена.");
           }
           return;
         }

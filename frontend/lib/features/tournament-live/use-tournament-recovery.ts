@@ -98,6 +98,7 @@ export const useTournamentRecovery = (
         tournamentId,
         snapshot: response.snapshot,
         serverTimestamp: response.serverTimestamp,
+        allowEqualCursor: true,
         fresh,
       });
       recoveryRef.current = transition.state;

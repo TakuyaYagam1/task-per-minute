@@ -13,7 +13,7 @@
   --admin-success: var(--success);
   --admin-warning: var(--warning);
   min-height: 100vh;
-  padding: 76px clamp(16px, 4vw, 64px) 64px;
+  padding: 24px clamp(16px, 4vw, 64px) 64px;
   background: var(--admin-bg);
   color: var(--admin-text);
 }
@@ -21,7 +21,6 @@
 .shellHeader {
   display: flex;
   align-items: flex-start;
-  justify-content: space-between;
   gap: 24px;
   max-width: 1180px;
   margin: 0 auto;
@@ -55,10 +54,6 @@
   margin: 8px 0 0;
   color: var(--admin-muted);
   font-size: 0.9rem;
-}
-
-.shellLogout {
-  flex: 0 0 auto;
 }
 
 .shellNav {
@@ -118,7 +113,7 @@
 
 .loginLayout {
   display: grid;
-  min-height: 100vh;
+  min-height: calc(100vh - var(--site-header-height, 4rem));
   place-items: center;
   padding-top: 24px;
   padding-bottom: 24px;
@@ -724,15 +719,11 @@
 
 @media (max-width: 640px) {
   .container {
-    padding: 72px 12px 40px;
+    padding: 20px 12px 40px;
   }
 
   .shellHeader {
     gap: 14px;
-  }
-
-  .shellLogout {
-    min-width: 76px;
   }
 
   .shellNavItem {

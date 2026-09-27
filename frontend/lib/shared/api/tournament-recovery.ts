@@ -1040,6 +1040,8 @@ export type RoleRecoverySnapshotInput = {
   resumeId?: string | null;
   /** A no-cursor response is authoritative even when its cursor is lower or equal. */
   fresh?: boolean;
+  /** A cursor-bearing REST response is still a complete snapshot and may refresh equal data. */
+  allowEqualCursor?: boolean;
 };
 
 export type RoleRecoveryOutcome =
@@ -1366,7 +1368,7 @@ export const applyRoleRecoverySnapshot = (
       changed: false,
     };
   }
-  if (comparison === 0) {
+  if (comparison === 0 && input.allowEqualCursor !== true) {
     return {
       state: previous,
       outcome: "duplicate",

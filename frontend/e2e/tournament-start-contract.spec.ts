@@ -244,6 +244,25 @@ test("из черновика открывает регистрацию по с�
   await expect(panel).toContainText("Регистрация открыта");
 });
 
+test("оставляет заметный отступ между подсказкой и кнопкой запуска", async ({ page }) => {
+  const initial = tournament("draft");
+  await setupHarness(page, {
+    listItems: [initial],
+    snapshotTournament: initial,
+    snapshotRevision: 18,
+  });
+  await loginAndOpenTournament(page);
+
+  const panel = page.getByTestId("tournament-start-controls");
+  const guidance = panel.getByRole("status").filter({ hasText: "Регистрация закрыта" });
+  const action = panel.getByRole("button", { name: "Открыть регистрацию" });
+  const guidanceBox = await guidance.boundingBox();
+  const actionBox = await action.boundingBox();
+  expect(guidanceBox).not.toBeNull();
+  expect(actionBox).not.toBeNull();
+  expect((actionBox?.y ?? 0) - ((guidanceBox?.y ?? 0) + (guidanceBox?.height ?? 0))).toBeGreaterThan(8);
+});
+
 test("из зафиксированного состава запускает швейцарский этап и предлагает открыть сетку", async ({ page }) => {
   const initial = tournament("roster_locked");
   const harness = await setupHarness(page, {

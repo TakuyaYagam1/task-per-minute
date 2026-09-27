@@ -13,6 +13,13 @@
   box-shadow: var(--shadow-small);
 }
 
+.inline {
+  position: static;
+  z-index: auto;
+  flex: 0 0 auto;
+  box-shadow: none;
+}
+
 .button {
   display: inline-grid;
   width: 32px;
@@ -71,5 +78,10 @@
   .button {
     width: 36px;
     min-height: 36px;
+  }
+
+  .inline .button {
+    width: 44px;
+    min-height: 44px;
   }
 }

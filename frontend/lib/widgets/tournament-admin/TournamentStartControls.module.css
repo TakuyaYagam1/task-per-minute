@@ -41,6 +41,10 @@
   margin-top: 0.7rem;
 }
 
+.actionRow {
+  margin-top: 0.95rem;
+}
+
 @media (max-width: 640px) {
   .toolbar {
     align-items: stretch;

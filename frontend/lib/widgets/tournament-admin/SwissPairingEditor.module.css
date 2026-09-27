@@ -326,6 +326,11 @@
   color: var(--text);
 }
 
+.nextStepButton {
+  display: block;
+  margin-top: 0.8rem;
+}
+
 .resultGrid {
   display: grid;
   min-width: 0;

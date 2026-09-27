@@ -8,8 +8,6 @@ import {
   type ReactNode,
 } from "react";
 
-import { Button } from "../../../shared/ui";
-
 import {
   adminNavigationEquals,
   adminNavigationSearch,
@@ -24,8 +22,6 @@ import styles from "../admin.module.css";
 export interface AdminShellProps {
   navigation: AdminNavigation;
   onNavigate: (navigation: AdminNavigation) => void;
-  onLogout: () => void;
-  logoutPending: boolean;
   children: ReactNode;
 }
 
@@ -228,8 +224,6 @@ export const tournamentNavigation = (
 export function AdminShell({
   navigation,
   onNavigate,
-  onLogout,
-  logoutPending,
   children,
 }: AdminShellProps) {
   return (
@@ -242,17 +236,6 @@ export function AdminShell({
             Текущий раздел: {sectionLabels[navigation.section]}
           </p>
         </div>
-        <Button
-          type="button"
-          variant="secondary"
-          size="small"
-          className={styles.shellLogout}
-          onClick={onLogout}
-          loading={logoutPending}
-          loadingLabel="Выход..."
-        >
-          Выйти
-        </Button>
       </header>
       <nav className={styles.shellNav} aria-label="Разделы админ-панели">
         {Object.entries(sectionLabels).map(([section, label]) => {

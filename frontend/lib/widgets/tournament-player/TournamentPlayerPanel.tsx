@@ -73,11 +73,11 @@ const assignmentStatusLabel = (
 ): string => {
   switch (state) {
     case "delivered":
-      return "Доставлено сервером";
+      return "Задание готово";
     case "superseded":
-      return "Назначение устарело";
+      return "Задание обновлено";
     case "waiting":
-      return "Ожидается доставка";
+      return "Задание готовится";
   }
 };
 
@@ -99,7 +99,7 @@ const formatDeadline = (value: string | null): string => {
 
   const timestamp = Date.parse(value);
   if (!Number.isFinite(timestamp)) {
-    return "Серверное время недоступно";
+    return "Время недоступно";
   }
 
   return new Intl.DateTimeFormat("ru-RU", {
@@ -111,7 +111,7 @@ const formatDeadline = (value: string | null): string => {
 const formatServerTimestamp = (value: string): string => {
   const timestamp = Date.parse(value);
   if (!Number.isFinite(timestamp)) {
-    return "Серверное время недоступно";
+    return "Время недоступно";
   }
 
   return new Intl.DateTimeFormat("ru-RU", {
@@ -184,11 +184,11 @@ const draftStateLabel = (state: NonNullable<ParticipantPlayerView["draft"]>["sta
     case "paused":
       return "На паузе";
     case "recovery_required":
-      return "Ожидает восстановления";
+      return "Ждет восстановления";
     case "completed":
       return "Завершен";
     case "superseded":
-      return "Заменен сервером";
+      return "Заменен новой версией";
   }
 };
 
@@ -210,7 +210,7 @@ const pauseSourceLabel = (source: ParticipantPlayerView["pause"]["source"]): str
     case "wave":
       return "Раунд приостановлен";
     case "series":
-      return "Серия на технической паузе";
+      return "Серия на паузе";
     case "game":
       return "Игра приостановлена";
     case "draft":
@@ -231,7 +231,7 @@ const pauseReasonLabel = (reason: ParticipantPlayerView["pause"]["reason"]): str
     case "execution_epoch":
       return "Перезапуск выполнения";
     case null:
-      return "Причина не опубликована сервером";
+      return "Причина не указана";
   }
 };
 
@@ -244,13 +244,13 @@ const reconnectStateLabel = (
 ): string => {
   switch (state) {
     case "open":
-      return "Ожидает переподключения";
+      return "Ждет переподключения";
     case "reconnected":
       return "Переподключение подтверждено";
     case "expired":
       return "Срок истек";
     case "cancelled":
-      return "Отменено сервером";
+      return "Отменено";
   }
 };
 
@@ -271,10 +271,10 @@ const runtimeStatusTone = (
 
 const runtimeStatusLabel = (view: ParticipantPlayerView): string => {
   if (view.pause.active) {
-    return "Пауза сервера";
+    return "Матч на паузе";
   }
 
-  return view.officialOutcome === null ? "Синхронизировано" : "Итог зафиксирован";
+  return view.officialOutcome === null ? "Матч обновлен" : "Итог зафиксирован";
 };
 
 const officialOutcomeStateLabel = (
@@ -290,7 +290,7 @@ const officialOutcomeSubjectLabel = (
 const officialOutcomeReasonLabel = (
   outcome: NonNullable<ParticipantPlayerView["officialOutcome"]>,
 ): string => outcome.reason === null
-  ? "Причина не опубликована сервером"
+  ? "Причина не указана"
   : formatResultReason(outcome.reason);
 
 const officialWinnerLabel = (
@@ -298,14 +298,14 @@ const officialWinnerLabel = (
   participantId: string,
   opponentName: string | null,
 ): string => outcome.winnerId === null
-  ? "Победитель не опубликован сервером"
+  ? "Победитель не определен"
   : outcome.winnerId === participantId
     ? "Вы"
     : opponentName ?? "Соперник";
 
 const deadlineLabel = (value: string | null, suppressed: boolean): string => {
   if (suppressed) {
-    return "Приостановлен сервером";
+    return "Приостановлен";
   }
 
   return formatDeadline(value);
@@ -367,10 +367,10 @@ export const TournamentPlayerPanel = ({
     return (
       <section className={styles.panel} aria-labelledby="participant-player-title" data-state="loading">
         <div className={styles.header}>
-          <h2 className={styles.title} id="participant-player-title">Загружаем состояние</h2>
-          <Status tone="loading">Получаем снимок</Status>
+          <h2 className={styles.title} id="participant-player-title">Загружаем матч</h2>
+          <Status tone="loading">Загружаем данные</Status>
         </div>
-        <p className={styles.description}>Сверяем текущий турнир с сервером.</p>
+        <p className={styles.description}>Загружаем данные матча.</p>
       </section>
     );
   }
@@ -423,6 +423,50 @@ export const TournamentPlayerPanel = ({
 
       <p className={styles.description}>{view.stateDescription}</p>
 
+      {showReadinessAction && (
+        <section className={styles.readiness} aria-labelledby="participant-readiness-title">
+          <div className={styles.readinessHeader}>
+            <div>
+              <h3 className={styles.readinessTitle} id="participant-readiness-title">
+                Следующее действие
+              </h3>
+              <p className={styles.readinessCopy} id="participant-readiness-help">
+                {view.readyWindowOpen
+                  ? "Подтвердите готовность, когда будете готовы к матчу."
+                  : "Кнопка станет доступна, когда откроется окно готовности."}
+              </p>
+            </div>
+            <span className={styles.deadline} data-ready-window-state={view.readyWindowState ?? "closed"}>
+              {view.pause.deadlinesSuppressed
+                ? "Пауза"
+                : view.readyWindowDeadline === null
+                  ? "Срок не указан"
+                  : `До ${formatDeadline(view.readyWindowDeadline)}`}
+            </span>
+          </div>
+          <Button
+            aria-describedby="participant-readiness-help"
+            aria-disabled={readinessDisabled}
+            data-testid="participant-ready-button"
+            disabled={readinessDisabled}
+            loading={readiness.status === "submitting"}
+            loadingLabel="Сохраняем"
+            onClick={readiness.submitReady}
+            variant="primary"
+          >
+            {readiness.ready ? "Готовность подтверждена" : "Подтвердить готовность"}
+          </Button>
+          {readiness.message !== null && (
+            <Message
+              tone={readiness.status === "accepted" ? "success" : "error"}
+              title={readiness.status === "accepted" ? "Готово" : "Не удалось подтвердить готовность"}
+            >
+              <p>{readiness.message}</p>
+            </Message>
+          )}
+        </section>
+      )}
+
       {(view.pause.active ||
         view.officialOutcome !== null ||
         (view.runtime?.presence.length ?? 0) > 0 ||
@@ -444,7 +488,7 @@ export const TournamentPlayerPanel = ({
                 Состояние матча
               </h3>
               <p className={styles.runtimeCopy}>
-                Состояние и доступность действий определяются последним снимком сервера.
+                Здесь показаны подтвержденные данные матча.
               </p>
             </div>
             <Status tone={runtimeStatusTone(view)}>{runtimeStatusLabel(view)}</Status>
@@ -452,17 +496,17 @@ export const TournamentPlayerPanel = ({
 
           {view.pause.active && (
             <div className={styles.runtimePause} role="status">
-              <p>Матч приостановлен сервером. Локальное продолжение недоступно.</p>
+              <p>Матч приостановлен. Продолжение пока недоступно.</p>
               <dl className={styles.runtimeFacts} aria-label="Состояние паузы">
                 <div>
-                  <dt>Серверное состояние</dt>
+                  <dt>Источник паузы</dt>
                   <dd>{pauseSourceLabel(view.pause.source)}</dd>
                 </div>
                 <div>
                   <dt>Пауза с</dt>
                   <dd>
                     {view.pause.pausedAt === null
-                      ? "Время не опубликовано сервером"
+                      ? "Время не указано"
                       : (
                         <time dateTime={view.pause.pausedAt}>
                           {formatServerTimestamp(view.pause.pausedAt)}
@@ -478,21 +522,21 @@ export const TournamentPlayerPanel = ({
                   <dt>Дедлайны</dt>
                   <dd>
                     {view.pause.deadlinesSuppressed
-                      ? "Подавлены сервером"
-                      : "Не подавлены сервером"}
+                      ? "Остановлены"
+                      : "Идут"}
                   </dd>
                 </div>
                 <div>
                   <dt>Переподключение до</dt>
                   <dd>
                     {view.pause.reconnectDeadline === null
-                      ? "Срок не опубликован сервером"
+                      ? "Не опубликовано"
                       : formatDeadline(view.pause.reconnectDeadline)}
                   </dd>
                 </div>
               </dl>
               <p className={styles.runtimeHint}>
-                Следующее состояние и момент продолжения будут опубликованы сервером.
+                Продолжение появится после обновления матча.
               </p>
             </div>
           )}
@@ -544,21 +588,21 @@ export const TournamentPlayerPanel = ({
                 ))}
               </ul>
               <p className={styles.runtimeHint}>
-                Состояние переподключения сохраняется сервером. Локальное возобновление не создается.
+                Данные переподключения относятся к текущему матчу.
               </p>
             </div>
           )}
 
           {!view.pause.active && view.officialOutcome !== null && (
             <div className={styles.runtimeOutcome} role="status">
-              <p>Официальный итог опубликован сервером.</p>
+              <p>Официальный итог получен.</p>
               <dl className={styles.runtimeFacts} aria-label="Официальный итог">
                 <div>
                   <dt>Объект</dt>
                   <dd>{officialOutcomeSubjectLabel(view.officialOutcome)}</dd>
                 </div>
                 <div>
-                  <dt>Состояние</dt>
+                  <dt>Итог</dt>
                   <dd>{officialOutcomeStateLabel(view.officialOutcome)}</dd>
                 </div>
                 <div>
@@ -629,7 +673,7 @@ export const TournamentPlayerPanel = ({
             <h4>История игр</h4>
             {view.seriesResult.games.length === 0 ? (
               <p className={styles.seriesEmpty} data-testid="participant-series-empty-history">
-                Сыгранных игр нет. Сервер не публиковал назначение или победителя.
+                Сыгранных игр пока нет.
               </p>
             ) : (
               <ol className={styles.seriesGames}>
@@ -688,13 +732,13 @@ export const TournamentPlayerPanel = ({
         </div>
         <div className={styles.detailRow}>
           <dt>Игра</dt>
-          <dd>{view.gameNumber === null ? "Номер не опубликован сервером" : `Игра ${view.gameNumber}`}</dd>
+          <dd>{view.gameNumber === null ? "Не опубликован" : `Игра ${view.gameNumber}`}</dd>
         </div>
         <div className={styles.detailRow}>
           <dt>Счет серии</dt>
           <dd>
             {view.seriesScore === null
-              ? "Счет не опубликован сервером"
+              ? "Не опубликован"
               : `${view.seriesScore.own}:${view.seriesScore.opponent}`}
           </dd>
         </div>
@@ -712,7 +756,7 @@ export const TournamentPlayerPanel = ({
         </div>
         <div className={styles.detailRow}>
           <dt>Категория</dt>
-          <dd>{view.category ?? "Категория будет объявлена сервером"}</dd>
+          <dd>{view.category ?? "Категория появится перед игрой"}</dd>
         </div>
         <div className={styles.detailRow}>
           <dt>Требуемое действие</dt>
@@ -735,7 +779,7 @@ export const TournamentPlayerPanel = ({
                 Драфт категории {view.draft.format.toUpperCase()}
               </h3>
               <p className={styles.draftCopy}>
-                Порядок хода, дедлайн и доступные категории подтверждены сервером.
+                Порядок хода и доступные категории подтверждены.
               </p>
             </div>
             <Status tone={view.draft.state === "active" ? "info" : view.draft.state === "completed" ? "success" : "neutral"}>
@@ -743,7 +787,7 @@ export const TournamentPlayerPanel = ({
             </Status>
           </div>
 
-          <dl className={styles.draftFacts} aria-label="Состояние драфта">
+          <dl className={styles.draftFacts} aria-label="Данные драфта">
             <div>
               <dt>Раунд хода</dt>
               <dd>{view.draft.turn}</dd>
@@ -760,7 +804,7 @@ export const TournamentPlayerPanel = ({
               <dt>Владелец хода</dt>
               <dd>
                 {view.draft.currentActorId === null
-                  ? "Не задан сервером"
+                  ? "Не определен"
                   : view.draft.currentActorId === view.participantId
                     ? "Ваш ход"
                     : "Ход соперника"}
@@ -812,13 +856,13 @@ export const TournamentPlayerPanel = ({
             <p className={styles.draftHint}>
               {draft.allowed
                 ? view.draft.currentAction === "ban"
-                  ? "Выберите категорию для бана. Подтверждение и следующий ход вернет сервер."
-                  : "Выберите категорию для игры. Подтверждение и следующий ход вернет сервер."
+                  ? "Выберите категорию для бана, чтобы перейти к следующему ходу."
+                  : "Выберите категорию для игры, чтобы перейти к следующему ходу."
                 : view.draft.state === "paused"
-                  ? "Драфт на паузе. Ходы возобновятся только после решения сервера."
+                  ? "Драфт на паузе. Ходы возобновятся позже."
                   : view.draft.currentActorId !== null && view.draft.currentActorId !== view.participantId
-                    ? "Сейчас ход соперника. Ожидайте обновления сервера."
-                    : "Ход недоступен в текущем серверном состоянии."}
+                    ? "Сейчас ход соперника. Дождитесь его завершения."
+                    : "Ход пока недоступен."}
             </p>
           </div>
 
@@ -852,11 +896,11 @@ export const TournamentPlayerPanel = ({
                       <span>{action.action === "ban" ? "Бан" : "Выбор"}</span>
                     </div>
                     <span className={styles.draftActionMeta}>
-                      {action.automatic ? "Автоматически сервером" : "Ход участника"}
+                      {action.automatic ? "Автоматический ход" : "Ход участника"}
                     </span>
                     {action.decisionEvidence !== null && (
                       <span className={styles.draftEvidence}>
-                        Подтверждено доказательством решения сервера
+                        Решение подтверждено
                       </span>
                     )}
                   </li>
@@ -888,7 +932,9 @@ export const TournamentPlayerPanel = ({
           <div>
             <h3 className={styles.assignmentTitle} id="participant-assignment-title">Задание для игры</h3>
             <p className={styles.assignmentMeta}>
-              Контент отображается только после подтвержденной доставки сервером.
+              {view.assignment === null
+                ? "Задание появится после подготовки."
+                : "Проверьте задание перед игрой."}
             </p>
           </div>
           <Status tone={assignmentStatusTone(view.assignmentDeliveryState)}>
@@ -898,13 +944,13 @@ export const TournamentPlayerPanel = ({
 
         {view.assignment === null && view.assignmentDeliveryState === "waiting" && (
           <p className={styles.assignmentUnavailable} role="status">
-            Задание пока не доставлено. Ожидайте обновления состояния турнира.
+            Задание готовится. Оно появится здесь автоматически.
           </p>
         )}
 
         {view.assignment === null && view.assignmentDeliveryState === "superseded" && (
           <p className={styles.assignmentUnavailable} role="status">
-            Предыдущее назначение устарело. Новый контент будет показан только после доставки сервером.
+            Задание обновилось. Ожидайте новую версию.
           </p>
         )}
 
@@ -923,11 +969,11 @@ export const TournamentPlayerPanel = ({
           <p className={styles.assignmentName}>{view.assignment.title}</p>
           {taskHref !== null ? (
             <a className={styles.assignmentLink} href={taskHref}>
-              Открыть назначенное задание
+              Открыть задание
             </a>
           ) : (
             <span className={styles.assignmentUnavailable} role="status">
-              Ссылка на задание появится после подтверждения сервером.
+              Ссылка появится, когда задание будет готово.
             </span>
           )}
           {view.assignment.sourceFileAvailable && (
@@ -954,13 +1000,13 @@ export const TournamentPlayerPanel = ({
             </>
           )}
           <p className={styles.assignmentDescription}>{view.assignment.description}</p>
-          <dl className={styles.assignmentFacts} aria-label="Параметры назначения">
+          <dl className={styles.assignmentFacts} aria-label="Параметры задания">
             <div>
               <dt>Версия задания</dt>
               <dd>{view.assignment.version}</dd>
             </div>
             <div>
-              <dt>Доставлено сервером</dt>
+              <dt>Получено</dt>
               <dd>
                 <time dateTime={view.assignment.deliveredAt}>
                   {formatServerTimestamp(view.assignment.deliveredAt)}
@@ -971,14 +1017,14 @@ export const TournamentPlayerPanel = ({
               <dt>Дедлайн задания</dt>
               <dd>
                 {view.pause.deadlinesSuppressed
-                  ? "Приостановлен сервером"
+                  ? "Приостановлен"
                   : view.taskDeadlineAt === null
-                    ? "Не опубликован сервером"
+                    ? "Не опубликован"
                     : formatDeadline(view.taskDeadlineAt)}
               </dd>
             </div>
             <div>
-              <dt>Состояние игры</dt>
+              <dt>Статус игры</dt>
               <dd>{formatGameStatus(view.assignment.gameState)}</dd>
             </div>
             <div>
@@ -1038,10 +1084,10 @@ export const TournamentPlayerPanel = ({
               </div>
               <p className={styles.submissionHelp} id="participant-submission-help">
                 {view.pause.active
-                  ? "Отправка приостановлена сервером. Ожидайте нового снимка состояния."
+                  ? "Отправка приостановлена. Подождите продолжения."
                   : submission.allowed
-                    ? "Сервер проверит ответ. Победитель определяется только официальным результатом."
-                    : "Отправка откроется, когда сервер активирует текущую игру."}
+                    ? "Ответ проверит система. Итог появится после официального решения."
+                    : "Отправка откроется, когда игра начнется."}
               </p>
               {submission.message !== null && (
                 <Message
@@ -1113,50 +1159,6 @@ export const TournamentPlayerPanel = ({
           </>
         )}
       </section>
-
-      {showReadinessAction && (
-        <section className={styles.readiness} aria-labelledby="participant-readiness-title">
-          <div className={styles.readinessHeader}>
-            <div>
-              <h3 className={styles.readinessTitle} id="participant-readiness-title">
-                Готовность к раунду
-              </h3>
-              <p className={styles.readinessCopy} id="participant-readiness-help">
-                {view.readyWindowOpen
-                  ? "Подтверждение действует только для текущего окна и назначения."
-                  : "Действие откроется только в активном окне готовности."}
-              </p>
-            </div>
-            <span className={styles.deadline} data-ready-window-state={view.readyWindowState ?? "closed"}>
-              {view.pause.deadlinesSuppressed
-                ? "Срок приостановлен сервером"
-                : view.readyWindowDeadline === null
-                  ? "Срок не задан"
-                  : `До ${formatDeadline(view.readyWindowDeadline)}`}
-            </span>
-          </div>
-          <Button
-            aria-describedby="participant-readiness-help"
-            aria-disabled={readinessDisabled}
-            data-testid="participant-ready-button"
-            disabled={readinessDisabled}
-            loading={readiness.status === "submitting"}
-            loadingLabel="Сохраняем"
-            onClick={readiness.submitReady}
-            variant="primary"
-          >
-            {readiness.ready ? "Готовность подтверждена" : "Подтвердить готовность"}
-          </Button>
-          {readiness.message !== null && (
-            <Message
-              tone={readiness.status === "accepted" ? "success" : "error"}
-              title={readiness.status === "accepted" ? "Готово" : "Состояние обновилось"}
-            >
-              <p>{readiness.message}</p>
-            </Message>
-          )}
-        </section>
-      )}
 
     </section>
   );

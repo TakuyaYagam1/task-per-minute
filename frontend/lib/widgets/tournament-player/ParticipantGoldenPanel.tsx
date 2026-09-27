@@ -19,7 +19,7 @@ type ParticipantGoldenPanelProps = Readonly<{
 
 const timerLabel = (deadline: string | null, now: number, paused: boolean): string => {
   if (paused) {
-    return "Остановлен сервером";
+    return "Остановлен";
   }
   if (deadline === null) {
     return "Не запущен";
@@ -139,7 +139,7 @@ export const ParticipantGoldenPanel = ({
             <h2 className={styles.title} id="participant-golden-title">Golden Task</h2>
           </div>
           <Status tone={golden.loadStatus === "loading" ? "loading" : "error"}>
-            {golden.loadStatus === "loading" ? "Получаем состояние" : "Нет связи"}
+            {golden.loadStatus === "loading" ? "Загружаем Golden" : "Нет связи"}
           </Status>
         </div>
         {golden.loadMessage !== null && (
@@ -184,13 +184,13 @@ export const ParticipantGoldenPanel = ({
           <p className={styles.eyebrow}>Групповое задание</p>
           <h2 className={styles.title} id="participant-golden-title">Golden Task</h2>
           <p className={styles.description}>
-            Общая группа и распределение мест принадлежат серверу. Это не BO1-серия.
+            Это общая группа с единым распределением мест, а не BO1-серия.
           </p>
         </div>
         <Status tone={stateTone(snapshot.state)}>{formatGoldenState(snapshot.state)}</Status>
       </div>
 
-      <dl className={styles.facts} aria-label="Состояние Golden группы">
+      <dl className={styles.facts} aria-label="Golden группа">
         <div>
           <dt>Таймер</dt>
           <dd data-testid="participant-golden-timer">
@@ -205,7 +205,7 @@ export const ParticipantGoldenPanel = ({
           <strong>{formatTimestamp(snapshot.started_at)}</strong>
         </div>
         <div>
-          <span>Дедлайн сервера</span>
+            <span>Дедлайн</span>
           <strong>{formatTimestamp(snapshot.deadline)}</strong>
         </div>
       </div>
@@ -223,19 +223,19 @@ export const ParticipantGoldenPanel = ({
           >
             Готов к Golden
           </Button>
-          <p>Материалы появятся только после server start и допуска участника.</p>
+          <p>Материалы появятся после старта и допуска участника.</p>
         </div>
       )}
 
       {snapshot.state === "ready" && (
         <Message tone="info" title="Группа готова">
-          <p>Ожидайте запуска сервером. Задание пока не раскрывается.</p>
+          <p>Ожидайте запуска. Задание пока недоступно.</p>
         </Message>
       )}
 
       {paused && (
         <Message tone="warning" title="Техническая пауза">
-          <p>Таймер и действия остановлены сервером. Локального продолжения нет.</p>
+          <p>Таймер и действия остановлены. Продолжение появится после паузы.</p>
         </Message>
       )}
 
@@ -281,8 +281,7 @@ export const ParticipantGoldenPanel = ({
       ) : snapshot.state === "active" || snapshot.state === "completed" ? (
         <Message tone="warning" title="Материалы не выданы">
           <p>
-            Сервер не допустил этого участника к текущей попытке или зафиксировал no-show.
-            Клиент не восстанавливает задание из чужих данных.
+            Участие в этой попытке недоступно. Задание не восстанавливается из чужих данных.
           </p>
         </Message>
       ) : null}
@@ -318,7 +317,7 @@ export const ParticipantGoldenPanel = ({
 
       {snapshot.submitted && (
         <Message tone="success" title="Решение принято">
-          <p>Сервер зафиксировал результат. Ожидайте итоговое распределение мест.</p>
+          <p>Результат зафиксирован. Ожидайте итоговое распределение мест.</p>
         </Message>
       )}
 
@@ -326,7 +325,7 @@ export const ParticipantGoldenPanel = ({
         <div className={styles.position} data-testid="participant-golden-position">
           <span>Официальное место в группе</span>
           <strong>{snapshot.position ?? "Не опубликовано"}</strong>
-          <p>Следующий этап определяет только серверный lobby или playoff snapshot.</p>
+          <p>Следующий этап появится после обновления результата.</p>
         </div>
       )}
 
@@ -336,7 +335,7 @@ export const ParticipantGoldenPanel = ({
           data-testid="participant-golden-action-status"
           id="participant-golden-action-status"
           tone={actionTone(golden.actionStatus)}
-          title={golden.actionStatus === "accepted" ? "Сервер подтвердил действие" : "Golden"}
+          title={golden.actionStatus === "accepted" ? "Действие подтверждено" : "Golden"}
         >
           <p>{golden.actionMessage}</p>
         </Message>

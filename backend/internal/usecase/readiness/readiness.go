@@ -240,11 +240,17 @@ func buildReadinessCommit(
 	case ReadinessEventReady:
 		changed, err = wave.MarkReady(operation.scope.WindowID, operation.participantID, occurredAt)
 	case ReadinessEventCleared:
-		changed, err = clearParticipantReadiness(&wave, operation.participantID)
+		changed, err = clearParticipantReadiness(&wave, operation.participantID, occurredAt)
 	default:
 		return ReadinessCommit{}, false, readinessError("unknown operation")
 	}
 	if err != nil {
+		if errors.Is(err, domain.ErrReadyWindowDeadline) ||
+			errors.Is(err, domain.ErrReadyWindowStale) ||
+			errors.Is(err, domain.ErrWaveTransition) ||
+			errors.Is(err, domain.ErrWaveMemberNotFound) {
+			return ReadinessCommit{}, false, ErrReadinessAuthorityConflict
+		}
 		return ReadinessCommit{}, false, readinessError("apply event: %v", err)
 	}
 	if !changed {
@@ -282,11 +288,14 @@ func readinessEventCommit(
 	}
 }
 
-func clearParticipantReadiness(wave *domain.Wave, participantID uuid.UUID) (bool, error) {
+func clearParticipantReadiness(wave *domain.Wave, participantID uuid.UUID, at time.Time) (bool, error) {
 	if wave == nil || wave.StartedAt != nil || wave.ReadyWindow == nil ||
 		wave.ReadyWindow.State != domain.ReadyWindowStateOpen ||
 		(wave.State != domain.WaveStateReadyWindowOpen && wave.State != domain.WaveStateReady) {
 		return false, ErrReadinessAuthorityConflict
+	}
+	if at.Before(wave.ReadyWindow.OpenedAt) || at.After(wave.ReadyWindow.Deadline) {
+		return false, domain.ErrReadyWindowDeadline
 	}
 	for index := range wave.Members {
 		if wave.Members[index].ParticipantID != participantID {

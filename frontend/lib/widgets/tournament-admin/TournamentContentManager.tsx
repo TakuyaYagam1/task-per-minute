@@ -1145,7 +1145,7 @@ export const TournamentContentManager = ({
 
             {tasksState === "loading" && (
               <Message tone="loading" title="Загрузка задач">
-                Получаем актуальный каталог с сервера.
+                Загружаем актуальный каталог задач.
               </Message>
             )}
             {tasksState === "error" && (

@@ -1,6 +1,6 @@
 .page {
   display: grid;
-  min-height: 100vh;
+  min-height: calc(100vh - var(--site-header-height, 4rem));
   place-items: center;
   padding: clamp(1.5rem, 5vw, 4rem) 1rem;
   background: var(--bg);
@@ -87,7 +87,6 @@
   font-size: 0.82rem;
 }
 
-.leaderboardLink,
 .arenaLink {
   width: fit-content;
   color: var(--text);
@@ -96,11 +95,6 @@
   text-underline-offset: 0.2em;
 }
 
-.leaderboardLink {
-  margin-top: 1.75rem;
-}
-
-.leaderboardLink:hover,
 .arenaLink:hover {
   color: var(--accent-strong);
 }
@@ -243,12 +237,6 @@
   pointer-events: auto;
 }
 
-@media (max-width: 1024px) {
-  .page {
-    padding-top: max(4rem, 72px);
-  }
-}
-
 @media (max-width: 760px) {
   .homeCard {
     grid-template-columns: 1fr;
@@ -262,7 +250,7 @@
 
 @media (max-width: 375px) {
   .page {
-    padding: max(4rem, 72px) 0.65rem 1rem;
+    padding: 1rem 0.65rem;
   }
 
   .intro,
