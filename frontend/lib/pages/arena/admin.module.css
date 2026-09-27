@@ -200,6 +200,10 @@
   margin-top: 18px;
 }
 
+.playerDialogForm {
+  margin-top: 0;
+}
+
 .formRow {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

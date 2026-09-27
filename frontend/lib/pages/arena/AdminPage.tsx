@@ -1110,6 +1110,38 @@ export default function AdminPage() {
         closeOnEscape={!playerSubmitting}
         closeOnBackdrop={false}
         showCloseButton={!playerSubmitting}
+        footer={
+          <div className={styles.btnGroup}>
+            <button
+              type="submit"
+              form="admin-player-form"
+              className={`${styles.btn} ${styles.btnPrimary} motion-button`}
+              disabled={playerSubmitting}
+            >
+              {playerSubmitting ? (
+                <>
+                  <div
+                    className={styles.spinner}
+                    style={{ width: 18, height: 18 }}
+                  ></div>
+                  {isCreate ? "Создание..." : "Сохранение..."}
+                </>
+              ) : isCreate ? (
+                "Создать игрока"
+              ) : (
+                "Сохранить игрока"
+              )}
+            </button>
+            <button
+              type="button"
+              className={`${styles.btn} ${styles.btnSecondary} motion-button`}
+              onClick={() => resetPlayerForm()}
+              disabled={playerSubmitting}
+            >
+              Отменить
+            </button>
+          </div>
+        }
         onOpenChange={(open) => {
           if (!open && !playerSubmitting) {
             resetPlayerForm();
@@ -1119,7 +1151,7 @@ export default function AdminPage() {
         <form
           id="admin-player-form"
           onSubmit={handlePlayerSubmit}
-          className={styles.form}
+          className={`${styles.form} ${styles.playerDialogForm}`}
           noValidate
         >
           <div className={styles.inputGroup}>
@@ -1248,36 +1280,6 @@ export default function AdminPage() {
             </p>
           )}
         </form>
-        <div className={styles.btnGroup}>
-          <button
-            type="submit"
-            form="admin-player-form"
-            className={`${styles.btn} ${styles.btnPrimary} motion-button`}
-            disabled={playerSubmitting}
-          >
-            {playerSubmitting ? (
-              <>
-                <div
-                  className={styles.spinner}
-                  style={{ width: 18, height: 18 }}
-                ></div>
-                {isCreate ? "Создание..." : "Сохранение..."}
-              </>
-            ) : isCreate ? (
-              "Создать игрока"
-            ) : (
-              "Сохранить игрока"
-            )}
-          </button>
-          <button
-            type="button"
-            className={`${styles.btn} ${styles.btnSecondary} motion-button`}
-            onClick={() => resetPlayerForm()}
-            disabled={playerSubmitting}
-          >
-            Отменить
-          </button>
-        </div>
       </Dialog>
     );
   };
