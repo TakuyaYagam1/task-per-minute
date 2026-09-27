@@ -21,12 +21,11 @@ import { catalogFormatLabel } from "../../entities/tournament";
 import { formatTournamentState } from "../../shared/lib";
 import {
   Button,
+  Dialog,
   Message,
   Panel,
   Status,
-  Table,
   type StatusTone,
-  type TableColumn,
 } from "../../shared/ui";
 
 import { GoldenPlayoffControlPanel } from "./GoldenPlayoffControlPanel";
@@ -196,8 +195,11 @@ export const TournamentAdminPanel = ({
     String(DEFAULT_ROSTER_SIZE),
   );
   const [formError, setFormError] = useState<string | null>(null);
+  const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [creating, setCreating] = useState(false);
   const creatingRef = useRef(false);
+  const createNameInputRef = useRef<HTMLInputElement | null>(null);
+  const createTriggerRef = useRef<HTMLButtonElement | null>(null);
   const mountedRef = useRef(false);
   const createRunRef = useRef(0);
   const navigationContextRef = useRef({ activeView, selectedTournamentId });
@@ -220,8 +222,8 @@ export const TournamentAdminPanel = ({
 
   const publishDirty = useCallback((): void => {
     const editorDirty = Object.values(dirtySourcesRef.current).some(Boolean);
-    onDirtyChange?.(createFormDirty || editorDirty);
-  }, [createFormDirty, onDirtyChange]);
+    onDirtyChange?.((createDialogOpen && createFormDirty) || editorDirty);
+  }, [createDialogOpen, createFormDirty, onDirtyChange]);
 
   const reportChildDirty = useCallback(
     (source: string, dirty: boolean): void => {
@@ -380,6 +382,45 @@ export const TournamentAdminPanel = ({
     );
   }, []);
 
+  const resetCreateForm = useCallback((): void => {
+    setName("");
+    setPlannedRosterSize(String(DEFAULT_ROSTER_SIZE));
+    setFormError(null);
+  }, []);
+
+  const closeCreateDialog = useCallback((): void => {
+    if (creatingRef.current) {
+      return;
+    }
+    if (
+      createFormDirty &&
+      !window.confirm("Есть несохраненные изменения. Закрыть без сохранения?")
+    ) {
+      return;
+    }
+    setCreateDialogOpen(false);
+    resetCreateForm();
+  }, [createFormDirty, resetCreateForm]);
+
+  const openCreateDialog = useCallback(
+    (trigger: HTMLButtonElement): void => {
+      if (creatingRef.current) {
+        return;
+      }
+      resetCreateForm();
+      createTriggerRef.current = trigger;
+      setCreateDialogOpen(true);
+    },
+    [resetCreateForm],
+  );
+
+  useEffect(() => {
+    if (selectedTournamentId && createDialogOpen && !creatingRef.current) {
+      setCreateDialogOpen(false);
+      resetCreateForm();
+    }
+  }, [createDialogOpen, resetCreateForm, selectedTournamentId]);
+
   const handleCreate = async (): Promise<void> => {
     if (creatingRef.current) {
       return;
@@ -428,6 +469,7 @@ export const TournamentAdminPanel = ({
       setTournaments((current) => [tournament, ...current]);
       setName("");
       setPlannedRosterSize(String(DEFAULT_ROSTER_SIZE));
+      setCreateDialogOpen(false);
       dirtySourcesRef.current = {};
       onDirtyChange?.(false);
       window.setTimeout(() => {
@@ -466,62 +508,21 @@ export const TournamentAdminPanel = ({
     }
   };
 
-  const columns = useMemo<readonly TableColumn<Tournament>[]>(
-    () => [
-      {
-        key: "name",
-        header: "Соревнование",
-        cell: (tournament) => (
-          <div className={styles.tournamentNameCell}>
-            <strong>{tournament.name}</strong>
-          </div>
-        ),
-      },
-      {
-        key: "state",
-        header: "Состояние",
-        cell: (tournament) => (
-          <Status tone={STATE_TONES[tournament.state]}>
-            {formatTournamentState(tournament.state)}
-          </Status>
-        ),
-      },
-      {
-        key: "roster_size",
-        header: "Состав",
-        align: "center",
-        cell: (tournament) => (
-          <span>
-            {tournament.roster_size} / {tournament.planned_roster_size}
-          </span>
-        ),
-      },
-      {
-        key: "created_at",
-        header: "Создан",
-        cell: (tournament) => formatDateTime(tournament.created_at),
-      },
-      {
-        key: "open",
-        header: "Действие",
-        cell: (tournament) => (
-          <Button
-            variant="secondary"
-            size="small"
-            onClick={() => onNavigate(tournament.id, "overview")}
-          >
-            Открыть
-          </Button>
-        ),
-      },
-    ],
-    [onNavigate],
-  );
-
-  const renderCreateForm = (): ReactNode => (
-    <Panel
-      title="Новое соревнование"
-      className={styles.panel}
+  const renderCreateDialog = (): ReactNode => (
+    <Dialog
+      open={createDialogOpen}
+      title="Создать соревнование"
+      size="small"
+      initialFocusRef={createNameInputRef}
+      returnFocusRef={createTriggerRef}
+      closeLabel="Закрыть форму создания соревнования"
+      closeOnEscape={!creating}
+      showCloseButton={!creating}
+      onOpenChange={(nextOpen) => {
+        if (!nextOpen) {
+          closeCreateDialog();
+        }
+      }}
     >
       <form
         className={styles.form}
@@ -534,12 +535,14 @@ export const TournamentAdminPanel = ({
         <div className={styles.field}>
           <label htmlFor="tournament-name">Название соревнования</label>
           <input
+            ref={createNameInputRef}
             id="tournament-name"
             name="name"
             type="text"
             value={name}
             required
             maxLength={MAX_TOURNAMENT_NAME_LENGTH}
+            disabled={creating}
             onChange={(event) => {
               setName(event.target.value);
               setFormError(null);
@@ -555,6 +558,7 @@ export const TournamentAdminPanel = ({
             id="tournament-roster-size"
             name="planned_roster_size"
             value={plannedRosterSize}
+            disabled={creating}
             onChange={(event) => {
               setPlannedRosterSize(event.target.value);
               setFormError(null);
@@ -581,6 +585,7 @@ export const TournamentAdminPanel = ({
                 <button
                   className={styles.inlineAction}
                   type="button"
+                  disabled={creating}
                   onClick={() => void loadContent()}
                 >
                   Обновить данные
@@ -594,61 +599,131 @@ export const TournamentAdminPanel = ({
             {formError}
           </Message>
         ) : null}
-        <Button
-          type="submit"
-          size="large"
-          loading={creating}
-          loadingLabel="Создаем соревнование"
-          disabled={contentState !== "ready" || !content}
-          className={styles.submitButton}
-        >
-          Создать соревнование
-        </Button>
+        <div className={styles.formActions}>
+          <Button
+            type="submit"
+            loading={creating}
+            loadingLabel="Создаем соревнование"
+            disabled={contentState !== "ready" || !content}
+          >
+            Создать соревнование
+          </Button>
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={closeCreateDialog}
+            disabled={creating}
+          >
+            Отменить
+          </Button>
+        </div>
       </form>
-    </Panel>
+    </Dialog>
   );
 
   const renderTournamentList = (): ReactNode => (
-    <Panel
-      title="Список соревнований"
-      className={`${styles.panel} ${styles.listPanel}`}
-    >
-      <div className={styles.listToolbar}>
-        <span className={styles.listCount}>
-          {tournamentsState === "ready"
-            ? `Всего: ${tournaments.length}`
-            : ""}
-        </span>
-        <Button
-          variant="secondary"
-          size="small"
-          onClick={() => void loadTournaments()}
-          loading={tournamentsState === "loading"}
-          loadingLabel="Обновляем"
-        >
-          Обновить список
-        </Button>
-      </div>
-      <Table
-        columns={columns}
-        rows={tournaments}
-        rowKey="id"
-        ariaLabel="Список соревнований"
-        loading={tournamentsState === "loading"}
-        loadingMessage="Загружаем соревнования"
-        error={
-          tournamentsState === "error"
-            ? tournamentsError || "Неизвестная ошибка списка"
-            : undefined
+    <>
+      {renderCreateDialog()}
+      <Panel
+        as="article"
+        aria-labelledby="tournament-list-title"
+        header={
+          <div className={styles.listHeader}>
+            <div>
+              <h2 id="tournament-list-title" className={styles.sectionTitle}>
+                Список соревнований
+              </h2>
+              {tournamentsState === "ready" && (
+                <p className={styles.listDescription}>
+                  Всего: {tournaments.length}
+                </p>
+              )}
+            </div>
+            <Button onClick={(event) => openCreateDialog(event.currentTarget)}>
+              Создать соревнование
+            </Button>
+          </div>
         }
-        empty={
-          tournamentsState === "ready" && tournaments.length === 0
-            ? "Соревнований пока нет"
-            : undefined
+        className={styles.listPanel}
+        footer={
+          <Button
+            variant="secondary"
+            size="small"
+            onClick={() => void loadTournaments()}
+            loading={tournamentsState === "loading"}
+            loadingLabel="Обновляем"
+          >
+            Обновить список
+          </Button>
         }
-        wrapperClassName={styles.tableRegion}
-      />
-    </Panel>
+      >
+        {tournamentsState === "loading" && (
+          <Message tone="loading" title="Загрузка соревнований">
+            Загружаем актуальный список соревнований.
+          </Message>
+        )}
+        {tournamentsState === "error" && (
+          <Message tone="error" title="Не удалось загрузить соревнования">
+            {tournamentsError}
+            <Button
+              variant="secondary"
+              size="small"
+              className={styles.inlineButton}
+              onClick={() => void loadTournaments()}
+            >
+              Повторить
+            </Button>
+          </Message>
+        )}
+        {tournamentsState === "ready" && tournaments.length === 0 && (
+          <Message tone="empty" title="Каталог пуст">
+            Пока нет созданных соревнований
+          </Message>
+        )}
+        {tournamentsState === "ready" && tournaments.length > 0 && (
+          <div className={styles.tournamentList} aria-label="Каталог соревнований">
+            {tournaments.map((tournament) => (
+              <article key={tournament.id} className={styles.tournamentCard}>
+                <div className={styles.tournamentCardHeader}>
+                  <div className={styles.tournamentCardTitle}>
+                    <h3 className={styles.tournamentName}>{tournament.name}</h3>
+                  </div>
+                  <Status
+                    className={styles.tournamentStatus}
+                    tone={STATE_TONES[tournament.state]}
+                    size="small"
+                  >
+                    {formatTournamentState(tournament.state)}
+                  </Status>
+                </div>
+                <dl className={styles.tournamentMeta}>
+                  <div className={styles.tournamentMetaItem}>
+                    <dt>Состав</dt>
+                    <dd>
+                      {tournament.roster_size} / {tournament.planned_roster_size}
+                    </dd>
+                  </div>
+                  <div className={styles.tournamentMetaItem}>
+                    <dt>Создано</dt>
+                    <dd>{formatDateTime(tournament.created_at)}</dd>
+                  </div>
+                </dl>
+                <div className={styles.tournamentCardActions}>
+                  <Button
+                    variant="secondary"
+                    size="small"
+                    aria-label={`Открыть соревнование ${tournament.name}`}
+                    onClick={() => onNavigate(tournament.id, "overview")}
+                  >
+                    Открыть
+                  </Button>
+                </div>
+              </article>
+            ))}
+          </div>
+        )}
+      </Panel>
+    </>
   );
 
   const renderDetail = (): ReactNode => {
@@ -814,18 +889,10 @@ export const TournamentAdminPanel = ({
 
   return (
     <section className={styles.root} aria-label="Управление соревнованиями">
-      {!selectedTournamentId ? (
-        <div className={styles.heading}>
-          <h2>Соревнования</h2>
-        </div>
-      ) : null}
       {selectedTournamentId ? (
         renderDetail()
       ) : (
-        <div className={styles.layout}>
-          {renderCreateForm()}
-          {renderTournamentList()}
-        </div>
+        renderTournamentList()
       )}
     </section>
   );

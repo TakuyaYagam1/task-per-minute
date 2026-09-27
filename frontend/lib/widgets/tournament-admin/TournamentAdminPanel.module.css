@@ -6,41 +6,6 @@
   margin: 0 auto;
 }
 
-.heading {
-  border-bottom: 1px solid var(--border);
-  padding-bottom: 0.8rem;
-}
-
-.heading h2,
-.heading p {
-  margin: 0;
-}
-
-.heading h2 {
-  color: var(--text);
-  font-size: clamp(1.15rem, 2vw, 1.5rem);
-  font-weight: 800;
-  letter-spacing: -0.015em;
-}
-
-.eyebrow {
-  margin-bottom: 0.35rem !important;
-  color: var(--secondary);
-  font-size: 0.7rem;
-  font-weight: 760;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.layout {
-  display: grid;
-  min-width: 0;
-  grid-template-columns: minmax(280px, 0.36fr) minmax(0, 0.64fr);
-  gap: 1rem;
-  align-items: start;
-}
-
-.panel,
 .listPanel,
 .detail {
   min-width: 0;
@@ -48,7 +13,18 @@
 
 .form {
   display: grid;
+  min-width: 0;
   gap: 1rem;
+}
+
+.formActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+}
+
+.formActions > button {
+  flex: 1 1 10rem;
 }
 
 .field {
@@ -86,22 +62,6 @@
   gap: 0.55rem;
   border-top: 1px solid var(--border);
   padding-top: 1rem;
-}
-
-.publicIdHint {
-  margin: 0;
-  color: var(--secondary);
-  font-size: 0.8rem;
-  line-height: 1.5;
-}
-
-.publicIdHint {
-  overflow-wrap: anywhere;
-}
-
-.publicIdHint code {
-  color: var(--accent);
-  font-size: 0.78rem;
 }
 
 .inlineAction {
@@ -143,51 +103,132 @@
   color: var(--text);
 }
 
+.inlineAction:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+
 .backButton:hover {
   border-color: var(--accent);
   background: var(--accent-soft);
 }
 
-.submitButton {
-  width: 100%;
-}
-
-.listToolbar {
+.listHeader {
   display: flex;
   min-width: 0;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
-  gap: 0.8rem;
-  margin-bottom: 0.8rem;
+  gap: 1rem;
 }
 
-.listCount {
-  min-height: 1.4rem;
+.sectionTitle {
+  margin: 0;
+  color: var(--text);
+  font-size: 1rem;
+  font-weight: 780;
+}
+
+.listDescription {
+  margin: 0.3rem 0 0;
   color: var(--secondary);
   font-size: 0.8rem;
 }
 
-.tableRegion {
-  min-width: 0;
+.inlineButton {
+  margin-top: 0.65rem;
 }
 
-.tournamentNameCell {
+.tournamentList {
   display: grid;
-  min-width: 10rem;
-  gap: 0.15rem;
+  min-width: 0;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.65rem;
 }
 
-.tournamentNameCell strong {
+.tournamentCard {
+  display: grid;
+  min-width: 0;
+  gap: 0.8rem;
+  height: 100%;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-small);
+  padding: 0.9rem;
+  background: var(--surface-muted);
+}
+
+.tournamentCardHeader {
+  display: flex;
+  flex-wrap: wrap;
+  min-width: 0;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.8rem;
+}
+
+.tournamentCardTitle {
+  display: grid;
+  min-width: 0;
+  flex: 1 1 12rem;
+  gap: 0.25rem;
+}
+
+.tournamentName {
+  overflow-wrap: anywhere;
+  margin: 0;
   color: var(--text);
-  font-size: 0.87rem;
+  font-size: 0.92rem;
   font-weight: 760;
 }
 
-.publicId,
 .detailMeta {
   overflow-wrap: anywhere;
   color: var(--secondary);
   font-size: 0.74rem;
+}
+
+.tournamentStatus {
+  flex: 0 1 auto;
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: normal;
+  word-break: normal;
+}
+
+.tournamentMeta {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.65rem;
+  margin: 0;
+}
+
+.tournamentMetaItem {
+  min-width: 0;
+  border-top: 1px solid var(--border);
+  padding-top: 0.6rem;
+}
+
+.tournamentMetaItem dt {
+  color: var(--secondary);
+  font-size: 0.72rem;
+}
+
+.tournamentMetaItem dd {
+  margin: 0.2rem 0 0;
+  overflow-wrap: anywhere;
+  color: var(--text);
+  font-size: 0.84rem;
+  font-weight: 760;
+}
+
+.tournamentCardActions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: auto;
+}
+
+.tournamentCardActions button {
+  min-width: 6rem;
 }
 
 .detail {
@@ -284,23 +325,26 @@
 }
 
 @media (max-width: 940px) {
-  .layout {
-    grid-template-columns: 1fr;
-  }
-
   .overviewGrid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
 @media (max-width: 640px) {
-  .listToolbar {
-    align-items: stretch;
+  .listHeader {
     flex-direction: column;
   }
 
-  .listToolbar button {
+  .listHeader > button {
     width: 100%;
+  }
+
+  .tournamentList {
+    grid-template-columns: 1fr;
+  }
+
+  .formActions > button {
+    flex-basis: 100%;
   }
 
   .viewTab {
