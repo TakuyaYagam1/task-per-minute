@@ -761,7 +761,7 @@ export const SeriesConfigurationEditor = ({
               )}
 
               <div className={styles.reserveFields}>
-                <div className={styles.field}>
+                <div className={`${styles.field} ${styles.reserveField}`}>
                   <label htmlFor="reserve-count-select">
                     Количество резервов для normal и Golden
                   </label>
@@ -784,18 +784,18 @@ export const SeriesConfigurationEditor = ({
                   <span id="reserve-count-help" className={styles.fieldHint}>
                     Резерв расходуется только после сбоя основной попытки; значение 0 означает вмешательство оператора.
                   </span>
-                </div>
-                <div className={styles.reserveActions}>
-                  <Button
-                    type="button"
-                    onClick={() => void handleReserveSubmit()}
-                    loading={submittingConfiguration}
-                    loadingLabel="Сохраняем"
-                    disabled={reserveEditingClosed || reserveCountDraft === null || anySubmitting}
-                    aria-describedby={reserveError ? "reserve-count-error" : undefined}
-                  >
-                    Сохранить резерв
-                  </Button>
+                  <div className={styles.reserveActions}>
+                    <Button
+                      type="button"
+                      onClick={() => void handleReserveSubmit()}
+                      loading={submittingConfiguration}
+                      loadingLabel="Сохраняем"
+                      disabled={reserveEditingClosed || reserveCountDraft === null || anySubmitting}
+                      aria-describedby={reserveError ? "reserve-count-error" : undefined}
+                    >
+                      Сохранить резерв
+                    </Button>
+                  </div>
                 </div>
               </div>
 

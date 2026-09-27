@@ -41,6 +41,10 @@ func tournamentAdminPairingAuthority(
 	roundRows []sqlc.LockTournamentPairingRoundsRow,
 	waveRows []sqlc.LockTournamentPairingWavesRow,
 ) (pairingusecase.PairingAuthority, error) {
+	state := domain.TournamentState(header.TournamentState)
+	if pairingPreStartState(state) {
+		return tournamentAdminPreStartPairingAuthority(header, state)
+	}
 	if header.TournamentID == uuid.Nil || header.RosterID == uuid.Nil || !header.RosterLockedAt.Valid {
 		return pairingusecase.PairingAuthority{}, domain.ErrInternal
 	}
@@ -88,6 +92,44 @@ func tournamentAdminPairingAuthority(
 		PreviousMeetings: previous, PriorMeetingCounts: counts, ReceivedBye: receivedBye,
 		RoundCount: len(roundRows), CompletedRoundCount: completed,
 	}, nil
+}
+
+func tournamentAdminPreStartPairingAuthority(
+	header sqlc.LockTournamentPairingAuthorityRow,
+	state domain.TournamentState,
+) (pairingusecase.PairingAuthority, error) {
+	if !validPairingPreStartAuthorityHeader(header) {
+		return pairingusecase.PairingAuthority{}, domain.ErrInternal
+	}
+	return pairingusecase.PairingAuthority{
+		TournamentID:         header.TournamentID,
+		TournamentState:      state,
+		TournamentRevision:   header.TournamentRevision,
+		RosterID:             header.RosterID,
+		RosterRevision:       header.RosterRevision,
+		RosterLockedAt:       pairingRosterLockedAt(header),
+		ProjectionRevisionID: header.ProjectionRevisionID,
+		ProjectionRevision:   header.ProjectionRevision,
+		HistoryRevision:      0,
+	}, nil
+}
+
+func pairingPreStartState(state domain.TournamentState) bool {
+	return state == domain.TournamentStateDraft || state == domain.TournamentStateRegistration
+}
+
+func validPairingPreStartAuthorityHeader(header sqlc.LockTournamentPairingAuthorityRow) bool {
+	state := domain.TournamentState(header.TournamentState)
+	return header.TournamentID != uuid.Nil && header.RosterID != uuid.Nil &&
+		pairingPreStartState(state) && header.TournamentRevision >= 1 && header.RosterRevision >= 1 &&
+		header.ProjectionRevisionID != uuid.Nil && header.ProjectionRevision >= 1
+}
+
+func pairingRosterLockedAt(header sqlc.LockTournamentPairingAuthorityRow) time.Time {
+	if !header.RosterLockedAt.Valid {
+		return time.Time{}
+	}
+	return header.RosterLockedAt.Time.UTC()
 }
 
 func tournamentAdminStandings(

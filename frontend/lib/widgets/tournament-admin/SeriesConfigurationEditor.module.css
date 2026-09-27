@@ -93,9 +93,28 @@
 .reserveFields {
   display: grid;
   min-width: 0;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: end;
+  grid-template-columns: minmax(0, 1fr);
   gap: 0.9rem;
+}
+
+.field.reserveField {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 0.4rem 0.9rem;
+}
+
+.reserveField label {
+  grid-column: 1 / -1;
+}
+
+.reserveField select {
+  grid-column: 1;
+  grid-row: 2;
+}
+
+.reserveField .fieldHint {
+  grid-column: 1;
+  grid-row: 3;
 }
 
 .reserveActions {
@@ -103,6 +122,13 @@
   min-width: 0;
   align-items: center;
   gap: 0.7rem;
+}
+
+.reserveField .reserveActions {
+  grid-column: 2;
+  grid-row: 2;
+  align-self: stretch;
+  align-items: stretch;
 }
 
 .title,
@@ -306,6 +332,15 @@
 
   .reserveFields {
     grid-template-columns: 1fr;
+  }
+
+  .field.reserveField {
+    grid-template-columns: 1fr;
+  }
+
+  .reserveField .reserveActions {
+    grid-column: 1;
+    grid-row: 4;
   }
 
   .fields {

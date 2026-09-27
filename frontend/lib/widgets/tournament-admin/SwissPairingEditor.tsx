@@ -172,6 +172,82 @@ const isRepeatProblem = (error: ApiError): boolean => {
   return /повтор|повторн|repeat|встречал|already/.test(detail);
 };
 
+type PairingLifecycleMessage = Readonly<{
+  statusLabel: string;
+  title: string;
+  detail: string;
+}>;
+
+const pairingLifecycleMessage = (
+  state: Tournament["state"],
+  pausedFromState: Tournament["paused_from_state"],
+): PairingLifecycleMessage => {
+  switch (state) {
+    case "draft":
+      return {
+        statusLabel: "Турнир не запущен",
+        title: "Подготовьте турнир к запуску",
+        detail: 'Откройте регистрацию, отметьте присутствующих участников, затем нажмите "Заблокировать состав" и "Начать швейцарский этап".',
+      };
+    case "registration":
+      return {
+        statusLabel: "Турнир не запущен",
+        title: "Сначала запустите турнир",
+        detail: 'Проверьте состав, затем нажмите "Заблокировать состав" и "Начать швейцарский этап". После этого можно формировать пары.',
+      };
+    case "roster_locked":
+      return {
+        statusLabel: "Турнир не запущен",
+        title: "Сначала запустите турнир",
+        detail: 'Нажмите "Начать швейцарский этап". После этого можно формировать пары.',
+      };
+    case "swiss":
+      return {
+        statusLabel: "Раунд доступен",
+        title: "Раунд доступен",
+        detail: "Можно сформировать следующий раунд.",
+      };
+    case "technical_pause":
+      if (pausedFromState === "swiss") {
+        return {
+          statusLabel: "Турнир приостановлен",
+          title: "Возобновите турнир",
+          detail: "Возобновите турнир, чтобы продолжить формирование пар.",
+        };
+      }
+      return {
+        statusLabel: "Этап приостановлен",
+        title: "Возобновите турнир",
+        detail: "Сейчас турнир приостановлен. Новые пары можно формировать только во время швейцарского этапа.",
+      };
+    case "golden":
+    case "playoffs":
+      return {
+        statusLabel: "Этап завершен",
+        title: "Швейцарский этап завершен",
+        detail: "Турнир уже перешел к следующему этапу. Формировать новые пары здесь больше не нужно.",
+      };
+    case "completed":
+      return {
+        statusLabel: "Турнир завершен",
+        title: "Турнир завершен",
+        detail: "Формирование пар недоступно для завершенного турнира.",
+      };
+    case "cancelled":
+      return {
+        statusLabel: "Турнир отменен",
+        title: "Турнир отменен",
+        detail: "Формирование пар недоступно для отмененного турнира.",
+      };
+    default:
+      return {
+        statusLabel: "Действие недоступно",
+        title: "Состояние турнира изменилось",
+        detail: "Обновите состояние турнира перед формированием пар.",
+      };
+  }
+};
+
 export const SwissPairingEditor = ({
   onReloadTournaments,
   onSelectTournament,
@@ -320,6 +396,15 @@ export const SwissPairingEditor = ({
       activeConfigurationRound?.consumed ||
       activeConfigurationRound?.disclosed,
   );
+  const currentTournament = snapshot?.tournament ?? selectedTournament;
+  const pairingLifecycle = currentTournament
+    ? pairingLifecycleMessage(
+        currentTournament.state,
+        currentTournament.paused_from_state,
+      )
+    : null;
+  const pairingStateAllowed = currentTournament?.state === "swiss";
+  const pairingFormDisabled = !pairingStateAllowed || editingLocked || submitting;
 
   const updatePairingMode = (nextMode: PairingMode): void => {
     onDirtyChange?.(true);
@@ -380,6 +465,14 @@ export const SwissPairingEditor = ({
     ) {
       return;
     }
+    if (!pairingStateAllowed) {
+      setFormError(
+        pairingLifecycle?.detail ||
+          "Обновите состояние турнира перед формированием пар.",
+      );
+      void onReloadTournaments();
+      return;
+    }
     if (categories.length === 0) {
       setFormError("Выберите хотя бы одну категорию для Swiss раунда.");
       return;
@@ -403,16 +496,35 @@ export const SwissPairingEditor = ({
     submitControllerRef.current?.abort();
     const controller = new AbortController();
     submitControllerRef.current = controller;
+    const submitLoadRun = loadRunRef.current;
+    const canApply = (): boolean =>
+      !controller.signal.aborted && loadRunRef.current === submitLoadRun;
     try {
       const freshSnapshot = await operatorApi.getSnapshot(
         selectedTournament.id,
         undefined,
         controller.signal,
       );
-      if (controller.signal.aborted) {
+      if (!canApply()) {
+        return;
+      }
+      if (freshSnapshot.tournament.id !== selectedTournament.id) {
+        setFormError(
+          "Сервер вернул состояние другого турнира. Обновите данные и повторите попытку.",
+        );
+        void onReloadTournaments();
         return;
       }
       setSnapshot(freshSnapshot);
+      if (freshSnapshot.tournament.state !== "swiss") {
+        const freshLifecycle = pairingLifecycleMessage(
+          freshSnapshot.tournament.state,
+          freshSnapshot.tournament.paused_from_state,
+        );
+        setFormError(freshLifecycle.detail);
+        void onReloadTournaments();
+        return;
+      }
       const body: PairingConfigurationRequest = {
         expected_projection_revision: freshSnapshot.next_cursor.projection_revision,
         round_number: roundNumber,
@@ -435,7 +547,7 @@ export const SwissPairingEditor = ({
         createOperatorCommandIntent(),
         controller.signal,
       );
-      if (controller.signal.aborted) {
+      if (!canApply()) {
         return;
       }
       setSavedRound(configuredRound);
@@ -443,7 +555,7 @@ export const SwissPairingEditor = ({
       onDirtyChange?.(false);
       await onReloadTournaments();
     } catch (error) {
-      if (controller.signal.aborted || isAbortError(error)) {
+      if (!canApply() || isAbortError(error)) {
         return;
       }
       if (error instanceof ApiError && error.status === 401) {
@@ -464,9 +576,9 @@ export const SwissPairingEditor = ({
     } finally {
       if (submitControllerRef.current === controller) {
         submitControllerRef.current = null;
+        submittingRef.current = false;
+        setSubmitting(false);
       }
-      submittingRef.current = false;
-      setSubmitting(false);
     }
   };
 
@@ -531,8 +643,10 @@ export const SwissPairingEditor = ({
                   Следующий раунд определяется конфигурацией сервера и не редактируется локально.
                 </p>
               </div>
-              <Status tone={editingLocked ? "disabled" : "info"}>
-                {editingLocked ? "Раунд заблокирован" : "Раунд доступен"}
+              <Status tone={editingLocked || !pairingStateAllowed ? "disabled" : "info"}>
+                {editingLocked
+                  ? "Раунд заблокирован"
+                  : pairingLifecycle?.statusLabel || "Состояние недоступно"}
               </Status>
             </div>
             <dl className={styles.meta}>
@@ -553,6 +667,12 @@ export const SwissPairingEditor = ({
             </Message>
           )}
 
+          {!pairingStateAllowed && pairingLifecycle && (
+            <Message tone="warning" title={pairingLifecycle.title}>
+              {pairingLifecycle.detail}
+            </Message>
+          )}
+
           <section className={styles.editor} aria-labelledby="swiss-pairing-editor-title">
             <div className={styles.sectionHeading}>
               <div>
@@ -568,7 +688,7 @@ export const SwissPairingEditor = ({
               </Status>
             </div>
 
-            <fieldset className={styles.modeFieldset} disabled={editingLocked || submitting}>
+            <fieldset className={styles.modeFieldset} disabled={pairingFormDisabled}>
               <legend>Способ формирования пар</legend>
               <label className={styles.radioOption}>
                 <input
@@ -610,7 +730,7 @@ export const SwissPairingEditor = ({
                     setNotice(null);
                     onDirtyChange?.(true);
                   }}
-                  disabled={editingLocked || submitting}
+                  disabled={pairingFormDisabled}
                 >
                   {CATEGORY_MODES.map((mode) => (
                     <option key={mode} value={mode}>
@@ -628,7 +748,7 @@ export const SwissPairingEditor = ({
                         type="checkbox"
                         checked={categories.includes(category)}
                         onChange={(event) => updateCategory(category, event.target.checked)}
-                        disabled={editingLocked || submitting}
+                        disabled={pairingFormDisabled}
                       />
                       <span>{CATEGORY_LABELS[category]}</span>
                     </label>
@@ -659,7 +779,7 @@ export const SwissPairingEditor = ({
                   <>
                     <div className={styles.pairList} aria-label="Ручные пары">
                       {draftPairings.map((pairing, index) => (
-                        <fieldset className={styles.pairRow} key={`pair-${index + 1}`} disabled={editingLocked || submitting}>
+                        <fieldset className={styles.pairRow} key={`pair-${index + 1}`} disabled={pairingFormDisabled}>
                           <legend>Пара {index + 1}</legend>
                           <div className={styles.field}>
                             <label htmlFor={`pair-first-${index}`}>Пара {index + 1} - первый участник</label>
@@ -706,7 +826,7 @@ export const SwissPairingEditor = ({
                             setNotice(null);
                             onDirtyChange?.(true);
                           }}
-                          disabled={editingLocked || submitting}
+                          disabled={pairingFormDisabled}
                         >
                           <option value="">Выберите одного участника</option>
                           {eligibleParticipants.map((participant) => (
@@ -750,7 +870,7 @@ export const SwissPairingEditor = ({
                 onClick={() => void handleSubmit()}
                 loading={submitting}
                 loadingLabel="Формируем пары"
-                disabled={editingLocked || submitting || eligibleParticipants.length < 2}
+                disabled={pairingFormDisabled || eligibleParticipants.length < 2}
               >
                 Сформировать пары
               </Button>

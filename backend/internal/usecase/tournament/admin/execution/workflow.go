@@ -79,7 +79,12 @@ func (w *ExecutionWorkflow) configurePairingsLocked(
 	if err != nil {
 		return SwissRoundView{}, err
 	}
-	if !validPairingAuthority(authority, command.TournamentID) {
+	preStart := pairingPreStartState(authority.TournamentState)
+	if preStart {
+		if !validPairingPreStartAuthority(authority, command.TournamentID) {
+			return SwissRoundView{}, fmt.Errorf("validate pairing authority: %w", domain.ErrInternal)
+		}
+	} else if !validPairingAuthority(authority, command.TournamentID) {
 		return SwissRoundView{}, fmt.Errorf("validate pairing authority: %w", domain.ErrInternal)
 	}
 	recorded, err := w.repository.FindPairingCommand(ctx, command.TournamentID, command.CommandID)
@@ -88,6 +93,9 @@ func (w *ExecutionWorkflow) configurePairingsLocked(
 	}
 	if recorded != nil {
 		return replayPairingAgainstAuthority(*recorded, command, digest, authority)
+	}
+	if preStart {
+		return SwissRoundView{}, executionConflict(command.ExpectedProjectionRevision, authority)
 	}
 	return w.createPairingsLocked(ctx, command, digest, authority)
 }
@@ -1002,6 +1010,16 @@ func validPairingAuthority(authority PairingAuthority, tournamentID uuid.UUID) b
 		return false
 	}
 	return validPairingAuthorityParticipants(authority)
+}
+
+func pairingPreStartState(state domain.TournamentState) bool {
+	return state == domain.TournamentStateDraft || state == domain.TournamentStateRegistration
+}
+
+func validPairingPreStartAuthority(authority PairingAuthority, tournamentID uuid.UUID) bool {
+	return authority.TournamentID == tournamentID && pairingPreStartState(authority.TournamentState) &&
+		authority.TournamentRevision >= 1 && authority.RosterID != uuid.Nil && authority.RosterRevision >= 1 &&
+		authority.ProjectionRevisionID != uuid.Nil && authority.ProjectionRevision >= 1
 }
 
 func validPairingAuthorityHeader(authority PairingAuthority, tournamentID uuid.UUID) bool {
