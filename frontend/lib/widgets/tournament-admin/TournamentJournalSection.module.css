@@ -1,6 +1,6 @@
 .root {
   display: grid;
-  width: min(100%, 1120px);
+  width: 100%;
   min-width: 0;
   gap: 1rem;
   margin: 0 auto;
