@@ -17,7 +17,6 @@ import (
 )
 
 const (
-	tournamentActiveConstraint   = "tournaments_single_active_idx"
 	tournamentPublicIDConstraint = "tournaments_public_id_unique"
 )
 
@@ -120,17 +119,6 @@ func (r *TournamentCatalogPostgres) Get(ctx context.Context, id uuid.UUID) (sqlc
 	return row, nil
 }
 
-func (r *TournamentCatalogPostgres) Active(ctx context.Context) (sqlc.Tournament, error) {
-	row, err := r.tx.Querier(ctx).GetActiveTournament(ctx)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return sqlc.Tournament{}, nil
-		}
-		return sqlc.Tournament{}, fmt.Errorf("TournamentPostgres - Active - Querier.GetActiveTournament: %w", err)
-	}
-	return row, nil
-}
-
 func (r *TournamentCatalogPostgres) List(ctx context.Context) ([]sqlc.Tournament, error) {
 	rows, err := r.tx.Querier(ctx).ListTournaments(ctx)
 	if err != nil {
@@ -174,9 +162,6 @@ func (r *TournamentCatalogPostgres) Transition(
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return sqlc.Tournament{}, false, nil
-		}
-		if isUniqueViolation(err, tournamentActiveConstraint) {
-			return sqlc.Tournament{}, false, domain.WrapError(err, domain.ErrConflict)
 		}
 		return sqlc.Tournament{}, false, fmt.Errorf("TournamentPostgres - Transition - Querier.UpdateTournamentCAS: %w", err)
 	}

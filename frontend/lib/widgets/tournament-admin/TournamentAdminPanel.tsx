@@ -839,9 +839,6 @@ export const TournamentAdminPanel = ({
             К списку соревнований
           </button>
           <h2 id="tournament-detail-title">{selectedTournament.name}</h2>
-          <p className={styles.detailMeta}>
-            {formatTournamentState(selectedTournament.state)}
-          </p>
         </div>
         <nav className={styles.viewNav} aria-label="Разделы соревнования">
           {(Object.keys(viewLabels) as TournamentAdminView[]).map((view) => (

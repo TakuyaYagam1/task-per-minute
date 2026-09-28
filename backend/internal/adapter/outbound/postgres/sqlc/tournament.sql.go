@@ -134,45 +134,6 @@ func (q *Queries) CreateTournamentRoster(ctx context.Context, arg CreateTourname
 	return i, err
 }
 
-const getActiveTournament = `-- name: GetActiveTournament :one
-SELECT id,
-    preset,
-    state,
-    paused_from_state,
-    revision,
-    created_at,
-    updated_at,
-    started_at,
-    finished_at,
-    name,
-    public_id,
-    planned_roster_size,
-    content_revision
-FROM tournaments
-WHERE state IN ('swiss', 'golden', 'playoffs', 'technical_pause')
-`
-
-func (q *Queries) GetActiveTournament(ctx context.Context) (Tournament, error) {
-	row := q.db.QueryRow(ctx, getActiveTournament)
-	var i Tournament
-	err := row.Scan(
-		&i.ID,
-		&i.Preset,
-		&i.State,
-		&i.PausedFromState,
-		&i.Revision,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-		&i.StartedAt,
-		&i.FinishedAt,
-		&i.Name,
-		&i.PublicID,
-		&i.PlannedRosterSize,
-		&i.ContentRevision,
-	)
-	return i, err
-}
-
 const getTournament = `-- name: GetTournament :one
 SELECT id,
     preset,

@@ -279,7 +279,6 @@ func TestSchemaMigration(t *testing.T) {
 		"golden_plan_snapshot_participant_reservation_identity_fk",
 	}
 	requiredIndexes := []string{
-		"tournaments_single_active_idx",
 		"outbox_events_claim_idx",
 		"outbox_wave_control_sources_scope_idx",
 		"reconnect_intervals_root_presence_epoch_key",

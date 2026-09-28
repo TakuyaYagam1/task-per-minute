@@ -16,6 +16,7 @@ import {
 import { formatTournamentState, PREFLIGHT_CODE_LABELS } from "../../shared/lib";
 import { Button, Message, Panel, Status, TechnicalDetails } from "../../shared/ui";
 
+import { PlayerPicker } from "./PlayerPicker";
 import styles from "./RosterEditor.module.css";
 
 type RosterEditorProps = Readonly<{
@@ -105,11 +106,18 @@ export const RosterEditor = ({
 }: RosterEditorProps) => {
   const tournamentId = selectedTournament?.id ?? "";
   const rosterControllerRef = useRef<AbortController | null>(null);
+  const playersControllerRef = useRef<AbortController | null>(null);
   const preflightControllerRef = useRef<AbortController | null>(null);
   const rosterLoadRef = useRef(0);
+  const playersLoadRef = useRef(0);
+  const playersInFlightRef = useRef(false);
+  const playersSessionExpiredRef = useRef(false);
   const preflightRunRef = useRef(0);
   const draftIdRef = useRef(0);
   const [players, setPlayers] = useState<AdminPlayer[]>([]);
+  const [playersHasSnapshot, setPlayersHasSnapshot] = useState(false);
+  const [playersState, setPlayersState] = useState<LoadState>("ready");
+  const [playersError, setPlayersError] = useState<string | null>(null);
   const [roster, setRoster] = useState<Roster | null>(null);
   const [draftParticipants, setDraftParticipants] = useState<DraftParticipant[]>([]);
   const [rosterState, setRosterState] = useState<LoadState>("ready");
@@ -153,6 +161,64 @@ export const RosterEditor = ({
     setPreflightError(null);
   }, []);
 
+  const cancelPlayersLoad = useCallback((): void => {
+    playersControllerRef.current?.abort();
+    playersControllerRef.current = null;
+    playersLoadRef.current += 1;
+    playersInFlightRef.current = false;
+  }, []);
+
+  const loadPlayers = useCallback(async (id: string): Promise<void> => {
+    if (
+      !id ||
+      playersInFlightRef.current ||
+      playersSessionExpiredRef.current
+    ) {
+      return;
+    }
+    const controller = new AbortController();
+    const loadId = playersLoadRef.current + 1;
+    playersLoadRef.current = loadId;
+    playersControllerRef.current = controller;
+    playersInFlightRef.current = true;
+    setPlayersState("loading");
+    setPlayersError(null);
+
+    try {
+      const activePlayers = await adminApi.listPlayers(false, controller.signal);
+      if (
+        controller.signal.aborted ||
+        playersLoadRef.current !== loadId
+      ) {
+        return;
+      }
+      setPlayers(activePlayers);
+      setPlayersHasSnapshot(true);
+      setPlayersState("ready");
+    } catch (error) {
+      if (
+        controller.signal.aborted ||
+        playersLoadRef.current !== loadId ||
+        isAbortError(error)
+      ) {
+        return;
+      }
+      if (error instanceof ApiError && error.status === 401) {
+        playersSessionExpiredRef.current = true;
+        onSessionExpired?.();
+      }
+      setPlayersState("error");
+      setPlayersError(
+        rosterErrorMessage(error, "Не удалось загрузить список активных игроков"),
+      );
+    } finally {
+      if (playersControllerRef.current === controller) {
+        playersControllerRef.current = null;
+        playersInFlightRef.current = false;
+      }
+    }
+  }, [onSessionExpired]);
+
   const loadRoster = useCallback(async (id: string): Promise<void> => {
     rosterControllerRef.current?.abort();
     resetPreflight();
@@ -168,17 +234,13 @@ export const RosterEditor = ({
     setUnlockReason("");
 
     try {
-      const [activePlayers, currentRoster] = await Promise.all([
-        adminApi.listPlayers(false, controller.signal),
-        operatorApi.getRoster(id, controller.signal),
-    ]);
+      const currentRoster = await operatorApi.getRoster(id, controller.signal);
       if (
         controller.signal.aborted ||
         rosterLoadRef.current !== loadId
       ) {
         return;
       }
-      setPlayers(activePlayers);
       setRoster(currentRoster);
       setDraftParticipants(draftFromRoster(currentRoster));
       setRosterState("ready");
@@ -191,6 +253,7 @@ export const RosterEditor = ({
         return;
       }
       if (error instanceof ApiError && error.status === 401) {
+        playersSessionExpiredRef.current = true;
         onSessionExpired?.();
       }
       setRosterState("error");
@@ -207,9 +270,14 @@ export const RosterEditor = ({
   useEffect(() => {
     if (!tournamentId) {
       rosterControllerRef.current?.abort();
+      cancelPlayersLoad();
+      playersSessionExpiredRef.current = false;
       resetPreflight();
       rosterLoadRef.current += 1;
       setPlayers([]);
+      setPlayersHasSnapshot(false);
+      setPlayersState("ready");
+      setPlayersError(null);
       setRoster(null);
       setDraftParticipants([]);
       setRosterState("ready");
@@ -220,16 +288,50 @@ export const RosterEditor = ({
       setUnlockReason("");
       return;
     }
+    playersSessionExpiredRef.current = false;
     void loadRoster(tournamentId);
     return () => {
       rosterControllerRef.current?.abort();
+      cancelPlayersLoad();
     };
-  }, [loadRoster, resetPreflight, tournamentId]);
+  }, [cancelPlayersLoad, loadRoster, resetPreflight, tournamentId]);
+
+  useEffect(() => {
+    if (!tournamentId) {
+      return;
+    }
+
+    const refreshWhenVisible = (): void => {
+      if (document.visibilityState === "visible") {
+        void loadPlayers(tournamentId);
+      }
+    };
+    const handleVisibilityChange = (): void => {
+      if (document.visibilityState === "visible") {
+        refreshWhenVisible();
+      }
+    };
+    const handleWindowFocus = (): void => {
+      refreshWhenVisible();
+    };
+
+    refreshWhenVisible();
+    const refreshTimer = window.setInterval(refreshWhenVisible, 5000);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    window.addEventListener("focus", handleWindowFocus);
+    return () => {
+      window.clearInterval(refreshTimer);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("focus", handleWindowFocus);
+      cancelPlayersLoad();
+    };
+  }, [cancelPlayersLoad, loadPlayers, tournamentId]);
 
   useEffect(() => () => {
     rosterControllerRef.current?.abort();
+    cancelPlayersLoad();
     preflightControllerRef.current?.abort();
-  }, []);
+  }, [cancelPlayersLoad]);
 
   useEffect(() => {
     resetPreflight();
@@ -678,7 +780,7 @@ export const RosterEditor = ({
 
       {selectedTournament && rosterState === "loading" && (
         <Message tone="loading" title="Загружаем состав">
-          Получаем состав соревнования и список активных игроков.
+          Получаем состав соревнования.
         </Message>
       )}
 
@@ -728,6 +830,23 @@ export const RosterEditor = ({
               </div>
             </dl>
           </div>
+
+          {playersState === "loading" && players.length === 0 && (
+            <p className={styles.fieldHint}>Загружаем список активных игроков.</p>
+          )}
+
+          {playersState === "error" && (
+            <Message tone="error" title="Не удалось загрузить список игроков">
+              {playersError || "Список активных игроков временно недоступен."}
+              <button
+                className={styles.inlineAction}
+                type="button"
+                onClick={() => void loadPlayers(tournamentId)}
+              >
+                Повторить загрузку
+              </button>
+            </Message>
+          )}
 
           {rosterEditingLocked && (
             <Message
@@ -1032,12 +1151,25 @@ export const RosterEditor = ({
               {draftParticipants.map((participant, index) => {
                 const player = playerById.get(participant.playerId);
                 const unknownPlayer =
-                  participant.playerId && !player
+                  participant.playerId && playersHasSnapshot && !player
                     ? {
                         id: participant.playerId,
                         username: "Игрок недоступен",
                       }
                     : null;
+                const selectedPlayer = player ||
+                  (participant.playerId
+                    ? {
+                        id: participant.playerId,
+                        username: unknownPlayer?.username || "Игрок выбран",
+                      }
+                    : null);
+                const excludedPlayerIds = new Set(
+                  draftParticipants
+                    .filter((candidate) => candidate.id !== participant.id)
+                    .map((candidate) => candidate.playerId)
+                    .filter((playerId): playerId is string => Boolean(playerId)),
+                );
                 return (
                   <fieldset
                     className={styles.row}
@@ -1050,26 +1182,19 @@ export const RosterEditor = ({
                         <label htmlFor={`roster-player-${participant.id}`}>
                           Игрок
                         </label>
-                        <select
+                        <PlayerPicker
                           id={`roster-player-${participant.id}`}
-                          aria-describedby={unknownPlayer ? `roster-player-hint-${participant.id}` : undefined}
+                          players={players}
                           value={participant.playerId}
-                          onChange={(event) =>
-                            updateDraftPlayer(participant.id, event.target.value)
+                          selectedPlayer={selectedPlayer}
+                          excludedPlayerIds={excludedPlayerIds}
+                          describedBy={unknownPlayer ? `roster-player-hint-${participant.id}` : undefined}
+                          onOpen={() => void loadPlayers(tournamentId)}
+                          onChange={(playerId) =>
+                            updateDraftPlayer(participant.id, playerId)
                           }
-                        >
-                          <option value="">Выберите игрока</option>
-                          {unknownPlayer && (
-                            <option value={unknownPlayer.id}>
-                              {unknownPlayer.username}
-                            </option>
-                          )}
-                          {players.map((activePlayer) => (
-                            <option key={activePlayer.id} value={activePlayer.id}>
-                              {activePlayer.username}
-                            </option>
-                          ))}
-                        </select>
+                          disabled={rosterEditingLocked || savingRoster}
+                        />
                       </div>
                       <div className={styles.field}>
                         <label htmlFor={`roster-seed-${participant.id}`}>

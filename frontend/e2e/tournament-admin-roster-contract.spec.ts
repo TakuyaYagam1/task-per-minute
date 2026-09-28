@@ -394,6 +394,14 @@ const rosterGroup = (page: Page, index: number) =>
 const attendanceControl = (group: ReturnType<Page["getByRole"]>) =>
   group.getByRole("combobox", { name: "Участие" });
 
+const selectPlayerByName = async (
+  group: ReturnType<Page["getByRole"]>,
+  username: string,
+): Promise<void> => {
+  await group.getByRole("combobox", { name: "Игрок" }).fill(username);
+  await group.getByRole("option", { name: username, exact: true }).click();
+};
+
 test("загружает игроков и roster, отображает русскую посещаемость и серверный порядок", async ({ page }) => {
   await setupRosterRoutes(page, roster([
     participant(0, player(0, "Алиса").id, "registered", 2),
@@ -411,10 +419,10 @@ test("загружает игроков и roster, отображает русс
     /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i,
   );
   await expect(rosterGroup(page, 1).getByRole("combobox", { name: "Игрок" })).toHaveValue(
-    player(0, "Алиса").id,
+    player(0, "Алиса").username,
   );
   await expect(rosterGroup(page, 2).getByRole("combobox", { name: "Игрок" })).toHaveValue(
-    player(1, "Боб").id,
+    player(1, "Боб").username,
   );
   await expect(rosterGroup(page, 1).getByRole("spinbutton", { name: "Позиция" })).toHaveValue("2");
   await expect(rosterGroup(page, 2).getByRole("spinbutton", { name: "Позиция" })).toHaveValue("1");
@@ -436,8 +444,9 @@ test("добавляет участника и отклоняет duplicate иг
   await region.getByRole("button", { name: /Добавить участника/i }).click();
   await expect(region).toContainText("Вера");
 
-  await rosterGroup(page, 3).getByRole("combobox", { name: "Игрок" }).selectOption(players[0].id);
-  await expect(region.getByRole("alert")).toContainText(/уже добавлен|дубликат|повтор/i);
+  const addedGroup = rosterGroup(page, 3);
+  await addedGroup.getByRole("combobox", { name: "Игрок" }).click();
+  await expect(addedGroup.getByRole("option", { name: players[0].username, exact: true })).toHaveCount(0);
 });
 
 test("показывает editable empty state и не отправляет PUT для состава меньше минимума", async ({ page }) => {
@@ -542,7 +551,7 @@ test("изменяет attendance, заменяет и удаляет участ
 
   const region = rosterRegion(page);
   await rosterGroup(page, 5).getByRole("button", { name: "Удалить" }).click();
-  await rosterGroup(page, 2).getByRole("combobox", { name: "Игрок" }).selectOption(players[2].id);
+  await selectPlayerByName(rosterGroup(page, 2), players[2].username);
   await rosterGroup(page, 2).getByRole("spinbutton", { name: "Позиция" }).fill("3");
   await rosterGroup(page, 1).getByRole("spinbutton", { name: "Позиция" }).fill("4");
   await rosterGroup(page, 3).getByRole("spinbutton", { name: "Позиция" }).fill("2");
@@ -562,10 +571,10 @@ test("изменяет attendance, заменяет и удаляет участ
   await expect(rosterGroup(page, 4)).toContainText("Боб");
   await expect(
     rosterGroup(page, 1).getByRole("combobox", { name: "Игрок" }),
-  ).toHaveValue(players[2].id);
+  ).toHaveValue(players[2].username);
   await expect(
     rosterGroup(page, 2).getByRole("combobox", { name: "Игрок" }),
-  ).toHaveValue(players[0].id);
+  ).toHaveValue(players[0].username);
 });
 
 test("сохраняет draft при русском 409 и показывает следующий шаг для зафиксированного состава", async ({ page }) => {

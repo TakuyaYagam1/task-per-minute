@@ -193,23 +193,6 @@ WHERE tournament.id = sqlc.arg(id)
 GROUP BY tournament.id,
     roster.id;
 
--- name: GetActiveTournament :one
-SELECT id,
-    preset,
-    state,
-    paused_from_state,
-    revision,
-    created_at,
-    updated_at,
-    started_at,
-    finished_at,
-    name,
-    public_id,
-    planned_roster_size,
-    content_revision
-FROM tournaments
-WHERE state IN ('swiss', 'golden', 'playoffs', 'technical_pause');
-
 -- name: ListTournaments :many
 SELECT id,
     preset,

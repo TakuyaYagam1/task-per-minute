@@ -8,7 +8,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/internal/db"
@@ -16,8 +15,6 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	lifecycleusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/lifecycle"
 )
-
-const tournamentActiveConstraint = "tournaments_single_active_idx"
 
 type TournamentLifecyclePostgres struct {
 	tx *db.TxManager
@@ -78,9 +75,6 @@ func (r *TournamentLifecyclePostgres) TransitionTournament(
 			if errors.Is(err, pgx.ErrNoRows) {
 				return nil
 			}
-			if isUniqueViolation(err, tournamentActiveConstraint) {
-				return activeTournamentConflict(err)
-			}
 			return fmt.Errorf("TournamentPostgres - Transition - Querier.UpdateTournamentCAS: %w", err)
 		}
 		if in.NextState.IsTerminal() {
@@ -100,10 +94,6 @@ func (r *TournamentLifecyclePostgres) TransitionTournament(
 		return nil, false, err
 	}
 	return record, changed, nil
-}
-
-func activeTournamentConflict(err error) error {
-	return errors.Join(lifecycleusecase.ErrActiveTournamentConflict, domain.WrapError(err, domain.ErrConflict))
 }
 
 func validateTournamentTransitionInput(in lifecycleusecase.TournamentLifecycleTransitionInput) error {
@@ -172,12 +162,4 @@ func utcTimePointer(value *time.Time) *time.Time {
 	}
 	normalized := value.UTC()
 	return &normalized
-}
-
-func isUniqueViolation(err error, constraint string) bool {
-	var pgErr *pgconn.PgError
-	if !errors.As(err, &pgErr) {
-		return false
-	}
-	return pgErr.Code == "23505" && pgErr.ConstraintName == constraint
 }

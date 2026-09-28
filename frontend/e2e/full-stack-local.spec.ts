@@ -1754,7 +1754,8 @@ test.describe('local compose full stack e2e', () => {
 
       for (const [index, player] of players.slice(0, 4).entries()) {
         const group = rosterRegion.getByRole('group').nth(index);
-        await group.getByRole('combobox', { name: 'Игрок' }).selectOption(player.id);
+        await group.getByRole('combobox', { name: 'Игрок' }).fill(player.username);
+        await group.getByRole('option', { name: player.username, exact: true }).click();
         await group.getByRole('spinbutton', { name: 'Позиция' }).fill(String(index + 1));
       }
 
@@ -1814,8 +1815,13 @@ test.describe('local compose full stack e2e', () => {
       await expect(rosterRegion.getByRole('group')).toHaveCount(4);
       for (const [index, participant] of savedParticipants.entries()) {
         const group = rosterRegion.getByRole('group').nth(index);
+        const savedPlayer = players.find((player) => player.id === participant.player_id);
+        expect(savedPlayer).toBeDefined();
+        if (!savedPlayer) {
+          throw new Error(`saved roster player ${participant.player_id} was not found in fixture players`);
+        }
         await expect(group.getByRole('combobox', { name: 'Игрок' })).toHaveValue(
-          participant.player_id,
+          savedPlayer.username,
         );
         await expect(group.getByRole('spinbutton', { name: 'Позиция' })).toHaveValue(
           String(index + 1),
@@ -1825,9 +1831,9 @@ test.describe('local compose full stack e2e', () => {
       await rosterRegion.getByRole('group').nth(0)
         .getByRole('combobox', { name: 'Участие' })
         .selectOption('checked_in');
-      await rosterRegion.getByRole('group').nth(1)
-        .getByRole('combobox', { name: 'Игрок' })
-        .selectOption(players[4].id);
+      const replacementGroup = rosterRegion.getByRole('group').nth(1);
+      await replacementGroup.getByRole('combobox', { name: 'Игрок' }).fill(players[4].username);
+      await replacementGroup.getByRole('option', { name: players[4].username, exact: true }).click();
 
       const secondSave = page.waitForResponse(
         (response) =>

@@ -81,9 +81,6 @@ const isProjectionRevision = (value: number): boolean =>
 
 const transitionConflictMessage =
   "Не удалось выполнить переход. Обновите данные и проверьте готовность состава.";
-const activeTournamentConflictDetail = "another tournament is already active";
-const activeTournamentConflictMessage =
-  "Уже идет другое соревнование. Завершите или отмените его перед запуском нового.";
 
 export const TournamentStartControls = ({
   onNavigate,
@@ -215,11 +212,7 @@ export const TournamentStartControls = ({
         if (error instanceof ApiError && error.status === 409) {
           setStale(true);
           setActionUnavailable(true);
-          setCommandError(
-            error.problem?.detail === activeTournamentConflictDetail
-              ? activeTournamentConflictMessage
-              : transitionConflictMessage,
-          );
+          setCommandError(transitionConflictMessage);
         } else if (error instanceof ApiError && error.status === 422) {
           setActionUnavailable(false);
           setCommandError(

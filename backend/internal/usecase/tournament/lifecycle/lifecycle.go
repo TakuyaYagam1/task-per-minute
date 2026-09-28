@@ -11,11 +11,8 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 )
 
-const ActiveTournamentConflictDetail = "another tournament is already active"
-
 var (
 	ErrTournamentGuardedTransition = errors.New("tournament transition requires a dedicated command")
-	ErrActiveTournamentConflict    = errors.New(ActiveTournamentConflictDetail)
 )
 
 type TournamentLifecycleUseCase struct {

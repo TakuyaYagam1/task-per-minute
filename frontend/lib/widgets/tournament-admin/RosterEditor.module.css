@@ -448,7 +448,7 @@
   min-width: 0;
   grid-template-columns: minmax(0, 1.35fr) minmax(8rem, 0.5fr) minmax(10rem, 0.7fr) auto;
   gap: 0.7rem;
-  align-items: end;
+  align-items: start;
 }
 
 .fields .field {
@@ -459,6 +459,7 @@
 
 .fields .field label {
   margin: 0;
+  font-size: 0.83rem;
   line-height: 1.4;
 }
 
@@ -477,8 +478,9 @@
   line-height: 1.35;
 }
 
-.fields button {
+.fields > button {
   min-height: 44px;
+  margin-top: calc(0.83rem * 1.4 + 0.5rem);
   white-space: nowrap;
 }
 
@@ -487,12 +489,16 @@
     grid-template-columns: minmax(0, 1fr) minmax(8rem, 0.5fr);
   }
 
-  .fields button {
+  .fields > button {
     width: 100%;
   }
 }
 
 @media (max-width: 640px) {
+  .fields > button {
+    margin-top: 0;
+  }
+
   .summaryHeading,
   .actions,
   .preflightHeader,

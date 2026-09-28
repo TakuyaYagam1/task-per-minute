@@ -205,10 +205,6 @@ func TestTournamentRepository(t *testing.T) {
 	firstTournament = transitionRepositoryTournament(
 		ctx, t, fixture, firstTournament, domain.TournamentStateSwiss, baseTime.Add(13*time.Second),
 	)
-	active, err := fixture.tournaments.Active(ctx)
-	require.NoError(t, err)
-	require.Equal(t, firstTournament.ID, active.ID)
-
 	thirdTournament, _ := createRepositoryTournament(ctx, t, fixture, baseTime.Add(14*time.Second))
 	thirdTournament = transitionRepositoryTournament(
 		ctx, t, fixture, thirdTournament, domain.TournamentStateRegistration, baseTime.Add(15*time.Second),
@@ -225,8 +221,11 @@ func TestTournamentRepository(t *testing.T) {
 		UpdatedAt:        startedAt,
 		StartedAt:        &startedAt,
 	})
-	require.ErrorIs(t, err, domain.ErrConflict)
-	require.False(t, changed)
+	require.NoError(t, err)
+	require.True(t, changed)
+	thirdTournament, err = fixture.tournaments.GetTournament(ctx, thirdTournament.ID)
+	require.NoError(t, err)
+	require.Equal(t, domain.TournamentStateSwiss, thirdTournament.State)
 
 	tournaments, err := fixture.tournaments.List(ctx)
 	require.NoError(t, err)

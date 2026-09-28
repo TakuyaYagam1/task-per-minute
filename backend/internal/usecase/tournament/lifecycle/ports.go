@@ -30,9 +30,9 @@ type TournamentLifecycleTransitionInput struct {
 	FinishedAt       *time.Time
 }
 
-// TournamentLifecycleRepository owns the atomic lifecycle compare-and-set.
-// Entering a live state must acquire the database-backed active-event slot in
-// the same commit, while entering a terminal state must release it.
+// TournamentLifecycleRepository owns the atomic lifecycle compare-and-set for
+// one tournament. Terminal transitions release that tournament's participant
+// reservations in the same transaction.
 type TournamentLifecycleRepository interface {
 	GetTournament(ctx context.Context, id uuid.UUID) (*LifecycleTournamentRecord, error)
 	TransitionTournament(

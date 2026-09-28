@@ -9,14 +9,13 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/mock"
-	"github.com/stretchr/testify/require"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	lifecycleusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/lifecycle"
 	tournamentmocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/lifecycle/mocks"
 )
 
-func TestLifecycleActiveSlot(t *testing.T) {
+func TestLifecycleTransitions(t *testing.T) {
 	t.Parallel()
 
 	now := time.Date(2026, time.August, 28, 21, 0, 0, 0, time.UTC)
@@ -87,7 +86,7 @@ func TestLifecycleActiveSlot(t *testing.T) {
 		}
 	})
 
-	t.Run("one concurrent owner and release", func(t *testing.T) {
+	t.Run("concurrent independent transitions and terminal release", func(t *testing.T) {
 		t.Parallel()
 
 		firstID := uuid.MustParse("41000000-0000-0000-0000-000000000001")
@@ -95,13 +94,13 @@ func TestLifecycleActiveSlot(t *testing.T) {
 		repository := newLifecycleRepository(
 			t,
 			6,
-			5,
+			4,
 			lifecycleLifecycleTournamentRecord(firstID, domain.TournamentStateRosterLocked, 3, now),
 			lifecycleLifecycleTournamentRecord(secondID, domain.TournamentStateRosterLocked, 3, now),
 		)
 		useCase := lifecycleusecase.NewTournamentLifecycleUseCase(
 			repository,
-			lifecycleNewFixedTournamentClock(t, now, 5),
+			lifecycleNewFixedTournamentClock(t, now, 4),
 		)
 		type result struct {
 			id      uuid.UUID
@@ -122,46 +121,40 @@ func TestLifecycleActiveSlot(t *testing.T) {
 		}
 		close(start)
 		firstResult, secondResult := <-results, <-results
-		var winner, loser result
-		for _, candidate := range []result{firstResult, secondResult} {
-			if candidate.changed {
-				winner = candidate
-			} else {
-				loser = candidate
+		startedByID := map[uuid.UUID]result{firstResult.id: firstResult, secondResult.id: secondResult}
+		for _, id := range []uuid.UUID{firstID, secondID} {
+			started := startedByID[id]
+			if started.record == nil || started.err != nil || !started.changed || started.record.State != domain.TournamentStateSwiss {
+				t.Fatalf("started[%s] = %+v", id, started)
 			}
-		}
-		if winner.record == nil || winner.err != nil || winner.record.State != domain.TournamentStateSwiss {
-			t.Fatalf("winner = %+v", winner)
-		}
-		if !errors.Is(loser.err, domain.ErrConflict) || loser.changed {
-			t.Fatalf("loser = %+v, want conflict", loser)
 		}
 
 		retried, changed, err := useCase.Transition(t.Context(), lifecycleusecase.TournamentLifecycleCommand{
-			TournamentID: winner.id, ExpectedRevision: 3, NextState: domain.TournamentStateSwiss,
+			TournamentID: firstID, ExpectedRevision: 3, NextState: domain.TournamentStateSwiss,
 		})
-		if err != nil || changed || retried == nil || retried.ID != winner.id {
+		if err != nil || changed || retried == nil || retried.ID != firstID {
 			t.Fatalf("retry error = %v, changed = %v, record = %+v", err, changed, retried)
 		}
 
 		playoffs, changed, err := useCase.Transition(t.Context(), lifecycleusecase.TournamentLifecycleCommand{
-			TournamentID: winner.id, ExpectedRevision: 4, NextState: domain.TournamentStatePlayoffs,
+			TournamentID: firstID, ExpectedRevision: 4, NextState: domain.TournamentStatePlayoffs,
 		})
 		if err != nil || !changed {
 			t.Fatalf("playoffs error = %v, changed = %v", err, changed)
 		}
 		_, changed, err = useCase.Transition(t.Context(), lifecycleusecase.TournamentLifecycleCommand{
-			TournamentID: winner.id, ExpectedRevision: playoffs.Revision,
+			TournamentID: firstID, ExpectedRevision: playoffs.Revision,
 			NextState: domain.TournamentStateCompleted,
 		})
 		if err != nil || !changed {
 			t.Fatalf("complete error = %v, changed = %v", err, changed)
 		}
-		started, changed, err := useCase.Transition(t.Context(), lifecycleusecase.TournamentLifecycleCommand{
-			TournamentID: loser.id, ExpectedRevision: 3, NextState: domain.TournamentStateSwiss,
+		remaining, changed, err := useCase.Transition(t.Context(), lifecycleusecase.TournamentLifecycleCommand{
+			TournamentID: secondID, ExpectedRevision: 4, NextState: domain.TournamentStateSwiss,
 		})
-		if err != nil || !changed || started == nil {
-			t.Fatalf("start after release error = %v, changed = %v", err, changed)
+		if err != nil || changed || remaining == nil || remaining.ID != secondID ||
+			remaining.State != domain.TournamentStateSwiss {
+			t.Fatalf("remaining tournament error = %v, changed = %v, record = %+v", err, changed, remaining)
 		}
 	})
 
@@ -207,30 +200,6 @@ var lifecycleTournamentIDs = []string{
 type lifecycleRepositoryState struct {
 	mu      sync.Mutex
 	records map[uuid.UUID]lifecycleusecase.LifecycleTournamentRecord
-	active  *uuid.UUID
-}
-
-func TestLifecycleActiveSlotConflictPreservesSpecificError(t *testing.T) {
-	t.Parallel()
-
-	now := time.Date(2026, time.August, 28, 21, 0, 0, 0, time.UTC)
-	id := uuid.MustParse("41000000-0000-0000-0000-000000000110")
-	record := lifecycleLifecycleTournamentRecord(id, domain.TournamentStateRosterLocked, 3, now)
-	repository := tournamentmocks.NewMockTournamentLifecycleRepository(t)
-	repository.EXPECT().GetTournament(mock.Anything, id).Return(lifecycleCloneTournamentRecord(record), nil)
-	repository.EXPECT().TransitionTournament(mock.Anything, mock.Anything).
-		Return(nil, false, errors.Join(lifecycleusecase.ErrActiveTournamentConflict, domain.ErrConflict))
-	clock := lifecycleNewFixedTournamentClock(t, now, 1)
-	useCase := lifecycleusecase.NewTournamentLifecycleUseCase(repository, clock)
-
-	updated, changed, err := useCase.Transition(t.Context(), lifecycleusecase.TournamentLifecycleCommand{
-		TournamentID: id, ExpectedRevision: record.Revision, NextState: domain.TournamentStateSwiss,
-	})
-
-	require.Nil(t, updated)
-	require.False(t, changed)
-	require.ErrorIs(t, err, lifecycleusecase.ErrActiveTournamentConflict)
-	require.ErrorIs(t, err, domain.ErrConflict)
 }
 
 func newLifecycleRepository(
@@ -245,10 +214,6 @@ func newLifecycleRepository(
 	}
 	for _, record := range records {
 		state.records[record.ID] = *lifecycleCloneTournamentRecord(record)
-		if lifecycleStateIsActive(record.State) {
-			id := record.ID
-			state.active = &id
-		}
 	}
 	repository := tournamentmocks.NewMockTournamentLifecycleRepository(t)
 	if getCalls > 0 {
@@ -280,17 +245,6 @@ func newLifecycleRepository(
 				}
 				if record.Revision != in.ExpectedRevision || record.State != in.ExpectedState {
 					return nil, false, nil
-				}
-				if lifecycleStateIsActive(in.NextState) && !lifecycleStateIsActive(record.State) &&
-					state.active != nil && *state.active != record.ID {
-					return nil, false, domain.ErrConflict
-				}
-				if lifecycleStateIsActive(in.NextState) {
-					id := record.ID
-					state.active = &id
-				} else if lifecycleStateIsActive(record.State) &&
-					state.active != nil && *state.active == record.ID {
-					state.active = nil
 				}
 				record.State = in.NextState
 				record.PausedFromState = cloneStatePointer(in.PausedFromState)

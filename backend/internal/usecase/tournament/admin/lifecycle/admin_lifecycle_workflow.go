@@ -472,9 +472,6 @@ func (w *LifecycleWorkflow) actionError(
 	if err == nil || errors.Is(err, domain.ErrValidation) || errors.Is(err, domain.ErrTournamentNotFound) {
 		return err
 	}
-	if errors.Is(err, lifecycleusecase.ErrActiveTournamentConflict) {
-		return lifecycleConflictWithDetail(command, authority, lifecycleusecase.ActiveTournamentConflictDetail)
-	}
 	if errors.Is(err, domain.ErrConflict) || errors.Is(err, domain.ErrTournamentTransition) ||
 		errors.Is(err, lifecycleusecase.ErrTournamentGuardedTransition) ||
 		errors.Is(err, tournamentpause.ErrTournamentPauseGraphPartial) ||

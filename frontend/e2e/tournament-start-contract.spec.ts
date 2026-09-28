@@ -344,7 +344,7 @@ test("не применяет поздний снимок после ухода 
 test("409 показывает понятный конфликт и требует обновить данные перед повтором", async ({ page }) => {
   const initial = tournament("roster_locked");
   const harness = await setupHarness(page, {
-    actionDetail: "another tournament is already active",
+    actionDetail: "projection revision conflict",
     actionStatus: 409,
     listItems: [initial],
     snapshotTournament: initial,
@@ -358,12 +358,12 @@ test("409 показывает понятный конфликт и требуе
   const alert = panel.getByRole("alert");
   await expect(alert).toContainText("Действие недоступно");
   await expect(alert).toContainText(
-    "Уже идет другое соревнование. Завершите или отмените его перед запуском нового.",
+    "Не удалось выполнить переход. Обновите данные и проверьте готовность состава.",
   );
-  await expect(alert).not.toContainText("another tournament is already active");
+  await expect(alert).not.toContainText("projection revision conflict");
   await expect(actionButton).toBeDisabled();
 
-  await panel.getByRole("button", { name: "Обновить данные" }).first().click();
+  await alert.getByRole("button", { name: "Повторить загрузку" }).click();
   await expect(actionButton).toBeEnabled();
   expect(harness.actionRequests).toHaveLength(1);
 });

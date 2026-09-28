@@ -230,12 +230,6 @@
   font-weight: 760;
 }
 
-.detailMeta {
-  overflow-wrap: anywhere;
-  color: var(--secondary);
-  font-size: 0.74rem;
-}
-
 .tournamentStatus {
   flex: 0 1 auto;
   max-width: 100%;
@@ -298,10 +292,6 @@
   color: var(--text);
   font-size: clamp(1.25rem, 2.3vw, 1.8rem);
   font-weight: 820;
-}
-
-.detailMeta {
-  margin: 0;
 }
 
 .viewNav {

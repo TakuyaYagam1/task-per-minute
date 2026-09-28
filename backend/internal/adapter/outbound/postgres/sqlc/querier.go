@@ -421,7 +421,6 @@ type Querier interface {
 	FindTournamentStageProgression(ctx context.Context, arg FindTournamentStageProgressionParams) (FindTournamentStageProgressionRow, error)
 	FindWaveControlCommand(ctx context.Context, arg FindWaveControlCommandParams) (WaveControlCommand, error)
 	FindWaveStartCommandByID(ctx context.Context, commandID uuid.UUID) (WaveControlCommand, error)
-	GetActiveTournament(ctx context.Context) (Tournament, error)
 	GetAdminPlayer(ctx context.Context, id uuid.UUID) (GetAdminPlayerRow, error)
 	GetAdminPlayerIncludingDeleted(ctx context.Context, id uuid.UUID) (GetAdminPlayerIncludingDeletedRow, error)
 	GetAssignment(ctx context.Context, id uuid.UUID) (GetAssignmentRow, error)

@@ -46,7 +46,7 @@ type TournamentCancellationRecord struct {
 // TournamentCancellationRepository owns the full cancellation transaction.
 // The commit must retain prior result evidence, clear future-start authority,
 // block later participant mutations, append audit and terminal outbox rows,
-// release the active slot and reservations, and leave champion evidence empty.
+// release tournament reservations, and leave champion evidence empty.
 type TournamentCancellationRepository interface {
 	GetTournament(ctx context.Context, id uuid.UUID) (*CancellationTournamentRecord, error)
 	GetTournamentCancellation(

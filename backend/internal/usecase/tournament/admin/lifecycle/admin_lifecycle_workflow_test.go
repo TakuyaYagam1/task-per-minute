@@ -2,7 +2,6 @@ package lifecycle_test
 
 import (
 	"context"
-	"errors"
 	"testing"
 	"time"
 
@@ -177,30 +176,6 @@ func TestLifecycleWorkflowStartsSwissWithLockedCompleteRoster(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, domain.TournamentStateSwiss, view.State)
 	require.True(t, view.StartedAt.Equal(startedAt))
-}
-
-func TestLifecycleWorkflowReportsActiveTournamentConflict(t *testing.T) {
-	t.Parallel()
-	harness := newLifecycleWorkflowHarness(t)
-	authority := lifecycleAuthorityFixture(domain.TournamentStateRosterLocked)
-	command := lifecycleCommandFixture(tournamentadmin.TournamentActionStartSwiss, authority)
-
-	harness.repository.EXPECT().LockLifecycleAuthority(mock.Anything, command.TournamentID).Return(authority, nil)
-	harness.repository.EXPECT().FindLifecycleCommand(mock.Anything, command.TournamentID, command.CommandID).
-		Return(nil, nil)
-	harness.transitions.EXPECT().Transition(
-		mock.Anything,
-		lifecycleusecase.TournamentLifecycleCommand{
-			TournamentID: command.TournamentID, ExpectedRevision: authority.Tournament.Revision,
-			NextState: domain.TournamentStateSwiss,
-		},
-	).Return(nil, false, errors.Join(lifecycleusecase.ErrActiveTournamentConflict, domain.ErrConflict))
-
-	_, err := harness.workflow.ApplyTournamentAction(context.Background(), command)
-	var conflict *tournamentadmin.RevisionConflictError
-	require.ErrorAs(t, err, &conflict)
-	require.ErrorIs(t, err, domain.ErrConflict)
-	require.Equal(t, lifecycleusecase.ActiveTournamentConflictDetail, conflict.Detail)
 }
 
 func TestLifecycleWorkflowRejectsDirectCompletion(t *testing.T) {
