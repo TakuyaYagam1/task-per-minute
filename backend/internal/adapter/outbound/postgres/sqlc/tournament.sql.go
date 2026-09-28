@@ -268,7 +268,9 @@ SELECT tournament.id,
     COUNT(participant.id)::BIGINT AS roster_size
 FROM tournaments AS tournament
 INNER JOIN rosters AS roster ON roster.tournament_id = tournament.id
-LEFT JOIN participants AS participant ON participant.roster_id = roster.id
+LEFT JOIN participants AS participant
+    ON participant.roster_id = roster.id
+    AND participant.attendance <> 'withdrawn'
 WHERE tournament.id = $1
     AND tournament.deleted_at IS NULL
 GROUP BY tournament.id,
@@ -563,6 +565,7 @@ SELECT participant.id,
 FROM participants AS participant
 JOIN rosters AS roster ON roster.id = participant.roster_id
 WHERE participant.roster_id = $1
+    AND participant.attendance <> 'withdrawn'
 ORDER BY participant.seed,
     participant.id
 `
@@ -664,7 +667,9 @@ SELECT tournament.id,
     COUNT(participant.id)::BIGINT AS roster_size
 FROM tournaments AS tournament
 INNER JOIN rosters AS roster ON roster.tournament_id = tournament.id
-LEFT JOIN participants AS participant ON participant.roster_id = roster.id
+LEFT JOIN participants AS participant
+    ON participant.roster_id = roster.id
+    AND participant.attendance <> 'withdrawn'
 WHERE tournament.deleted_at IS NULL
 GROUP BY tournament.id,
     roster.id
@@ -914,21 +919,39 @@ func (q *Queries) ReleaseTournamentReservations(ctx context.Context, tournamentI
 }
 
 const replaceWithdrawnTournamentParticipant = `-- name: ReplaceWithdrawnTournamentParticipant :one
+WITH replacement AS MATERIALIZED (
+    SELECT participant.id AS participant_id,
+        participant.roster_id,
+        replacement_player.id AS replacement_player_id,
+        ((participant.seed - 1) % tournament.planned_roster_size) + 1 AS seed
+    FROM participants AS participant
+    JOIN rosters AS roster ON roster.id = participant.roster_id
+    JOIN tournaments AS tournament ON tournament.id = roster.tournament_id
+    JOIN players AS replacement_player
+        ON replacement_player.id = $3
+        AND replacement_player.deleted_at IS NULL
+    WHERE participant.id = $4
+        AND participant.roster_id = $5
+        AND participant.attendance = 'withdrawn'
+        AND roster.locked_at IS NULL
+        AND roster.execution_started_at IS NULL
+        AND NOT EXISTS (
+            SELECT 1
+            FROM participants AS active_participant
+            WHERE active_participant.roster_id = participant.roster_id
+                AND active_participant.id <> participant.id
+                AND active_participant.attendance <> 'withdrawn'
+                AND active_participant.seed = ((participant.seed - 1) % tournament.planned_roster_size) + 1
+        )
+)
 UPDATE participants AS participant
 SET id = $1,
-    player_id = replacement.id,
+    player_id = replacement.replacement_player_id,
+    seed = replacement.seed,
     attendance = 'invited',
     updated_at = $2
-FROM rosters AS roster,
-    players AS replacement
-WHERE participant.id = $3
-    AND participant.roster_id = $4
-    AND participant.attendance = 'withdrawn'
-    AND roster.id = participant.roster_id
-    AND roster.locked_at IS NULL
-    AND roster.execution_started_at IS NULL
-    AND replacement.id = $5
-    AND replacement.deleted_at IS NULL
+FROM replacement
+WHERE participant.id = replacement.participant_id
 RETURNING participant.id,
     participant.roster_id,
     participant.player_id,
@@ -941,18 +964,18 @@ RETURNING participant.id,
 type ReplaceWithdrawnTournamentParticipantParams struct {
 	ReplacementParticipantID uuid.UUID
 	ReplacedAt               pgtype.Timestamptz
+	ReplacementPlayerID      uuid.UUID
 	WithdrawnParticipantID   uuid.UUID
 	RosterID                 uuid.UUID
-	ReplacementPlayerID      uuid.UUID
 }
 
 func (q *Queries) ReplaceWithdrawnTournamentParticipant(ctx context.Context, arg ReplaceWithdrawnTournamentParticipantParams) (Participant, error) {
 	row := q.db.QueryRow(ctx, replaceWithdrawnTournamentParticipant,
 		arg.ReplacementParticipantID,
 		arg.ReplacedAt,
+		arg.ReplacementPlayerID,
 		arg.WithdrawnParticipantID,
 		arg.RosterID,
-		arg.ReplacementPlayerID,
 	)
 	var i Participant
 	err := row.Scan(

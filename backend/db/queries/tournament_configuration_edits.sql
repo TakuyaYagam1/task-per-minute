@@ -130,9 +130,15 @@ WHERE projection.id = sqlc.arg(projection_revision_id)::UUID
 -- checked-in rows become pairing participants and receive stable seeds.
 -- name: ListTournamentConfigurationEditParticipants :many
 SELECT participant.id,
-    participant.seed,
+    CASE
+        WHEN participant.attendance = 'withdrawn' THEN
+            ((participant.seed - 1) % tournament.planned_roster_size) + 1
+        ELSE participant.seed
+    END::INTEGER AS seed,
     participant.attendance
 FROM participants AS participant
+JOIN rosters AS roster ON roster.id = participant.roster_id
+JOIN tournaments AS tournament ON tournament.id = roster.tournament_id
 WHERE participant.roster_id = sqlc.arg(roster_id)::UUID
 ORDER BY participant.seed, participant.id;
 

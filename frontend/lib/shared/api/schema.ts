@@ -1242,6 +1242,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/arena/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Stream public tournament catalog invalidations
+         * @description Opens a public server-sent event stream. The stream emits `ready` with an empty object and `changed` only when tournament catalog data may have changed; each `changed` payload contains only `{topic: "tournaments"}`. Events are best-effort invalidations without a snapshot or replay. Clients should refresh the public tournament catalog to read current data. Idle connections receive heartbeat comments. At most 8 streams per server instance are admitted; rejected clients receive a `Retry-After` header.
+         */
+        get: operations["streamPublicTournamentEvents"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/tournaments/{tournament_id}": {
         parameters: {
             query?: never;
@@ -6626,6 +6646,38 @@ export interface operations {
             };
             404: components["responses"]["NotFoundProblem"];
             429: components["responses"]["RateLimitedProblem"];
+            default: components["responses"]["UnexpectedServerProblem"];
+        };
+    };
+    streamPublicTournamentEvents: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Public tournament catalog invalidation stream. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": string;
+                };
+            };
+            /** @description The server reached its active public event stream limit. */
+            429: {
+                headers: {
+                    /** @description Seconds until the client may retry opening the stream. */
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
             default: components["responses"]["UnexpectedServerProblem"];
         };
     };

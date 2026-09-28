@@ -27,13 +27,19 @@ WHERE tournament_id = sqlc.arg(tournament_id)
     AND command_id = sqlc.arg(command_id);
 
 -- name: MarkTournamentDeleted :one
+-- A cancellation inserted in this transaction has deferred evidence tied to its
+-- lifecycle revision and updated_at. Deletion metadata must not change either.
 UPDATE tournaments
 SET deleted_at = sqlc.arg(deleted_at),
-    revision = revision + 1,
-    updated_at = sqlc.arg(deleted_at)
+    revision = revision + CASE WHEN sqlc.arg(cancelled)::BOOLEAN THEN 0 ELSE 1 END,
+    updated_at = CASE
+        WHEN sqlc.arg(cancelled)::BOOLEAN THEN updated_at
+        ELSE sqlc.arg(deleted_at)
+    END
 WHERE id = sqlc.arg(tournament_id)
     AND revision = sqlc.arg(expected_revision)
     AND deleted_at IS NULL
+    AND (NOT sqlc.arg(cancelled)::BOOLEAN OR state = 'cancelled')
 RETURNING id AS tournament_id,
     state,
     revision,

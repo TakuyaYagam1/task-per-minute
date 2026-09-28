@@ -21,6 +21,7 @@ SELECT participant.id,
 FROM participants AS participant
 JOIN rosters AS roster ON roster.id = participant.roster_id
 WHERE roster.tournament_id = sqlc.arg(tournament_id)
+    AND participant.attendance <> 'withdrawn'
 ORDER BY participant.seed, participant.id;
 
 -- name: LockTournamentRosterAuthority :one
@@ -186,6 +187,7 @@ JOIN rosters AS roster ON roster.id = participant.roster_id
 LEFT JOIN participant_reservations AS reservation ON reservation.player_id = participant.player_id
 WHERE roster.id = sqlc.arg(roster_id)
     AND roster.tournament_id = sqlc.arg(tournament_id)
+    AND participant.attendance <> 'withdrawn'
 ORDER BY participant.seed, participant.id;
 
 -- name: GetTournamentPreflightRound :one

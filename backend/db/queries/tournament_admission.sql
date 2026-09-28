@@ -60,7 +60,14 @@ SELECT tournament.id AS tournament_id,
     roster_count.roster_size,
     COALESCE(participant.id, '00000000-0000-0000-0000-000000000000'::UUID) AS participant_id,
     COALESCE(participant.player_id, '00000000-0000-0000-0000-000000000000'::UUID) AS participant_player_id,
-    COALESCE(participant.seed, 0)::INTEGER AS participant_seed,
+    COALESCE(
+        CASE
+            WHEN participant.attendance = 'withdrawn' THEN
+                ((participant.seed - 1) % tournament.planned_roster_size) + 1
+            ELSE participant.seed
+        END,
+        0
+    )::INTEGER AS participant_seed,
     COALESCE(participant.attendance, '')::TEXT AS participant_attendance
 FROM tournaments AS tournament
 JOIN rosters AS roster ON roster.tournament_id = tournament.id
@@ -68,6 +75,7 @@ CROSS JOIN LATERAL (
     SELECT COUNT(*)::BIGINT AS roster_size
     FROM participants AS roster_participant
     WHERE roster_participant.roster_id = roster.id
+        AND roster_participant.attendance <> 'withdrawn'
 ) AS roster_count
 LEFT JOIN participants AS participant
     ON participant.roster_id = roster.id
@@ -85,6 +93,57 @@ WHERE NOT EXISTS (
 )
 ORDER BY candidate.seed
 LIMIT 1;
+
+-- Withdrawn rows stay in participants for history, but move outside the active
+-- seed range. The modulo preserves their former seat for historical reads.
+-- Rebase legacy rows created before this rule before allocating a new seed.
+-- name: RebaseWithdrawnParticipantSeeds :one
+WITH legacy_withdrawn AS MATERIALIZED (
+    SELECT participant.id,
+        participant.seed::BIGINT AS original_seed,
+        ROW_NUMBER() OVER (ORDER BY participant.seed, participant.id)::BIGINT AS sequence
+    FROM participants AS participant
+    WHERE participant.roster_id = sqlc.arg(roster_id)
+        AND participant.attendance = 'withdrawn'
+        AND participant.seed BETWEEN 1 AND sqlc.arg(planned_roster_size)::INTEGER
+), seed_limits AS MATERIALIZED (
+    SELECT sqlc.arg(planned_roster_size)::BIGINT AS planned_roster_size,
+        COALESCE((
+            SELECT MAX(participant.seed)::BIGINT
+            FROM participants AS participant
+            WHERE participant.roster_id = sqlc.arg(roster_id)
+        ), 0) AS max_seed,
+        COALESCE(MAX(legacy_withdrawn.original_seed), 0) AS max_original_seed,
+        COUNT(legacy_withdrawn.id)::BIGINT AS legacy_count
+    FROM legacy_withdrawn
+), rebase_limits AS MATERIALIZED (
+    SELECT seed_limits.*,
+        (seed_limits.max_seed / seed_limits.planned_roster_size) + 1 AS base_offset,
+        CASE
+            WHEN seed_limits.legacy_count = 0 THEN TRUE
+            ELSE seed_limits.max_original_seed + seed_limits.planned_roster_size * (
+                (seed_limits.max_seed / seed_limits.planned_roster_size) + seed_limits.legacy_count
+            ) <= 2147483647
+        END AS can_rebase
+    FROM seed_limits
+), rebased AS (
+    UPDATE participants AS participant
+    SET seed = (
+        legacy_withdrawn.original_seed + rebase_limits.planned_roster_size * (
+            rebase_limits.base_offset + legacy_withdrawn.sequence - 1
+        )
+    )::INTEGER
+    FROM legacy_withdrawn
+    CROSS JOIN rebase_limits
+    WHERE participant.id = legacy_withdrawn.id
+        AND rebase_limits.can_rebase
+    RETURNING participant.id
+)
+SELECT rebase_limits.can_rebase,
+    COUNT(rebased.id)::BIGINT AS rebased_count
+FROM rebase_limits
+LEFT JOIN rebased ON TRUE
+GROUP BY rebase_limits.can_rebase;
 
 -- name: InsertRegisteredParticipant :one
 WITH locked_roster AS MATERIALIZED (
@@ -156,7 +215,7 @@ RETURNING participant.id,
     participant.created_at,
     participant.updated_at;
 
--- name: WithdrawAdmissionParticipant :one
+-- name: RegisterWithdrawnParticipant :one
 WITH locked_roster AS MATERIALIZED (
     UPDATE rosters AS roster
     SET revision = roster.revision + 1,
@@ -170,12 +229,56 @@ WITH locked_roster AS MATERIALIZED (
     RETURNING roster.id
 )
 UPDATE participants AS participant
-SET attendance = 'withdrawn',
+SET seed = sqlc.arg(seed),
+    attendance = 'registered',
     updated_at = sqlc.arg(updated_at)
 FROM locked_roster AS roster
 WHERE participant.roster_id = roster.id
     AND participant.player_id = sqlc.arg(player_id)
-    AND participant.attendance IN ('invited', 'registered', 'checked_in')
+    AND participant.attendance = 'withdrawn'
+RETURNING participant.id,
+    participant.roster_id,
+    participant.player_id,
+    participant.seed,
+    participant.attendance,
+    participant.created_at,
+    participant.updated_at;
+
+-- name: WithdrawAdmissionParticipant :one
+WITH locked_roster AS MATERIALIZED (
+    UPDATE rosters AS roster
+    SET revision = roster.revision + 1,
+        updated_at = sqlc.arg(updated_at)
+    FROM tournaments AS tournament
+    WHERE roster.id = sqlc.arg(roster_id)
+        AND tournament.id = roster.tournament_id
+        AND tournament.state = 'registration'
+        AND roster.locked_at IS NULL
+        AND roster.execution_started_at IS NULL
+    RETURNING roster.id, roster.tournament_id
+), withdrawable AS MATERIALIZED (
+    SELECT participant.id,
+        participant.seed::BIGINT AS participant_seed,
+        tournament.planned_roster_size::BIGINT AS planned_roster_size,
+        MAX(roster_participant.seed)::BIGINT AS max_seed
+    FROM locked_roster AS roster
+    JOIN tournaments AS tournament ON tournament.id = roster.tournament_id
+    JOIN participants AS participant ON participant.roster_id = roster.id
+    JOIN participants AS roster_participant ON roster_participant.roster_id = roster.id
+    WHERE participant.player_id = sqlc.arg(player_id)
+        AND participant.attendance IN ('invited', 'registered', 'checked_in')
+    GROUP BY participant.id, participant.seed, tournament.planned_roster_size
+)
+UPDATE participants AS participant
+SET seed = (
+        withdrawable.participant_seed + withdrawable.planned_roster_size * (
+            ((withdrawable.max_seed - withdrawable.participant_seed) / withdrawable.planned_roster_size) + 1
+        )
+    )::INTEGER,
+    attendance = 'withdrawn',
+    updated_at = sqlc.arg(updated_at)
+FROM withdrawable
+WHERE participant.id = withdrawable.id
 RETURNING participant.id,
     participant.roster_id,
     participant.player_id,

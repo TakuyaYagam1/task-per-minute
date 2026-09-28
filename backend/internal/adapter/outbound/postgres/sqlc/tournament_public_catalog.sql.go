@@ -43,7 +43,9 @@ WITH classified AS (
         END::VARCHAR AS public_stage
     FROM tournaments AS tournament
     INNER JOIN rosters AS roster ON roster.tournament_id = tournament.id
-    LEFT JOIN participants AS participant ON participant.roster_id = roster.id
+    LEFT JOIN participants AS participant
+        ON participant.roster_id = roster.id
+        AND participant.attendance <> 'withdrawn'
     WHERE tournament.state <> 'draft'
         AND tournament.deleted_at IS NULL
         AND tournament.public_id = $1::VARCHAR
@@ -137,7 +139,9 @@ WITH classified AS (
         END::VARCHAR AS public_stage
     FROM tournaments AS tournament
     INNER JOIN rosters AS roster ON roster.tournament_id = tournament.id
-    LEFT JOIN participants AS participant ON participant.roster_id = roster.id
+    LEFT JOIN participants AS participant
+        ON participant.roster_id = roster.id
+        AND participant.attendance <> 'withdrawn'
     WHERE tournament.state <> 'draft'
         AND tournament.deleted_at IS NULL
     GROUP BY tournament.id,

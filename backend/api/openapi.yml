@@ -164,6 +164,8 @@ paths:
     $ref: 'routes/tournament_public_catalog.yml#/~1api~1v1~1public~1tournaments'
   /api/v1/public/tournaments/{public_id}:
     $ref: 'routes/tournament_public_catalog.yml#/~1api~1v1~1public~1tournaments~1{public_id}'
+  /api/v1/arena/events:
+    $ref: 'routes/tournament_public_catalog.yml#/~1api~1v1~1arena~1events'
 
   /api/v1/tournaments/{tournament_id}:
     $ref: 'routes/tournament.yml#/~1api~1v1~1tournaments~1{tournament_id}'

@@ -386,6 +386,7 @@ SELECT participant.id,
 FROM participants AS participant
 JOIN rosters AS roster ON roster.id = participant.roster_id
 WHERE roster.tournament_id = $1
+    AND participant.attendance <> 'withdrawn'
 ORDER BY participant.seed, participant.id
 `
 
@@ -502,6 +503,7 @@ JOIN rosters AS roster ON roster.id = participant.roster_id
 LEFT JOIN participant_reservations AS reservation ON reservation.player_id = participant.player_id
 WHERE roster.id = $1
     AND roster.tournament_id = $2
+    AND participant.attendance <> 'withdrawn'
 ORDER BY participant.seed, participant.id
 `
 

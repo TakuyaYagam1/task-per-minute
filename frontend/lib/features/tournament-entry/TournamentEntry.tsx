@@ -49,6 +49,8 @@ const getSafeArenaCatalogReturnPath = (value: string | null | undefined): string
 
 export type TournamentEntryProps = Readonly<{
   catalogReturnPath?: string | null;
+  admissionRefreshVersion?: number;
+  onRosterSizeChange?: (rosterSize: number) => void;
   publicId: string;
   returnPath?: string | null;
   state: TournamentState;
@@ -124,8 +126,8 @@ const conflictNotice = (reason: TournamentAdmissionConflictReason): Notice => {
       };
     case "withdrawn":
       return {
-        body: "Эта регистрация отменена и требует решения оператора.",
-        title: "Регистрация отменена",
+        body: "Повторная регистрация пока недоступна. Обновите статус участия и попробуйте снова.",
+        title: "Повторная регистрация недоступна",
         tone: "warning",
       };
     case "conflicting_reservation":
@@ -253,8 +255,19 @@ const canWithdrawAdmission = (
     )
   );
 
+const canJoinAdmission = (
+  view: TournamentAdmissionView,
+  catalogState: TournamentState,
+): boolean =>
+  !view.roster_locked &&
+  catalogState === "registration" &&
+  view.tournament_state === "registration" &&
+  (view.status === "not_registered" || view.status === "withdrawn");
+
 export const TournamentEntry = ({
+  admissionRefreshVersion = 0,
   catalogReturnPath,
+  onRosterSizeChange,
   publicId,
   returnPath,
   state,
@@ -273,6 +286,7 @@ export const TournamentEntry = ({
   const [notice, setNotice] = useState<Notice | null>(null);
   const [workspaceReady, setWorkspaceReady] = useState(false);
   const [visibilityTick, setVisibilityTick] = useState(0);
+  const lastAdmissionRefreshVersionRef = useRef(admissionRefreshVersion);
   const busyActionRef = useRef<BusyAction>(null);
   busyActionRef.current = busyAction;
 
@@ -319,6 +333,7 @@ export const TournamentEntry = ({
       return false;
     }
     setView(nextView);
+    onRosterSizeChange?.(nextView.roster_size);
     const publicationReady = isWorkspacePublicationReady(state, nextView.tournament_state);
     setWorkspaceReady((current) => {
       if (!publicationReady) {
@@ -331,7 +346,7 @@ export const TournamentEntry = ({
     });
     setPhase("ready");
     return true;
-  }, [state, tournamentId]);
+  }, [onRosterSizeChange, state, tournamentId]);
 
   const restoreStatus = useCallback(async (
     candidate: Player | null,
@@ -457,6 +472,23 @@ export const TournamentEntry = ({
     document.addEventListener("visibilitychange", onVisibilityChange);
     return () => document.removeEventListener("visibilitychange", onVisibilityChange);
   }, []);
+
+  useEffect(() => {
+    if (lastAdmissionRefreshVersionRef.current === admissionRefreshVersion) {
+      return;
+    }
+    if (busyAction !== null) {
+      return;
+    }
+    if (document.visibilityState !== "visible") {
+      return;
+    }
+    lastAdmissionRefreshVersionRef.current = admissionRefreshVersion;
+    const candidate = player ?? playerModel.getCurrentPlayer();
+    if (candidate !== null) {
+      void restoreStatus(candidate, false);
+    }
+  }, [admissionRefreshVersion, busyAction, player, restoreStatus, visibilityTick]);
 
   useEffect(() => {
     if (
@@ -797,17 +829,21 @@ export const TournamentEntry = ({
           </p>
         )}
         {view.status === "withdrawn" && (
-          <p className={styles.copy}>Повторная регистрация доступна только после решения оператора.</p>
+          <p className={styles.copy}>
+            {canJoinAdmission(view, state)
+              ? "Регистрация отменена. Пока набор открыт, можно подать заявку повторно."
+              : "Регистрация отменена. Повторная заявка недоступна."}
+          </p>
         )}
         <div className={styles.actions}>
-          {view.status === "not_registered" && state === "registration" && (
+          {canJoinAdmission(view, state) && (
             <Button
               type="button"
               loading={busyAction === "join"}
               disabled={busyAction !== null && busyAction !== "join"}
               onClick={handleJoinExisting}
             >
-              Участвовать
+              {view.status === "withdrawn" ? "Подать заявку повторно" : "Участвовать"}
             </Button>
           )}
           {view.status === "invited" && (

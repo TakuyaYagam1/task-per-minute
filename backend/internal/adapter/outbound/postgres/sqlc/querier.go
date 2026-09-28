@@ -1163,6 +1163,8 @@ type Querier interface {
 	MarkGoldenMembershipNoShow(ctx context.Context, arg MarkGoldenMembershipNoShowParams) (GoldenMembership, error)
 	MarkGoldenMembershipReady(ctx context.Context, arg MarkGoldenMembershipReadyParams) (GoldenMembership, error)
 	MarkRealtimeOutboxTerminal(ctx context.Context, arg MarkRealtimeOutboxTerminalParams) (uuid.UUID, error)
+	// A cancellation inserted in this transaction has deferred evidence tied to its
+	// lifecycle revision and updated_at. Deletion metadata must not change either.
 	MarkTournamentDeleted(ctx context.Context, arg MarkTournamentDeletedParams) (MarkTournamentDeletedRow, error)
 	MarkTournamentRosterExecutionStartedCAS(ctx context.Context, arg MarkTournamentRosterExecutionStartedCASParams) (Roster, error)
 	MarkWaveMemberReadyCAS(ctx context.Context, arg MarkWaveMemberReadyCASParams) (WaveReadiness, error)
@@ -1193,6 +1195,10 @@ type Querier interface {
 	// Exact-normal planning and delivery complete the authority needed by the
 	// start workflow. Only that same locked Series may become ready.
 	ReadySwissSeriesForMaterialization(ctx context.Context, arg ReadySwissSeriesForMaterializationParams) (ReadySwissSeriesForMaterializationRow, error)
+	// Withdrawn rows stay in participants for history, but move outside the active
+	// seed range. The modulo preserves their former seat for historical reads.
+	// Rebase legacy rows created before this rule before allocating a new seed.
+	RebaseWithdrawnParticipantSeeds(ctx context.Context, arg RebaseWithdrawnParticipantSeedsParams) (RebaseWithdrawnParticipantSeedsRow, error)
 	// RebindPausedExecutionGameEpochs appends successor authority evidence before
 	// any paused Game becomes active. The supplied service-owned identity must be
 	// the exact latest live PostgreSQL lease; prior epoch rows are never updated.
@@ -1207,6 +1213,7 @@ type Querier interface {
 	RecordTaskPublicExposure(ctx context.Context, arg RecordTaskPublicExposureParams) (TaskPublicExposure, error)
 	RecordUnhealthyTaskVersionProbeAttestation(ctx context.Context, arg RecordUnhealthyTaskVersionProbeAttestationParams) (TaskVersionHealthAttestation, error)
 	RegisterInvitedParticipant(ctx context.Context, arg RegisterInvitedParticipantParams) (Participant, error)
+	RegisterWithdrawnParticipant(ctx context.Context, arg RegisterWithdrawnParticipantParams) (Participant, error)
 	ReleaseLosingExactDraftBranches(ctx context.Context, arg ReleaseLosingExactDraftBranchesParams) (int64, error)
 	ReleaseLosingExactDraftChildReservations(ctx context.Context, arg ReleaseLosingExactDraftChildReservationsParams) ([]uuid.UUID, error)
 	ReleaseLosingExactDraftChildren(ctx context.Context, arg ReleaseLosingExactDraftChildrenParams) ([]uuid.UUID, error)

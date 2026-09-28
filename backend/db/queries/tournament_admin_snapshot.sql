@@ -27,6 +27,7 @@ LEFT JOIN LATERAL (
     SELECT COUNT(*)::INTEGER AS participant_count
     FROM participants AS participant
     WHERE participant.roster_id = roster.id
+        AND participant.attendance <> 'withdrawn'
 ) AS roster_size ON TRUE
 LEFT JOIN LATERAL (
     SELECT revision.revision_number

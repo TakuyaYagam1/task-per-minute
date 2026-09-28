@@ -639,6 +639,12 @@ func (delivery *RealtimeDelivery) renderSessionFrames(
 	}
 	snapshotData, err := session.render(ctx, event.Clone())
 	if err != nil {
+		// A cancellation can be followed by a soft delete in the same
+		// transaction. The snapshot is then intentionally unavailable, but
+		// subscribers still need the durable terminal event.
+		if errors.Is(err, domain.ErrTournamentNotFound) {
+			return [][]byte{terminalData}, nil
+		}
 		return nil, err
 	}
 	return [][]byte{snapshotData, terminalData}, nil

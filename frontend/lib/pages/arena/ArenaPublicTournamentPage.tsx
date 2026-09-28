@@ -22,6 +22,7 @@ import {
 import {
   ApiError,
   getPublicTournamentByPublicId,
+  openPublicTournamentEvents,
 } from "../../shared/api";
 import {
   buildArenaPublicTournamentPath,
@@ -30,7 +31,7 @@ import {
   isSafePublicTournamentId,
   type ArenaPublicView,
 } from "../../shared/lib";
-import { Button, Message, Status } from "../../shared/ui";
+import { Button, Dialog, Message, Status } from "../../shared/ui";
 import {
   TournamentRecoveryPanel,
   type TournamentRecoveryRenderContext,
@@ -48,6 +49,7 @@ type PublicTournamentLoadState = Readonly<{
   item: PublicTournamentCatalogItemView | null;
   error: string | null;
   metadataStale: boolean;
+  deletionConfirmed: boolean;
 }>;
 
 const initialLoadState: PublicTournamentLoadState = {
@@ -55,7 +57,15 @@ const initialLoadState: PublicTournamentLoadState = {
   item: null,
   error: null,
   metadataStale: false,
+  deletionConfirmed: false,
 };
+
+const unavailableTournamentMessage =
+  "Соревнование не найдено или больше не публикуется.";
+const deletedTournamentMessage =
+  "Соревнование удалено или снято с публикации. Вернитесь к списку соревнований.";
+const registrationMetadataRefreshIntervalMs = 5_000;
+const metadataRefreshIntervalMs = 15_000;
 
 type ArenaPublicTournamentPageProps = Readonly<{
   publicId: string;
@@ -108,24 +118,30 @@ const getSafeArenaCatalogReturnPath = (value: string | null): string => {
   return "/arena";
 };
 
-const errorFor = (error: unknown): Pick<PublicTournamentLoadState, "status" | "error"> => {
+const errorFor = (error: unknown): Pick<
+  PublicTournamentLoadState,
+  "status" | "error" | "deletionConfirmed"
+> => {
   if (error instanceof ApiError) {
     if (error.kind === "not_found") {
       return {
         status: "not_found",
-        error: "Соревнование не найдено или больше не публикуется.",
+        error: unavailableTournamentMessage,
+        deletionConfirmed: false,
       };
     }
     if (error.kind === "rate_limited") {
       return {
         status: "rate_limited",
         error: "Слишком много запросов. Повторите попытку позже.",
+        deletionConfirmed: false,
       };
     }
   }
   return {
     status: "error",
     error: "Не удалось загрузить соревнование. Повторите попытку.",
+    deletionConfirmed: false,
   };
 };
 
@@ -141,19 +157,53 @@ const isPrestartItem = (item: PublicTournamentCatalogItemView): boolean =>
 
 type PublicBroadcastProps = Readonly<{
   item: PublicTournamentCatalogItemView;
+  onRosterSizeChange: (tournamentId: string, rosterSize: number) => void;
+  onTournamentMissing: (tournamentId: string) => void;
   view: ArenaPublicView;
 }>;
 
-const PublicBroadcast = ({ item, view }: PublicBroadcastProps) => (
+const PublicBroadcast = ({ item, onRosterSizeChange, onTournamentMissing, view }: PublicBroadcastProps) => (
   <TournamentRecoveryPanel contentOnly role="spectator" tournamentId={item.tournamentId}>
-    {(context) => <PublicBroadcastContent context={context} view={view} />}
+    {(context) => (
+      <PublicBroadcastContent
+        context={context}
+        onRosterSizeChange={onRosterSizeChange}
+        onTournamentMissing={onTournamentMissing}
+        tournamentId={item.tournamentId}
+        view={view}
+      />
+    )}
   </TournamentRecoveryPanel>
 );
 
 const PublicBroadcastContent = ({
   context,
+  onRosterSizeChange,
+  onTournamentMissing,
+  tournamentId,
   view,
-}: Readonly<{ context: TournamentRecoveryRenderContext; view: ArenaPublicView }>) => {
+}: Readonly<{
+  context: TournamentRecoveryRenderContext;
+  onRosterSizeChange: (tournamentId: string, rosterSize: number) => void;
+  onTournamentMissing: (tournamentId: string) => void;
+  tournamentId: string;
+  view: ArenaPublicView;
+}>) => {
+  const rosterSize = context.publicState?.display.tournament.roster_size;
+  const tournamentMissing = context.recoveryError?.kind === "not_found";
+
+  useEffect(() => {
+    if (typeof rosterSize === "number" && Number.isSafeInteger(rosterSize) && rosterSize >= 0) {
+      onRosterSizeChange(tournamentId, rosterSize);
+    }
+  }, [onRosterSizeChange, rosterSize, tournamentId]);
+
+  useEffect(() => {
+    if (tournamentMissing) {
+      onTournamentMissing(tournamentId);
+    }
+  }, [onTournamentMissing, tournamentId, tournamentMissing]);
+
   const noPublicState = context.recovery === null && context.publicState === null;
   if (noPublicState) {
     if (context.recoveryError?.kind === "not_found") {
@@ -216,10 +266,101 @@ export const ArenaPublicTournamentPage = ({
   const [view, setView] = useState<ArenaPublicView>("overview");
   const [locationState, setLocationState] = useState<PublicLocationState>(initialLocationState);
   const [loadState, setLoadState] = useState<PublicTournamentLoadState>(initialLoadState);
+  const [liveRosterSize, setLiveRosterSize] = useState<Readonly<{
+    tournamentId: string;
+    rosterSize: number;
+    updatedAtMs: number;
+  }> | null>(null);
+  const [admissionRefreshVersion, setAdmissionRefreshVersion] = useState(0);
   const [reloadVersion, setReloadVersion] = useState(0);
   const requestRef = useRef(0);
   const metadataRequestRef = useRef(0);
-  const shouldPollMetadata = loadState.status === "ready" && loadState.item !== null;
+  const refreshMetadataRef = useRef<() => void>(() => {});
+  const missingCheckRef = useRef<Readonly<{
+    controller: AbortController;
+    publicId: string;
+    tournamentId: string;
+  }> | null>(null);
+  const shouldPollMetadata =
+    loadState.status === "ready" && loadState.item?.publicId === publicId;
+  const currentMetadataRefreshIntervalMs = loadState.item?.state === "registration"
+    ? registrationMetadataRefreshIntervalMs
+    : metadataRefreshIntervalMs;
+
+  const handleRosterSizeChange = useCallback((tournamentId: string, rosterSize: number): void => {
+    setLiveRosterSize({ tournamentId, rosterSize, updatedAtMs: Date.now() });
+  }, []);
+
+  const handleTournamentMissing = useCallback((tournamentId: string): void => {
+    const currentPublicId = loadState.item?.publicId;
+    const currentTournamentId = loadState.item?.tournamentId;
+    if (currentPublicId === undefined || currentTournamentId !== tournamentId) {
+      return;
+    }
+    const existingCheck = missingCheckRef.current;
+    if (
+      existingCheck?.publicId === currentPublicId &&
+      existingCheck.tournamentId === tournamentId
+    ) {
+      return;
+    }
+
+    existingCheck?.controller.abort();
+    const controller = new AbortController();
+    missingCheckRef.current = { controller, publicId: currentPublicId, tournamentId };
+    void getPublicTournamentByPublicId(currentPublicId, controller.signal)
+      .then((response) => {
+        const nextItem = toPublicTournamentCatalogItemView(response);
+        if (
+          controller.signal.aborted ||
+          nextItem.publicId !== currentPublicId ||
+          nextItem.tournamentId !== tournamentId
+        ) {
+          return;
+        }
+        setLoadState((current) => (
+          current.item?.publicId === currentPublicId && current.item.tournamentId === tournamentId
+            ? { ...current, item: nextItem, metadataStale: false }
+            : current
+        ));
+      })
+      .catch((error: unknown) => {
+        if (controller.signal.aborted || isAbortError(error)) {
+          return;
+        }
+        if (error instanceof ApiError && error.kind === "not_found") {
+          setLoadState((current) => (
+            current.item?.publicId === currentPublicId && current.item.tournamentId === tournamentId
+              ? {
+                status: "not_found",
+                item: null,
+                error: deletedTournamentMessage,
+                metadataStale: false,
+                deletionConfirmed: true,
+              }
+              : current
+          ));
+          return;
+        }
+        setLoadState((current) => (
+          current.item?.publicId === currentPublicId && current.item.tournamentId === tournamentId
+            ? { ...current, metadataStale: true }
+            : current
+        ));
+      })
+      .finally(() => {
+        if (missingCheckRef.current?.controller === controller) {
+          missingCheckRef.current = null;
+        }
+      });
+  }, [loadState.item?.publicId, loadState.item?.tournamentId]);
+
+  const handleEntryRosterSizeChange = useCallback((rosterSize: number): void => {
+    const tournamentId = loadState.item?.tournamentId;
+    if (tournamentId !== undefined) {
+      handleRosterSizeChange(tournamentId, rosterSize);
+    }
+  }, [handleRosterSizeChange, loadState.item?.tournamentId]);
 
   useEffect(() => {
     const syncLocation = (): void => {
@@ -234,6 +375,10 @@ export const ArenaPublicTournamentPage = ({
     return () => window.removeEventListener("popstate", handlePopState);
   }, [publicId]);
 
+  useEffect(() => () => {
+    missingCheckRef.current?.controller.abort();
+  }, [publicId]);
+
   useEffect(() => {
     const controller = new AbortController();
     const requestId = ++requestRef.current;
@@ -241,8 +386,9 @@ export const ArenaPublicTournamentPage = ({
       setLoadState({
         status: "not_found",
         item: null,
-        error: "Соревнование не найдено.",
+        error: unavailableTournamentMessage,
         metadataStale: false,
+        deletionConfirmed: false,
       });
       return () => controller.abort();
     }
@@ -252,6 +398,7 @@ export const ArenaPublicTournamentPage = ({
       item: current.item?.publicId === publicId ? current.item : null,
       error: null,
       metadataStale: false,
+      deletionConfirmed: false,
     }));
     void getPublicTournamentByPublicId(publicId, controller.signal)
       .then((item) => {
@@ -268,6 +415,7 @@ export const ArenaPublicTournamentPage = ({
           item: viewItem,
           error: null,
           metadataStale: false,
+          deletionConfirmed: false,
         });
       })
       .catch((error: unknown) => {
@@ -293,13 +441,19 @@ export const ArenaPublicTournamentPage = ({
     const controller = new AbortController();
     let active = true;
     let inFlight = false;
+    let pendingRefresh = false;
 
     const refreshMetadata = (): void => {
-      if (!active || inFlight || document.visibilityState !== "visible") {
+      if (!active || document.visibilityState !== "visible") {
+        return;
+      }
+      if (inFlight) {
+        pendingRefresh = true;
         return;
       }
       inFlight = true;
       const requestId = ++metadataRequestRef.current;
+      const requestStartedAt = Date.now();
       void getPublicTournamentByPublicId(publicId, controller.signal)
         .then((response) => {
           const nextItem = toPublicTournamentCatalogItemView(response);
@@ -310,6 +464,12 @@ export const ArenaPublicTournamentPage = ({
           ) {
             return;
           }
+          setLiveRosterSize((current) => (
+            current?.tournamentId === nextItem.tournamentId &&
+            current.updatedAtMs > requestStartedAt
+              ? current
+              : null
+          ));
           setLoadState((current) => {
             if (
               current.item?.publicId !== publicId ||
@@ -330,6 +490,20 @@ export const ArenaPublicTournamentPage = ({
           ) {
             return;
           }
+          if (error instanceof ApiError && error.kind === "not_found") {
+            setLoadState((current) => (
+              current.item?.publicId === publicId
+                ? {
+                  status: "not_found",
+                  item: null,
+                  error: deletedTournamentMessage,
+                  metadataStale: false,
+                  deletionConfirmed: true,
+                }
+                : current
+            ));
+            return;
+          }
           setLoadState((current) => (
             current.item?.publicId === publicId
               ? { ...current, metadataStale: true }
@@ -338,10 +512,16 @@ export const ArenaPublicTournamentPage = ({
         })
         .finally(() => {
           inFlight = false;
+          if (active && pendingRefresh) {
+            pendingRefresh = false;
+            refreshMetadata();
+          }
         });
     };
 
-    const interval = window.setInterval(refreshMetadata, 15_000);
+    refreshMetadataRef.current = refreshMetadata;
+
+    const interval = window.setInterval(refreshMetadata, currentMetadataRefreshIntervalMs);
     const handleVisibilityChange = (): void => {
       if (document.visibilityState === "visible") {
         refreshMetadata();
@@ -351,10 +531,130 @@ export const ArenaPublicTournamentPage = ({
     return () => {
       active = false;
       controller.abort();
+      if (refreshMetadataRef.current === refreshMetadata) {
+        refreshMetadataRef.current = () => {};
+      }
       window.clearInterval(interval);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, [publicId, reloadVersion, shouldPollMetadata]);
+  }, [currentMetadataRefreshIntervalMs, publicId, reloadVersion, shouldPollMetadata]);
+
+  useEffect(() => {
+    if (!shouldPollMetadata || typeof document === "undefined") {
+      return undefined;
+    }
+
+    let active = true;
+    let source: EventSource | null = null;
+    let retryTimer: number | undefined;
+    let invalidationTimer: number | undefined;
+    let retryAttempt = 0;
+
+    const closeSource = (): void => {
+      if (source === null) {
+        return;
+      }
+      source.onerror = null;
+      source.close();
+      source = null;
+    };
+
+    const connect = (): void => {
+      if (!active || source !== null || document.visibilityState !== "visible") {
+        return;
+      }
+      try {
+        const nextSource = openPublicTournamentEvents();
+        source = nextSource;
+        nextSource.addEventListener("ready", () => {
+          const reconnected = retryAttempt > 0;
+          retryAttempt = 0;
+          if (reconnected) {
+            refreshMetadataRef.current();
+            setAdmissionRefreshVersion((current) => current + 1);
+          }
+        });
+        nextSource.addEventListener("changed", (event: Event) => {
+          let payload: unknown;
+          try {
+            payload = JSON.parse((event as MessageEvent<string>).data) as unknown;
+          } catch {
+            return;
+          }
+          if (
+            typeof payload !== "object" ||
+            payload === null ||
+            !("topic" in payload) ||
+            payload.topic !== "tournaments" ||
+            invalidationTimer !== undefined
+          ) {
+            return;
+          }
+          invalidationTimer = window.setTimeout(() => {
+            invalidationTimer = undefined;
+            if (!active || document.visibilityState !== "visible") {
+              return;
+            }
+            refreshMetadataRef.current();
+            setAdmissionRefreshVersion((current) => current + 1);
+          }, 150);
+        });
+        nextSource.onerror = () => {
+          closeSource();
+          if (!active || document.visibilityState !== "visible" || retryTimer !== undefined) {
+            return;
+          }
+          const retryDelay = Math.min(30_000, 1_000 * 2 ** Math.min(retryAttempt, 5));
+          retryAttempt += 1;
+          retryTimer = window.setTimeout(() => {
+            retryTimer = undefined;
+            connect();
+          }, retryDelay);
+        };
+      } catch {
+        if (!active || document.visibilityState !== "visible" || retryTimer !== undefined) {
+          return;
+        }
+        const retryDelay = Math.min(30_000, 1_000 * 2 ** Math.min(retryAttempt, 5));
+        retryAttempt += 1;
+        retryTimer = window.setTimeout(() => {
+          retryTimer = undefined;
+          connect();
+        }, retryDelay);
+      }
+    };
+
+    const handleVisibilityChange = (): void => {
+      if (document.visibilityState !== "visible") {
+        if (retryTimer !== undefined) {
+          window.clearTimeout(retryTimer);
+          retryTimer = undefined;
+        }
+        closeSource();
+        return;
+      }
+      if (retryTimer !== undefined) {
+        window.clearTimeout(retryTimer);
+        retryTimer = undefined;
+      }
+      setAdmissionRefreshVersion((current) => current + 1);
+      connect();
+    };
+
+    connect();
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      active = false;
+      if (retryTimer !== undefined) {
+        window.clearTimeout(retryTimer);
+      }
+      if (invalidationTimer !== undefined) {
+        window.clearTimeout(invalidationTimer);
+      }
+      closeSource();
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [publicId, shouldPollMetadata]);
 
   const safeReturnPath = locationState.returnPath;
 
@@ -395,22 +695,52 @@ export const ArenaPublicTournamentPage = ({
         )}
 
         {loadState.error && (
-          <Message
-            tone={loadState.status === "rate_limited" ? "warning" : "error"}
-            title={loadState.status === "not_found" ? "Соревнование не найдено" : "Соревнование недоступно"}
-          >
-            <p>{loadState.error}</p>
-            <Button
-              type="button"
-              size="small"
-              variant="secondary"
-              onClick={() => {
-                setReloadVersion((current) => current + 1);
-              }}
+          loadState.status !== "not_found" && (
+            <Message
+              tone={loadState.status === "rate_limited" ? "warning" : "error"}
+              title="Соревнование недоступно"
             >
-              Повторить
-            </Button>
+              <p>{loadState.error}</p>
+              <Button
+                type="button"
+                size="small"
+                variant="secondary"
+                onClick={() => {
+                  setReloadVersion((current) => current + 1);
+                }}
+              >
+                Повторить
+              </Button>
+            </Message>
+          )
+        )}
+
+        {loadState.status === "not_found" && !loadState.deletionConfirmed && (
+          <Message tone="warning" title="Соревнование не найдено">
+            <p>{loadState.error}</p>
+            <Link className={styles.backLink} href={returnHref}>
+              Вернуться к списку соревнований
+            </Link>
           </Message>
+        )}
+
+        {loadState.status === "not_found" && loadState.deletionConfirmed && (
+          <Dialog
+            closeOnEscape={false}
+            closeOnBackdrop={false}
+            description={loadState.error ?? deletedTournamentMessage}
+            footer={(
+              <Link className={styles.backLink} href={returnHref}>
+                Вернуться к списку соревнований
+              </Link>
+            )}
+            open
+            showCloseButton={false}
+            size="small"
+            title="Соревнование удалено"
+          >
+            <p>Откройте список соревнований, чтобы выбрать другое.</p>
+          </Dialog>
         )}
 
         {loadState.item && (
@@ -440,7 +770,12 @@ export const ArenaPublicTournamentPage = ({
                 </div>
                 <div>
                   <dt>Участники</dt>
-                  <dd>{catalogRosterLabel(loadState.item)}</dd>
+                  <dd>{catalogRosterLabel({
+                    ...loadState.item,
+                    rosterSize: liveRosterSize?.tournamentId === loadState.item.tournamentId
+                      ? liveRosterSize.rosterSize
+                      : loadState.item.rosterSize,
+                  })}</dd>
                 </div>
                 <div>
                   <dt>Формат</dt>
@@ -490,6 +825,8 @@ export const ArenaPublicTournamentPage = ({
                 publicId={loadState.item.publicId}
                 catalogReturnPath={returnHref}
                 returnPath={buildViewHref(view)}
+                admissionRefreshVersion={admissionRefreshVersion}
+                onRosterSizeChange={handleEntryRosterSizeChange}
                 state={loadState.item.state}
                 tournamentId={loadState.item.tournamentId}
               />
@@ -502,6 +839,8 @@ export const ArenaPublicTournamentPage = ({
             ) : (
               <PublicBroadcast
                 item={loadState.item}
+                onRosterSizeChange={handleRosterSizeChange}
+                onTournamentMissing={handleTournamentMissing}
                 view={view}
               />
             )}

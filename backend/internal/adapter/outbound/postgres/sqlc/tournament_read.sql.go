@@ -466,7 +466,9 @@ SELECT tournament.id AS tournament_id,
     tournament.finished_at
 FROM tournaments AS tournament
 JOIN rosters AS roster ON roster.tournament_id = tournament.id
-LEFT JOIN participants AS participant ON participant.roster_id = roster.id
+LEFT JOIN participants AS participant
+    ON participant.roster_id = roster.id
+    AND participant.attendance <> 'withdrawn'
 WHERE tournament.id = $1
     AND tournament.deleted_at IS NULL
 GROUP BY tournament.id
@@ -1934,6 +1936,7 @@ FROM participants AS participant
 JOIN rosters AS roster ON roster.id = participant.roster_id
 JOIN players AS player ON player.id = participant.player_id
 WHERE roster.tournament_id = $1
+    AND participant.attendance <> 'withdrawn'
 ORDER BY participant.seed,
     participant.id
 `

@@ -1,3 +1,4 @@
+import { CONFIG } from "../config";
 import { publicClient, unwrapApi, type ApiResult } from "./client";
 import {
   ApiContractError,
@@ -18,6 +19,12 @@ export type PublicTournamentProjection = Readonly<{
   bracket: PublicBracketResponse;
   projectionRevision: number;
 }>;
+
+export const openPublicTournamentEvents = (): EventSource => {
+  const baseUrl = CONFIG.apiUrl || window.location.origin;
+  const url = new URL("/api/v1/arena/events", baseUrl);
+  return new EventSource(url, { withCredentials: true });
+};
 
 const readPublicResponse = async <T>(
   result: ApiResult<T> | Promise<ApiResult<T>>,

@@ -113,6 +113,10 @@ export default function HomePage() {
       showNotification(buildRateLimitMessage(result.retryAfter));
       return;
     }
+    if (result.kind === "username_taken") {
+      showNotification("Никнейм занят активной сессией. Завершите ее или выберите другой никнейм.");
+      return;
+    }
     if (result.kind !== "aborted") {
       showNotification("Ошибка соединения");
     }

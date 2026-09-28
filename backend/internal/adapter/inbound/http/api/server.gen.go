@@ -155,6 +155,9 @@ type ServerInterface interface {
 	// ResolveTournamentNoShow Resolve a confirmed ready-window no-show
 	// (POST /api/v1/admin/tournaments/{tournament_id}/waves/{wave_id}/no-shows)
 	ResolveTournamentNoShow(w http.ResponseWriter, r *http.Request, tournamentId TournamentId, waveId WaveId, params ResolveTournamentNoShowParams)
+	// StreamPublicTournamentEvents Stream public tournament catalog invalidations
+	// (GET /api/v1/arena/events)
+	StreamPublicTournamentEvents(w http.ResponseWriter, r *http.Request)
 	// GetLeaderboard Top-50 leaderboard
 	// (GET /api/v1/leaderboard)
 	GetLeaderboard(w http.ResponseWriter, r *http.Request)
@@ -509,6 +512,12 @@ func (_ Unimplemented) ControlTournamentWave(w http.ResponseWriter, r *http.Requ
 // ResolveTournamentNoShow Resolve a confirmed ready-window no-show
 // (POST /api/v1/admin/tournaments/{tournament_id}/waves/{wave_id}/no-shows)
 func (_ Unimplemented) ResolveTournamentNoShow(w http.ResponseWriter, r *http.Request, tournamentId TournamentId, waveId WaveId, params ResolveTournamentNoShowParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// StreamPublicTournamentEvents Stream public tournament catalog invalidations
+// (GET /api/v1/arena/events)
+func (_ Unimplemented) StreamPublicTournamentEvents(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -3619,6 +3628,20 @@ func (siw *ServerInterfaceWrapper) ResolveTournamentNoShow(w http.ResponseWriter
 	handler.ServeHTTP(w, r)
 }
 
+// StreamPublicTournamentEvents operation middleware
+func (siw *ServerInterfaceWrapper) StreamPublicTournamentEvents(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.StreamPublicTournamentEvents(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetLeaderboard operation middleware
 func (siw *ServerInterfaceWrapper) GetLeaderboard(w http.ResponseWriter, r *http.Request) {
 
@@ -5319,6 +5342,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/public/tournaments/{public_id}", wrapper.GetPublicTournamentByPublicID)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/arena/events", wrapper.StreamPublicTournamentEvents)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/tournaments/{tournament_id}", wrapper.GetPublicTournament)
@@ -10884,6 +10910,97 @@ func (response ResolveTournamentNoShowdefaultApplicationProblemPlusJSONResponse)
 	return err
 }
 
+type StreamPublicTournamentEventsRequestObject struct {
+}
+
+type StreamPublicTournamentEventsResponseObject interface {
+	VisitStreamPublicTournamentEventsResponse(w http.ResponseWriter) error
+}
+
+type StreamPublicTournamentEvents200TexteventStreamResponse struct {
+	Body          io.Reader
+	ContentLength int64
+}
+
+func (response StreamPublicTournamentEvents200TexteventStreamResponse) VisitStreamPublicTournamentEventsResponse(w http.ResponseWriter) error {
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	if response.ContentLength != 0 {
+		w.Header().Set("Content-Length", fmt.Sprint(response.ContentLength))
+	}
+	w.WriteHeader(200)
+
+	if closer, ok := response.Body.(io.ReadCloser); ok {
+		defer closer.Close()
+	}
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		// If w doesn't support flushing, fall back to io.Copy.
+		_, err := io.Copy(w, response.Body)
+		return err
+	}
+	// text/event-stream messages are typically small; use a
+	// modest buffer and flush after each chunk so clients see
+	// events immediately instead of waiting on OS buffering.
+	buf := make([]byte, 4096)
+	for {
+		n, err := response.Body.Read(buf)
+		if n > 0 {
+			if _, writeErr := w.Write(buf[:n]); writeErr != nil {
+				return writeErr
+			}
+			flusher.Flush()
+		}
+		if err != nil {
+			if err == io.EOF {
+				return nil
+			}
+			return err
+		}
+	}
+}
+
+type StreamPublicTournamentEvents429ResponseHeaders struct {
+	RetryAfter *int32
+}
+
+type StreamPublicTournamentEvents429ApplicationProblemPlusJSONResponse struct {
+	Body    ProblemDetails
+	Headers StreamPublicTournamentEvents429ResponseHeaders
+}
+
+func (response StreamPublicTournamentEvents429ApplicationProblemPlusJSONResponse) VisitStreamPublicTournamentEventsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	if response.Headers.RetryAfter != nil {
+		w.Header().Set("Retry-After", fmt.Sprint(*response.Headers.RetryAfter))
+	}
+	w.WriteHeader(429)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type StreamPublicTournamentEventsdefaultApplicationProblemPlusJSONResponse struct {
+	Body       ProblemDetails
+	StatusCode int
+}
+
+func (response StreamPublicTournamentEventsdefaultApplicationProblemPlusJSONResponse) VisitStreamPublicTournamentEventsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type GetLeaderboardRequestObject struct {
 }
 
@@ -13884,6 +14001,9 @@ type StrictServerInterface interface {
 	// ResolveTournamentNoShow Resolve a confirmed ready-window no-show
 	// (POST /api/v1/admin/tournaments/{tournament_id}/waves/{wave_id}/no-shows)
 	ResolveTournamentNoShow(ctx context.Context, request ResolveTournamentNoShowRequestObject) (ResolveTournamentNoShowResponseObject, error)
+	// StreamPublicTournamentEvents Stream public tournament catalog invalidations
+	// (GET /api/v1/arena/events)
+	StreamPublicTournamentEvents(ctx context.Context, request StreamPublicTournamentEventsRequestObject) (StreamPublicTournamentEventsResponseObject, error)
 	// GetLeaderboard Top-50 leaderboard
 	// (GET /api/v1/leaderboard)
 	GetLeaderboard(ctx context.Context, request GetLeaderboardRequestObject) (GetLeaderboardResponseObject, error)
@@ -15381,6 +15501,30 @@ func (sh *strictHandler) ResolveTournamentNoShow(w http.ResponseWriter, r *http.
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(ResolveTournamentNoShowResponseObject); ok {
 		if err := validResponse.VisitResolveTournamentNoShowResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// StreamPublicTournamentEvents operation middleware
+func (sh *strictHandler) StreamPublicTournamentEvents(w http.ResponseWriter, r *http.Request) {
+	var request StreamPublicTournamentEventsRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.StreamPublicTournamentEvents(ctx, request.(StreamPublicTournamentEventsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "StreamPublicTournamentEvents")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(StreamPublicTournamentEventsResponseObject); ok {
+		if err := validResponse.VisitStreamPublicTournamentEventsResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

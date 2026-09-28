@@ -1497,9 +1497,15 @@ func (q *Queries) ListTournamentConfigurationEditLineage(ctx context.Context, ar
 
 const listTournamentConfigurationEditParticipants = `-- name: ListTournamentConfigurationEditParticipants :many
 SELECT participant.id,
-    participant.seed,
+    CASE
+        WHEN participant.attendance = 'withdrawn' THEN
+            ((participant.seed - 1) % tournament.planned_roster_size) + 1
+        ELSE participant.seed
+    END::INTEGER AS seed,
     participant.attendance
 FROM participants AS participant
+JOIN rosters AS roster ON roster.id = participant.roster_id
+JOIN tournaments AS tournament ON tournament.id = roster.tournament_id
 WHERE participant.roster_id = $1::UUID
 ORDER BY participant.seed, participant.id
 `

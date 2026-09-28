@@ -191,7 +191,9 @@ SELECT tournament.id,
     COUNT(participant.id)::BIGINT AS roster_size
 FROM tournaments AS tournament
 INNER JOIN rosters AS roster ON roster.tournament_id = tournament.id
-LEFT JOIN participants AS participant ON participant.roster_id = roster.id
+LEFT JOIN participants AS participant
+    ON participant.roster_id = roster.id
+    AND participant.attendance <> 'withdrawn'
 WHERE tournament.id = sqlc.arg(id)
     AND tournament.deleted_at IS NULL
 GROUP BY tournament.id,
@@ -235,7 +237,9 @@ SELECT tournament.id,
     COUNT(participant.id)::BIGINT AS roster_size
 FROM tournaments AS tournament
 INNER JOIN rosters AS roster ON roster.tournament_id = tournament.id
-LEFT JOIN participants AS participant ON participant.roster_id = roster.id
+LEFT JOIN participants AS participant
+    ON participant.roster_id = roster.id
+    AND participant.attendance <> 'withdrawn'
 WHERE tournament.deleted_at IS NULL
 GROUP BY tournament.id,
     roster.id
@@ -349,21 +353,39 @@ RETURNING participant.id,
     participant.updated_at;
 
 -- name: ReplaceWithdrawnTournamentParticipant :one
+WITH replacement AS MATERIALIZED (
+    SELECT participant.id AS participant_id,
+        participant.roster_id,
+        replacement_player.id AS replacement_player_id,
+        ((participant.seed - 1) % tournament.planned_roster_size) + 1 AS seed
+    FROM participants AS participant
+    JOIN rosters AS roster ON roster.id = participant.roster_id
+    JOIN tournaments AS tournament ON tournament.id = roster.tournament_id
+    JOIN players AS replacement_player
+        ON replacement_player.id = sqlc.arg(replacement_player_id)
+        AND replacement_player.deleted_at IS NULL
+    WHERE participant.id = sqlc.arg(withdrawn_participant_id)
+        AND participant.roster_id = sqlc.arg(roster_id)
+        AND participant.attendance = 'withdrawn'
+        AND roster.locked_at IS NULL
+        AND roster.execution_started_at IS NULL
+        AND NOT EXISTS (
+            SELECT 1
+            FROM participants AS active_participant
+            WHERE active_participant.roster_id = participant.roster_id
+                AND active_participant.id <> participant.id
+                AND active_participant.attendance <> 'withdrawn'
+                AND active_participant.seed = ((participant.seed - 1) % tournament.planned_roster_size) + 1
+        )
+)
 UPDATE participants AS participant
 SET id = sqlc.arg(replacement_participant_id),
-    player_id = replacement.id,
+    player_id = replacement.replacement_player_id,
+    seed = replacement.seed,
     attendance = 'invited',
     updated_at = sqlc.arg(replaced_at)
-FROM rosters AS roster,
-    players AS replacement
-WHERE participant.id = sqlc.arg(withdrawn_participant_id)
-    AND participant.roster_id = sqlc.arg(roster_id)
-    AND participant.attendance = 'withdrawn'
-    AND roster.id = participant.roster_id
-    AND roster.locked_at IS NULL
-    AND roster.execution_started_at IS NULL
-    AND replacement.id = sqlc.arg(replacement_player_id)
-    AND replacement.deleted_at IS NULL
+FROM replacement
+WHERE participant.id = replacement.participant_id
 RETURNING participant.id,
     participant.roster_id,
     participant.player_id,
@@ -384,6 +406,7 @@ SELECT participant.id,
 FROM participants AS participant
 JOIN rosters AS roster ON roster.id = participant.roster_id
 WHERE participant.roster_id = sqlc.arg(roster_id)
+    AND participant.attendance <> 'withdrawn'
 ORDER BY participant.seed,
     participant.id;
 

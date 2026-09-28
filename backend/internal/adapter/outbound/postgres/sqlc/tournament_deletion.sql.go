@@ -172,11 +172,15 @@ func (q *Queries) LockTournamentDeletionScope(ctx context.Context, tournamentID 
 const markTournamentDeleted = `-- name: MarkTournamentDeleted :one
 UPDATE tournaments
 SET deleted_at = $1,
-    revision = revision + 1,
-    updated_at = $1
-WHERE id = $2
-    AND revision = $3
+    revision = revision + CASE WHEN $2::BOOLEAN THEN 0 ELSE 1 END,
+    updated_at = CASE
+        WHEN $2::BOOLEAN THEN updated_at
+        ELSE $1
+    END
+WHERE id = $3
+    AND revision = $4
     AND deleted_at IS NULL
+    AND (NOT $2::BOOLEAN OR state = 'cancelled')
 RETURNING id AS tournament_id,
     state,
     revision,
@@ -186,6 +190,7 @@ RETURNING id AS tournament_id,
 
 type MarkTournamentDeletedParams struct {
 	DeletedAt        pgtype.Timestamptz
+	Cancelled        bool
 	TournamentID     uuid.UUID
 	ExpectedRevision int64
 }
@@ -198,8 +203,15 @@ type MarkTournamentDeletedRow struct {
 	DeletedAt    pgtype.Timestamptz
 }
 
+// A cancellation inserted in this transaction has deferred evidence tied to its
+// lifecycle revision and updated_at. Deletion metadata must not change either.
 func (q *Queries) MarkTournamentDeleted(ctx context.Context, arg MarkTournamentDeletedParams) (MarkTournamentDeletedRow, error) {
-	row := q.db.QueryRow(ctx, markTournamentDeleted, arg.DeletedAt, arg.TournamentID, arg.ExpectedRevision)
+	row := q.db.QueryRow(ctx, markTournamentDeleted,
+		arg.DeletedAt,
+		arg.Cancelled,
+		arg.TournamentID,
+		arg.ExpectedRevision,
+	)
 	var i MarkTournamentDeletedRow
 	err := row.Scan(
 		&i.TournamentID,

@@ -81,7 +81,7 @@ func (r *TournamentAdmissionPostgres) joinInTransaction(
 	case domain.AttendanceStateRegistered, domain.AttendanceStateCheckedIn:
 		return current, false, nil
 	case domain.AttendanceStateWithdrawn:
-		return admissionusecase.AdmissionRecord{}, false, admissionusecase.ErrTournamentAdmissionWithdrawn
+		return r.joinWithdrawnInTransaction(ctx, input, scope, status.RosterSize)
 	case domain.AttendanceStateInvited:
 		return r.joinInvitedInTransaction(ctx, input, scope)
 	default:
@@ -119,6 +119,42 @@ func (r *TournamentAdmissionPostgres) joinInvitedInTransaction(
 	return record, true, err
 }
 
+func (r *TournamentAdmissionPostgres) joinWithdrawnInTransaction(
+	ctx context.Context,
+	input admissionusecase.JoinInput,
+	scope sqlc.LockTournamentAdmissionScopeRow,
+	rosterSize int64,
+) (admissionusecase.AdmissionRecord, bool, error) {
+	if rosterSize >= int64(scope.PlannedRosterSize) {
+		return admissionusecase.AdmissionRecord{}, false, admissionusecase.ErrTournamentAdmissionFull
+	}
+	querier := r.tx.Querier(ctx)
+	conflicting, err := querier.HasConflictingParticipantReservation(ctx, sqlc.HasConflictingParticipantReservationParams{
+		PlayerID: input.PlayerID, TournamentID: input.TournamentID,
+	})
+	if err != nil {
+		return admissionusecase.AdmissionRecord{}, false, admissionMutationError("Join - reservation check", err)
+	}
+	if conflicting {
+		return admissionusecase.AdmissionRecord{}, false, admissionusecase.ErrTournamentAdmissionConflict
+	}
+	seed, err := availableAdmissionSeed(ctx, querier, scope)
+	if err != nil {
+		return admissionusecase.AdmissionRecord{}, false, err
+	}
+	if _, err := querier.RegisterWithdrawnParticipant(ctx, sqlc.RegisterWithdrawnParticipantParams{
+		PlayerID: input.PlayerID, RosterID: scope.RosterID, Seed: seed,
+		UpdatedAt: admissionTimestamp(input.JoinedAt),
+	}); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return admissionusecase.AdmissionRecord{}, false, domain.ErrConflict
+		}
+		return admissionusecase.AdmissionRecord{}, false, admissionMutationError("Join - re-register participant", err)
+	}
+	record, err := r.statusInTransaction(ctx, input.TournamentID, input.PlayerID)
+	return record, true, err
+}
+
 func (r *TournamentAdmissionPostgres) joinRegisteredInTransaction(
 	ctx context.Context,
 	input admissionusecase.JoinInput,
@@ -138,14 +174,9 @@ func (r *TournamentAdmissionPostgres) joinRegisteredInTransaction(
 	if conflicting {
 		return admissionusecase.AdmissionRecord{}, false, admissionusecase.ErrTournamentAdmissionConflict
 	}
-	seed, err := querier.FindFirstAvailableParticipantSeed(ctx, sqlc.FindFirstAvailableParticipantSeedParams{
-		PlannedRosterSize: scope.PlannedRosterSize, RosterID: scope.RosterID,
-	})
-	if errors.Is(err, pgx.ErrNoRows) {
-		return admissionusecase.AdmissionRecord{}, false, admissionusecase.ErrTournamentAdmissionFull
-	}
+	seed, err := availableAdmissionSeed(ctx, querier, scope)
 	if err != nil {
-		return admissionusecase.AdmissionRecord{}, false, admissionMutationError("Join - find seed", err)
+		return admissionusecase.AdmissionRecord{}, false, err
 	}
 	if _, err := querier.InsertRegisteredParticipant(ctx, sqlc.InsertRegisteredParticipantParams{
 		ParticipantID: input.ParticipantID,
@@ -161,6 +192,35 @@ func (r *TournamentAdmissionPostgres) joinRegisteredInTransaction(
 	}
 	record, err := r.statusInTransaction(ctx, input.TournamentID, input.PlayerID)
 	return record, true, err
+}
+
+func availableAdmissionSeed(
+	ctx context.Context,
+	querier *sqlc.Queries,
+	scope sqlc.LockTournamentAdmissionScopeRow,
+) (int32, error) {
+	rebase, err := querier.RebaseWithdrawnParticipantSeeds(ctx, sqlc.RebaseWithdrawnParticipantSeedsParams{
+		PlannedRosterSize: scope.PlannedRosterSize,
+		RosterID:          scope.RosterID,
+	})
+	if err != nil {
+		return 0, admissionMutationError("Join - rebase withdrawn seeds", err)
+	}
+	canRebase, ok := rebase.CanRebase.(bool)
+	if !ok || !canRebase {
+		return 0, domain.ErrInternal
+	}
+	seed, err := querier.FindFirstAvailableParticipantSeed(ctx, sqlc.FindFirstAvailableParticipantSeedParams{
+		PlannedRosterSize: scope.PlannedRosterSize,
+		RosterID:          scope.RosterID,
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return 0, admissionusecase.ErrTournamentAdmissionFull
+	}
+	if err != nil {
+		return 0, admissionMutationError("Join - find seed", err)
+	}
+	return seed, nil
 }
 
 func (r *TournamentAdmissionPostgres) GetStatus(

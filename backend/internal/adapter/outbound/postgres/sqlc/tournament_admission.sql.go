@@ -49,7 +49,14 @@ SELECT tournament.id AS tournament_id,
     roster_count.roster_size,
     COALESCE(participant.id, '00000000-0000-0000-0000-000000000000'::UUID) AS participant_id,
     COALESCE(participant.player_id, '00000000-0000-0000-0000-000000000000'::UUID) AS participant_player_id,
-    COALESCE(participant.seed, 0)::INTEGER AS participant_seed,
+    COALESCE(
+        CASE
+            WHEN participant.attendance = 'withdrawn' THEN
+                ((participant.seed - 1) % tournament.planned_roster_size) + 1
+            ELSE participant.seed
+        END,
+        0
+    )::INTEGER AS participant_seed,
     COALESCE(participant.attendance, '')::TEXT AS participant_attendance
 FROM tournaments AS tournament
 JOIN rosters AS roster ON roster.tournament_id = tournament.id
@@ -57,6 +64,7 @@ CROSS JOIN LATERAL (
     SELECT COUNT(*)::BIGINT AS roster_size
     FROM participants AS roster_participant
     WHERE roster_participant.roster_id = roster.id
+        AND roster_participant.attendance <> 'withdrawn'
 ) AS roster_count
 LEFT JOIN participants AS participant
     ON participant.roster_id = roster.id
@@ -279,6 +287,75 @@ func (q *Queries) LockTournamentAdmissionScope(ctx context.Context, tournamentID
 	return i, err
 }
 
+const rebaseWithdrawnParticipantSeeds = `-- name: RebaseWithdrawnParticipantSeeds :one
+WITH legacy_withdrawn AS MATERIALIZED (
+    SELECT participant.id,
+        participant.seed::BIGINT AS original_seed,
+        ROW_NUMBER() OVER (ORDER BY participant.seed, participant.id)::BIGINT AS sequence
+    FROM participants AS participant
+    WHERE participant.roster_id = $1
+        AND participant.attendance = 'withdrawn'
+        AND participant.seed BETWEEN 1 AND $2::INTEGER
+), seed_limits AS MATERIALIZED (
+    SELECT $2::BIGINT AS planned_roster_size,
+        COALESCE((
+            SELECT MAX(participant.seed)::BIGINT
+            FROM participants AS participant
+            WHERE participant.roster_id = $1
+        ), 0) AS max_seed,
+        COALESCE(MAX(legacy_withdrawn.original_seed), 0) AS max_original_seed,
+        COUNT(legacy_withdrawn.id)::BIGINT AS legacy_count
+    FROM legacy_withdrawn
+), rebase_limits AS MATERIALIZED (
+    SELECT seed_limits.planned_roster_size, seed_limits.max_seed, seed_limits.max_original_seed, seed_limits.legacy_count,
+        (seed_limits.max_seed / seed_limits.planned_roster_size) + 1 AS base_offset,
+        CASE
+            WHEN seed_limits.legacy_count = 0 THEN TRUE
+            ELSE seed_limits.max_original_seed + seed_limits.planned_roster_size * (
+                (seed_limits.max_seed / seed_limits.planned_roster_size) + seed_limits.legacy_count
+            ) <= 2147483647
+        END AS can_rebase
+    FROM seed_limits
+), rebased AS (
+    UPDATE participants AS participant
+    SET seed = (
+        legacy_withdrawn.original_seed + rebase_limits.planned_roster_size * (
+            rebase_limits.base_offset + legacy_withdrawn.sequence - 1
+        )
+    )::INTEGER
+    FROM legacy_withdrawn
+    CROSS JOIN rebase_limits
+    WHERE participant.id = legacy_withdrawn.id
+        AND rebase_limits.can_rebase
+    RETURNING participant.id
+)
+SELECT rebase_limits.can_rebase,
+    COUNT(rebased.id)::BIGINT AS rebased_count
+FROM rebase_limits
+LEFT JOIN rebased ON TRUE
+GROUP BY rebase_limits.can_rebase
+`
+
+type RebaseWithdrawnParticipantSeedsParams struct {
+	RosterID          uuid.UUID
+	PlannedRosterSize int32
+}
+
+type RebaseWithdrawnParticipantSeedsRow struct {
+	CanRebase    interface{}
+	RebasedCount int64
+}
+
+// Withdrawn rows stay in participants for history, but move outside the active
+// seed range. The modulo preserves their former seat for historical reads.
+// Rebase legacy rows created before this rule before allocating a new seed.
+func (q *Queries) RebaseWithdrawnParticipantSeeds(ctx context.Context, arg RebaseWithdrawnParticipantSeedsParams) (RebaseWithdrawnParticipantSeedsRow, error) {
+	row := q.db.QueryRow(ctx, rebaseWithdrawnParticipantSeeds, arg.RosterID, arg.PlannedRosterSize)
+	var i RebaseWithdrawnParticipantSeedsRow
+	err := row.Scan(&i.CanRebase, &i.RebasedCount)
+	return i, err
+}
+
 const registerInvitedParticipant = `-- name: RegisterInvitedParticipant :one
 WITH locked_roster AS MATERIALIZED (
     UPDATE rosters AS roster
@@ -329,13 +406,13 @@ func (q *Queries) RegisterInvitedParticipant(ctx context.Context, arg RegisterIn
 	return i, err
 }
 
-const withdrawAdmissionParticipant = `-- name: WithdrawAdmissionParticipant :one
+const registerWithdrawnParticipant = `-- name: RegisterWithdrawnParticipant :one
 WITH locked_roster AS MATERIALIZED (
     UPDATE rosters AS roster
     SET revision = roster.revision + 1,
-        updated_at = $1
+        updated_at = $2
     FROM tournaments AS tournament
-    WHERE roster.id = $3
+    WHERE roster.id = $4
         AND tournament.id = roster.tournament_id
         AND tournament.state = 'registration'
         AND roster.locked_at IS NULL
@@ -343,12 +420,84 @@ WITH locked_roster AS MATERIALIZED (
     RETURNING roster.id
 )
 UPDATE participants AS participant
-SET attendance = 'withdrawn',
-    updated_at = $1
+SET seed = $1,
+    attendance = 'registered',
+    updated_at = $2
 FROM locked_roster AS roster
 WHERE participant.roster_id = roster.id
-    AND participant.player_id = $2
-    AND participant.attendance IN ('invited', 'registered', 'checked_in')
+    AND participant.player_id = $3
+    AND participant.attendance = 'withdrawn'
+RETURNING participant.id,
+    participant.roster_id,
+    participant.player_id,
+    participant.seed,
+    participant.attendance,
+    participant.created_at,
+    participant.updated_at
+`
+
+type RegisterWithdrawnParticipantParams struct {
+	Seed      int32
+	UpdatedAt pgtype.Timestamptz
+	PlayerID  uuid.UUID
+	RosterID  uuid.UUID
+}
+
+func (q *Queries) RegisterWithdrawnParticipant(ctx context.Context, arg RegisterWithdrawnParticipantParams) (Participant, error) {
+	row := q.db.QueryRow(ctx, registerWithdrawnParticipant,
+		arg.Seed,
+		arg.UpdatedAt,
+		arg.PlayerID,
+		arg.RosterID,
+	)
+	var i Participant
+	err := row.Scan(
+		&i.ID,
+		&i.RosterID,
+		&i.PlayerID,
+		&i.Seed,
+		&i.Attendance,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const withdrawAdmissionParticipant = `-- name: WithdrawAdmissionParticipant :one
+WITH locked_roster AS MATERIALIZED (
+    UPDATE rosters AS roster
+    SET revision = roster.revision + 1,
+        updated_at = $1
+    FROM tournaments AS tournament
+    WHERE roster.id = $2
+        AND tournament.id = roster.tournament_id
+        AND tournament.state = 'registration'
+        AND roster.locked_at IS NULL
+        AND roster.execution_started_at IS NULL
+    RETURNING roster.id, roster.tournament_id
+), withdrawable AS MATERIALIZED (
+    SELECT participant.id,
+        participant.seed::BIGINT AS participant_seed,
+        tournament.planned_roster_size::BIGINT AS planned_roster_size,
+        MAX(roster_participant.seed)::BIGINT AS max_seed
+    FROM locked_roster AS roster
+    JOIN tournaments AS tournament ON tournament.id = roster.tournament_id
+    JOIN participants AS participant ON participant.roster_id = roster.id
+    JOIN participants AS roster_participant ON roster_participant.roster_id = roster.id
+    WHERE participant.player_id = $3
+        AND participant.attendance IN ('invited', 'registered', 'checked_in')
+    GROUP BY participant.id, participant.seed, tournament.planned_roster_size
+)
+UPDATE participants AS participant
+SET seed = (
+        withdrawable.participant_seed + withdrawable.planned_roster_size * (
+            ((withdrawable.max_seed - withdrawable.participant_seed) / withdrawable.planned_roster_size) + 1
+        )
+    )::INTEGER,
+    attendance = 'withdrawn',
+    updated_at = $1
+FROM withdrawable
+WHERE participant.id = withdrawable.id
 RETURNING participant.id,
     participant.roster_id,
     participant.player_id,
@@ -360,12 +509,12 @@ RETURNING participant.id,
 
 type WithdrawAdmissionParticipantParams struct {
 	UpdatedAt pgtype.Timestamptz
-	PlayerID  uuid.UUID
 	RosterID  uuid.UUID
+	PlayerID  uuid.UUID
 }
 
 func (q *Queries) WithdrawAdmissionParticipant(ctx context.Context, arg WithdrawAdmissionParticipantParams) (Participant, error) {
-	row := q.db.QueryRow(ctx, withdrawAdmissionParticipant, arg.UpdatedAt, arg.PlayerID, arg.RosterID)
+	row := q.db.QueryRow(ctx, withdrawAdmissionParticipant, arg.UpdatedAt, arg.RosterID, arg.PlayerID)
 	var i Participant
 	err := row.Scan(
 		&i.ID,

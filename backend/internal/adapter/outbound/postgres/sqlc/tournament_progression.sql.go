@@ -6795,6 +6795,7 @@ SELECT participant.id,
     participant.seed
 FROM participants AS participant
 WHERE participant.roster_id = $1
+    AND participant.attendance <> 'withdrawn'
 ORDER BY participant.seed, participant.id
 FOR UPDATE
 `

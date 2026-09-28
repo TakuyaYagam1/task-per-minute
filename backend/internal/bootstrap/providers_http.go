@@ -13,12 +13,19 @@ import (
 
 	"github.com/TakuyaYagam1/task-per-minute/config"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/http/api"
+	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/http/errmap"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/http/middleware"
 	restv1 "github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/http/v1"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/websocket"
 	redisadapter "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/redis"
+	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	inbound "github.com/TakuyaYagam1/task-per-minute/internal/port/inbound"
 	authusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/auth"
+)
+
+const (
+	publicTournamentEventStreamLimit      = 8
+	publicTournamentEventStreamRetryAfter = "30"
 )
 
 func provideRESTServerWithClock(
@@ -267,6 +274,7 @@ func provideHTTPHandler(
 	}
 	router.Method(http.MethodGet, "/api/v1/admin/players/events", adminPlayerEventsHandler(rest, auth, log, cfg))
 	router.Method(http.MethodGet, "/api/v1/admin/events", adminEventsHandler(rest, auth, log, cfg))
+	router.Method(http.MethodGet, "/api/v1/arena/events", publicTournamentEventsHandler(rest, log, cfg))
 	router.Mount("/", handler)
 
 	return middleware.CORS(cfg.HTTP.AllowedOrigins)(router)
@@ -294,6 +302,28 @@ func adminEventsHandler(rest *restv1.Server, auth *authusecase.UseCase, log logk
 		handler = middleware.AdminSession(auth)(handler)
 	}
 	handler = middleware.NoStoreSensitiveResponses()(handler)
+	if cfg != nil {
+		handler = middleware.BuildStreaming(
+			log,
+			middleware.WithTrustedProxyCIDRs(cfg.HTTP.TrustedProxyCIDRs),
+			middleware.WithAllowedOrigins(cfg.HTTP.AllowedOrigins),
+		)(handler)
+	}
+	return handler
+}
+
+func publicTournamentEventsHandler(rest *restv1.Server, log logkit.Logger, cfg *config.Config) http.Handler {
+	slots := make(chan struct{}, publicTournamentEventStreamLimit)
+	var handler http.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case slots <- struct{}{}:
+			defer func() { <-slots }()
+			rest.StreamPublicTournamentEvents(w, r)
+		default:
+			w.Header().Set("Retry-After", publicTournamentEventStreamRetryAfter)
+			errmap.HandleError(w, r, domain.ErrRateLimited)
+		}
+	})
 	if cfg != nil {
 		handler = middleware.BuildStreaming(
 			log,

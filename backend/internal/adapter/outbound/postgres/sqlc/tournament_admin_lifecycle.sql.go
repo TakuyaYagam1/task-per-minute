@@ -571,6 +571,7 @@ JOIN LATERAL (
     SELECT COUNT(*)::INTEGER AS participant_count
     FROM participants AS participant
     WHERE participant.roster_id = roster.id
+        AND participant.attendance <> 'withdrawn'
 ) AS roster_size ON TRUE
 WHERE tournament.id = $1
     AND tournament.deleted_at IS NULL

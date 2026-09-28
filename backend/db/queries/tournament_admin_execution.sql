@@ -39,6 +39,7 @@ SELECT participant.id,
     participant.attendance
 FROM participants AS participant
 WHERE participant.roster_id = sqlc.arg(roster_id)
+    AND participant.attendance <> 'withdrawn'
 ORDER BY participant.seed, participant.id
 FOR UPDATE;
 

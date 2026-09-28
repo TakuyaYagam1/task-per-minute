@@ -9,6 +9,7 @@ interface PlayerSessionState {
 
 export type InitializePlayerResult =
   | { kind: "ok"; player: Player }
+  | { kind: "username_taken" }
   | { kind: "rate_limited"; retryAfter?: string | null }
   | { kind: "aborted" }
   | { kind: "error" };
@@ -48,6 +49,9 @@ export const playerModel = {
       }
       if (error instanceof ApiError && error.status === 429) {
         return { kind: "rate_limited", retryAfter: error.retryAfter };
+      }
+      if (error instanceof ApiError && error.status === 409) {
+        return { kind: "username_taken" };
       }
       return { kind: "error" };
     }

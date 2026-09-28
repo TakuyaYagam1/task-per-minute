@@ -232,9 +232,11 @@ func ValidTournamentDeletionCommand(command TournamentDeletionCommand) bool {
 }
 
 func deletionRecordMatches(record TournamentDeletionRecord, command TournamentDeletionCommand) bool {
+	requiresCancellation := record.SourceState != domain.TournamentStateDraft && !record.SourceState.IsTerminal()
 	return record.CommandID == command.CommandID && record.TournamentID == command.TournamentID &&
 		record.ActorID == command.Operator.ActorID && record.SourceRevision == command.ExpectedRevision &&
-		record.SourceState.IsValid() && record.ResultingRevision >= record.SourceRevision+1 &&
+		record.SourceState.IsValid() && record.Cancelled == requiresCancellation &&
+		record.ResultingRevision == record.SourceRevision+1 &&
 		record.Reason == TournamentDeletionReason && strings.TrimSpace(record.Reason) == record.Reason &&
 		domain.IsValidServerTime(record.DeletedAt) && domain.IsValidServerTime(record.CreatedAt) &&
 		!record.DeletedAt.After(record.CreatedAt)

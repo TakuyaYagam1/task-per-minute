@@ -82,6 +82,7 @@ func (r *TournamentAdminLifecyclePostgres) MarkTournamentDeleted(
 		DeletedAt:        tstz(input.DeletedAt),
 		TournamentID:     input.TournamentID,
 		ExpectedRevision: input.ExpectedRevision,
+		Cancelled:        input.Cancelled,
 	})
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, domain.ErrConflict
@@ -89,8 +90,7 @@ func (r *TournamentAdminLifecyclePostgres) MarkTournamentDeleted(
 	if err != nil {
 		return nil, lifecycleWriteError("mark tournament deleted", err)
 	}
-	if updated.TournamentID != input.TournamentID || updated.Revision != input.ExpectedRevision+1 ||
-		!updated.UpdatedAt.Valid || !updated.DeletedAt.Valid {
+	if !deletedTournamentRowValid(updated, input) {
 		return nil, domain.ErrInternal
 	}
 	created, err := r.tx.Querier(ctx).CreateTournamentDeletion(ctx, sqlc.CreateTournamentDeletionParams{
@@ -118,6 +118,19 @@ func (r *TournamentAdminLifecyclePostgres) MarkTournamentDeleted(
 	return &record, nil
 }
 
+func deletedTournamentRowValid(
+	row sqlc.MarkTournamentDeletedRow,
+	input tournamentadmin.TournamentDeletionInput,
+) bool {
+	expectedRevision := input.ExpectedRevision + 1
+	if input.Cancelled {
+		expectedRevision = input.ExpectedRevision
+	}
+	return row.TournamentID == input.TournamentID && row.Revision == expectedRevision &&
+		row.UpdatedAt.Valid && row.DeletedAt.Valid &&
+		(!input.Cancelled || domain.TournamentState(row.State) == domain.TournamentStateCancelled)
+}
+
 func tournamentDeletionRecord(row sqlc.TournamentDeletion) tournamentadmin.TournamentDeletionRecord {
 	return tournamentadmin.TournamentDeletionRecord{
 		CommandID:         row.CommandID,
@@ -138,6 +151,10 @@ func validTournamentDeletionInput(input tournamentadmin.TournamentDeletionInput)
 		input.SourceRevision < 1 || input.ExpectedRevision < 1 || !input.SourceState.IsValid() ||
 		input.Reason != tournamentadmin.TournamentDeletionReason || input.DeletedAt.IsZero() ||
 		input.CreatedAt.IsZero() || input.DeletedAt.After(input.CreatedAt) {
+		return false
+	}
+	requiresCancellation := input.SourceState != domain.TournamentStateDraft && !input.SourceState.IsTerminal()
+	if input.Cancelled != requiresCancellation {
 		return false
 	}
 	if input.Cancelled {
