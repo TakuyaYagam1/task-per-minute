@@ -17,6 +17,7 @@ import {
   type TournamentContentSelection,
   type UpdateTaskRequest,
 } from "../../shared/api";
+import { useAdminLiveRefresh } from "../../features/admin-live";
 import { log, useTimedNotification } from "../../shared/lib";
 import {
   Button,
@@ -298,6 +299,7 @@ export const TournamentContentManager = ({
   const [taskKindFilter, setTaskKindFilter] = useState<TaskKindFilter>("all");
   const tasksControllerRef = useRef<AbortController | null>(null);
   const tasksRequestIDRef = useRef(0);
+  const tasksStateRef = useRef(tasksState);
   const operationControllerRef = useRef<AbortController | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const formRef = useRef<HTMLFormElement>(null);
@@ -307,6 +309,7 @@ export const TournamentContentManager = ({
   const formBaselineRef = useRef<TaskFormSnapshot>(emptyTaskFormSnapshot());
   const { notification, showNotification } =
     useTimedNotification<Notification>();
+  tasksStateRef.current = tasksState;
 
   const formSnapshot: TaskFormSnapshot = {
     title,
@@ -387,6 +390,7 @@ export const TournamentContentManager = ({
 
   const loadTasks = useCallback(
     async (options: { silent?: boolean } = {}): Promise<void> => {
+      const previousTasksState = tasksStateRef.current;
       tasksControllerRef.current?.abort();
       const controller = new AbortController();
       tasksControllerRef.current = controller;
@@ -398,6 +402,7 @@ export const TournamentContentManager = ({
         !controller.signal.aborted;
 
       if (!options.silent) {
+        tasksStateRef.current = "loading";
         setTasksState("loading");
         setTasksError(null);
       }
@@ -406,6 +411,7 @@ export const TournamentContentManager = ({
         const data = await request(() => adminApi.listTasks(controller.signal));
         if (canApply()) {
           setTasks(data);
+          tasksStateRef.current = "ready";
           setTasksState("ready");
           setTasksError(null);
         }
@@ -415,8 +421,14 @@ export const TournamentContentManager = ({
         }
         if (options.silent) {
           log.warn("admin tasks refresh failed", error);
+          if (previousTasksState === "loading") {
+            tasksStateRef.current = "error";
+            setTasksState("error");
+            setTasksError(apiErrorMessage(error, "Не удалось загрузить задачи"));
+          }
           return;
         }
+        tasksStateRef.current = "error";
         setTasksState("error");
         setTasksError(apiErrorMessage(error, "Не удалось загрузить задачи"));
       } finally {
@@ -434,6 +446,8 @@ export const TournamentContentManager = ({
       tasksControllerRef.current?.abort();
     };
   }, [loadTasks]);
+
+  useAdminLiveRefresh("tasks", () => loadTasks({ silent: true }));
 
   const clearTaskFormError = useCallback((field: TaskFormErrorField) => {
     setTaskFormErrors((current) => {

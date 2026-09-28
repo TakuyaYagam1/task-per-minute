@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParticipantNames } from "../../entities/tournament";
 
 import {
@@ -13,6 +13,7 @@ import {
   type Wave,
   type WaveControlRequest,
 } from "../../shared/api";
+import { useAdminLiveRefresh } from "../../features/admin-live";
 import { useOperatorTournamentRealtime } from "../../features/tournament-live/use-operator-tournament-realtime";
 import { useTournamentRecovery } from "../../features/tournament-live/use-tournament-recovery";
 import { useServerCountdown } from "../../features/tournament-live/use-server-countdown";
@@ -33,12 +34,6 @@ type WaveControlPanelProps = Readonly<{
 }>;
 
 type WaveAction = Extract<WaveControlRequest["action"], "open_ready_window" | "start">;
-
-type PresenceView = Readonly<{
-  participantId: string;
-  seriesId: string;
-  state: "connected" | "disconnected";
-}>;
 
 type OperatorRecoveryState = Omit<RoleAwareRecoveryState, "cursor" | "role" | "snapshot"> & {
   cursor: OperatorRecoveryCursor;
@@ -75,23 +70,6 @@ const hasOnlyKeys = (
 ): boolean => {
   const allowed = new Set([...required, ...optional]);
   return required.every((key) => key in value) && Object.keys(value).every((key) => allowed.has(key));
-};
-
-const readPresence = (value: unknown): PresenceView | null => {
-  if (!isRecord(value)) {
-    return null;
-  }
-  const participantId = value.participant_id;
-  const seriesId = value.series_id;
-  const state = value.state;
-  if (
-    typeof participantId !== "string" ||
-    typeof seriesId !== "string" ||
-    (state !== "connected" && state !== "disconnected")
-  ) {
-    return null;
-  }
-  return { participantId, seriesId, state };
 };
 
 const operatorRecoveryFrom = (
@@ -193,28 +171,6 @@ const problemMessage = (error: unknown, fallback: string): string => {
   return fallback;
 };
 
-const connectionLabel = (state: PresenceView["state"] | undefined): string => {
-  if (state === "connected") {
-    return "На связи";
-  }
-  if (state === "disconnected") {
-    return "Связь потеряна";
-  }
-  return "Нет данных";
-};
-
-const connectionTone = (
-  state: PresenceView["state"] | undefined,
-): "success" | "error" | "neutral" => {
-  if (state === "connected") {
-    return "success";
-  }
-  if (state === "disconnected") {
-    return "error";
-  }
-  return "neutral";
-};
-
 const seriesForWave = (
   wave: Wave,
   seriesById: ReadonlyMap<string, OperatorRecoverySnapshot["series"][number]>,
@@ -270,7 +226,6 @@ const WaveCountdown = ({
 
 type WaveCardProps = Readonly<{
   busyAction: string | null;
-  connectionByParticipant: ReadonlyMap<string, PresenceView["state"]>;
   onAction: (wave: Wave, action: WaveAction) => void;
   recovery: RoleAwareRecoveryState;
   receivedAtMonotonicMs?: number;
@@ -284,7 +239,6 @@ type WaveCardProps = Readonly<{
 
 const WaveCard = ({
   busyAction,
-  connectionByParticipant,
   onAction,
   recovery,
   receivedAtMonotonicMs,
@@ -341,7 +295,6 @@ const WaveCard = ({
             </div>
             <div className={styles.members} data-testid="operator-match-members">
               {membersForSeries(wave, series).map((member) => {
-                const presence = connectionByParticipant.get(member.participant_id);
                 return (
                   <div className={styles.member} key={`${series.id}-${member.participant_id}`}>
                     <div className={styles.memberIdentity}>
@@ -352,7 +305,6 @@ const WaveCard = ({
                       <Status tone={member.ready ? "success" : "warning"}>
                         {member.ready ? "Готов" : "Не готов"}
                       </Status>
-                      <Status tone={connectionTone(presence)}>{connectionLabel(presence)}</Status>
                     </div>
                   </div>
                 );
@@ -413,6 +365,9 @@ export const WaveControlPanel = ({
   const [stale, setStale] = useState(false);
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const commandInFlightRef = useRef(false);
+  const mountedRef = useRef(false);
+  const tournamentIdRef = useRef(tournamentId);
+  tournamentIdRef.current = tournamentId;
   const { receivedAtMonotonicMs, recovery, refresh, status } = useTournamentRecovery(
     "operator",
     tournamentId,
@@ -426,9 +381,48 @@ export const WaveControlPanel = ({
   const operatorRecovery = operatorRecoveryFrom(recovery);
   const snapshot = operatorRecovery?.snapshot ?? null;
   const { participantName, matchName } = useParticipantNames(tournamentId, snapshot?.roster ?? null);
+  const staleRef = useRef(stale);
+  staleRef.current = stale;
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+  const refreshLive = useCallback(async (): Promise<void> => {
+    if (commandInFlightRef.current) {
+      return;
+    }
+    const requestedTournamentId = tournamentId;
+    const refreshed = await refresh();
+    if (
+      refreshed &&
+      mountedRef.current &&
+      tournamentIdRef.current === requestedTournamentId &&
+      staleRef.current &&
+      !commandInFlightRef.current
+    ) {
+      staleRef.current = false;
+      setStale(false);
+      setCommandError(null);
+    }
+  }, [refresh, tournamentId]);
+  useAdminLiveRefresh(
+    "tournaments",
+    refreshLive,
+    Boolean(tournamentId) && busyAction === null && (operatorRecovery !== null || status !== "connecting"),
+  );
 
   const realtimeWaves = useMemo(() => {
-    const waves = realtime.state?.operator.waves ?? [];
+    const realtimeState = realtime.state;
+    if (
+      realtimeState === null ||
+      operatorRecovery === null ||
+      realtimeState.projectionRevision < operatorRecovery.cursor.projection_revision
+    ) {
+      return new Map<string, RealtimeWaveProjection>();
+    }
+    const waves = realtimeState.operator.waves;
     const result = new Map<string, RealtimeWaveProjection>();
     for (const candidate of waves) {
       const projection = parseRealtimeWave(candidate);
@@ -437,7 +431,7 @@ export const WaveControlPanel = ({
       }
     }
     return result;
-  }, [realtime.state]);
+  }, [operatorRecovery, realtime.state]);
 
   const waves = useMemo(
     () => snapshot?.waves.map((wave) => {
@@ -450,24 +444,6 @@ export const WaveControlPanel = ({
     () => new Map((snapshot?.series ?? []).map((series) => [series.id, series] as const)),
     [snapshot],
   );
-  const connectionByParticipant = useMemo(() => {
-    const presence = new Map<string, PresenceView["state"]>();
-    const fallbackPresence = snapshot?.pause_graph?.presence ?? [];
-    for (const entry of fallbackPresence) {
-      const parsed = readPresence(entry);
-      if (parsed) {
-        presence.set(parsed.participantId, parsed.state);
-      }
-    }
-    for (const entry of realtime.state?.operator.presence ?? []) {
-      const parsed = readPresence(entry);
-      if (parsed) {
-        presence.set(parsed.participantId, parsed.state);
-      }
-    }
-    return presence;
-  }, [realtime.state, snapshot]);
-
   const representedSeriesIds = useMemo(
     () => new Set(waves.flatMap((wave) => wave.members.flatMap((member) => (
       member.series_id ? [member.series_id] : []
@@ -496,7 +472,7 @@ export const WaveControlPanel = ({
           ? "Все участники подтвердили готовность. Дождитесь перехода волны к запуску."
           : "Ожидаем подтверждения участников. Запуск станет доступен после полной готовности пары."
         : nextWave.state === "ready_window_expired"
-          ? "Окно готовности истекло. Обновите данные и проверьте участников, которые не подтвердили готовность."
+          ? "Окно готовности истекло. Проверьте участников, которые не подтвердили готовность."
           : nextWave.state === "active"
             ? "Волна запущена. Следите за матчами и готовьте следующий раунд после их завершения."
             : nextWaveAllReady
@@ -536,7 +512,17 @@ export const WaveControlPanel = ({
       }
       if (error instanceof ApiError && error.status === 409) {
         setStale(true);
-        setCommandError("Состояние соревнования устарело. Обновите данные перед повтором.");
+        setCommandError("Состояние соревнования изменилось.");
+        const requestedTournamentId = tournamentId;
+        const refreshed = await refresh();
+        if (
+          refreshed &&
+          mountedRef.current &&
+          tournamentIdRef.current === requestedTournamentId
+        ) {
+          setStale(false);
+          setCommandError(null);
+        }
       } else {
         setCommandError(problemMessage(error, "Не удалось изменить состояние волны"));
       }
@@ -576,15 +562,12 @@ export const WaveControlPanel = ({
       ) : null}
       {(status === "stale" || status === "rejected") && !commandError ? (
         <Message tone="error" title="Данные соревнования недоступны">
-          <button className={styles.linkButton} type="button" onClick={refresh}>Повторить загрузку</button>
+          Ожидаем актуальные данные после восстановления соединения.
         </Message>
       ) : null}
       {commandError ? (
         <Message tone="error" title={stale ? "Состояние изменилось" : "Действие не выполнено"}>
           {commandError}
-          <button className={styles.linkButton} type="button" onClick={() => { setStale(false); setCommandError(null); refresh(); }}>
-            Повторить загрузку
-          </button>
         </Message>
       ) : null}
 
@@ -599,7 +582,6 @@ export const WaveControlPanel = ({
             {waves.map((wave, index) => (
               <WaveCard
                 busyAction={busyAction}
-                connectionByParticipant={connectionByParticipant}
                 key={wave.id}
                 onAction={(currentWave, action) => void handleAction(currentWave, action)}
                 recovery={operatorRecovery}

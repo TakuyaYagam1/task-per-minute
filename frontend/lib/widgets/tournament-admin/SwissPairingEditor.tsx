@@ -16,6 +16,7 @@ import {
 } from "../../shared/api";
 import { Button, Message, Panel, Status } from "../../shared/ui";
 
+import { useAdminLiveRefresh } from "../../features/admin-live";
 import styles from "./SwissPairingEditor.module.css";
 
 type SwissPairingEditorProps = Readonly<{
@@ -62,7 +63,29 @@ const CATEGORY_MODE_LABELS: Readonly<Record<CategoryMode, string>> = {
   draft: "Драфт",
 };
 
-const CATEGORIES = Object.keys(CATEGORY_LABELS) as Category[];
+const categoryModeDescription = (mode: CategoryMode): string => {
+  switch (mode) {
+    case "admin":
+      return "Выберите одну категорию для всех матчей раунда.";
+    case "draft":
+      return "Участники по очереди исключают категории, пока не останется одна.";
+    default:
+      return "Категория каждого матча выбирается случайно из списка.";
+  }
+};
+
+const genericValidationMessage = (
+  pairingMode: PairingMode,
+  categoryMode: CategoryMode,
+): string => {
+  if (pairingMode === "manual") {
+    return "Сервер отклонил настройки. Проверьте ручные пары, bye и политику категорий.";
+  }
+  return `Сервер отклонил настройки. ${categoryModeDescription(categoryMode)}`;
+};
+
+const isGenericValidationDetail = (detail: string): boolean =>
+  /validation failed|bad request|invalid request|ошибк[аи] валидации/i.test(detail);
 
 const isAbortError = (error: unknown): boolean =>
   error instanceof DOMException &&
@@ -265,6 +288,11 @@ export const SwissPairingEditor = ({
   const submitControllerRef = useRef<AbortController | null>(null);
   const loadRunRef = useRef(0);
   const submittingRef = useRef(false);
+  const draftDirtyRef = useRef(false);
+  const reportDirty = useCallback((dirty: boolean) => {
+    draftDirtyRef.current = dirty;
+    onDirtyChange?.(dirty);
+  }, [onDirtyChange]);
   const [players, setPlayers] = useState<AdminPlayer[]>([]);
   const [roster, setRoster] = useState<Roster | null>(null);
   const [configuration, setConfiguration] = useState<Awaited<ReturnType<typeof getTournamentConfiguration>> | null>(null);
@@ -284,22 +312,24 @@ export const SwissPairingEditor = ({
 
   useEffect(() => {
     if (!selectedTournamentId) {
-      onDirtyChange?.(false);
+      reportDirty(false);
     }
-  }, [onDirtyChange, selectedTournamentId]);
+  }, [reportDirty, selectedTournamentId]);
 
-  const loadTournamentData = useCallback(async (id: string): Promise<void> => {
+  const loadTournamentData = useCallback(async (id: string, silent = false): Promise<void> => {
     loadControllerRef.current?.abort();
-    submitControllerRef.current?.abort();
+    if (!silent) submitControllerRef.current?.abort();
     const controller = new AbortController();
     const runId = loadRunRef.current + 1;
     loadRunRef.current = runId;
     loadControllerRef.current = controller;
-    setLoadState("loading");
-    setLoadError(null);
-    setFormError(null);
-    setNotice(null);
-    setSavedRound(null);
+    if (!silent) {
+      setLoadState("loading");
+      setLoadError(null);
+      setFormError(null);
+      setNotice(null);
+      setSavedRound(null);
+    }
     try {
       const [currentRoster, activePlayers, currentConfiguration, currentSnapshot] = await Promise.all([
         operatorApi.getRoster(id, controller.signal),
@@ -318,14 +348,27 @@ export const SwissPairingEditor = ({
       setPlayers(activePlayers);
       setConfiguration(currentConfiguration);
       setSnapshot(currentSnapshot);
-      setRoundNumber(nextRound);
-      setPairingMode("automatic");
-      setCategoryMode(currentConfiguration.swiss_default.mode);
-      setCategories([...currentConfiguration.swiss_default.categories]);
-      setDraftPairings(blankPairings(eligible.length));
-      setByeParticipantId("");
+      if (!silent || !draftDirtyRef.current) {
+        setRoundNumber(nextRound);
+        setPairingMode("automatic");
+        const officialCategories = currentConfiguration.category_pools.find(
+          (pool) => pool.format === "bo1",
+        )?.categories ?? [];
+        const configuredCategoryMode = currentConfiguration.swiss_default.mode;
+        const configuredAdminCategory = currentConfiguration.swiss_default.categories.find(
+          (category) => officialCategories.includes(category),
+        ) ?? officialCategories[0];
+        setCategoryMode(configuredCategoryMode);
+        setCategories(
+          configuredCategoryMode === "admin" && configuredAdminCategory
+            ? [configuredAdminCategory]
+            : [...officialCategories],
+        );
+        setDraftPairings(blankPairings(eligible.length));
+        setByeParticipantId("");
+        reportDirty(false);
+      }
       setLoadState("ready");
-      onDirtyChange?.(false);
     } catch (error) {
       if (controller.signal.aborted || loadRunRef.current !== runId || isAbortError(error)) {
         return;
@@ -333,14 +376,16 @@ export const SwissPairingEditor = ({
       if (error instanceof ApiError && error.status === 401) {
         onSessionExpired?.();
       }
-      setLoadState("error");
-      setLoadError(problemMessage(error, "Не удалось загрузить данные для формирования пар"));
+      if (!silent) {
+        setLoadState("error");
+        setLoadError(problemMessage(error, "Не удалось загрузить данные для формирования пар"));
+      }
     } finally {
       if (loadControllerRef.current === controller) {
         loadControllerRef.current = null;
       }
     }
-  }, [onDirtyChange, onSessionExpired]);
+  }, [reportDirty, onSessionExpired]);
 
   useEffect(() => {
     if (!tournamentId) {
@@ -352,6 +397,9 @@ export const SwissPairingEditor = ({
       setConfiguration(null);
       setSnapshot(null);
       setSavedRound(null);
+      setPairingMode("automatic");
+      setCategoryMode("random");
+      setCategories([]);
       setDraftPairings([]);
       setByeParticipantId("");
       setLoadState("ready");
@@ -372,6 +420,10 @@ export const SwissPairingEditor = ({
     submitControllerRef.current?.abort();
   }, []);
 
+  useAdminLiveRefresh(["tournaments", "players"], async () => {
+    if (tournamentId) await loadTournamentData(tournamentId, true);
+  }, Boolean(tournamentId) && !submitting && loadState !== "loading");
+
   const eligibleParticipants = useMemo(
     () =>
       (roster?.participants ?? [])
@@ -391,6 +443,10 @@ export const SwissPairingEditor = ({
     () => configuration?.rounds.find((round) => round.round_number === roundNumber) ?? null,
     [configuration, roundNumber],
   );
+  const swissPoolCategories = useMemo(
+    () => configuration?.category_pools.find((pool) => pool.format === "bo1")?.categories ?? [],
+    [configuration],
+  );
   const editingLocked = Boolean(
     savedRound?.locked ||
       activeConfigurationRound?.locked ||
@@ -409,7 +465,7 @@ export const SwissPairingEditor = ({
   const pairingFormDisabled = !pairingStateAllowed || editingLocked || submitting;
 
   const updatePairingMode = (nextMode: PairingMode): void => {
-    onDirtyChange?.(true);
+    reportDirty(true);
     setPairingMode(nextMode);
     setFormError(null);
     setNotice(null);
@@ -421,14 +477,25 @@ export const SwissPairingEditor = ({
     }
   };
 
-  const updateCategory = (category: Category, checked: boolean): void => {
-    onDirtyChange?.(true);
-    setCategories((current) => {
-      if (checked) {
-        return current.includes(category) ? current : [...current, category];
-      }
-      return current.filter((item) => item !== category);
-    });
+  const updateCategoryMode = (nextMode: CategoryMode): void => {
+    reportDirty(true);
+    const selectedCategory = swissPoolCategories.find((category) => categories.includes(category)) ?? swissPoolCategories[0];
+    setCategoryMode(nextMode);
+    setCategories(
+      nextMode === "admin" && selectedCategory
+        ? [selectedCategory]
+        : [...swissPoolCategories],
+    );
+    setFormError(null);
+    setNotice(null);
+  };
+
+  const updateAdminCategory = (category: Category): void => {
+    if (!swissPoolCategories.includes(category)) {
+      return;
+    }
+    reportDirty(true);
+    setCategories([category]);
     setFormError(null);
     setNotice(null);
   };
@@ -438,7 +505,7 @@ export const SwissPairingEditor = ({
     field: keyof PairingDraft,
     value: string,
   ): void => {
-    onDirtyChange?.(true);
+    reportDirty(true);
     setDraftPairings((current) =>
       current.map((pairing, pairingIndex) =>
         pairingIndex === index ? { ...pairing, [field]: value } : pairing,
@@ -446,13 +513,6 @@ export const SwissPairingEditor = ({
     );
     setFormError(null);
     setNotice(null);
-  };
-
-  const handleReload = (): void => {
-    if (!tournamentId || submittingRef.current) {
-      return;
-    }
-    void loadTournamentData(tournamentId);
   };
 
   const handleSubmit = async (): Promise<void> => {
@@ -475,10 +535,23 @@ export const SwissPairingEditor = ({
       void onReloadTournaments();
       return;
     }
-    if (categories.length === 0) {
-      setFormError("Выберите хотя бы одну категорию для раунда квалификации.");
+    const officialCategories = configuration.category_pools.find(
+      (pool) => pool.format === "bo1",
+    )?.categories ?? [];
+    if (officialCategories.length === 0) {
+      setFormError("Для этого соревнования пока нет доступных категорий.");
       return;
     }
+    const selectedCategory = categories.length === 1 && officialCategories.includes(categories[0])
+      ? categories[0]
+      : null;
+    if (categoryMode === "admin" && !selectedCategory) {
+      setFormError("Выберите одну из доступных категорий раунда.");
+      return;
+    }
+    const requestCategories: Category[] = categoryMode === "admin" && selectedCategory
+      ? [selectedCategory]
+      : [...officialCategories];
     if (pairingMode === "manual") {
       const validationError = validateManualDraft(
         draftPairings,
@@ -532,7 +605,7 @@ export const SwissPairingEditor = ({
         round_number: roundNumber,
         pairing_mode: pairingMode,
         category_mode: categoryMode,
-        categories: [...categories],
+        categories: requestCategories,
         ...(pairingMode === "manual"
           ? {
               manual_pairings: draftPairings.map((pairing) => ({
@@ -554,7 +627,7 @@ export const SwissPairingEditor = ({
       }
       setSavedRound(configuredRound);
       setNotice(`Раунд ${configuredRound.round_number} сформирован. Следующий шаг - в разделе "Проведение" открыть готовность и дождаться участников.`);
-      onDirtyChange?.(false);
+      reportDirty(false);
       await onReloadTournaments();
     } catch (error) {
       if (!canApply() || isAbortError(error)) {
@@ -563,15 +636,31 @@ export const SwissPairingEditor = ({
       if (error instanceof ApiError && error.status === 401) {
         onSessionExpired?.();
       }
-      if (error instanceof ApiError && error.status === 409) {
+      if (error instanceof ApiError && error.status === 400) {
+        const detail = problemMessage(error, "");
         setFormError(
-          `${problemMessage(error, "Состояние соревнования изменилось.")} Результат предыдущего сохранения оставлен на экране. Перезагрузите данные и повторите попытку.`,
+          isGenericValidationDetail(detail)
+            ? genericValidationMessage(pairingMode, categoryMode)
+            : detail || genericValidationMessage(pairingMode, categoryMode),
         );
+      } else if (error instanceof ApiError && error.status === 409) {
+        setFormError(
+          `${problemMessage(error, "Состояние соревнования изменилось.")} Настройки сохранены в форме. Повторите отправку после автоматического обновления.`,
+        );
+        await loadTournamentData(tournamentId, true);
       } else if (error instanceof ApiError && error.status === 422) {
-        const repeatMessage = isRepeatProblem(error)
-          ? "Повторные пары запрещены. Выберите участников, которые еще не встречались."
-          : "Не удалось принять ручную сетку. Проверьте пары, bye и состав участников.";
-        setFormError(`${repeatMessage} ${problemMessage(error, "")}`.trim());
+        const detail = problemMessage(error, "");
+        if (pairingMode === "manual") {
+          const repeatMessage = isRepeatProblem(error)
+            ? "Повторные пары запрещены. Выберите участников, которые еще не встречались."
+            : "Не удалось принять ручную сетку. Проверьте пары, bye и состав участников.";
+          setFormError(`${repeatMessage} ${detail}`.trim());
+        } else {
+          const automaticMessage = categoryMode === "admin"
+            ? "Не удалось сохранить пары. Выберите одну из доступных категорий раунда."
+            : `Не удалось сохранить автоматические пары: ${categoryModeDescription(categoryMode)}`;
+          setFormError(`${automaticMessage} ${detail}`.trim());
+        }
       } else {
         setFormError(problemMessage(error, "Не удалось сформировать раунд квалификации"));
       }
@@ -629,9 +718,6 @@ export const SwissPairingEditor = ({
       {selectedTournament && loadState === "error" && (
         <Message tone="error" title="Данные квалификации недоступны">
           {loadError || "Не удалось получить данные для формирования пар."}
-          <button className={styles.inlineAction} type="button" onClick={handleReload}>
-            Повторить загрузку
-          </button>
         </Message>
       )}
 
@@ -682,11 +768,11 @@ export const SwissPairingEditor = ({
                   Настройки раунда {roundNumber}
                 </h4>
                 <p className={styles.sectionDescription}>
-                  Категории берутся из настроек квалификации и могут быть уточнены перед отправкой.
+                  Выберите, как определяется категория каждого матча.
                 </p>
               </div>
               <Status tone="info" size="small">
-                Настройки квалификации: {CATEGORY_MODE_LABELS[configuration.swiss_default.mode]}
+                Текущая политика: {CATEGORY_MODE_LABELS[categoryMode]}
               </Status>
             </div>
 
@@ -727,10 +813,7 @@ export const SwissPairingEditor = ({
                   id="swiss-category-mode"
                   value={categoryMode}
                   onChange={(event) => {
-                    setCategoryMode(event.target.value as CategoryMode);
-                    setFormError(null);
-                    setNotice(null);
-                    onDirtyChange?.(true);
+                    updateCategoryMode(event.target.value as CategoryMode);
                   }}
                   disabled={pairingFormDisabled}
                 >
@@ -742,20 +825,46 @@ export const SwissPairingEditor = ({
                 </select>
               </div>
               <div className={styles.categoryField}>
-                <span className={styles.fieldLabel}>Категории раунда</span>
-                <div className={styles.categoryGrid}>
-                  {CATEGORIES.map((category) => (
-                    <label className={styles.categoryOption} key={category}>
-                      <input
-                        type="checkbox"
-                        checked={categories.includes(category)}
-                        onChange={(event) => updateCategory(category, event.target.checked)}
-                        disabled={pairingFormDisabled}
-                      />
-                      <span>{CATEGORY_LABELS[category]}</span>
+                {categoryMode === "admin" ? (
+                  <>
+                    <label className={styles.fieldLabel} htmlFor="swiss-admin-category">
+                      Категория раунда
                     </label>
-                  ))}
-                </div>
+                    <select
+                      id="swiss-admin-category"
+                      value={categories[0] ?? ""}
+                      onChange={(event) => updateAdminCategory(event.target.value as Category)}
+                      disabled={pairingFormDisabled}
+                    >
+                      {swissPoolCategories.map((category) => (
+                        <option key={category} value={category}>
+                          {CATEGORY_LABELS[category]}
+                        </option>
+                      ))}
+                    </select>
+                    <span className={styles.fieldHint}>
+                      Эта категория будет использована во всех матчах раунда.
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <span className={styles.fieldLabel}>Категории раунда</span>
+                    <div className={styles.categoryReadonly}>
+                      <span className={styles.fieldHint}>{categoryModeDescription(categoryMode)}</span>
+                      {swissPoolCategories.length > 0 ? (
+                        <ul className={styles.categoryList} aria-label="Категории раунда">
+                          {swissPoolCategories.map((category) => (
+                            <li key={category}>{CATEGORY_LABELS[category]}</li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <span className={styles.fieldHint}>
+                          Доступных категорий пока нет.
+                        </span>
+                      )}
+                    </div>
+                  </>
+                )}
               </div>
             </div>
 
@@ -826,7 +935,7 @@ export const SwissPairingEditor = ({
                             setByeParticipantId(event.target.value);
                             setFormError(null);
                             setNotice(null);
-                            onDirtyChange?.(true);
+                            reportDirty(true);
                           }}
                           disabled={pairingFormDisabled}
                         >
@@ -850,14 +959,6 @@ export const SwissPairingEditor = ({
             {formError && (
               <Message tone="error" title="Пары не сохранены">
                 {formError}
-                <button
-                  className={styles.inlineAction}
-                  type="button"
-                  onClick={handleReload}
-                  disabled={submitting}
-                >
-                  Повторить загрузку
-                </button>
               </Message>
             )}
             {notice && (

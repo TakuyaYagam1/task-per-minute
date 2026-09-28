@@ -1,0 +1,27 @@
+/api/v1/admin/events:
+  get:
+    operationId: streamAdminEvents
+    tags: [admin]
+    summary: Stream admin invalidation events
+    description: |
+      Server-Sent Events stream for authenticated admin dashboards. The stream
+      emits `ready` with an empty object and `changed` with one allowlisted
+      topic (`players`, `tasks`, or `tournaments`). Heartbeats are sent as SSE
+      comments while the connection is idle.
+    security:
+      - AdminSessionAuth: []
+    responses:
+      '200':
+        description: SSE stream. Events contain no table names or row data.
+        content:
+          text/event-stream:
+            schema:
+              type: string
+      '401':
+        description: Missing or invalid admin session.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      default:
+        $ref: '../components/responses.yml#/UnexpectedServerProblem'

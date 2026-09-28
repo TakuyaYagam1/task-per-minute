@@ -9,6 +9,7 @@ import {
   type OperatorRecoverySnapshot,
   type Tournament,
 } from "../../shared/api";
+import { useAdminLiveRefresh } from "../../features/admin-live";
 import { formatTournamentState } from "../../shared/lib";
 import { Button, Message, Panel, Status } from "../../shared/ui";
 
@@ -80,7 +81,7 @@ const isProjectionRevision = (value: number): boolean =>
   Number.isSafeInteger(value) && value > 0;
 
 const transitionConflictMessage =
-  "Не удалось выполнить переход. Обновите данные и проверьте готовность состава.";
+  "Не удалось выполнить переход: состояние соревнования изменилось.";
 
 export const TournamentStartControls = ({
   onNavigate,
@@ -98,6 +99,10 @@ export const TournamentStartControls = ({
   const commandControllerRef = useRef<AbortController | null>(null);
   const generationRef = useRef(0);
   const mountedRef = useRef(false);
+  const staleRef = useRef(stale);
+  const tournamentIdRef = useRef(tournament.id);
+  staleRef.current = stale;
+  tournamentIdRef.current = tournament.id;
 
   useEffect(() => {
     mountedRef.current = true;
@@ -117,12 +122,54 @@ export const TournamentStartControls = ({
     };
   }, [tournament.id]);
 
-  const refreshTournaments = useCallback((): void => {
-    setCommandError(null);
-    setStale(false);
-    setActionUnavailable(false);
-    void onReloadTournaments?.();
-  }, [onReloadTournaments]);
+  const refreshAuthoritative = useCallback(async (duringCommand = false): Promise<boolean> => {
+    if (!mountedRef.current) {
+      return false;
+    }
+    const requestedTournamentId = tournament.id;
+    const generation = generationRef.current;
+    try {
+      const snapshot = await operatorApi.getSnapshot(requestedTournamentId);
+      if (
+        !mountedRef.current ||
+        generationRef.current !== generation ||
+        (!duringCommand && commandInFlightRef.current) ||
+        tournamentIdRef.current !== requestedTournamentId ||
+        snapshot.tournament.id !== requestedTournamentId
+      ) {
+        return false;
+      }
+      onTournamentUpdated?.(snapshot.tournament);
+      const reload = onReloadTournaments?.();
+      if (reload) {
+        void reload.catch(() => undefined);
+      }
+      return true;
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 401) {
+        onSessionExpired?.();
+      }
+      return false;
+    }
+  }, [onReloadTournaments, onSessionExpired, onTournamentUpdated, tournament.id]);
+
+  const refreshLive = useCallback(async (): Promise<void> => {
+    if (commandInFlightRef.current) {
+      return;
+    }
+    const refreshed = await refreshAuthoritative();
+    if (refreshed && mountedRef.current && !commandInFlightRef.current && staleRef.current) {
+      staleRef.current = false;
+      setStale(false);
+      setActionUnavailable(false);
+      setCommandError(null);
+    }
+  }, [refreshAuthoritative]);
+  useAdminLiveRefresh(
+    "tournaments",
+    refreshLive,
+    busyAction === null,
+  );
 
   const handleLifecycleAction = useCallback(
     async (action: LifecycleAction): Promise<void> => {
@@ -136,7 +183,7 @@ export const TournamentStartControls = ({
       }
 
       commandInFlightRef.current = true;
-      const generation = generationRef.current;
+      const generation = ++generationRef.current;
       const controller = new AbortController();
       commandControllerRef.current = controller;
       const canApply = (): boolean =>
@@ -163,7 +210,7 @@ export const TournamentStartControls = ({
         if (snapshot.tournament.id !== tournament.id) {
           setActionUnavailable(false);
           setStale(true);
-          setCommandError("Данные относятся к другому соревнованию. Обновите данные перед повтором.");
+          setCommandError("Получены данные другого соревнования.");
           return;
         }
 
@@ -172,7 +219,7 @@ export const TournamentStartControls = ({
           setActionUnavailable(false);
           setStale(true);
           setCommandError(
-            `Состояние соревнования уже изменилось: ${stateLabel(snapshot.tournament.state)}. Обновите данные перед повтором.`,
+            `Состояние соревнования уже изменилось: ${stateLabel(snapshot.tournament.state)}.`,
           );
           return;
         }
@@ -181,7 +228,7 @@ export const TournamentStartControls = ({
         if (!isProjectionRevision(projectionRevision)) {
           setActionUnavailable(false);
           setStale(true);
-          setCommandError("Не удалось получить актуальные данные для перехода. Обновите данные перед повтором.");
+          setCommandError("Не удалось получить актуальные данные для перехода.");
           return;
         }
 
@@ -213,10 +260,16 @@ export const TournamentStartControls = ({
           setStale(true);
           setActionUnavailable(true);
           setCommandError(transitionConflictMessage);
+          const refreshed = await refreshAuthoritative(true);
+          if (refreshed && canApply()) {
+            setStale(false);
+            setActionUnavailable(false);
+            setCommandError(null);
+          }
         } else if (error instanceof ApiError && error.status === 422) {
           setActionUnavailable(false);
           setCommandError(
-            problemMessage(error, "Переход пока недоступен. Проверьте состав и обновите данные."),
+            problemMessage(error, "Переход пока недоступен. Проверьте состав."),
           );
         } else {
           setActionUnavailable(false);
@@ -232,7 +285,7 @@ export const TournamentStartControls = ({
         }
       }
     },
-    [onSessionExpired, onTournamentUpdated, stale, tournament],
+    [onSessionExpired, onTournamentUpdated, refreshAuthoritative, stale, tournament],
   );
 
   const action =
@@ -261,11 +314,6 @@ export const TournamentStartControls = ({
           title={actionUnavailable ? "Действие недоступно" : stale ? "Состояние изменилось" : "Действие не выполнено"}
         >
           {commandError}
-          {onReloadTournaments ? (
-            <button className={styles.inlineAction} type="button" onClick={refreshTournaments}>
-              Повторить загрузку
-            </button>
-          ) : null}
         </Message>
       ) : null}
 

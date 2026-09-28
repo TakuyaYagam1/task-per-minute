@@ -18,6 +18,7 @@ import {
 import { formatCategory, formatSeriesFormat } from "../../shared/lib";
 import { Button, Message, Panel, Status } from "../../shared/ui";
 
+import { useAdminLiveRefresh } from "../../features/admin-live";
 import styles from "./SeriesConfigurationEditor.module.css";
 
 type SeriesConfigurationEditorProps = Readonly<{
@@ -116,7 +117,7 @@ const lockedReason = (
 };
 
 const staleMessage =
-  "Состояние конфигурации устарело. Перезагрузите данные перед повторной отправкой.";
+  "Настройки соревнования изменились. Ваши правки сохранены в форме. Повторите отправку после автоматического обновления.";
 
 const cutoffMessage =
   "Изменение недоступно: серия уже заблокирована, начата, использована или раскрыта.";
@@ -193,6 +194,7 @@ export const SeriesConfigurationEditor = ({
     async (
       id: string,
       options: Readonly<{
+        silent?: boolean;
         preserveDirtyDrafts?: boolean;
         replaceReserveCount?: boolean;
         replaceSeriesId?: string;
@@ -203,10 +205,12 @@ export const SeriesConfigurationEditor = ({
       const runId = loadRunRef.current + 1;
       loadRunRef.current = runId;
       loadControllerRef.current = controller;
-      setLoadState("loading");
-      setLoadError(null);
-      setFormErrors({});
-      setReserveNotice(null);
+      if (!options.silent) {
+        setLoadState("loading");
+        setLoadError(null);
+        setFormErrors({});
+        setReserveNotice(null);
+      }
 
       try {
         const nextConfiguration = await getTournamentConfiguration(
@@ -230,13 +234,13 @@ export const SeriesConfigurationEditor = ({
         }
         setConfiguration(nextConfiguration);
         setReserveCountDraft((current) => {
-          if (!options.preserveDirtyDrafts || options.replaceReserveCount || current === null) {
+          if (!options.preserveDirtyDrafts || !dirtyReserveRef.current || options.replaceReserveCount || current === null) {
             return nextReserveCount;
           }
           return current;
         });
         setReserveServerCutoff(false);
-        setReserveError(null);
+        if (!options.silent) setReserveError(null);
         setDrafts((current) => {
           if (!options.preserveDirtyDrafts) {
             dirtySeriesIdsRef.current.clear();
@@ -275,10 +279,10 @@ export const SeriesConfigurationEditor = ({
         if (error instanceof ApiError && error.status === 401) {
           onSessionExpired?.();
         }
-        setLoadState("error");
-        setLoadError(
-          problemMessage(error, "Не удалось загрузить конфигурацию серий"),
-        );
+        if (!options.silent) {
+          setLoadState("error");
+          setLoadError(problemMessage(error, "Не удалось загрузить конфигурацию серий"));
+        }
         return null;
       } finally {
         if (loadControllerRef.current === controller) {
@@ -335,6 +339,12 @@ export const SeriesConfigurationEditor = ({
       submitControllerRef.current?.abort();
     };
   }, [loadConfiguration, tournamentId]);
+
+  useAdminLiveRefresh("tournaments", async () => {
+    if (tournamentId) {
+      await loadConfiguration(tournamentId, { silent: true, preserveDirtyDrafts: true });
+    }
+  }, Boolean(tournamentId) && !submittingConfiguration && !submittingSeriesId && loadState !== "loading");
 
   const poolById = useMemo(
     () =>
@@ -478,6 +488,7 @@ export const SeriesConfigurationEditor = ({
         setReserveError("Сессия оператора истекла. Войдите снова.");
       } else if (error instanceof ApiError && error.status === 409) {
         setReserveError(staleMessage);
+        await loadConfiguration(tournamentId, { silent: true, preserveDirtyDrafts: true });
       } else if (error instanceof ApiError && error.status === 422) {
         const detail = problemMessage(error, "");
         setReserveServerCutoff(true);
@@ -506,13 +517,6 @@ export const SeriesConfigurationEditor = ({
     reserveEditingClosed,
     tournamentId,
   ]);
-
-  const handleReload = useCallback((): void => {
-    if (!tournamentId || submittingRef.current) {
-      return;
-    }
-    void loadConfiguration(tournamentId);
-  }, [loadConfiguration, tournamentId]);
 
   const handleSubmit = useCallback(
     async (
@@ -626,6 +630,7 @@ export const SeriesConfigurationEditor = ({
             ...current,
             [series.id]: staleMessage,
           }));
+          await loadConfiguration(tournamentId, { silent: true, preserveDirtyDrafts: true });
         } else if (error instanceof ApiError && error.status === 422) {
           const detail = problemMessage(error, "");
           setFormErrors((current) => ({
@@ -703,13 +708,6 @@ export const SeriesConfigurationEditor = ({
       {selectedTournament && loadState === "error" && (
         <Message tone="error" title="Конфигурация серий недоступна">
           {loadError || "Не удалось получить конфигурацию серий."}
-          <button
-            className={styles.inlineAction}
-            type="button"
-            onClick={handleReload}
-          >
-            Повторить загрузку
-          </button>
         </Message>
       )}
 
@@ -802,14 +800,6 @@ export const SeriesConfigurationEditor = ({
               {reserveError && (
                 <Message id="reserve-count-error" tone="error" title="Резерв не сохранен">
                   {reserveError}
-                  <button
-                    className={styles.inlineAction}
-                    type="button"
-                    onClick={handleReload}
-                    disabled={anySubmitting}
-                  >
-                    Повторить загрузку
-                  </button>
                 </Message>
               )}
               {reserveNotice && (
@@ -969,14 +959,6 @@ export const SeriesConfigurationEditor = ({
                         title="Серия не сохранена"
                       >
                         {formErrors[series.id]}
-                        <button
-                          className={styles.inlineAction}
-                          type="button"
-                          onClick={handleReload}
-                          disabled={anySubmitting}
-                        >
-                          Повторить загрузку
-                        </button>
                       </Message>
                     )}
                     {notices[series.id] && (

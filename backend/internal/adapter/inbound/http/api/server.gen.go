@@ -20,6 +20,9 @@ import (
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
+	// StreamAdminEvents Stream admin invalidation events
+	// (GET /api/v1/admin/events)
+	StreamAdminEvents(w http.ResponseWriter, r *http.Request)
 	// LoginAdmin Exchange the shared admin password for an admin session
 	// (POST /api/v1/admin/login)
 	LoginAdmin(w http.ResponseWriter, r *http.Request)
@@ -235,6 +238,12 @@ type ServerInterface interface {
 // Unimplemented server implementation that returns http.StatusNotImplemented for each endpoint.
 
 type Unimplemented struct{}
+
+// StreamAdminEvents Stream admin invalidation events
+// (GET /api/v1/admin/events)
+func (_ Unimplemented) StreamAdminEvents(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
 
 // LoginAdmin Exchange the shared admin password for an admin session
 // (POST /api/v1/admin/login)
@@ -664,6 +673,26 @@ type ServerInterfaceWrapper struct {
 }
 
 type MiddlewareFunc func(http.Handler) http.Handler
+
+// StreamAdminEvents operation middleware
+func (siw *ServerInterfaceWrapper) StreamAdminEvents(w http.ResponseWriter, r *http.Request) {
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, AdminSessionAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.StreamAdminEvents(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
 
 // LoginAdmin operation middleware
 func (siw *ServerInterfaceWrapper) LoginAdmin(w http.ResponseWriter, r *http.Request) {
@@ -5023,6 +5052,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Post(options.BaseURL+"/api/v1/admin/logout", wrapper.LogoutAdmin)
 	})
 	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/admin/events", wrapper.StreamAdminEvents)
+	})
+	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/admin/players", wrapper.ListPlayers)
 	})
 	r.Group(func(r chi.Router) {
@@ -5240,6 +5272,87 @@ type UnauthorizedProblemApplicationProblemPlusJSONResponse ProblemDetails
 type UnexpectedServerProblemApplicationProblemPlusJSONResponse ProblemDetails
 
 type UnsupportedMediaTypeProblemApplicationProblemPlusJSONResponse ProblemDetails
+
+type StreamAdminEventsRequestObject struct {
+}
+
+type StreamAdminEventsResponseObject interface {
+	VisitStreamAdminEventsResponse(w http.ResponseWriter) error
+}
+
+type StreamAdminEvents200TexteventStreamResponse struct {
+	Body          io.Reader
+	ContentLength int64
+}
+
+func (response StreamAdminEvents200TexteventStreamResponse) VisitStreamAdminEventsResponse(w http.ResponseWriter) error {
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	if response.ContentLength != 0 {
+		w.Header().Set("Content-Length", fmt.Sprint(response.ContentLength))
+	}
+	w.WriteHeader(200)
+
+	if closer, ok := response.Body.(io.ReadCloser); ok {
+		defer closer.Close()
+	}
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		// If w doesn't support flushing, fall back to io.Copy.
+		_, err := io.Copy(w, response.Body)
+		return err
+	}
+	// text/event-stream messages are typically small; use a
+	// modest buffer and flush after each chunk so clients see
+	// events immediately instead of waiting on OS buffering.
+	buf := make([]byte, 4096)
+	for {
+		n, err := response.Body.Read(buf)
+		if n > 0 {
+			if _, writeErr := w.Write(buf[:n]); writeErr != nil {
+				return writeErr
+			}
+			flusher.Flush()
+		}
+		if err != nil {
+			if err == io.EOF {
+				return nil
+			}
+			return err
+		}
+	}
+}
+
+type StreamAdminEvents401ApplicationProblemPlusJSONResponse ProblemDetails
+
+func (response StreamAdminEvents401ApplicationProblemPlusJSONResponse) VisitStreamAdminEventsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type StreamAdminEventsdefaultApplicationProblemPlusJSONResponse struct {
+	Body       ProblemDetails
+	StatusCode int
+}
+
+func (response StreamAdminEventsdefaultApplicationProblemPlusJSONResponse) VisitStreamAdminEventsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
 
 type LoginAdminRequestObject struct {
 	Body *LoginAdminJSONRequestBody
@@ -13394,6 +13507,9 @@ func (response HealthCheckdefaultApplicationProblemPlusJSONResponse) VisitHealth
 
 // StrictServerInterface represents all server handlers.
 type StrictServerInterface interface {
+	// StreamAdminEvents Stream admin invalidation events
+	// (GET /api/v1/admin/events)
+	StreamAdminEvents(ctx context.Context, request StreamAdminEventsRequestObject) (StreamAdminEventsResponseObject, error)
 	// LoginAdmin Exchange the shared admin password for an admin session
 	// (POST /api/v1/admin/login)
 	LoginAdmin(ctx context.Context, request LoginAdminRequestObject) (LoginAdminResponseObject, error)
@@ -13643,6 +13759,30 @@ type strictHandler struct {
 	ssi         StrictServerInterface
 	middlewares []StrictMiddlewareFunc
 	options     StrictHTTPServerOptions
+}
+
+// StreamAdminEvents operation middleware
+func (sh *strictHandler) StreamAdminEvents(w http.ResponseWriter, r *http.Request) {
+	var request StreamAdminEventsRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.StreamAdminEvents(ctx, request.(StreamAdminEventsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "StreamAdminEvents")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(StreamAdminEventsResponseObject); ok {
+		if err := validResponse.VisitStreamAdminEventsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
 }
 
 // LoginAdmin operation middleware

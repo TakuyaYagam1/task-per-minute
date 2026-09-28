@@ -65,6 +65,8 @@ paths:
     $ref: 'routes/admin_session.yml#/~1api~1v1~1admin~1refresh'
   /api/v1/admin/logout:
     $ref: 'routes/admin_session.yml#/~1api~1v1~1admin~1logout'
+  /api/v1/admin/events:
+    $ref: 'routes/admin_events.yml#/~1api~1v1~1admin~1events'
   /api/v1/admin/players:
     $ref: 'routes/player_management.yml#/~1api~1v1~1admin~1players'
   /api/v1/admin/players/events:

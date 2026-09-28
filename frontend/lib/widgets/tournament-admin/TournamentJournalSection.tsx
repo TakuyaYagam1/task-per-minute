@@ -7,12 +7,14 @@ import {
   operatorApi,
   type Tournament,
 } from "../../shared/api";
-import { Button, Message, Panel } from "../../shared/ui";
+import { useAdminLiveRefresh } from "../../features/admin-live";
+import { Message, Panel } from "../../shared/ui";
 
 import { TournamentAuditPanel } from "./TournamentAuditPanel";
 import styles from "./TournamentJournalSection.module.css";
 
 type LoadState = "loading" | "ready" | "error";
+type LoadOptions = Readonly<{ silent?: boolean }>;
 
 export type TournamentJournalSectionProps = Readonly<{
   selectedTournamentId: string | null;
@@ -61,6 +63,8 @@ export const TournamentJournalSection = ({
   const [loadError, setLoadError] = useState<string | null>(null);
   const controllerRef = useRef<AbortController | null>(null);
   const requestGenerationRef = useRef(0);
+  const loadStateRef = useRef(loadState);
+  loadStateRef.current = loadState;
   const selectedTournament = useMemo(
     () =>
       tournaments.find((tournament) => tournament.id === selectedTournamentId) ??
@@ -68,14 +72,18 @@ export const TournamentJournalSection = ({
     [selectedTournamentId, tournaments],
   );
 
-  const loadTournaments = useCallback(async (): Promise<void> => {
+  const loadTournaments = useCallback(async (options: LoadOptions = {}): Promise<void> => {
+    const previousLoadState = loadStateRef.current;
     controllerRef.current?.abort();
     const controller = new AbortController();
     const requestGeneration = requestGenerationRef.current + 1;
     requestGenerationRef.current = requestGeneration;
     controllerRef.current = controller;
-    setLoadState("loading");
-    setLoadError(null);
+    if (!options.silent) {
+      loadStateRef.current = "loading";
+      setLoadState("loading");
+      setLoadError(null);
+    }
     try {
       const items = await readAllTournaments(controller.signal);
       if (
@@ -85,7 +93,9 @@ export const TournamentJournalSection = ({
         return;
       }
       setTournaments(items);
+      loadStateRef.current = "ready";
       setLoadState("ready");
+      setLoadError(null);
     } catch (error) {
       if (
         controller.signal.aborted ||
@@ -97,6 +107,15 @@ export const TournamentJournalSection = ({
       if (error instanceof ApiError && error.status === 401) {
         onSessionExpired?.();
       }
+      if (options.silent) {
+        if (previousLoadState === "loading") {
+          loadStateRef.current = "error";
+          setLoadState("error");
+          setLoadError(problemMessage(error, "Не удалось загрузить список соревнований"));
+        }
+        return;
+      }
+      loadStateRef.current = "error";
       setLoadState("error");
       setLoadError(problemMessage(error, "Не удалось загрузить список соревнований"));
     } finally {
@@ -105,6 +124,8 @@ export const TournamentJournalSection = ({
       }
     }
   }, [onSessionExpired]);
+
+  useAdminLiveRefresh("tournaments", () => loadTournaments({ silent: true }));
 
   useEffect(() => {
     void loadTournaments();
@@ -145,13 +166,6 @@ export const TournamentJournalSection = ({
         {loadState === "error" ? (
           <Message tone="error" title="Список соревнований недоступен">
             {loadError}
-            <Button
-              variant="secondary"
-              size="small"
-              onClick={() => void loadTournaments()}
-            >
-              Повторить загрузку
-            </Button>
           </Message>
         ) : null}
         {loadState === "ready" && !selectedTournament ? (

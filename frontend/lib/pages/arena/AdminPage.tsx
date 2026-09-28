@@ -7,7 +7,6 @@ import React, {
   useState,
 } from "react";
 import {
-  ADMIN_PLAYERS_CHANGED_EVENT,
   activateAdminSession,
   adminApi,
   ApiError,
@@ -25,6 +24,7 @@ import {
   useTimedNotification,
 } from "../../shared/lib";
 import { Dialog, TechnicalDetails, ViewportPortal } from "../../shared/ui";
+import { AdminLiveProvider } from "../../features/admin-live";
 import { useSiteHeaderAuth } from "../../features/site-header";
 import {
   TournamentAdminPanel,
@@ -63,10 +63,6 @@ interface Notification {
 const USERNAME_RE = /^[a-zA-Z0-9_-]{2,50}$/;
 const MAX_INT32 = 2_147_483_647;
 const LOGOUT_TIMEOUT_MS = 8_000;
-const PLAYERS_EVENTS_RETRY_BASE_MS = 1_000;
-const PLAYERS_EVENTS_RETRY_MAX_MS = 30_000;
-const PLAYERS_EVENTS_REFRESH_COOLDOWN_MS = 60_000;
-const PLAYERS_EVENTS_FALLBACK_POLL_MS = 5_000;
 
 const operatorReturnPath = (): string | null =>
   getSafeArenaReturnPath(
@@ -226,10 +222,6 @@ export default function AdminPage() {
   const isMountedRef = useRef(false);
   const authSessionVersionRef = useRef(0);
   const playersRequestIDRef = useRef(0);
-  const playersEventsRef = useRef<EventSource | null>(null);
-  const playersRealtimeRefreshTimerRef = useRef<number | null>(null);
-  const playersEventsRetryTimerRef = useRef<number | null>(null);
-  const playersEventsFallbackPollTimerRef = useRef<number | null>(null);
   const playerAuditRequestIDRef = useRef(0);
   const playerDialogInitialFocusRef = useRef<HTMLInputElement>(null);
   const playerDialogReturnFocusRef = useRef<HTMLElement | null>(null);
@@ -308,20 +300,6 @@ export default function AdminPage() {
       isMountedRef.current = false;
       authSessionVersionRef.current += 1;
       logoutAbortRef.current?.abort();
-      playersEventsRef.current?.close();
-      playersEventsRef.current = null;
-      if (playersRealtimeRefreshTimerRef.current !== null) {
-        window.clearTimeout(playersRealtimeRefreshTimerRef.current);
-        playersRealtimeRefreshTimerRef.current = null;
-      }
-      if (playersEventsRetryTimerRef.current !== null) {
-        window.clearTimeout(playersEventsRetryTimerRef.current);
-        playersEventsRetryTimerRef.current = null;
-      }
-      if (playersEventsFallbackPollTimerRef.current !== null) {
-        window.clearTimeout(playersEventsFallbackPollTimerRef.current);
-        playersEventsFallbackPollTimerRef.current = null;
-      }
     };
   }, []);
 
@@ -374,20 +352,6 @@ export default function AdminPage() {
       authSessionVersionRef.current = nextSessionVersion;
       playersRequestIDRef.current += 1;
       playerAuditRequestIDRef.current += 1;
-      playersEventsRef.current?.close();
-      playersEventsRef.current = null;
-      if (playersRealtimeRefreshTimerRef.current !== null) {
-        window.clearTimeout(playersRealtimeRefreshTimerRef.current);
-        playersRealtimeRefreshTimerRef.current = null;
-      }
-      if (playersEventsRetryTimerRef.current !== null) {
-        window.clearTimeout(playersEventsRetryTimerRef.current);
-        playersEventsRetryTimerRef.current = null;
-      }
-      if (playersEventsFallbackPollTimerRef.current !== null) {
-        window.clearTimeout(playersEventsFallbackPollTimerRef.current);
-        playersEventsFallbackPollTimerRef.current = null;
-      }
       clearAdminSession({ preserveCSRF: options.preserveAdminCSRF });
       sessionRef.current = null;
       setSession(null);
@@ -580,172 +544,11 @@ export default function AdminPage() {
     ],
   );
 
-  const schedulePlayersRealtimeRefresh = useCallback(() => {
-    if (!sessionRef.current || activeSection !== "players") {
-      return;
-    }
-    if (playersRealtimeRefreshTimerRef.current !== null) {
-      window.clearTimeout(playersRealtimeRefreshTimerRef.current);
-    }
-    playersRealtimeRefreshTimerRef.current = window.setTimeout(() => {
-      playersRealtimeRefreshTimerRef.current = null;
-      fetchPlayers({ silent: true });
-    }, 150);
-  }, [activeSection, fetchPlayers]);
-
   useEffect(() => {
-    if (!session) return;
-    if (activeSection === "players") {
-      fetchPlayers();
+    if (session && activeSection === "players") {
+      void fetchPlayers();
     }
   }, [activeSection, fetchPlayers, session]);
-
-  useEffect(() => {
-    if (!session || activeSection !== "players") {
-      return undefined;
-    }
-
-    let active = true;
-    let retryAttempt = 0;
-    let lastRefreshAttemptAt = 0;
-    const handlePlayersChanged: EventListener = () => {
-      schedulePlayersRealtimeRefresh();
-    };
-
-    const clearRetryTimer = (): void => {
-      if (playersEventsRetryTimerRef.current !== null) {
-        window.clearTimeout(playersEventsRetryTimerRef.current);
-        playersEventsRetryTimerRef.current = null;
-      }
-    };
-
-    const clearFallbackPollTimer = (): void => {
-      if (playersEventsFallbackPollTimerRef.current !== null) {
-        window.clearTimeout(playersEventsFallbackPollTimerRef.current);
-        playersEventsFallbackPollTimerRef.current = null;
-      }
-    };
-
-    const markStreamOpen = (): void => {
-      retryAttempt = 0;
-      clearFallbackPollTimer();
-    };
-
-    const scheduleFallbackPoll = (): void => {
-      if (
-        !active ||
-        !sessionRef.current ||
-        activeSection !== "players" ||
-        playersEventsFallbackPollTimerRef.current !== null
-      ) {
-        return;
-      }
-      playersEventsFallbackPollTimerRef.current = window.setTimeout(() => {
-        playersEventsFallbackPollTimerRef.current = null;
-        if (!active || !sessionRef.current || activeSection !== "players") {
-          return;
-        }
-        void fetchPlayers({ silent: true });
-        scheduleFallbackPoll();
-      }, PLAYERS_EVENTS_FALLBACK_POLL_MS);
-    };
-
-    const closeCurrentSource = (): void => {
-      const source = playersEventsRef.current;
-      if (!source) {
-        return;
-      }
-      source.removeEventListener(
-        ADMIN_PLAYERS_CHANGED_EVENT,
-        handlePlayersChanged,
-      );
-      source.removeEventListener("ready", markStreamOpen);
-      source.onopen = null;
-      source.onerror = null;
-      playersEventsRef.current = null;
-      source.close();
-    };
-
-    const scheduleOpen = (): void => {
-      if (!active || !sessionRef.current || activeSection !== "players") {
-        return;
-      }
-      clearRetryTimer();
-      const delay = Math.min(
-        PLAYERS_EVENTS_RETRY_MAX_MS,
-        PLAYERS_EVENTS_RETRY_BASE_MS * 2 ** Math.min(retryAttempt, 5),
-      );
-      retryAttempt += 1;
-      playersEventsRetryTimerRef.current = window.setTimeout(() => {
-        playersEventsRetryTimerRef.current = null;
-        void openStream();
-      }, delay);
-    };
-
-    const openStream = async (): Promise<void> => {
-      if (!active || !sessionRef.current || activeSection !== "players") {
-        return;
-      }
-      const sessionVersion = authSessionVersionRef.current;
-      const now = Date.now();
-      const shouldRefreshSession =
-        now - lastRefreshAttemptAt >= PLAYERS_EVENTS_REFRESH_COOLDOWN_MS;
-      if (shouldRefreshSession) {
-        lastRefreshAttemptAt = now;
-        try {
-          await adminApi.ensureFreshSession();
-          if (!active || !isCurrentAuthSession(sessionVersion)) {
-            return;
-          }
-        } catch (error) {
-          log.warn("admin players realtime refresh failed", error);
-          scheduleOpen();
-          return;
-        }
-      }
-
-      if (!active || !sessionRef.current || activeSection !== "players") {
-        return;
-      }
-      closeCurrentSource();
-      const source = adminApi.openPlayerEvents();
-      playersEventsRef.current = source;
-      source.onopen = markStreamOpen;
-      source.addEventListener("ready", markStreamOpen);
-      source.addEventListener(
-        ADMIN_PLAYERS_CHANGED_EVENT,
-        handlePlayersChanged,
-      );
-      source.onerror = (event) => {
-        log.warn("admin players realtime stream error", event);
-        if (playersEventsRef.current === source) {
-          closeCurrentSource();
-          void fetchPlayers({ silent: true });
-          scheduleFallbackPoll();
-          scheduleOpen();
-        }
-      };
-    };
-
-    void openStream();
-
-    return () => {
-      active = false;
-      clearRetryTimer();
-      clearFallbackPollTimer();
-      closeCurrentSource();
-      if (playersRealtimeRefreshTimerRef.current !== null) {
-        window.clearTimeout(playersRealtimeRefreshTimerRef.current);
-        playersRealtimeRefreshTimerRef.current = null;
-      }
-    };
-  }, [
-    activeSection,
-    fetchPlayers,
-    isCurrentAuthSession,
-    schedulePlayersRealtimeRefresh,
-    session,
-  ]);
 
   const resetPlayerForm = useCallback(
     (options: { skipConfirm?: boolean } = {}): boolean => {
@@ -1024,11 +827,13 @@ export default function AdminPage() {
     setPlayerAuditError(null);
   };
 
-  const openPlayerAudit = async (player: Player) => {
-    setAuditPlayer(player);
-    setPlayerAuditEvents([]);
-    setPlayerAuditError(null);
-    setPlayerAuditLoading(true);
+  const openPlayerAudit = async (player: Player, silent = false) => {
+    if (!silent) {
+      setAuditPlayer(player);
+      setPlayerAuditEvents([]);
+      setPlayerAuditError(null);
+      setPlayerAuditLoading(true);
+    }
     const sessionVersion = authSessionVersionRef.current;
     const requestID = playerAuditRequestIDRef.current + 1;
     playerAuditRequestIDRef.current = requestID;
@@ -1039,6 +844,7 @@ export default function AdminPage() {
       const events = await runAdminRequest(() => adminApi.listPlayerAudit(player.id));
       if (canApplyAuditRequest()) {
         setPlayerAuditEvents(events);
+        setPlayerAuditError(null);
       }
     } catch (error) {
       if (
@@ -1051,8 +857,10 @@ export default function AdminPage() {
         error,
         "Не удалось загрузить историю игрока",
       );
-      setPlayerAuditError(message);
-      showNotification("error", message);
+      if (!silent) {
+        setPlayerAuditError(message);
+        showNotification("error", message);
+      }
     } finally {
       if (canApplyAuditRequest()) {
         setPlayerAuditLoading(false);
@@ -1637,33 +1445,43 @@ export default function AdminPage() {
   };
 
   return (
-    <AdminShell
-      navigation={navigation}
-      onNavigate={navigate}
+    <AdminLiveProvider
+      runAdminRequest={runAdminRequest}
+      onChange={(topics) => {
+        if (activeSection === "players" && topics.has("players")) {
+          void fetchPlayers({ silent: true });
+          if (auditPlayer) void openPlayerAudit(auditPlayer, true);
+        }
+      }}
     >
-      {notification && (
-        <ViewportPortal>
-          <div
-            className={`${styles.notification} ${
-              notification.type === "success"
-                ? styles.notificationSuccess
-                : notification.type === "warning"
-                  ? styles.notificationWarning
-                  : styles.notificationError
-            }`}
-          >
-            {notification.message}
-          </div>
-        </ViewportPortal>
-      )}
-      <div
-        key={`${navigation.section}:${navigation.tournamentId ?? "all"}:${navigation.view}`}
-        className={`${styles.sectionPanel} ${styles.sectionPanelEnter}`}
+      <AdminShell
+        navigation={navigation}
+        onNavigate={navigate}
       >
-        {renderAdminSection(navigation)}
-      </div>
-      {renderPlayerDialog()}
-      {renderPlayerAuditModal()}
-    </AdminShell>
+        {notification && (
+          <ViewportPortal>
+            <div
+              className={`${styles.notification} ${
+                notification.type === "success"
+                  ? styles.notificationSuccess
+                  : notification.type === "warning"
+                    ? styles.notificationWarning
+                    : styles.notificationError
+              }`}
+            >
+              {notification.message}
+            </div>
+          </ViewportPortal>
+        )}
+        <div
+          key={`${navigation.section}:${navigation.tournamentId ?? "all"}:${navigation.view}`}
+          className={`${styles.sectionPanel} ${styles.sectionPanelEnter}`}
+        >
+          {renderAdminSection(navigation)}
+        </div>
+        {renderPlayerDialog()}
+        {renderPlayerAuditModal()}
+      </AdminShell>
+    </AdminLiveProvider>
   );
 }

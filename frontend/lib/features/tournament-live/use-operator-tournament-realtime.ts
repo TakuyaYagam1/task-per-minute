@@ -59,6 +59,7 @@ export const useOperatorTournamentRealtime = ({
   const confirmedResumeIdRef = useRef<string | null>(null);
   const activeTournamentRef = useRef<string | null>(null);
   const connectRef = useRef<(() => void) | null>(null);
+  const stateRecoveryRef = useRef<RoleAwareRecoveryState | null>(null);
   stateRef.current = state;
   const hasRecovery = recovery !== null;
 
@@ -80,6 +81,9 @@ export const useOperatorTournamentRealtime = ({
     generationRef.current += 1;
     terminalGenerationRef.current = null;
     clearSocket();
+    stateRef.current = null;
+    stateRecoveryRef.current = null;
+    setState(null);
 
     if (activeTournamentRef.current !== tournamentId) {
       activeTournamentRef.current = tournamentId;
@@ -164,6 +168,7 @@ export const useOperatorTournamentRealtime = ({
             const nextState = openOperatorRealtime(value, tournamentId);
             confirmedResumeIdRef.current = nextState.resumeId;
             stateRef.current = nextState;
+            stateRecoveryRef.current = recovery;
             receivedInitialFrame = true;
             reconnectCountRef.current = 0;
             setState(nextState);
@@ -178,6 +183,7 @@ export const useOperatorTournamentRealtime = ({
           if (applied.outcome === "applied") {
             confirmedResumeIdRef.current = applied.state.resumeId;
             stateRef.current = applied.state;
+            stateRecoveryRef.current = recovery;
             setState(applied.state);
             setStatus(isPausedState(applied.state) ? "paused" : "connected");
           }
@@ -225,16 +231,19 @@ export const useOperatorTournamentRealtime = ({
     reconnectCountRef.current = 0;
     terminalGenerationRef.current = null;
     stateRef.current = null;
+    stateRecoveryRef.current = null;
     setState(null);
     setStatus("connecting");
     connectRef.current?.();
   }, []);
 
+  const exposedState = recovery !== null && stateRecoveryRef.current === recovery ? state : null;
+
   return {
-    state,
+    state: exposedState,
     status,
-    ready: state !== null,
-    paused: isPausedState(state),
+    ready: exposedState !== null,
+    paused: isPausedState(exposedState),
     retry,
   };
 };

@@ -166,6 +166,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Stream admin invalidation events
+         * @description Server-Sent Events stream for authenticated admin dashboards. The stream
+         *     emits `ready` with an empty object and `changed` with one allowlisted
+         *     topic (`players`, `tasks`, or `tournaments`). Heartbeats are sent as SSE
+         *     comments while the connection is idle.
+         */
+        get: operations["streamAdminEvents"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/players": {
         parameters: {
             query?: never;
@@ -4139,6 +4162,36 @@ export interface operations {
             };
             /** @description CSRF token does not match the refresh session, or the request origin or referer is not allowed. */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            default: components["responses"]["UnexpectedServerProblem"];
+        };
+    };
+    streamAdminEvents: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description SSE stream. Events contain no table names or row data. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": string;
+                };
+            };
+            /** @description Missing or invalid admin session. */
+            401: {
                 headers: {
                     [name: string]: unknown;
                 };

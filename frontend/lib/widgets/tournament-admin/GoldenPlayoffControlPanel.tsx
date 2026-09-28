@@ -15,6 +15,7 @@ import {
   type PublicTournamentResponse,
   type Tournament,
 } from "../../shared/api";
+import { useAdminLiveRefresh } from "../../features/admin-live";
 import { GOLDEN_STATE_LABELS, formatSeriesState, formatTournamentState } from "../../shared/lib";
 import { useParticipantNames } from "../../entities/tournament";
 import { Button, Message, Panel, Status, type StatusTone } from "../../shared/ui";
@@ -28,6 +29,7 @@ type GoldenPlayoffControlPanelProps = Readonly<{
 }>;
 
 type LoadState = "loading" | "ready" | "error";
+type LoadOptions = Readonly<{ silent?: boolean }>;
 type LifecycleAction = "start_golden" | "start_playoffs";
 type PublicBracketMatch = PublicBracketResponse["matches"][number];
 
@@ -140,37 +142,45 @@ export const GoldenPlayoffControlPanel = ({
   const [commandError, setCommandError] = useState<string | null>(null);
   const [stale, setStale] = useState(false);
   const [busyAction, setBusyAction] = useState<string | null>(null);
+  const tournamentId = tournament?.id ?? null;
   const requestGenerationRef = useRef(0);
   const controllerRef = useRef<AbortController | null>(null);
   const commandInFlightRef = useRef(false);
+  const goldenRef = useRef<GoldenOperatorResponse | null>(null);
 
-  const loadState = useCallback(async (): Promise<void> => {
+  const loadState = useCallback(async (options: LoadOptions = {}): Promise<void> => {
+    const silent = options.silent === true;
     controllerRef.current?.abort();
     const controller = new AbortController();
     controllerRef.current = controller;
     const requestGeneration = requestGenerationRef.current + 1;
     requestGenerationRef.current = requestGeneration;
-    setGoldenState("loading");
+    if (!silent || goldenRef.current === null) {
+      setGoldenState("loading");
+    }
     setLoadError(null);
     try {
-      if (tournament === null) {
+      if (tournamentId === null) {
         return;
       }
       const nextPublicTournament = await publicTournamentApi.getPublicTournament(
-        tournament.id,
+        tournamentId,
         controller.signal,
       );
       if (!GOLDEN_CONTROL_STATES.has(nextPublicTournament.state)) {
         if (!controller.signal.aborted && requestGeneration === requestGenerationRef.current) {
+          goldenRef.current = null;
           setGolden(null);
           setPublicTournament(nextPublicTournament);
           setBracket(null);
           setScoreboard(null);
           setGoldenState("ready");
+          setStale(false);
+          setCommandError(null);
         }
         return;
       }
-      const nextGolden = await goldenApi.getOperatorState(tournament.id, controller.signal);
+      const nextGolden = await goldenApi.getOperatorState(tournamentId, controller.signal);
       let nextBracket: PublicBracketResponse | null = null;
       let nextScoreboard: PublicScoreboardResponse | null = null;
       if (
@@ -178,8 +188,8 @@ export const GoldenPlayoffControlPanel = ({
         nextPublicTournament?.state === "completed"
       ) {
         [nextBracket, nextScoreboard] = await Promise.all([
-          publicTournamentApi.getPublicBracket(tournament.id, controller.signal),
-          publicTournamentApi.getPublicScoreboard(tournament.id, controller.signal),
+          publicTournamentApi.getPublicBracket(tournamentId, controller.signal),
+          publicTournamentApi.getPublicScoreboard(tournamentId, controller.signal),
         ]);
       }
       if (
@@ -188,12 +198,14 @@ export const GoldenPlayoffControlPanel = ({
       ) {
         return;
       }
+      goldenRef.current = nextGolden;
       setGolden(nextGolden);
       setPublicTournament(nextPublicTournament);
       setBracket(nextBracket);
       setScoreboard(nextScoreboard);
       setGoldenState("ready");
       setStale(false);
+      setCommandError(null);
     } catch (error) {
       if (controller.signal.aborted || isAbortError(error)) {
         return;
@@ -201,7 +213,7 @@ export const GoldenPlayoffControlPanel = ({
       if (error instanceof ApiError && error.status === 401) {
         onSessionExpired?.();
       }
-      if (requestGeneration === requestGenerationRef.current) {
+      if (requestGeneration === requestGenerationRef.current && (!silent || goldenRef.current === null)) {
         setGoldenState("error");
         setLoadError(problemMessage(error, "Не удалось загрузить дополнительный отбор"));
       }
@@ -210,9 +222,14 @@ export const GoldenPlayoffControlPanel = ({
         controllerRef.current = null;
       }
     }
-  }, [onSessionExpired, tournament]);
+  }, [onSessionExpired, tournamentId]);
 
   useEffect(() => {
+    goldenRef.current = null;
+    setGolden(null);
+    setPublicTournament(null);
+    setBracket(null);
+    setScoreboard(null);
     void loadState();
     return () => {
       controllerRef.current?.abort();
@@ -250,11 +267,17 @@ export const GoldenPlayoffControlPanel = ({
     !stale;
   const terminal = currentState === "completed" || currentState === "cancelled";
 
-  const refresh = useCallback((): void => {
-    setStale(false);
-    setCommandError(null);
-    void loadState();
-  }, [loadState]);
+  const refreshLive = useCallback(async (): Promise<void> => {
+    if (commandInFlightRef.current || tournamentId === null) {
+      return;
+    }
+    await loadState({ silent: true });
+  }, [loadState, tournamentId]);
+  useAdminLiveRefresh(
+    "tournaments",
+    refreshLive,
+    tournamentId !== null && busyAction === null && (golden !== null || goldenState !== "loading"),
+  );
 
   const handleLifecycleAction = useCallback(async (action: LifecycleAction): Promise<void> => {
     if (
@@ -292,9 +315,9 @@ export const GoldenPlayoffControlPanel = ({
         onSessionExpired?.();
       }
       if (error instanceof ApiError && error.status === 409) {
-        await loadState();
         setStale(true);
-        setCommandError("Состояние соревнования изменилось. Обновите данные перед повтором.");
+        setCommandError("Состояние соревнования изменилось.");
+        await loadState();
       } else {
         setCommandError(problemMessage(error, "Не удалось изменить этап соревнования"));
       }
@@ -329,9 +352,9 @@ export const GoldenPlayoffControlPanel = ({
         onSessionExpired?.();
       }
       if (error instanceof ApiError && error.status === 409) {
-        await loadState();
         setStale(true);
-        setCommandError("Состояние дополнительного отбора изменилось. Обновите данные перед повтором.");
+        setCommandError("Состояние дополнительного отбора изменилось.");
+        await loadState();
       } else {
         setCommandError(problemMessage(error, "Не удалось открыть подготовку к дополнительному отбору"));
       }
@@ -374,9 +397,9 @@ export const GoldenPlayoffControlPanel = ({
         onSessionExpired?.();
       }
       if (error instanceof ApiError && error.status === 409) {
-        await loadState();
         setStale(true);
-        setCommandError("Игра дополнительного отбора изменилась. Обновите данные перед повтором.");
+        setCommandError("Игра дополнительного отбора изменилась.");
+        await loadState();
       } else {
         setCommandError(problemMessage(error, "Не удалось начать игру дополнительного отбора"));
       }
@@ -416,17 +439,11 @@ export const GoldenPlayoffControlPanel = ({
       {goldenState === "error" ? (
         <Message tone="error" title="Дополнительный отбор недоступен">
           {loadError ?? "Не удалось загрузить данные дополнительного отбора."}
-          <button className={styles.linkButton} type="button" onClick={refresh}>
-            Повторить загрузку
-          </button>
         </Message>
       ) : null}
       {commandError ? (
         <Message tone="error" title={stale ? "Состояние устарело" : "Команда не выполнена"}>
           {commandError}
-          <button className={styles.linkButton} type="button" onClick={refresh}>
-            Повторить загрузку
-          </button>
         </Message>
       ) : null}
       {goldenState === "ready" && golden === null && !GOLDEN_CONTROL_STATES.has(currentState) ? (
@@ -545,10 +562,7 @@ export const GoldenPlayoffControlPanel = ({
       ) : null}
       {bracket !== null && bracketMatches.length === 0 ? (
         <Message tone="error" title="Сетка недоступна">
-          Не удалось получить полуфиналы и финал. Повторите попытку.
-          <button className={styles.linkButton} type="button" onClick={refresh}>
-            Повторить загрузку
-          </button>
+          Не удалось получить полуфиналы и финал.
         </Message>
       ) : null}
       {(currentState === "playoffs" || currentState === "completed") && scoreboard !== null ? (

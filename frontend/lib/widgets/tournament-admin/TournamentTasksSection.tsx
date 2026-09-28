@@ -7,6 +7,7 @@ import {
   getTournamentContent,
   type TournamentContentSelection,
 } from "../../shared/api";
+import { useAdminLiveRefresh } from "../../features/admin-live";
 
 import {
   TournamentContentManager,
@@ -15,6 +16,7 @@ import {
 import styles from "./TournamentTasksSection.module.css";
 
 type LoadState = "loading" | "ready" | "error";
+type LoadOptions = Readonly<{ silent?: boolean }>;
 
 export type TournamentTasksSectionProps = Readonly<{
   onSessionExpired?: () => void;
@@ -44,16 +46,22 @@ export const TournamentTasksSection = ({
   const [contentEmpty, setContentEmpty] = useState(false);
   const controllerRef = useRef<AbortController | null>(null);
   const requestGenerationRef = useRef(0);
+  const contentStateRef = useRef(contentState);
+  contentStateRef.current = contentState;
 
-  const loadContent = useCallback(async (): Promise<void> => {
+  const loadContent = useCallback(async (options: LoadOptions = {}): Promise<void> => {
+    const previousContentState = contentStateRef.current;
     controllerRef.current?.abort();
     const controller = new AbortController();
     const requestGeneration = requestGenerationRef.current + 1;
     requestGenerationRef.current = requestGeneration;
     controllerRef.current = controller;
-    setContentState("loading");
-    setContentError(null);
-    setContentEmpty(false);
+    if (!options.silent) {
+      contentStateRef.current = "loading";
+      setContentState("loading");
+      setContentError(null);
+      setContentEmpty(false);
+    }
 
     try {
       const selection = await getTournamentContent(controller.signal);
@@ -64,7 +72,10 @@ export const TournamentTasksSection = ({
         return;
       }
       setContent(selection);
+      contentStateRef.current = "ready";
       setContentState("ready");
+      setContentError(null);
+      setContentEmpty(false);
     } catch (error) {
       if (
         controller.signal.aborted ||
@@ -76,9 +87,24 @@ export const TournamentTasksSection = ({
       if (error instanceof ApiError && error.status === 401) {
         onSessionExpired?.();
       }
+      if (options.silent) {
+        if (previousContentState === "loading") {
+          const unavailable = error instanceof ApiError && error.status === 422;
+          contentStateRef.current = "error";
+          setContentEmpty(unavailable);
+          setContentState("error");
+          setContentError(
+            unavailable
+              ? "Опубликованных задач пока нет. Сначала опубликуйте задачи."
+              : problemMessage(error, "Не удалось получить текущую публикацию контента"),
+          );
+        }
+        return;
+      }
       const unavailable = error instanceof ApiError && error.status === 422;
       setContent(null);
       setContentEmpty(unavailable);
+      contentStateRef.current = "error";
       setContentState("error");
       setContentError(
         unavailable
@@ -91,6 +117,8 @@ export const TournamentTasksSection = ({
       }
     }
   }, [onSessionExpired]);
+
+  useAdminLiveRefresh("tasks", () => loadContent({ silent: true }));
 
   useEffect(() => {
     void loadContent();

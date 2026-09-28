@@ -22,6 +22,7 @@ import (
 	playerrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/player"
 	playoffrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/playoff"
 	projectionrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/projection"
+	realtimerepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/realtime"
 	schemarepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/schema"
 	taskrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/task"
 	correctionrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/admin/correction"
@@ -133,6 +134,8 @@ var ReposSet = wire.NewSet(
 	wire.Bind(new(restv1.SchemaVersionReader), new(*schemarepo.SchemaVersionPostgres)),
 	playerrepo.NewAdminPlayerEventsPostgres,
 	wire.Bind(new(restv1.AdminPlayerEventSubscriber), new(*playerrepo.AdminPlayerEventsPostgres)),
+	realtimerepo.NewAdminEventsPostgres,
+	wire.Bind(new(restv1.AdminEventSubscriber), new(*realtimerepo.AdminEventsPostgres)),
 
 	playerrepo.NewPlayerPostgres,
 	wire.Bind(new(playerusecase.PlayerRepository), new(*playerrepo.PlayerPostgres)),

@@ -20,7 +20,8 @@
 }
 
 .chooser select,
-.field select {
+.field select,
+.categoryField select {
   width: 100%;
   min-height: 44px;
   border: 1px solid var(--border-strong);
@@ -36,7 +37,8 @@
 }
 
 .chooser select:focus,
-.field select:focus {
+.field select:focus,
+.categoryField select:focus {
   outline: none;
   border-color: var(--accent);
   background: var(--panel);
@@ -198,8 +200,7 @@
   background: var(--accent-soft);
 }
 
-.radioOption input,
-.categoryOption input {
+.radioOption input {
   flex: 0 0 auto;
   width: 1rem;
   height: 1rem;
@@ -238,30 +239,33 @@
   gap: 0.4rem;
 }
 
-.categoryGrid {
+.categoryReadonly {
+  display: grid;
+  min-width: 0;
+  gap: 0.55rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-small);
+  padding: 0.7rem 0.75rem;
+  background: var(--panel);
+}
+
+.categoryList {
   display: flex;
   min-width: 0;
   flex-wrap: wrap;
   gap: 0.45rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
 
-.categoryOption {
-  display: inline-flex;
-  min-height: 38px;
-  align-items: center;
-  gap: 0.4rem;
+.categoryList li {
   border: 1px solid var(--border);
   border-radius: 999px;
   padding: 0.35rem 0.65rem;
-  background: var(--panel);
+  background: var(--surface-muted);
   color: var(--text);
   font-size: 0.78rem;
-  cursor: pointer;
-}
-
-.categoryOption:has(input:checked) {
-  border-color: var(--accent);
-  background: var(--accent-soft);
 }
 
 .manualEditor {
@@ -454,7 +458,8 @@
 
 @media (prefers-reduced-motion: reduce) {
   .chooser select,
-  .field select {
+  .field select,
+  .categoryField select {
     transition: none;
   }
 }

@@ -16,6 +16,7 @@ import {
   type Tournament,
   type TournamentAuditQuery,
 } from "../../shared/api";
+import { useAdminLiveRefresh } from "../../features/admin-live";
 import { formatGameState, formatResultReason, formatTournamentState, RESULT_REASON_LABELS } from "../../shared/lib";
 import { Button, Message, Panel, Status, TechnicalDetails } from "../../shared/ui";
 
@@ -42,6 +43,7 @@ type AuditFilters = Readonly<{
 
 type AppliedAuditQuery = Omit<TournamentAuditQuery, "tournament_id" | "cursor">;
 type LoadState = "idle" | "loading" | "ready" | "error";
+type FetchOptions = Readonly<{ silent?: boolean }>;
 type BundleReceipt = Pick<
   IncidentBundle,
   "generated_at" | "projection_revision" | "sha256" | "tournament_id"
@@ -196,19 +198,73 @@ export const TournamentAuditPanel = ({
   const [bundleError, setBundleError] = useState<string | null>(null);
   const [bundle, setBundle] = useState<BundleReceipt | null>(null);
   const [snapshot, setSnapshot] = useState<OperatorRecoverySnapshot | null>(null);
+  const loadStateRef = useRef(loadState);
+  const snapshotControllerRef = useRef<AbortController | null>(null);
+  const snapshotRequestRef = useRef(0);
+  const auditControllerRef = useRef<AbortController | null>(null);
+  const bundleControllerRef = useRef<AbortController | null>(null);
+  const mountedRef = useRef(false);
+  const auditViewRef = useRef({ selectedTournamentId, appliedQuery, pageIndex });
+  loadStateRef.current = loadState;
+  auditViewRef.current = { selectedTournamentId, appliedQuery, pageIndex };
   const currentSnapshot = snapshot?.tournament.id === selectedTournamentId ? snapshot : null;
   const { matchName } = useParticipantNames(selectedTournamentId, currentSnapshot?.roster ?? null);
 
   useEffect(() => {
-    if (!selectedTournamentId) return;
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  const loadSnapshot = useCallback(async (options: FetchOptions = {}): Promise<void> => {
+    snapshotControllerRef.current?.abort();
+    if (!selectedTournamentId) {
+      setSnapshot(null);
+      return;
+    }
     const controller = new AbortController();
-    void operatorApi.getSnapshot(selectedTournamentId, undefined, controller.signal).then((next) => {
-      if (!controller.signal.aborted) setSnapshot(next);
-    }).catch(() => {
-      if (!controller.signal.aborted) setSnapshot(null);
-    });
-    return () => controller.abort();
-  }, [selectedTournamentId]);
+    const requestID = snapshotRequestRef.current + 1;
+    snapshotRequestRef.current = requestID;
+    snapshotControllerRef.current = controller;
+    try {
+      const next = await operatorApi.getSnapshot(
+        selectedTournamentId,
+        undefined,
+        controller.signal,
+      );
+      if (
+        controller.signal.aborted ||
+        snapshotRequestRef.current !== requestID
+      ) {
+        return;
+      }
+      setSnapshot(next);
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 401) {
+        onSessionExpired?.();
+      }
+      if (
+        !controller.signal.aborted &&
+        snapshotRequestRef.current === requestID &&
+        !options.silent
+      ) {
+        setSnapshot(null);
+      }
+    } finally {
+      if (snapshotControllerRef.current === controller) {
+        snapshotControllerRef.current = null;
+      }
+    }
+  }, [onSessionExpired, selectedTournamentId]);
+
+  useEffect(() => {
+    void loadSnapshot();
+    return () => {
+      snapshotControllerRef.current?.abort();
+      snapshotRequestRef.current += 1;
+    };
+  }, [loadSnapshot]);
 
   const eventSubject = (event: AuditEvent): string => {
     const series = currentSnapshot?.series.find((item) =>
@@ -219,9 +275,6 @@ export const TournamentAuditPanel = ({
     if (!series) return event.entity_kind === "series" ? "Матч" : "Попытка решения";
     return matchName(series);
   };
-  const auditControllerRef = useRef<AbortController | null>(null);
-  const bundleControllerRef = useRef<AbortController | null>(null);
-
   const currentPage = pages[pageIndex] ?? null;
   const selectedTournament = useMemo(
     () => tournaments.find((tournament) => tournament.id === selectedTournamentId) ?? null,
@@ -232,12 +285,17 @@ export const TournamentAuditPanel = ({
     tournamentId: string,
     query: AppliedAuditQuery,
     cursor?: AuditCursor,
+    options: FetchOptions = {},
   ): Promise<AuditPage | null> => {
+    const previousLoadState = loadStateRef.current;
     auditControllerRef.current?.abort();
     const controller = new AbortController();
     auditControllerRef.current = controller;
-    setLoadState("loading");
-    setLoadError(null);
+    if (!options.silent) {
+      loadStateRef.current = "loading";
+      setLoadState("loading");
+      setLoadError(null);
+    }
     try {
       const page = await operatorApi.listAudit(
         { tournament_id: tournamentId, ...query, ...(cursor ? { cursor } : {}) },
@@ -246,7 +304,9 @@ export const TournamentAuditPanel = ({
       if (controller.signal.aborted) {
         return null;
       }
+      loadStateRef.current = "ready";
       setLoadState("ready");
+      setLoadError(null);
       return page;
     } catch (error) {
       if (controller.signal.aborted) {
@@ -255,6 +315,15 @@ export const TournamentAuditPanel = ({
       if (error instanceof ApiError && error.status === 401) {
         onSessionExpired?.();
       }
+      if (options.silent) {
+        if (previousLoadState === "loading") {
+          loadStateRef.current = "error";
+          setLoadState("error");
+          setLoadError(problemMessage(error, "Не удалось загрузить историю соревнования."));
+        }
+        return null;
+      }
+      loadStateRef.current = "error";
       setLoadState("error");
       setLoadError(problemMessage(error, "Не удалось загрузить историю соревнования."));
       return null;
@@ -291,6 +360,42 @@ export const TournamentAuditPanel = ({
       bundleControllerRef.current?.abort();
     };
   }, [fetchPage, selectedTournamentId]);
+
+  const refreshLiveAudit = useCallback(async (): Promise<void> => {
+    if (!selectedTournamentId) {
+      return;
+    }
+    const cursor = pageIndex > 0
+      ? pages[pageIndex - 1]?.next_cursor ?? undefined
+      : undefined;
+    if (pageIndex > 0 && !cursor) {
+      return;
+    }
+    const page = await fetchPage(
+      selectedTournamentId,
+      appliedQuery,
+      cursor,
+      { silent: true },
+    );
+    const currentView = auditViewRef.current;
+    if (
+      !page ||
+      !mountedRef.current ||
+      currentView.selectedTournamentId !== selectedTournamentId ||
+      currentView.appliedQuery !== appliedQuery ||
+      currentView.pageIndex !== pageIndex
+    ) {
+      return;
+    }
+    setPages((current) => [...current.slice(0, pageIndex), page]);
+    await loadSnapshot({ silent: true });
+  }, [appliedQuery, fetchPage, loadSnapshot, pageIndex, pages, selectedTournamentId]);
+
+  useAdminLiveRefresh(
+    ["tournaments", "players"] as const,
+    refreshLiveAudit,
+    Boolean(selectedTournamentId) && loadState !== "loading",
+  );
 
   const applyFilters = async (): Promise<void> => {
     if (!selectedTournamentId) {

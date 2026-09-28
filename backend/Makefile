@@ -107,14 +107,14 @@ lint-go-fix: ## Auto-fix Go lint findings
 	$(GOLANGCI_LINT) run --fix ./...
 
 .PHONY: lint-sql
-lint-sql: install-quality-python-deps ## Lint migrations, seeds and sqlc queries
-	$(QUALITY_PYTHON) -m sqlfluff lint --config .sqlfluff db/migrations db/seeds db/queries
+lint-sql: install-quality-python-deps ## Lint migrations and sqlc queries
+	$(QUALITY_PYTHON) -m sqlfluff lint --config .sqlfluff db/migrations db/queries
 
 # Applied migrations are immutable. Keep the fixer hard-scoped to queries.
 .PHONY: lint-sql-fix
 lint-sql-fix: install-quality-python-deps ## Auto-fix queries, then lint queries and immutable migrations
 	$(QUALITY_PYTHON) -m sqlfluff fix --config .sqlfluff db/queries
-	$(QUALITY_PYTHON) -m sqlfluff lint --config .sqlfluff db/migrations db/seeds db/queries
+	$(QUALITY_PYTHON) -m sqlfluff lint --config .sqlfluff db/migrations db/queries
 
 .PHONY: fmt
 fmt: ## golangci-lint fmt
@@ -167,14 +167,6 @@ migrate-down: ## goose down - roll back the last migration
 .PHONY: migrate-status
 migrate-status: ## goose status
 	$(GOOSE) -dir $(MIGRATIONS_DIR) postgres "$(DB_DSN)" status
-
-.PHONY: seed-up seed-status
-seed-up seed-status: export DB_DSN := $(DB_DSN)
-seed-up: ## Apply the separate demonstration seed after schema migrations
-	@go run ./cmd/migrate seed-up
-
-seed-status: ## Show the applied demonstration seed version
-	@go run ./cmd/migrate seed-status
 
 .PHONY: migrate-create
 migrate-create: ## Create a new migration: make migrate-create NAME=add_widgets

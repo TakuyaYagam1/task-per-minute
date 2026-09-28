@@ -17,6 +17,7 @@ import {
   type Tournament,
   type TournamentContentSelection,
 } from "../../shared/api";
+import { useAdminLiveRefresh } from "../../features/admin-live";
 import { catalogFormatLabel } from "../../entities/tournament";
 import { formatTournamentState } from "../../shared/lib";
 import {
@@ -55,6 +56,7 @@ type TournamentAdminPanelProps = Readonly<{
 }>;
 
 type LoadState = "loading" | "ready" | "error";
+type LoadOptions = Readonly<{ silent?: boolean }>;
 
 const PAGE_SIZE = 200;
 const MAX_TOURNAMENT_NAME_LENGTH = 120;
@@ -221,10 +223,14 @@ export const TournamentAdminPanel = ({
   const navigationContextRef = useRef({ activeView, selectedTournamentId });
   const tournamentsControllerRef = useRef<AbortController | null>(null);
   const contentControllerRef = useRef<AbortController | null>(null);
+  const tournamentsStateRef = useRef(tournamentsState);
+  const contentStateRef = useRef(contentState);
   const requestGenerationRef = useRef(0);
   const dirtySourcesRef = useRef<Record<string, boolean>>({});
   const previousViewRef = useRef(activeView);
   const previousTournamentIdRef = useRef(selectedTournamentId);
+  tournamentsStateRef.current = tournamentsState;
+  contentStateRef.current = contentState;
 
   const selectedTournament = useMemo(
     () =>
@@ -319,17 +325,23 @@ export const TournamentAdminPanel = ({
     [reportChildDirty],
   );
 
-  const loadTournaments = useCallback(async (): Promise<void> => {
+  const loadTournaments = useCallback(async (options: LoadOptions = {}): Promise<void> => {
+    const previousTournamentsState = tournamentsStateRef.current;
     tournamentsControllerRef.current?.abort();
     const controller = new AbortController();
     tournamentsControllerRef.current = controller;
-    setTournamentsState("loading");
-    setTournamentsError(null);
+    if (!options.silent) {
+      tournamentsStateRef.current = "loading";
+      setTournamentsState("loading");
+      setTournamentsError(null);
+    }
     try {
       const items = await readAllTournaments(controller.signal);
       if (!controller.signal.aborted) {
         setTournaments(items);
+        tournamentsStateRef.current = "ready";
         setTournamentsState("ready");
+        setTournamentsError(null);
       }
     } catch (error) {
       if (controller.signal.aborted || isAbortError(error)) {
@@ -338,6 +350,15 @@ export const TournamentAdminPanel = ({
       if (error instanceof ApiError && error.status === 401) {
         onSessionExpired?.();
       }
+      if (options.silent) {
+        if (previousTournamentsState === "loading") {
+          tournamentsStateRef.current = "error";
+          setTournamentsState("error");
+          setTournamentsError(problemMessage(error, "Не удалось загрузить список соревнований"));
+        }
+        return;
+      }
+      tournamentsStateRef.current = "error";
       setTournamentsState("error");
       setTournamentsError(problemMessage(error, "Не удалось загрузить список соревнований"));
     } finally {
@@ -347,15 +368,19 @@ export const TournamentAdminPanel = ({
     }
   }, [onSessionExpired]);
 
-  const loadContent = useCallback(async (): Promise<void> => {
+  const loadContent = useCallback(async (options: LoadOptions = {}): Promise<void> => {
+    const previousContentState = contentStateRef.current;
     contentControllerRef.current?.abort();
     const controller = new AbortController();
     const requestGeneration = requestGenerationRef.current + 1;
     requestGenerationRef.current = requestGeneration;
     contentControllerRef.current = controller;
-    setContentState("loading");
-    setContentError(null);
-    setContentEmpty(false);
+    if (!options.silent) {
+      contentStateRef.current = "loading";
+      setContentState("loading");
+      setContentError(null);
+      setContentEmpty(false);
+    }
     try {
       const selection = await getTournamentContent(controller.signal);
       if (
@@ -365,7 +390,10 @@ export const TournamentAdminPanel = ({
         return;
       }
       setContent(selection);
+      contentStateRef.current = "ready";
       setContentState("ready");
+      setContentError(null);
+      setContentEmpty(false);
     } catch (error) {
       if (
         controller.signal.aborted ||
@@ -377,9 +405,24 @@ export const TournamentAdminPanel = ({
       if (error instanceof ApiError && error.status === 401) {
         onSessionExpired?.();
       }
+      if (options.silent) {
+        if (previousContentState === "loading") {
+          const unavailable = error instanceof ApiError && error.status === 422;
+          contentStateRef.current = "error";
+          setContentEmpty(unavailable);
+          setContentState("error");
+          setContentError(
+            unavailable
+              ? "Опубликованных задач пока нет. Сначала опубликуйте задачи."
+              : problemMessage(error, "Не удалось получить текущую публикацию контента"),
+          );
+        }
+        return;
+      }
       const unavailable = error instanceof ApiError && error.status === 422;
       setContent(null);
       setContentEmpty(unavailable);
+      contentStateRef.current = "error";
       setContentState("error");
       setContentError(
         unavailable
@@ -392,6 +435,19 @@ export const TournamentAdminPanel = ({
       }
     }
   }, [onSessionExpired]);
+
+  const refreshLiveAdminData = useCallback(async (): Promise<void> => {
+    await Promise.all([
+      loadTournaments({ silent: true }),
+      loadContent({ silent: true }),
+    ]);
+  }, [loadContent, loadTournaments]);
+
+  useAdminLiveRefresh(["tournaments", "tasks"] as const, refreshLiveAdminData);
+
+  const reloadTournamentsSilently = useCallback(async (): Promise<void> => {
+    await loadTournaments({ silent: true });
+  }, [loadTournaments]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -858,7 +914,7 @@ export const TournamentAdminPanel = ({
             <div className={styles.editorStack}>
               <TournamentStartControls
                 onNavigate={(view) => onNavigate(selectedTournament.id, view)}
-                onReloadTournaments={loadTournaments}
+                onReloadTournaments={reloadTournamentsSilently}
                 onSessionExpired={onSessionExpired}
                 onTournamentUpdated={handleTournamentUpdated}
                 tournament={selectedTournament}
@@ -901,7 +957,7 @@ export const TournamentAdminPanel = ({
               selectedTournamentId={selectedTournament.id}
               onSelectTournament={(id) => onNavigate(id || null, "participants")}
               onNavigateToOverview={() => onNavigate(selectedTournament.id, "overview")}
-              onReloadTournaments={loadTournaments}
+              onReloadTournaments={reloadTournamentsSilently}
               onSessionExpired={onSessionExpired}
               onDirtyChange={reportRosterDirty}
               showTournamentChooser={false}
@@ -924,7 +980,7 @@ export const TournamentAdminPanel = ({
                 selectedTournamentId={selectedTournament.id}
                 onSelectTournament={(id) => onNavigate(id || null, "bracket")}
                 onNavigateToConduct={() => onNavigate(selectedTournament.id, "conduct")}
-                onReloadTournaments={loadTournaments}
+                onReloadTournaments={reloadTournamentsSilently}
                 onSessionExpired={onSessionExpired}
                 onDirtyChange={reportSwissDirty}
                 showTournamentChooser={false}

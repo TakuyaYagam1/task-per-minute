@@ -27,6 +27,7 @@ func provideRESTServerWithClock(
 	tasks restv1.AdminTaskService,
 	adminPlayers restv1.AdminPlayerService,
 	adminPlayerEvents restv1.AdminPlayerEventSubscriber,
+	adminEvents restv1.AdminEventSubscriber,
 	upload restv1.UploadService,
 	leaderboard restv1.LeaderboardService,
 	tournaments inbound.TournamentUseCase,
@@ -61,6 +62,7 @@ func provideRESTServerWithClock(
 		Tasks:                                tasks,
 		AdminPlayers:                         adminPlayers,
 		AdminPlayerEvents:                    adminPlayerEvents,
+		AdminEvents:                          adminEvents,
 		Upload:                               upload,
 		Leaderboard:                          leaderboard,
 		Tournaments:                          tournaments,
@@ -264,6 +266,7 @@ func provideHTTPHandler(
 		router.Method(http.MethodGet, "/internal/metrics", metrics.Handler)
 	}
 	router.Method(http.MethodGet, "/api/v1/admin/players/events", adminPlayerEventsHandler(rest, auth, log, cfg))
+	router.Method(http.MethodGet, "/api/v1/admin/events", adminEventsHandler(rest, auth, log, cfg))
 	router.Mount("/", handler)
 
 	return middleware.CORS(cfg.HTTP.AllowedOrigins)(router)
@@ -271,6 +274,22 @@ func provideHTTPHandler(
 
 func adminPlayerEventsHandler(rest *restv1.Server, auth *authusecase.UseCase, log logkit.Logger, cfg *config.Config) http.Handler {
 	var handler http.Handler = http.HandlerFunc(rest.StreamPlayerEvents)
+	if auth != nil {
+		handler = middleware.AdminSession(auth)(handler)
+	}
+	handler = middleware.NoStoreSensitiveResponses()(handler)
+	if cfg != nil {
+		handler = middleware.BuildStreaming(
+			log,
+			middleware.WithTrustedProxyCIDRs(cfg.HTTP.TrustedProxyCIDRs),
+			middleware.WithAllowedOrigins(cfg.HTTP.AllowedOrigins),
+		)(handler)
+	}
+	return handler
+}
+
+func adminEventsHandler(rest *restv1.Server, auth *authusecase.UseCase, log logkit.Logger, cfg *config.Config) http.Handler {
+	var handler http.Handler = http.HandlerFunc(rest.StreamAdminEvents)
 	if auth != nil {
 		handler = middleware.AdminSession(auth)(handler)
 	}

@@ -31,6 +31,7 @@ type Dependencies struct {
 	Tasks                                AdminTaskService
 	AdminPlayers                         AdminPlayerService
 	AdminPlayerEvents                    AdminPlayerEventSubscriber
+	AdminEvents                          AdminEventSubscriber
 	Upload                               UploadService
 	Leaderboard                          LeaderboardService
 	Tournaments                          usecase.TournamentUseCase
@@ -64,6 +65,7 @@ type Server struct {
 	tasks                                AdminTaskService
 	adminPlayers                         AdminPlayerService
 	adminPlayerEvents                    AdminPlayerEventSubscriber
+	adminEvents                          AdminEventSubscriber
 	upload                               UploadService
 	leaderboard                          LeaderboardService
 	publicTournamentCatalog              usecase.PublicTournamentCatalogUseCase
@@ -101,6 +103,7 @@ func New(deps Dependencies) *Server {
 		tasks:                                deps.Tasks,
 		adminPlayers:                         deps.AdminPlayers,
 		adminPlayerEvents:                    deps.AdminPlayerEvents,
+		adminEvents:                          deps.AdminEvents,
 		upload:                               deps.Upload,
 		leaderboard:                          deps.Leaderboard,
 		tournamentParticipant:                deps.TournamentParticipant,

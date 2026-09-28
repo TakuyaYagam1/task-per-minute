@@ -13,6 +13,7 @@ import {
   type ReplaceRosterRequest,
   type Tournament,
 } from "../../shared/api";
+import { useAdminLiveRefresh } from "../../features/admin-live";
 import { formatTournamentState, PREFLIGHT_CODE_LABELS } from "../../shared/lib";
 import { Button, Message, Panel, Status, TechnicalDetails } from "../../shared/ui";
 
@@ -32,6 +33,7 @@ type RosterEditorProps = Readonly<{
 }>;
 
 type LoadState = "loading" | "ready" | "error";
+type LoadOptions = Readonly<{ silent?: boolean }>;
 type PreflightState = "idle" | "loading" | "ready" | "error";
 type RosterParticipant = Roster["participants"][number];
 type RosterParticipantInput = ReplaceRosterRequest["participants"][number];
@@ -110,8 +112,12 @@ export const RosterEditor = ({
   const preflightControllerRef = useRef<AbortController | null>(null);
   const rosterLoadRef = useRef(0);
   const playersLoadRef = useRef(0);
-  const playersInFlightRef = useRef(false);
   const playersSessionExpiredRef = useRef(false);
+  const playersHasSnapshotRef = useRef(false);
+  const rosterRef = useRef<Roster | null>(null);
+  const rosterDraftDirtyRef = useRef(false);
+  const rosterMutationInFlightRef = useRef(false);
+  const rosterRefreshPendingRef = useRef(false);
   const preflightRunRef = useRef(0);
   const draftIdRef = useRef(0);
   const [players, setPlayers] = useState<AdminPlayer[]>([]);
@@ -134,22 +140,20 @@ export const RosterEditor = ({
   const [unlockConfirmed, setUnlockConfirmed] = useState(false);
   const [unlockReason, setUnlockReason] = useState("");
 
+  rosterRef.current = roster;
+  playersHasSnapshotRef.current = playersHasSnapshot;
+  const rosterDraftDirty = Boolean(selectedTournamentId && roster) && (
+    JSON.stringify(roster ? draftFromRoster(roster) : []) !== JSON.stringify(draftParticipants) ||
+    unlockConfirmed ||
+    Boolean(unlockReason.trim())
+  );
+  rosterDraftDirtyRef.current = rosterDraftDirty;
+  const rosterMutationInFlight = savingRoster || lockingRoster || unlockingRoster;
+  rosterMutationInFlightRef.current = rosterMutationInFlight;
+
   useEffect(() => {
-    if (!selectedTournamentId || !roster) {
-      onDirtyChange?.(false);
-      return;
-    }
-    const draftChanged =
-      JSON.stringify(draftFromRoster(roster)) !== JSON.stringify(draftParticipants);
-    onDirtyChange?.(draftChanged || unlockConfirmed || Boolean(unlockReason.trim()));
-  }, [
-    draftParticipants,
-    onDirtyChange,
-    roster,
-    selectedTournamentId,
-    unlockConfirmed,
-    unlockReason,
-  ]);
+    onDirtyChange?.(rosterDraftDirty);
+  }, [onDirtyChange, rosterDraftDirty]);
 
   const resetPreflight = useCallback((): void => {
     preflightControllerRef.current?.abort();
@@ -165,23 +169,21 @@ export const RosterEditor = ({
     playersControllerRef.current?.abort();
     playersControllerRef.current = null;
     playersLoadRef.current += 1;
-    playersInFlightRef.current = false;
   }, []);
 
-  const loadPlayers = useCallback(async (id: string): Promise<void> => {
-    if (
-      !id ||
-      playersInFlightRef.current ||
-      playersSessionExpiredRef.current
-    ) {
+  const loadPlayers = useCallback(async (id: string, options: LoadOptions = {}): Promise<void> => {
+    const silent = options.silent === true;
+    if (!id || playersSessionExpiredRef.current) {
       return;
     }
+    playersControllerRef.current?.abort();
     const controller = new AbortController();
     const loadId = playersLoadRef.current + 1;
     playersLoadRef.current = loadId;
     playersControllerRef.current = controller;
-    playersInFlightRef.current = true;
-    setPlayersState("loading");
+    if (!silent || !playersHasSnapshotRef.current) {
+      setPlayersState("loading");
+    }
     setPlayersError(null);
 
     try {
@@ -193,6 +195,7 @@ export const RosterEditor = ({
         return;
       }
       setPlayers(activePlayers);
+      playersHasSnapshotRef.current = true;
       setPlayersHasSnapshot(true);
       setPlayersState("ready");
     } catch (error) {
@@ -207,6 +210,10 @@ export const RosterEditor = ({
         playersSessionExpiredRef.current = true;
         onSessionExpired?.();
       }
+      if (silent && playersHasSnapshotRef.current) {
+        setPlayersState("ready");
+        return;
+      }
       setPlayersState("error");
       setPlayersError(
         rosterErrorMessage(error, "Не удалось загрузить список активных игроков"),
@@ -214,24 +221,28 @@ export const RosterEditor = ({
     } finally {
       if (playersControllerRef.current === controller) {
         playersControllerRef.current = null;
-        playersInFlightRef.current = false;
       }
     }
   }, [onSessionExpired]);
 
-  const loadRoster = useCallback(async (id: string): Promise<void> => {
+  const loadRoster = useCallback(async (id: string, options: LoadOptions = {}): Promise<void> => {
+    const silent = options.silent === true;
     rosterControllerRef.current?.abort();
-    resetPreflight();
+    rosterRefreshPendingRef.current = false;
     const controller = new AbortController();
     const loadId = rosterLoadRef.current + 1;
     rosterLoadRef.current = loadId;
     rosterControllerRef.current = controller;
-    setRosterState("loading");
+    if (!silent || rosterRef.current === null) {
+      setRosterState("loading");
+    }
     setRosterError(null);
     setRosterNotice(null);
     setControlError(null);
-    setUnlockConfirmed(false);
-    setUnlockReason("");
+    if (!silent || rosterRef.current === null) {
+      setUnlockConfirmed(false);
+      setUnlockReason("");
+    }
 
     try {
       const currentRoster = await operatorApi.getRoster(id, controller.signal);
@@ -241,6 +252,21 @@ export const RosterEditor = ({
       ) {
         return;
       }
+      if (
+        silent &&
+        (rosterDraftDirtyRef.current || rosterMutationInFlightRef.current)
+      ) {
+        rosterRefreshPendingRef.current = true;
+        return;
+      }
+      const previousRoster = rosterRef.current;
+      const rosterChanged = previousRoster === null ||
+        previousRoster.tournament_id !== currentRoster.tournament_id ||
+        previousRoster.revision !== currentRoster.revision;
+      if (rosterChanged) {
+        resetPreflight();
+      }
+      rosterRef.current = currentRoster;
       setRoster(currentRoster);
       setDraftParticipants(draftFromRoster(currentRoster));
       setRosterState("ready");
@@ -255,6 +281,9 @@ export const RosterEditor = ({
       if (error instanceof ApiError && error.status === 401) {
         playersSessionExpiredRef.current = true;
         onSessionExpired?.();
+      }
+      if (silent && rosterRef.current !== null) {
+        return;
       }
       setRosterState("error");
       setRosterError(
@@ -272,6 +301,8 @@ export const RosterEditor = ({
       rosterControllerRef.current?.abort();
       cancelPlayersLoad();
       playersSessionExpiredRef.current = false;
+      playersHasSnapshotRef.current = false;
+      rosterRefreshPendingRef.current = false;
       resetPreflight();
       rosterLoadRef.current += 1;
       setPlayers([]);
@@ -301,31 +332,59 @@ export const RosterEditor = ({
       return;
     }
 
-    const refreshWhenVisible = (): void => {
-      if (document.visibilityState === "visible") {
-        void loadPlayers(tournamentId);
-      }
-    };
-    const handleVisibilityChange = (): void => {
-      if (document.visibilityState === "visible") {
-        refreshWhenVisible();
-      }
-    };
-    const handleWindowFocus = (): void => {
-      refreshWhenVisible();
-    };
-
-    refreshWhenVisible();
-    const refreshTimer = window.setInterval(refreshWhenVisible, 5000);
-    document.addEventListener("visibilitychange", handleVisibilityChange);
-    window.addEventListener("focus", handleWindowFocus);
+    void loadPlayers(tournamentId);
     return () => {
-      window.clearInterval(refreshTimer);
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
-      window.removeEventListener("focus", handleWindowFocus);
       cancelPlayersLoad();
     };
   }, [cancelPlayersLoad, loadPlayers, tournamentId]);
+
+  useEffect(() => {
+    if (
+      !rosterRefreshPendingRef.current ||
+      !tournamentId ||
+      rosterDraftDirty ||
+      rosterMutationInFlight ||
+      rosterState === "loading"
+    ) {
+      return;
+    }
+    rosterRefreshPendingRef.current = false;
+    void loadRoster(tournamentId, { silent: true });
+  }, [loadRoster, rosterDraftDirty, rosterMutationInFlight, rosterState, tournamentId]);
+
+  const refreshPlayersLive = useCallback(async (): Promise<void> => {
+    if (!tournamentId) {
+      return;
+    }
+    await loadPlayers(tournamentId, { silent: true });
+  }, [loadPlayers, tournamentId]);
+
+  const refreshRosterLive = useCallback(async (): Promise<void> => {
+    if (
+      !tournamentId ||
+      rosterDraftDirtyRef.current ||
+      rosterMutationInFlightRef.current ||
+      rosterState === "loading"
+    ) {
+      rosterRefreshPendingRef.current = true;
+      return;
+    }
+    await loadRoster(tournamentId, { silent: true });
+  }, [loadRoster, rosterState, tournamentId]);
+
+  useAdminLiveRefresh(
+    "players",
+    refreshPlayersLive,
+    Boolean(tournamentId),
+  );
+  useAdminLiveRefresh(
+    "tournaments",
+    refreshRosterLive,
+    Boolean(tournamentId) &&
+      !rosterDraftDirty &&
+      !rosterMutationInFlight &&
+      rosterState !== "loading",
+  );
 
   useEffect(() => () => {
     rosterControllerRef.current?.abort();
@@ -338,7 +397,7 @@ export const RosterEditor = ({
     setControlError(null);
     setUnlockConfirmed(false);
     setUnlockReason("");
-  }, [resetPreflight, selectedTournament?.revision, selectedTournamentId]);
+  }, [resetPreflight, selectedTournamentId]);
 
   const rosterEditingLocked = Boolean(
     roster?.locked || roster?.execution_started,
@@ -535,14 +594,6 @@ export const RosterEditor = ({
     } finally {
       setSavingRoster(false);
     }
-  };
-
-  const handleReloadRoster = (): void => {
-    if (!tournamentId || savingRoster || lockingRoster || unlockingRoster) {
-      return;
-    }
-    void loadRoster(tournamentId);
-    void onReloadTournaments();
   };
 
   const checkedInPlayerIds = useMemo(
@@ -787,13 +838,6 @@ export const RosterEditor = ({
       {selectedTournament && rosterState === "error" && (
         <Message tone="error" title="Не удалось загрузить состав">
           {rosterError || "Состав временно недоступен."}
-          <button
-            className={styles.inlineAction}
-            type="button"
-            onClick={handleReloadRoster}
-          >
-            Повторить загрузку
-          </button>
         </Message>
       )}
 
@@ -838,13 +882,6 @@ export const RosterEditor = ({
           {playersState === "error" && (
             <Message tone="error" title="Не удалось загрузить список игроков">
               {playersError || "Список активных игроков временно недоступен."}
-              <button
-                className={styles.inlineAction}
-                type="button"
-                onClick={() => void loadPlayers(tournamentId)}
-              >
-                Повторить загрузку
-              </button>
             </Message>
           )}
 
@@ -939,28 +976,12 @@ export const RosterEditor = ({
           {controlError && (
             <Message tone="error" title="Операция не выполнена">
               {controlError}
-              <button
-                className={styles.inlineAction}
-                type="button"
-                onClick={handleReloadRoster}
-                disabled={savingRoster || lockingRoster || unlockingRoster}
-              >
-                Повторить загрузку
-              </button>
             </Message>
           )}
 
           {rosterError && !rosterEditingLocked && (
             <Message tone="error" title="Состав не сохранен">
               {rosterError}
-              <button
-                className={styles.inlineAction}
-                type="button"
-                onClick={handleReloadRoster}
-                disabled={savingRoster}
-              >
-                Повторить загрузку
-              </button>
             </Message>
           )}
 
@@ -1028,14 +1049,6 @@ export const RosterEditor = ({
             {preflightState === "error" && (
               <Message tone="error" title="Проверка не выполнена">
                 {preflightError || "Проверка не вернула результат."}
-                <button
-                  className={styles.inlineAction}
-                  type="button"
-                  onClick={handleReloadRoster}
-                  disabled={savingRoster || lockingRoster || unlockingRoster}
-                >
-                  Повторить загрузку
-                </button>
               </Message>
             )}
 

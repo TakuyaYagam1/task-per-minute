@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { adminApi, operatorApi, type AdminPlayer, type Roster } from "../../shared/api";
-import { ADMIN_PLAYERS_CHANGED_EVENT } from "../../shared/api/admin";
+import { ADMIN_PLAYERS_CHANGED_EVENT, ADMIN_TOURNAMENTS_CHANGED_EVENT } from "../../shared/api/admin";
 
 type MatchParticipants = Readonly<{ first_participant_id: string; second_participant_id: string }>;
 type Names = Readonly<{ tournamentId: string; players: readonly AdminPlayer[]; roster: Roster | null }>;
@@ -31,9 +31,11 @@ export const useParticipantNames = (tournamentId: string, roster?: Roster | null
     };
     load();
     window.addEventListener(ADMIN_PLAYERS_CHANGED_EVENT, load);
+    if (fetchRoster) window.addEventListener(ADMIN_TOURNAMENTS_CHANGED_EVENT, load);
     return () => {
       controller?.abort();
       window.removeEventListener(ADMIN_PLAYERS_CHANGED_EVENT, load);
+      window.removeEventListener(ADMIN_TOURNAMENTS_CHANGED_EVENT, load);
     };
   }, [fetchRoster, tournamentId]);
 

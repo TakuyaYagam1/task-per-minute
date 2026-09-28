@@ -20,6 +20,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/participantarchive"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/player"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/projection"
+	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/realtime"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/schema"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/task"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/admin/correction"
@@ -85,6 +86,7 @@ func initializeApp(runtime *RuntimeContext, cfg *config.Config, log logkit.Logge
 	cache := provideLeaderboardCache(ranking, bootstrapClockFunc)
 	managementUseCase := providePlayerManagementUseCase(v2, playerPostgres, cache, bootstrapClockFunc)
 	adminPlayerEventsPostgres := player.NewAdminPlayerEventsPostgres(pool)
+	adminEventsPostgres := realtime.NewAdminEventsPostgres(pool)
 	cleanupRunner := provideCleanupRunner()
 	sourceFiles := provideSourceFiles(taskUseCase, seaweedStorage, cleanupRunner, log)
 	deterministicIDGenerator, err := provideTournamentIDGenerator()
@@ -294,7 +296,7 @@ func initializeApp(runtime *RuntimeContext, cfg *config.Config, log logkit.Logge
 	bootstrapOperatorTournamentMutationRateLimiter := provideOperatorTournamentMutationRateLimiter(client, cfg)
 	bootstrapParticipantTournamentReadRateLimiter := provideParticipantTournamentReadRateLimiter(client, cfg)
 	bootstrapParticipantTournamentMutationRateLimiter := provideParticipantTournamentMutationRateLimiter(client, cfg)
-	server := provideRESTServerWithClock(sessionUseCase, useCase, taskUseCase, managementUseCase, adminPlayerEventsPostgres, sourceFiles, cache, catalogUseCase, service, admissionUseCase, tournamentAdminUseCase, tournamentConfigurationWorkflow, participantObservedService, participantarchiveService, tournamentSnapshotPostgres, runtimeApplication, healthChecks, bootstrapClockFunc, bootstrapLoginRateLimiter, bootstrapAdminRefreshRateLimiter, bootstrapJoinRateLimiter, bootstrapLeaderboardRateLimiter, bootstrapPublicTournamentReadRateLimiter, bootstrapOperatorTournamentReadRateLimiter, bootstrapOperatorTournamentMutationRateLimiter, bootstrapParticipantTournamentReadRateLimiter, bootstrapParticipantTournamentMutationRateLimiter, log)
+	server := provideRESTServerWithClock(sessionUseCase, useCase, taskUseCase, managementUseCase, adminPlayerEventsPostgres, adminEventsPostgres, sourceFiles, cache, catalogUseCase, service, admissionUseCase, tournamentAdminUseCase, tournamentConfigurationWorkflow, participantObservedService, participantarchiveService, tournamentSnapshotPostgres, runtimeApplication, healthChecks, bootstrapClockFunc, bootstrapLoginRateLimiter, bootstrapAdminRefreshRateLimiter, bootstrapJoinRateLimiter, bootstrapLeaderboardRateLimiter, bootstrapPublicTournamentReadRateLimiter, bootstrapOperatorTournamentReadRateLimiter, bootstrapOperatorTournamentMutationRateLimiter, bootstrapParticipantTournamentReadRateLimiter, bootstrapParticipantTournamentMutationRateLimiter, log)
 	bootstrapWsHandshakeRateLimiter := provideHandshakeRateLimiter(client, cfg)
 	tournamentProductionSnapshotSource, err := provideTournamentProductionSnapshotSource(tournamentSnapshotPostgres, runtimeApplication)
 	if err != nil {

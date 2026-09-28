@@ -36,6 +36,7 @@ export type UploadSourceResponse = components["schemas"]["TaskSourceUploadRespon
 
 const UPLOAD_SOURCE_TIMEOUT_MS = 5 * 60 * 1000;
 export const ADMIN_PLAYERS_CHANGED_EVENT = "players_changed";
+export const ADMIN_TOURNAMENTS_CHANGED_EVENT = "tournaments_changed";
 
 // Generated request types require the header at each unsafe endpoint. The
 // credentialed fetch layer replaces this placeholder with the current token.
@@ -297,6 +298,19 @@ export const adminApi = {
     });
     adminEventSources.add(source);
     return source;
+  },
+
+  openEvents(): EventSource {
+    const source = new EventSource(adminURL("/api/v1/admin/events"), {
+      withCredentials: true,
+    });
+    adminEventSources.add(source);
+    return source;
+  },
+
+  closeEvents(source: EventSource): void {
+    adminEventSources.delete(source);
+    source.close();
   },
 
   sourceDownloadURL(id: string): string {
