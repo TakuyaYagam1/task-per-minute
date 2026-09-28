@@ -3,6 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useEffect, useRef } from "react";
 
 import { useRegisteredSiteHeaderAuth } from "../../features/site-header";
 import { Button, ThemeToggle } from "../../shared/ui";
@@ -14,11 +15,43 @@ const themeStorageKey = "task-per-minute-theme";
 export function SiteHeader() {
   const auth = useRegisteredSiteHeaderAuth();
   const pathname = usePathname();
+  const headerRef = useRef<HTMLElement | null>(null);
   const isAdminPath = pathname === "/admin" || pathname?.startsWith("/admin/");
   const isAuthenticatedAdmin = isAdminPath && auth?.onLogout !== undefined;
 
+  useEffect(() => {
+    const header = headerRef.current;
+    if (!header) {
+      return;
+    }
+
+    const rootStyle = document.documentElement.style;
+    const previousHeight = rootStyle.getPropertyValue("--site-header-height");
+    const updateHeight = () => {
+      rootStyle.setProperty(
+        "--site-header-height",
+        `${header.getBoundingClientRect().height}px`,
+      );
+    };
+
+    updateHeight();
+    const observer = typeof ResizeObserver === "undefined"
+      ? null
+      : new ResizeObserver(updateHeight);
+    observer?.observe(header);
+
+    return () => {
+      observer?.disconnect();
+      if (previousHeight) {
+        rootStyle.setProperty("--site-header-height", previousHeight);
+      } else {
+        rootStyle.removeProperty("--site-header-height");
+      }
+    };
+  }, []);
+
   return (
-    <header className={styles.header} data-testid="site-header">
+    <header ref={headerRef} className={styles.header} data-testid="site-header">
       <div className={`${styles.inner} ${isAdminPath ? styles.adminInner : ""}`}>
         <Link
           href="/"

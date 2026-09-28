@@ -61,6 +61,20 @@ func (a *inboundAdapter) ApplyTournamentAction(ctx context.Context, command inbo
 	return view, adminInboundError(err)
 }
 
+func (a *inboundAdapter) DeleteTournament(ctx context.Context, command inbound.AdminTournamentDeletionCommand) (inbound.AdminTournamentDeletionRecord, error) {
+	record, err := a.next.DeleteTournament(ctx, TournamentDeletionCommand{
+		CommandScope:     commandScope(command.AdminCommandScope),
+		ExpectedRevision: command.ExpectedRevision,
+		Confirmed:        command.Confirmed,
+	})
+	return inbound.AdminTournamentDeletionRecord{
+		CommandID: record.CommandID, TournamentID: record.TournamentID, ActorID: record.ActorID,
+		SourceRevision: record.SourceRevision, ResultingRevision: record.ResultingRevision,
+		SourceState: record.SourceState, Cancelled: record.Cancelled, Reason: record.Reason,
+		DeletedAt: record.DeletedAt, CreatedAt: record.CreatedAt,
+	}, adminInboundError(err)
+}
+
 func (a *inboundAdapter) ControlWave(ctx context.Context, command inbound.AdminWaveCommand) (inbound.AdminWaveView, error) {
 	view, err := a.next.ControlWave(ctx, WaveCommand{CommandScope: commandScope(command.AdminCommandScope), WaveID: command.WaveID, ExpectedProjectionRevision: command.ExpectedProjectionRevision, Action: WaveAction(command.Action), Confirmed: command.Confirmed, Reason: command.Reason})
 	return waveView(view), adminInboundError(err)

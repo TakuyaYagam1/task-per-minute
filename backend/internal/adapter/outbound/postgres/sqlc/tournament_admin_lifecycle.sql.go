@@ -573,6 +573,7 @@ JOIN LATERAL (
     WHERE participant.roster_id = roster.id
 ) AS roster_size ON TRUE
 WHERE tournament.id = $1
+    AND tournament.deleted_at IS NULL
 FOR UPDATE OF tournament, roster
 `
 
@@ -865,6 +866,7 @@ SELECT roster.id
 FROM tournaments AS tournament
 JOIN rosters AS roster ON roster.tournament_id = tournament.id
 WHERE tournament.id = $1
+    AND tournament.deleted_at IS NULL
 FOR UPDATE OF tournament, roster
 `
 

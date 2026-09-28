@@ -1,0 +1,128 @@
+name: task-per-minute-web
+
+x-task-defaults: &task-defaults
+  restart: unless-stopped
+  init: true
+  read_only: true
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+  pids_limit: 128
+  stop_grace_period: 10s
+  tmpfs:
+    - /tmp:rw,noexec,nosuid,nodev,size=16m
+  deploy:
+    resources:
+      limits:
+        cpus: "0.50"
+        memory: 256M
+        pids: 128
+      reservations:
+        cpus: "0.05"
+        memory: 32M
+  networks:
+    - tasks
+
+services:
+  task-cookie:
+    <<: *task-defaults
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        NODE_IMAGE: ${TPMWEB_NODE_IMAGE:-node:22-bookworm-slim}
+        TASK_DIR: task01-cookie/admin/deploy
+        TASK_PORT: "3001"
+    expose:
+      - "3001"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3001/').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  task-archive:
+    <<: *task-defaults
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        NODE_IMAGE: ${TPMWEB_NODE_IMAGE:-node:22-bookworm-slim}
+        TASK_DIR: task02-robots/admin/deploy
+        TASK_PORT: "3002"
+    expose:
+      - "3002"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3002/').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  task-samovar:
+    <<: *task-defaults
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        NODE_IMAGE: ${TPMWEB_NODE_IMAGE:-node:22-bookworm-slim}
+        TASK_DIR: task03-status/admin/deploy
+        TASK_PORT: "3003"
+    expose:
+      - "3003"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3003/').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  task-vkontakte:
+    <<: *task-defaults
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        NODE_IMAGE: ${TPMWEB_NODE_IMAGE:-node:22-bookworm-slim}
+        TASK_DIR: task04-sqli/admin/deploy
+        TASK_PORT: "3004"
+    working_dir: /data
+    command: ["node", "/app/app.js"]
+    environment:
+      DB_PATH: /data/ctf.db
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=16m
+      - /data:rw,noexec,nosuid,nodev,size=16m,uid=1000,gid=1000,mode=0700
+    expose:
+      - "3004"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3004/').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  task-dedys:
+    <<: *task-defaults
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        NODE_IMAGE: ${TPMWEB_NODE_IMAGE:-node:22-bookworm-slim}
+        TASK_DIR: task05-xss/admin/deploy
+        TASK_PORT: "3005"
+    expose:
+      - "3005"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3005/').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+networks:
+  tasks:
+    external: true
+    name: task-per-minute_tasks

@@ -53,7 +53,8 @@ LEFT JOIN LATERAL (
     FROM audit_events AS event
     WHERE event.tournament_id = tournament.id
 ) AS audit ON TRUE
-WHERE tournament.id = sqlc.arg(tournament_id);
+WHERE tournament.id = sqlc.arg(tournament_id)
+    AND tournament.deleted_at IS NULL;
 
 -- name: ListTournamentAdminSnapshotWaves :many
 SELECT wave.id,

@@ -1,0 +1,12 @@
+{
+  "name": "task2-robots",
+  "version": "1.0.0",
+  "description": "CTF Task 2 - Flag in robots.txt",
+  "main": "app.js",
+  "scripts": {
+    "start": "node app.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2"
+  }
+}

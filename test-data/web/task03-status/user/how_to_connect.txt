@@ -1,0 +1,3 @@
+Открой в браузере: https://samovar.ctfleague.ru
+
+Для просмотра полного HTTP-ответа можно использовать DevTools или curl.

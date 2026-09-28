@@ -187,7 +187,7 @@
 
 .notificationWrap {
   position: fixed;
-  top: 1rem;
+  top: calc(var(--site-header-height, 4rem) + 0.75rem);
   right: 1rem;
   z-index: 50;
   display: flex;
@@ -205,6 +205,13 @@
   color: var(--text);
   box-shadow: var(--shadow-small);
   pointer-events: auto;
+}
+
+@media (max-width: 560px) {
+  .notificationWrap {
+    right: 0.75rem;
+    max-width: calc(100vw - 1.5rem);
+  }
 }
 
 @media (max-width: 760px) {

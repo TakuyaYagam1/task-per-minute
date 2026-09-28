@@ -228,7 +228,7 @@ func initializeApp(runtime *RuntimeContext, cfg *config.Config, log logkit.Logge
 	tournamentCancellationUseCase := provideTournamentCancellation(tournamentCancellationPostgres, bootstrapClockFunc)
 	tournamentProgressionPostgres := progression.NewTournamentProgressionPostgres(v2)
 	workflow := provideTournamentProgression(tournamentProgressionPostgres, tournamentProgressionPostgres, tournamentProgressionPostgres, tournamentProgressionPostgres, bootstrapClockFunc)
-	lifecycleWorkflow := provideTournamentAdminLifecycle(v2, tournamentAdminLifecyclePostgres, tournamentLifecycleUseCase, tournamentPauseUseCase, tournamentCancellationUseCase, workflow, bootstrapClockFunc)
+	lifecycleWorkflow := provideTournamentAdminLifecycle(v2, tournamentAdminLifecyclePostgres, tournamentAdminLifecyclePostgres, tournamentLifecycleUseCase, tournamentPauseUseCase, tournamentCancellationUseCase, workflow, bootstrapClockFunc)
 	resultPostgres := provideResultPostgres(v2)
 	tournamentAdminResultPostgres := provideTournamentAdminResultRepository(v2, resultPostgres)
 	operatorResultWorkflow := provideTournamentAdminResults(v2, tournamentAdminResultPostgres, v4)
@@ -244,7 +244,7 @@ func initializeApp(runtime *RuntimeContext, cfg *config.Config, log logkit.Logge
 		return nil, nil, err
 	}
 	tournamentAdminSnapshotPostgres := snapshot.NewTournamentAdminSnapshotPostgres(v2)
-	adminUseCase := provideTournamentAdminApplication(catalogUseCase, rosterWorkflow, rosterWorkflow, executionWorkflow, lifecycleWorkflow, executionWorkflow, operatorResultWorkflow, replayWorkflow, operatorResultWorkflow, replayWorkflow, correctionWorkflow, tournamentAdminAuditPostgres, tournamentAdminAuditPostgres, hmacAuthenticator, tournamentAdminSnapshotPostgres)
+	adminUseCase := provideTournamentAdminApplication(catalogUseCase, rosterWorkflow, rosterWorkflow, executionWorkflow, lifecycleWorkflow, lifecycleWorkflow, executionWorkflow, operatorResultWorkflow, replayWorkflow, operatorResultWorkflow, replayWorkflow, correctionWorkflow, tournamentAdminAuditPostgres, tournamentAdminAuditPostgres, hmacAuthenticator, tournamentAdminSnapshotPostgres)
 	idempotencyCoordinator := provideDistributedCommandCoordinator(commandReceiptStore)
 	idempotentService, err := provideIdempotentTournamentAdminApplication(adminUseCase, catalogUseCase, idempotencyCoordinator)
 	if err != nil {

@@ -61,7 +61,16 @@ Thumbs.db
 *.db
 *.sqlite
 *.pem
-*tpm-tasks/
+# Public fixture packaging excludes challenge-only admin material.
+/test-data/**/admin/*.txt
+/test-data/**/admin/*.md
+/test-data/**/admin/source/
+/test-data/**/admin/deploy/ctf.db
+/test-data/**/DEPLOY.md
+/test-data/**/solvers/
+/test-data/**/writeups/
+/test-data/**/.cache/
+/test-data/**/cache/
 vendor/
 PRD/
 frontend/preview/

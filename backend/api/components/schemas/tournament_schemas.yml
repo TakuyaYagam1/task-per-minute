@@ -113,6 +113,19 @@ CreateTournamentRequest:
       format: int64
       minimum: 1
 
+DeleteTournamentRequest:
+  type: object
+  additionalProperties: false
+  required: [expected_revision, confirmed]
+  properties:
+    expected_revision:
+      type: integer
+      format: int64
+      minimum: 1
+    confirmed:
+      type: boolean
+      enum: [true]
+
 TournamentListResponse:
   type: object
   additionalProperties: false

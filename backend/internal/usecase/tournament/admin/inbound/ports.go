@@ -37,6 +37,8 @@ type ParticipantPair = pairing.ParticipantPair
 
 type TournamentActionCommand = lifecycle.TournamentActionCommand
 type TournamentAction = lifecycle.TournamentAction
+type TournamentDeletionCommand = lifecycle.TournamentDeletionCommand
+type TournamentDeletionRecord = lifecycle.TournamentDeletionRecord
 type WaveCommand = execution.WaveCommand
 type WaveAction = execution.WaveAction
 type WaveView = execution.WaveView
@@ -76,6 +78,7 @@ type AdminService interface {
 	UnlockRoster(ctx context.Context, command UnlockRosterCommand) (RosterView, error)
 	ConfigurePairings(ctx context.Context, command PairingCommand) (SwissRoundView, error)
 	ApplyTournamentAction(ctx context.Context, command TournamentActionCommand) (contract.TournamentView, error)
+	DeleteTournament(ctx context.Context, command TournamentDeletionCommand) (TournamentDeletionRecord, error)
 	ControlWave(ctx context.Context, command WaveCommand) (WaveView, error)
 	ResolveNoShow(ctx context.Context, command NoShowCommand) error
 	AssignReserve(ctx context.Context, command ReserveCommand) error

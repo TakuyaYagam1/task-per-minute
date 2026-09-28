@@ -412,6 +412,12 @@ LEFT JOIN participants AS current_actor
     AND current_actor.roster_id = draft.roster_id
 LEFT JOIN players AS current_actor_player ON current_actor_player.id = current_actor.player_id
 WHERE series.tournament_id = $1
+    AND EXISTS (
+        SELECT 1
+        FROM tournaments AS tournament
+        WHERE tournament.id = series.tournament_id
+            AND tournament.deleted_at IS NULL
+    )
     AND revision.state <> 'superseded'
 ORDER BY draft.created_at DESC,
     draft.id DESC
@@ -462,6 +468,7 @@ FROM tournaments AS tournament
 JOIN rosters AS roster ON roster.tournament_id = tournament.id
 LEFT JOIN participants AS participant ON participant.roster_id = roster.id
 WHERE tournament.id = $1
+    AND tournament.deleted_at IS NULL
 GROUP BY tournament.id
 `
 
@@ -497,6 +504,12 @@ LEFT JOIN tournament_outbox_cursors AS outbox_cursor
     ON outbox_cursor.tournament_id = revision.tournament_id
 WHERE revision.tournament_id = $1
     AND revision.state = 'published'
+    AND EXISTS (
+        SELECT 1
+        FROM tournaments AS tournament
+        WHERE tournament.id = revision.tournament_id
+            AND tournament.deleted_at IS NULL
+    )
 `
 
 type GetTournamentReadCursorRow struct {

@@ -371,6 +371,72 @@ func (_c *MockAdminService_CorrectGameResult_Call) RunAndReturn(run func(ctx con
 	return _c
 }
 
+// DeleteTournament provides a mock function for the type MockAdminService
+func (_mock *MockAdminService) DeleteTournament(ctx context.Context, command inbound.TournamentDeletionCommand) (inbound.TournamentDeletionRecord, error) {
+	ret := _mock.Called(ctx, command)
+
+	if len(ret) == 0 {
+		panic("no return value specified for DeleteTournament")
+	}
+
+	var r0 inbound.TournamentDeletionRecord
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, inbound.TournamentDeletionCommand) (inbound.TournamentDeletionRecord, error)); ok {
+		return returnFunc(ctx, command)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, inbound.TournamentDeletionCommand) inbound.TournamentDeletionRecord); ok {
+		r0 = returnFunc(ctx, command)
+	} else {
+		r0 = ret.Get(0).(inbound.TournamentDeletionRecord)
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, inbound.TournamentDeletionCommand) error); ok {
+		r1 = returnFunc(ctx, command)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockAdminService_DeleteTournament_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'DeleteTournament'
+type MockAdminService_DeleteTournament_Call struct {
+	*mock.Call
+}
+
+// DeleteTournament is a helper method to define mock.On call
+//   - ctx context.Context
+//   - command inbound.TournamentDeletionCommand
+func (_e *MockAdminService_Expecter) DeleteTournament(ctx any, command any) *MockAdminService_DeleteTournament_Call {
+	return &MockAdminService_DeleteTournament_Call{Call: _e.mock.On("DeleteTournament", ctx, command)}
+}
+
+func (_c *MockAdminService_DeleteTournament_Call) Run(run func(ctx context.Context, command inbound.TournamentDeletionCommand)) *MockAdminService_DeleteTournament_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 inbound.TournamentDeletionCommand
+		if args[1] != nil {
+			arg1 = args[1].(inbound.TournamentDeletionCommand)
+		}
+		run(
+			arg0,
+			arg1,
+		)
+	})
+	return _c
+}
+
+func (_c *MockAdminService_DeleteTournament_Call) Return(tournamentDeletionRecord inbound.TournamentDeletionRecord, err error) *MockAdminService_DeleteTournament_Call {
+	_c.Call.Return(tournamentDeletionRecord, err)
+	return _c
+}
+
+func (_c *MockAdminService_DeleteTournament_Call) RunAndReturn(run func(ctx context.Context, command inbound.TournamentDeletionCommand) (inbound.TournamentDeletionRecord, error)) *MockAdminService_DeleteTournament_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // ExportIncident provides a mock function for the type MockAdminService
 func (_mock *MockAdminService) ExportIncident(ctx context.Context, query inbound.IncidentQuery) (audit.IncidentBundle, error) {
 	ret := _mock.Called(ctx, query)

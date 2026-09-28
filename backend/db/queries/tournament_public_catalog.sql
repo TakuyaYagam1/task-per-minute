@@ -31,6 +31,7 @@ WITH classified AS (
     INNER JOIN rosters AS roster ON roster.tournament_id = tournament.id
     LEFT JOIN participants AS participant ON participant.roster_id = roster.id
     WHERE tournament.state <> 'draft'
+        AND tournament.deleted_at IS NULL
     GROUP BY tournament.id,
         roster.id
 ), visible AS (
@@ -147,6 +148,7 @@ WITH classified AS (
     INNER JOIN rosters AS roster ON roster.tournament_id = tournament.id
     LEFT JOIN participants AS participant ON participant.roster_id = roster.id
     WHERE tournament.state <> 'draft'
+        AND tournament.deleted_at IS NULL
         AND tournament.public_id = sqlc.arg(public_id)::VARCHAR
     GROUP BY tournament.id,
         roster.id

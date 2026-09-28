@@ -143,6 +143,7 @@ type serviceMock struct {
 	replayGame            func(context.Context, replayusecase.ReplayCommand) error
 	assignReserve         func(context.Context, replayusecase.ReserveCommand) error
 	applyTournamentAction func(context.Context, lifecycleworkflow.TournamentActionCommand) (inbound.TournamentView, error)
+	deleteTournament      func(context.Context, lifecycleworkflow.TournamentDeletionCommand) (lifecycleworkflow.TournamentDeletionRecord, error)
 }
 
 func (service *serviceMock) GetRoster(context.Context, rosterusecase.RosterQuery) (rosterusecase.RosterView, error) {
@@ -177,6 +178,13 @@ func (service *serviceMock) ApplyTournamentAction(ctx context.Context, command l
 		return service.applyTournamentAction(ctx, command)
 	}
 	return inbound.TournamentView{}, nil
+}
+
+func (service *serviceMock) DeleteTournament(ctx context.Context, command lifecycleworkflow.TournamentDeletionCommand) (lifecycleworkflow.TournamentDeletionRecord, error) {
+	if service.deleteTournament != nil {
+		return service.deleteTournament(ctx, command)
+	}
+	return lifecycleworkflow.TournamentDeletionRecord{}, nil
 }
 
 func (service *serviceMock) ControlWave(context.Context, executionusecase.WaveCommand) (executionusecase.WaveView, error) {

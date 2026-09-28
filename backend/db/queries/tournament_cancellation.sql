@@ -15,6 +15,7 @@ INNER JOIN projection_revisions AS projection_revision
     AND projection_revision.roster_id = roster.id
     AND projection_revision.state = 'published'
 WHERE tournament.id = sqlc.arg(tournament_id)
+    AND tournament.deleted_at IS NULL
 FOR UPDATE OF tournament, projection_revision;
 
 -- name: FindTournamentCancellation :one
@@ -83,7 +84,8 @@ RETURNING id,
     name,
     public_id,
     planned_roster_size,
-    content_revision;
+    content_revision,
+    deleted_at;
 
 -- name: CreateTournamentCancellationAuditEvent :one
 INSERT INTO audit_events (

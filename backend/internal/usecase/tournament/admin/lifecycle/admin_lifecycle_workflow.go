@@ -135,6 +135,7 @@ type LifecycleWorkflowRepository interface {
 type LifecycleWorkflowDependencies struct {
 	Transactions  LifecycleTransactionManager
 	Repository    LifecycleWorkflowRepository
+	Deletions     DeletionRepository
 	Transitions   LifecycleTransitioner
 	Pauses        LifecyclePauser
 	Cancellations LifecycleCanceller
@@ -145,6 +146,7 @@ type LifecycleWorkflowDependencies struct {
 type LifecycleWorkflow struct {
 	transactions  LifecycleTransactionManager
 	repository    LifecycleWorkflowRepository
+	deletions     DeletionRepository
 	transitions   LifecycleTransitioner
 	pauses        LifecyclePauser
 	cancellations LifecycleCanceller
@@ -156,6 +158,7 @@ func NewLifecycleWorkflow(deps LifecycleWorkflowDependencies) *LifecycleWorkflow
 	return &LifecycleWorkflow{
 		transactions:  deps.Transactions,
 		repository:    deps.Repository,
+		deletions:     deps.Deletions,
 		transitions:   deps.Transitions,
 		pauses:        deps.Pauses,
 		cancellations: deps.Cancellations,

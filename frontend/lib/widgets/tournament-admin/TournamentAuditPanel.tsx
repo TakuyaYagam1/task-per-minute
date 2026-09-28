@@ -280,6 +280,7 @@ export const TournamentAuditPanel = ({
     () => tournaments.find((tournament) => tournament.id === selectedTournamentId) ?? null,
     [selectedTournamentId, tournaments],
   );
+  const hasAppliedFilters = Object.keys(appliedQuery).some((key) => key !== "page_size");
 
   const fetchPage = useCallback(async (
     tournamentId: string,
@@ -700,8 +701,8 @@ export const TournamentAuditPanel = ({
         </Message>
       ) : null}
       {!selectedTournamentId ? (
-        <Message tone="info" title="Выберите соревнование">
-          История и экспорт загружаются только для выбранного соревнования.
+        <Message tone="empty" title="Соревнование не выбрано">
+          Выберите соревнование, чтобы открыть его журнал.
         </Message>
       ) : null}
       {selectedTournamentId && loadState === "loading" && !currentPage ? (
@@ -710,8 +711,13 @@ export const TournamentAuditPanel = ({
         </Message>
       ) : null}
       {selectedTournamentId && loadState === "ready" && currentPage?.events.length === 0 ? (
-        <Message tone="info" title="Событий не найдено">
-          Измените фильтры или выберите другое соревнование.
+        <Message
+          tone="empty"
+          title={hasAppliedFilters ? "По фильтрам событий нет" : "Журнал пока пуст"}
+        >
+          {hasAppliedFilters
+            ? "Измените фильтры или сбросьте их, чтобы проверить другие события."
+            : "В выбранном соревновании пока нет событий аудита."}
         </Message>
       ) : null}
 

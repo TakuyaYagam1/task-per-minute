@@ -23,6 +23,7 @@ export { isOperatorRecoveryControl, isOperatorWave } from "./guards";
 export type Tournament = components["schemas"]["Tournament"];
 export type TournamentListResponse = components["schemas"]["TournamentListResponse"];
 export type CreateTournamentRequest = components["schemas"]["CreateTournamentRequest"];
+export type DeleteTournamentRequest = components["schemas"]["DeleteTournamentRequest"];
 export type TournamentStateFilter = components["parameters"]["TournamentStateFilter"];
 export type TournamentListCursor = components["parameters"]["TournamentListCursor"];
 export type TournamentPageSize = components["parameters"]["TournamentPageSize"];
@@ -194,6 +195,25 @@ export const operatorApi = {
       }),
       isTournamentResponse,
       "admin/tournament create",
+    );
+  },
+
+  async deleteTournament(
+    tournamentId: string,
+    body: DeleteTournamentRequest,
+    intent: OperatorIdempotencyKey,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    await unwrapApiVoid(
+      adminClient.DELETE("/api/v1/admin/tournaments/{tournament_id}", {
+        params: {
+          path: { tournament_id: tournamentId },
+          header: mutationHeaders(intent),
+        },
+        body,
+        signal,
+      }),
+      "admin/tournament delete",
     );
   },
 
@@ -540,6 +560,7 @@ export const operatorApi = {
 
 export const listTournaments = operatorApi.listTournaments;
 export const createTournament = operatorApi.createTournament;
+export const deleteTournament = operatorApi.deleteTournament;
 export const getTournamentRoster = operatorApi.getRoster;
 export const replaceTournamentRoster = operatorApi.replaceRoster;
 export const runTournamentRosterPreflight = operatorApi.runRosterPreflight;

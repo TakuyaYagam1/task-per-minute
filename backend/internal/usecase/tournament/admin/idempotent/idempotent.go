@@ -116,6 +116,17 @@ func (service *IdempotentService) ApplyTournamentAction(
 	})
 }
 
+func (service *IdempotentService) DeleteTournament(
+	ctx context.Context,
+	command lifecycleusecase.TournamentDeletionCommand,
+) (lifecycleusecase.TournamentDeletionRecord, error) {
+	return executeAdminMutation(ctx, service, lifecycleusecase.ValidTournamentDeletionCommand(command), func() (idempotency.Command, error) {
+		return tournamentDeletionReceipt(command)
+	}, func() (lifecycleusecase.TournamentDeletionRecord, error) {
+		return service.next.DeleteTournament(ctx, command)
+	})
+}
+
 func (service *IdempotentService) ControlWave(ctx context.Context, command executionusecase.WaveCommand) (executionusecase.WaveView, error) {
 	return executeAdminMutation(ctx, service, executionusecase.ValidWaveCommand(command), func() (idempotency.Command, error) {
 		return waveReceipt(command)

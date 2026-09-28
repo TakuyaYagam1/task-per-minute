@@ -495,7 +495,7 @@
 .notification {
   position: fixed;
   z-index: 1000;
-  top: 1rem;
+  top: calc(var(--site-header-height, 4rem) + 0.75rem);
   right: 1rem;
   width: min(28rem, calc(100vw - 2rem));
   border: 1px solid var(--border);
@@ -517,6 +517,13 @@
 
 .notificationError {
   border-color: var(--error);
+}
+
+@media (max-width: 560px) {
+  .notification {
+    right: 0.75rem;
+    width: min(28rem, calc(100vw - 1.5rem));
+  }
 }
 
 @media (max-width: 900px) {

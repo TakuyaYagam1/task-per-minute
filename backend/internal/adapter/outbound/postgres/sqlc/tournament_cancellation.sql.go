@@ -35,7 +35,8 @@ RETURNING id,
     name,
     public_id,
     planned_roster_size,
-    content_revision
+    content_revision,
+    deleted_at
 `
 
 type CancelTournamentForCancellationCASParams struct {
@@ -67,6 +68,7 @@ func (q *Queries) CancelTournamentForCancellationCAS(ctx context.Context, arg Ca
 		&i.PublicID,
 		&i.PlannedRosterSize,
 		&i.ContentRevision,
+		&i.DeletedAt,
 	)
 	return i, err
 }
@@ -651,6 +653,7 @@ INNER JOIN projection_revisions AS projection_revision
     AND projection_revision.roster_id = roster.id
     AND projection_revision.state = 'published'
 WHERE tournament.id = $1
+    AND tournament.deleted_at IS NULL
 FOR UPDATE OF tournament, projection_revision
 `
 

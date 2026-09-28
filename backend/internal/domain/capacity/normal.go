@@ -14,11 +14,12 @@ import (
 )
 
 const (
-	// GraphAlgorithmV1 is retained for the Golden proof. Normal capacity has a
-	// separate algorithm version because its retained-reservation demand is
-	// stage-aware.
+	// V1 and the normal V2 proof remain available for callers without effective
+	// stage categories. Published stage evidence uses the newer proof versions.
 	GraphAlgorithmV1       = "complete-bipartite-capacity-v1"
+	GoldenGraphAlgorithmV2 = "complete-bipartite-capacity-golden-v2"
 	NormalGraphAlgorithmV2 = "complete-bipartite-capacity-normal-v2"
+	NormalGraphAlgorithmV3 = "complete-bipartite-capacity-normal-v3"
 )
 
 type FailureCode string
@@ -99,9 +100,13 @@ type NormalInput struct {
 	ReserveCount   int
 	ParticipantIDs []uuid.UUID
 	CategoryPools  []domain.CategoryPoolRevision
-	NormalPool     domain.TaskPoolRevision
-	Versions       []TaskVersion
-	History        []TaskUse
+	// StageCategories records the effective categories of the published Swiss,
+	// semifinal and final defaults. Nil keeps the conservative pool-wide proof
+	// for callers without stage evidence.
+	StageCategories map[domain.TournamentStage][]domain.Category
+	NormalPool      domain.TaskPoolRevision
+	Versions        []TaskVersion
+	History         []TaskUse
 }
 
 type normalCategoryDemand struct {
@@ -123,7 +128,15 @@ func ProveNormal(in NormalInput) NormalProof {
 		return failedNormal(Failure{Code: FailureNormalInvalidInput})
 	}
 
-	demands := normalCategoryDemands(len(participants), rounds, categoryPools, versions, in.ReserveCount)
+	stages, valid := normalizeNormalStageCategories(categoryPools, in.StageCategories)
+	if !valid {
+		return failedNormal(Failure{Code: FailureNormalInvalidInput})
+	}
+	algorithm := NormalGraphAlgorithmV2
+	if stages != nil {
+		algorithm = NormalGraphAlgorithmV3
+	}
+	demands := normalCategoryDemands(len(participants), rounds, categoryPools, stages, versions, in.ReserveCount)
 	for i := range demands {
 		demand := &demands[i]
 		if len(demand.versions) < demand.required {
@@ -171,7 +184,7 @@ func ProveNormal(in NormalInput) NormalProof {
 	for _, demand := range demands {
 		graphs := make([]ConstraintGraph, 0, len(participants)+1)
 		graphs = append(graphs, newConstraintGraph(
-			NormalGraphAlgorithmV2,
+			algorithm,
 			"normal:"+demand.category.String()+":peak",
 			demand.category,
 			uuid.Nil,
@@ -180,7 +193,7 @@ func ProveNormal(in NormalInput) NormalProof {
 		))
 		for _, participantID := range participants {
 			graphs = append(graphs, newConstraintGraph(
-				NormalGraphAlgorithmV2,
+				algorithm,
 				"normal:"+demand.category.String()+":participant:"+participantID.String(),
 				demand.category,
 				participantID,
@@ -197,7 +210,7 @@ func ProveNormal(in NormalInput) NormalProof {
 			Graphs:                     graphs,
 		})
 	}
-	proof.Digest = normalDigest(proof)
+	proof.Digest = normalDigest(proof, algorithm, stages)
 	return proof
 }
 
@@ -291,6 +304,7 @@ func normalCategoryDemands(
 	rosterSize int,
 	swissRounds int,
 	pools []domain.CategoryPoolRevision,
+	stages map[domain.TournamentStage][]domain.Category,
 	versions []TaskVersion,
 	reserveCount int,
 ) []normalCategoryDemand {
@@ -326,18 +340,28 @@ func normalCategoryDemands(
 	demands := make([]normalCategoryDemand, 0, len(categories))
 	for _, category := range categories {
 		occurrences, retainedChains := 0, 0
-		if _, exists := bo1[category]; exists {
-			occurrences += swissRounds + 1
-			// Every Swiss pairing and both semifinal series retain one complete
-			// primary-plus-reserves chain. Normal reservations are tournament
-			// scoped and remain unavailable after they are committed.
-			retainedChains += rosterSize/2*swissRounds + 2
-		}
-		if _, exists := bo3[category]; exists {
-			occurrences++
-			// A BO3 draft retains one chain for the selected category in each
-			// reachable final path. Alternative paths may share these versions.
-			retainedChains++
+		if stages == nil {
+			if _, exists := bo1[category]; exists {
+				occurrences += swissRounds + 1
+				retainedChains += rosterSize/2*swissRounds + 2
+			}
+			if _, exists := bo3[category]; exists {
+				occurrences++
+				retainedChains++
+			}
+		} else {
+			if slicesContainsCategory(stages[domain.TournamentStageSwiss], category) {
+				occurrences += swissRounds
+				retainedChains += rosterSize / 2 * swissRounds
+			}
+			if slicesContainsCategory(stages[domain.TournamentStageSemifinal], category) {
+				occurrences++
+				retainedChains += 2
+			}
+			if slicesContainsCategory(stages[domain.TournamentStageFinal], category) {
+				occurrences++
+				retainedChains++
+			}
 		}
 		// Peak is the complete set of tournament-scoped live reservations. It
 		// is intentionally larger than one-wave concurrency because committed
@@ -353,6 +377,57 @@ func normalCategoryDemands(
 		})
 	}
 	return demands
+}
+
+func normalizeNormalStageCategories(
+	pools []domain.CategoryPoolRevision,
+	input map[domain.TournamentStage][]domain.Category,
+) (map[domain.TournamentStage][]domain.Category, bool) {
+	if input == nil {
+		return nil, true
+	}
+	if len(input) != 3 {
+		return nil, false
+	}
+	allowed := make(map[domain.SeriesFormat]map[domain.Category]struct{}, len(pools))
+	for _, pool := range pools {
+		members := make(map[domain.Category]struct{}, len(pool.Categories))
+		for _, category := range pool.Categories {
+			members[category] = struct{}{}
+		}
+		allowed[pool.Format] = members
+	}
+	result := make(map[domain.TournamentStage][]domain.Category, len(input))
+	for _, stage := range []domain.TournamentStage{
+		domain.TournamentStageSwiss, domain.TournamentStageSemifinal, domain.TournamentStageFinal,
+	} {
+		categories := append([]domain.Category(nil), input[stage]...)
+		if len(categories) == 0 {
+			return nil, false
+		}
+		format := domain.SeriesFormatBO1
+		if stage == domain.TournamentStageFinal {
+			format = domain.SeriesFormatBO3
+		}
+		sort.Slice(categories, func(i, j int) bool { return categories[i] < categories[j] })
+		for i, category := range categories {
+			if _, exists := allowed[format][category]; !exists ||
+				(i > 0 && categories[i-1] == category) {
+				return nil, false
+			}
+		}
+		result[stage] = categories
+	}
+	return result, true
+}
+
+func slicesContainsCategory(categories []domain.Category, candidate domain.Category) bool {
+	for _, category := range categories {
+		if category == candidate {
+			return true
+		}
+	}
+	return false
 }
 
 func filterVersions(versions []TaskVersion, used map[domain.TaskVersionRef]struct{}) []TaskVersion {
@@ -446,14 +521,25 @@ func graphDigest(graph ConstraintGraph) string {
 	return hex.EncodeToString(hash.Sum(nil))
 }
 
-func normalDigest(proof NormalProof) string {
+func normalDigest(
+	proof NormalProof,
+	algorithm string,
+	stages map[domain.TournamentStage][]domain.Category,
+) string {
 	hash := sha256.New()
-	writeField(hash, NormalGraphAlgorithmV2)
+	writeField(hash, algorithm)
 	writeField(hash, fmt.Sprintf("reserve_count:%d", proof.ReserveCount))
 	writeField(hash, proof.PoolRevisionID.String())
 	writeField(hash, fmt.Sprintf("pool_revision:%d", proof.PoolRevision))
 	writeField(hash, fmt.Sprintf("roster:%d", proof.RosterSize))
 	writeField(hash, fmt.Sprintf("swiss_rounds:%d", proof.SwissRounds))
+	for _, stage := range []domain.TournamentStage{
+		domain.TournamentStageSwiss, domain.TournamentStageSemifinal, domain.TournamentStageFinal,
+	} {
+		for _, category := range stages[stage] {
+			writeField(hash, string(stage)+":"+category.String())
+		}
+	}
 	for _, category := range proof.Categories {
 		writeField(hash, category.Category.String())
 		writeField(hash, fmt.Sprintf("peak:%d", category.PeakReservations))

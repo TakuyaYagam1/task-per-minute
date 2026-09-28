@@ -35,7 +35,8 @@ RETURNING id,
     name,
     public_id,
     planned_roster_size,
-    content_revision;
+    content_revision,
+    deleted_at;
 
 -- name: CreateTournamentRoster :one
 INSERT INTO rosters (
@@ -166,9 +167,11 @@ SELECT id,
     name,
     public_id,
     planned_roster_size,
-    content_revision
+    content_revision,
+    deleted_at
 FROM tournaments
-WHERE id = sqlc.arg(id);
+WHERE id = sqlc.arg(id)
+    AND deleted_at IS NULL;
 
 -- name: GetTournamentSummary :one
 SELECT tournament.id,
@@ -190,6 +193,7 @@ FROM tournaments AS tournament
 INNER JOIN rosters AS roster ON roster.tournament_id = tournament.id
 LEFT JOIN participants AS participant ON participant.roster_id = roster.id
 WHERE tournament.id = sqlc.arg(id)
+    AND tournament.deleted_at IS NULL
 GROUP BY tournament.id,
     roster.id;
 
@@ -206,8 +210,10 @@ SELECT id,
     name,
     public_id,
     planned_roster_size,
-    content_revision
+    content_revision,
+    deleted_at
 FROM tournaments
+WHERE deleted_at IS NULL
 ORDER BY created_at DESC,
     id;
 
@@ -230,6 +236,7 @@ SELECT tournament.id,
 FROM tournaments AS tournament
 INNER JOIN rosters AS roster ON roster.tournament_id = tournament.id
 LEFT JOIN participants AS participant ON participant.roster_id = roster.id
+WHERE tournament.deleted_at IS NULL
 GROUP BY tournament.id,
     roster.id
 ORDER BY tournament.created_at DESC,
@@ -258,7 +265,8 @@ RETURNING id,
     name,
     public_id,
     planned_roster_size,
-    content_revision;
+    content_revision,
+    deleted_at;
 
 -- name: GetTournamentRoster :one
 SELECT id,

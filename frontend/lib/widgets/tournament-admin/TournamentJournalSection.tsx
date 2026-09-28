@@ -170,15 +170,13 @@ export const TournamentJournalSection = ({
         ) : null}
         {loadState === "ready" && !selectedTournament ? (
           <Message
-            tone={selectedTournamentId ? "error" : "empty"}
-            title={selectedTournamentId ? "Соревнование недоступно" : "Соревнование не выбрано"}
+            tone="empty"
+            title={selectedTournamentId ? "Соревнование не найдено" : "Соревнование не выбрано"}
           >
             {selectedTournamentId ? (
-              <>
-                Выбранное соревнование не найдено. Выберите другое соревнование.
-              </>
+              "Выбранное соревнование больше не входит в список. Выберите другое соревнование."
             ) : tournaments.length === 0 ? (
-              "Журнал появится после создания соревнования."
+              "Соревнований пока нет. Журнал появится после создания соревнования."
             ) : (
               "Выберите соревнование, чтобы открыть его журнал."
             )}

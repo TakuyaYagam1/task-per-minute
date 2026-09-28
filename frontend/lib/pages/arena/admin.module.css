@@ -539,7 +539,8 @@
   position: fixed;
   z-index: 10;
   right: 20px;
-  bottom: 20px;
+  top: calc(var(--site-header-height, 4rem) + 0.75rem);
+  bottom: auto;
   max-width: min(420px, calc(100vw - 40px));
   padding: 12px 16px;
   border: 1px solid var(--admin-border-strong);
@@ -558,6 +559,13 @@
 
 .notificationWarning {
   border-color: var(--admin-warning);
+}
+
+@media (max-width: 560px) {
+  .notification {
+    right: 0.75rem;
+    max-width: calc(100vw - 1.5rem);
+  }
 }
 
 .modalBackdrop {

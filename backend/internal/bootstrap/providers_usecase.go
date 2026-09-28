@@ -326,6 +326,7 @@ func provideTournamentCancellation(
 func provideTournamentAdminLifecycle(
 	transactions tournamentadminlifecycle.LifecycleTransactionManager,
 	repository tournamentadminlifecycle.LifecycleWorkflowRepository,
+	deletions tournamentadminlifecycle.DeletionRepository,
 	transitions tournamentadminlifecycle.LifecycleTransitioner,
 	pauses tournamentadminlifecycle.LifecyclePauser,
 	cancellations tournamentadminlifecycle.LifecycleCanceller,
@@ -335,6 +336,7 @@ func provideTournamentAdminLifecycle(
 	return tournamentadminlifecycle.NewLifecycleWorkflow(tournamentadminlifecycle.LifecycleWorkflowDependencies{
 		Transactions:  transactions,
 		Repository:    repository,
+		Deletions:     deletions,
 		Transitions:   transitions,
 		Pauses:        pauses,
 		Cancellations: cancellations,
@@ -458,6 +460,7 @@ func provideTournamentAdminApplication(
 	preflight tournamentadminroster.PreflightPort,
 	pairing tournamentadminexecution.PairingPort,
 	lifecycle tournamentadminlifecycle.LifecyclePort,
+	deletion tournamentadminlifecycle.DeletionPort,
 	wave tournamentadminexecution.WavePort,
 	noShow tournamentadminresult.NoShowPort,
 	reserve tournamentadminreplay.ReservePort,
@@ -475,6 +478,7 @@ func provideTournamentAdminApplication(
 		Preflight:  preflight,
 		Pairing:    pairing,
 		Lifecycle:  lifecycle,
+		Deletion:   deletion,
 		Wave:       wave,
 		NoShow:     noShow,
 		Reserve:    reserve,

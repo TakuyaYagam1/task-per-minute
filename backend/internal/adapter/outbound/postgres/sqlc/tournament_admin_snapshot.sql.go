@@ -68,6 +68,7 @@ LEFT JOIN LATERAL (
     WHERE event.tournament_id = tournament.id
 ) AS audit ON TRUE
 WHERE tournament.id = $1
+    AND tournament.deleted_at IS NULL
 `
 
 type GetTournamentAdminSnapshotHeaderRow struct {

@@ -57,20 +57,23 @@
   outline-offset: 2px;
 }
 
+.formHint {
+  margin: 0;
+  color: var(--secondary);
+  font-size: 0.82rem;
+}
+
+.deleteDialogText {
+  margin: 0;
+  color: var(--text);
+  line-height: 1.45;
+}
+
 .revisionBlock {
   display: grid;
   gap: 0.55rem;
   border-top: 1px solid var(--border);
   padding-top: 1rem;
-}
-
-.inlineAction {
-  border: 0;
-  padding: 0;
-  background: transparent;
-  color: var(--accent);
-  font: inherit;
-  cursor: pointer;
 }
 
 .backButton {
@@ -88,24 +91,6 @@
   font-size: 0.8rem;
   font-weight: 760;
   cursor: pointer;
-}
-
-.inlineAction {
-  display: block;
-  margin-top: 0.55rem;
-  font-size: 0.8rem;
-  font-weight: 760;
-  text-decoration: underline;
-  text-underline-offset: 3px;
-}
-
-.inlineAction:hover {
-  color: var(--text);
-}
-
-.inlineAction:disabled {
-  cursor: not-allowed;
-  opacity: 0.65;
 }
 
 .backButton:hover {
@@ -267,7 +252,9 @@
 
 .tournamentCardActions {
   display: flex;
+  flex-wrap: wrap;
   justify-content: flex-end;
+  gap: 0.5rem;
   margin-top: auto;
 }
 

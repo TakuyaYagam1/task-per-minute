@@ -18,6 +18,7 @@ type GoldenGroupProof struct {
 
 type GoldenProof struct {
 	Certified             bool
+	Category              domain.Category
 	ReserveCount          int
 	NormalPoolRevisionID  uuid.UUID
 	NormalPoolRevision    int64
@@ -32,7 +33,10 @@ type GoldenProof struct {
 }
 
 type GoldenInput struct {
-	Preset         domain.TournamentPreset
+	Preset domain.TournamentPreset
+	// Category is the effective Golden stage category. An empty value retains
+	// the pool-wide proof for callers without published stage evidence.
+	Category       domain.Category
 	ReserveCount   int
 	ParticipantIDs []uuid.UUID
 	NormalPool     domain.TaskPoolRevision
@@ -46,12 +50,25 @@ func ProveGolden(in GoldenInput) GoldenProof {
 	if failure != nil {
 		return failedGolden(*failure)
 	}
+	if in.Category != "" {
+		if !in.Category.IsValid() {
+			return failedGolden(Failure{Code: FailureGoldenInvalidInput})
+		}
+		eligible := make([]TaskVersion, 0, len(versions))
+		for _, version := range versions {
+			if version.Category == in.Category {
+				eligible = append(eligible, version)
+			}
+		}
+		versions = eligible
+	}
 
 	chainSize := in.ReserveCount + 1
 	required := len(participants) / 2 * chainSize
 	if len(versions) < required {
 		return failedGolden(Failure{
-			Code: FailureGoldenReserveShortage, Required: required, Available: len(versions),
+			Code: FailureGoldenReserveShortage, Category: in.Category,
+			Required: required, Available: len(versions),
 		})
 	}
 
@@ -74,6 +91,7 @@ func ProveGolden(in GoldenInput) GoldenProof {
 	if len(safeVersions) < required {
 		return failedGolden(Failure{
 			Code:          FailureGoldenReuseConflict,
+			Category:      in.Category,
 			ParticipantID: conflictingParticipantID,
 			Required:      required,
 			Available:     len(safeVersions),
@@ -82,6 +100,7 @@ func ProveGolden(in GoldenInput) GoldenProof {
 
 	proof := GoldenProof{
 		Certified:             true,
+		Category:              in.Category,
 		ReserveCount:          in.ReserveCount,
 		NormalPoolRevisionID:  normalPool.ID,
 		NormalPoolRevision:    normalPool.Revision,
@@ -92,6 +111,10 @@ func ProveGolden(in GoldenInput) GoldenProof {
 		AvailableTaskVersions: len(safeVersions),
 		GroupShapes:           make([]GoldenGroupProof, 0, len(participants)-1),
 	}
+	algorithm := GraphAlgorithmV1
+	if in.Category != "" {
+		algorithm = GoldenGraphAlgorithmV2
+	}
 	for groupSize := 2; groupSize <= len(participants); groupSize++ {
 		concurrent := 1 + (len(participants)-groupSize)/2
 		groupRequired := concurrent * chainSize
@@ -99,9 +122,9 @@ func ProveGolden(in GoldenInput) GoldenProof {
 			GroupSize:           groupSize,
 			MaxConcurrentGroups: concurrent,
 			Graph: newConstraintGraph(
-				GraphAlgorithmV1,
+				algorithm,
 				fmt.Sprintf("golden:group_size:%02d", groupSize),
-				"",
+				in.Category,
 				uuid.Nil,
 				groupRequired,
 				safeVersions,
@@ -146,7 +169,12 @@ func normalizeGoldenInput(
 
 func goldenDigest(proof GoldenProof, normalPool domain.TaskPoolRevision) string {
 	hash := sha256.New()
-	writeField(hash, GraphAlgorithmV1)
+	if proof.Category == "" {
+		writeField(hash, GraphAlgorithmV1)
+	} else {
+		writeField(hash, GoldenGraphAlgorithmV2)
+		writeField(hash, proof.Category.String())
+	}
 	writeField(hash, fmt.Sprintf("reserve_count:%d", proof.ReserveCount))
 	writeField(hash, "normal_pool:"+normalPool.ID.String())
 	writeField(hash, fmt.Sprintf("normal_pool_revision:%d", normalPool.Revision))

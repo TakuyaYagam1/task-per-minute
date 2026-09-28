@@ -83,6 +83,9 @@ type ServerInterface interface {
 	// CreateTournament Create a tournament
 	// (POST /api/v1/admin/tournaments)
 	CreateTournament(w http.ResponseWriter, r *http.Request, params CreateTournamentParams)
+	// DeleteTournament Soft-delete a tournament
+	// (DELETE /api/v1/admin/tournaments/{tournament_id})
+	DeleteTournament(w http.ResponseWriter, r *http.Request, tournamentId TournamentId, params DeleteTournamentParams)
 	// ApplyTournamentAction Apply a tournament lifecycle operator action
 	// (POST /api/v1/admin/tournaments/{tournament_id}/actions)
 	ApplyTournamentAction(w http.ResponseWriter, r *http.Request, tournamentId TournamentId, params ApplyTournamentActionParams)
@@ -362,6 +365,12 @@ func (_ Unimplemented) ListTournaments(w http.ResponseWriter, r *http.Request, p
 // CreateTournament Create a tournament
 // (POST /api/v1/admin/tournaments)
 func (_ Unimplemented) CreateTournament(w http.ResponseWriter, r *http.Request, params CreateTournamentParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// DeleteTournament Soft-delete a tournament
+// (DELETE /api/v1/admin/tournaments/{tournament_id})
+func (_ Unimplemented) DeleteTournament(w http.ResponseWriter, r *http.Request, tournamentId TournamentId, params DeleteTournamentParams) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -1722,6 +1731,89 @@ func (siw *ServerInterfaceWrapper) CreateTournament(w http.ResponseWriter, r *ht
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.CreateTournament(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteTournament operation middleware
+func (siw *ServerInterfaceWrapper) DeleteTournament(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "tournament_id" -------------
+	var tournamentId TournamentId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "tournament_id", chi.URLParam(r, "tournament_id"), &tournamentId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "tournament_id", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, AdminSessionAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params DeleteTournamentParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		err := fmt.Errorf("Header parameter Idempotency-Key is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "Idempotency-Key", Err: err})
+		return
+	}
+
+	// ------------- Required header parameter "X-CSRF-Token" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-CSRF-Token")]; found {
+		var XCSRFToken AdminCSRFToken
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-CSRF-Token", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-CSRF-Token", valueList[0], &XCSRFToken, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-CSRF-Token", Err: err})
+			return
+		}
+
+		params.XCSRFToken = XCSRFToken
+
+	} else {
+		err := fmt.Errorf("Header parameter X-CSRF-Token is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-CSRF-Token", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteTournament(w, r, tournamentId, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -5100,6 +5192,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Post(options.BaseURL+"/api/v1/admin/tournaments", wrapper.CreateTournament)
 	})
 	r.Group(func(r chi.Router) {
+		r.Delete(options.BaseURL+"/api/v1/admin/tournaments/{tournament_id}", wrapper.DeleteTournament)
+	})
+	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/admin/tournament-content", wrapper.GetTournamentContent)
 	})
 	r.Group(func(r chi.Router) {
@@ -7366,6 +7461,153 @@ type CreateTournamentdefaultApplicationProblemPlusJSONResponse struct {
 }
 
 func (response CreateTournamentdefaultApplicationProblemPlusJSONResponse) VisitCreateTournamentResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteTournamentRequestObject struct {
+	TournamentId TournamentId `json:"tournament_id"`
+	Params       DeleteTournamentParams
+	Body         *DeleteTournamentJSONRequestBody
+}
+
+type DeleteTournamentResponseObject interface {
+	VisitDeleteTournamentResponse(w http.ResponseWriter) error
+}
+
+type DeleteTournament204Response struct {
+}
+
+func (response DeleteTournament204Response) VisitDeleteTournamentResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type DeleteTournament400ApplicationProblemPlusJSONResponse struct {
+	InvalidRequestProblemApplicationProblemPlusJSONResponse
+}
+
+func (response DeleteTournament400ApplicationProblemPlusJSONResponse) VisitDeleteTournamentResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteTournament401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedProblemApplicationProblemPlusJSONResponse
+}
+
+func (response DeleteTournament401ApplicationProblemPlusJSONResponse) VisitDeleteTournamentResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteTournament403ApplicationProblemPlusJSONResponse struct {
+	ForbiddenProblemApplicationProblemPlusJSONResponse
+}
+
+func (response DeleteTournament403ApplicationProblemPlusJSONResponse) VisitDeleteTournamentResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteTournament404ApplicationProblemPlusJSONResponse struct {
+	NotFoundProblemApplicationProblemPlusJSONResponse
+}
+
+func (response DeleteTournament404ApplicationProblemPlusJSONResponse) VisitDeleteTournamentResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteTournament409ApplicationProblemPlusJSONResponse struct {
+	TournamentRevisionConflictProblemApplicationProblemPlusJSONResponse
+}
+
+func (response DeleteTournament409ApplicationProblemPlusJSONResponse) VisitDeleteTournamentResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteTournament413ApplicationProblemPlusJSONResponse struct {
+	RequestEntityTooLargeProblemApplicationProblemPlusJSONResponse
+}
+
+func (response DeleteTournament413ApplicationProblemPlusJSONResponse) VisitDeleteTournamentResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(413)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteTournament415ApplicationProblemPlusJSONResponse struct {
+	UnsupportedMediaTypeProblemApplicationProblemPlusJSONResponse
+}
+
+func (response DeleteTournament415ApplicationProblemPlusJSONResponse) VisitDeleteTournamentResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(415)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteTournamentdefaultApplicationProblemPlusJSONResponse struct {
+	Body       ProblemDetails
+	StatusCode int
+}
+
+func (response DeleteTournamentdefaultApplicationProblemPlusJSONResponse) VisitDeleteTournamentResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -13570,6 +13812,9 @@ type StrictServerInterface interface {
 	// CreateTournament Create a tournament
 	// (POST /api/v1/admin/tournaments)
 	CreateTournament(ctx context.Context, request CreateTournamentRequestObject) (CreateTournamentResponseObject, error)
+	// DeleteTournament Soft-delete a tournament
+	// (DELETE /api/v1/admin/tournaments/{tournament_id})
+	DeleteTournament(ctx context.Context, request DeleteTournamentRequestObject) (DeleteTournamentResponseObject, error)
 	// ApplyTournamentAction Apply a tournament lifecycle operator action
 	// (POST /api/v1/admin/tournaments/{tournament_id}/actions)
 	ApplyTournamentAction(ctx context.Context, request ApplyTournamentActionRequestObject) (ApplyTournamentActionResponseObject, error)
@@ -14345,6 +14590,40 @@ func (sh *strictHandler) CreateTournament(w http.ResponseWriter, r *http.Request
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(CreateTournamentResponseObject); ok {
 		if err := validResponse.VisitCreateTournamentResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// DeleteTournament operation middleware
+func (sh *strictHandler) DeleteTournament(w http.ResponseWriter, r *http.Request, tournamentId TournamentId, params DeleteTournamentParams) {
+	var request DeleteTournamentRequestObject
+
+	request.TournamentId = tournamentId
+	request.Params = params
+
+	var body DeleteTournamentJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.DeleteTournament(ctx, request.(DeleteTournamentRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DeleteTournament")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(DeleteTournamentResponseObject); ok {
+		if err := validResponse.VisitDeleteTournamentResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

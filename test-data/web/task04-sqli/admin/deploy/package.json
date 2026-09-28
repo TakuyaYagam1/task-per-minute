@@ -1,0 +1,13 @@
+{
+  "name": "task4-sqli",
+  "version": "1.0.0",
+  "description": "CTF Task 4 - SQL Injection",
+  "main": "app.js",
+  "scripts": {
+    "start": "node app.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "better-sqlite3": "^9.4.3"
+  }
+}

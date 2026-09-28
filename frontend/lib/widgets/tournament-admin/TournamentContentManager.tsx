@@ -839,20 +839,12 @@ export const TournamentContentManager = ({
           Получаем опубликованный набор задач.
         </Message>
       )}
-      {contentState === "error" && (
+      {contentState === "error" && !contentEmpty && (
         <Message
-          tone={contentEmpty ? "empty" : "error"}
-          title={contentEmpty ? "Публикации пока нет" : "Контент недоступен"}
+          tone="error"
+          title="Контент недоступен"
         >
           {contentError || "Не удалось загрузить опубликованные задачи"}
-          <Button
-            variant="secondary"
-            size="small"
-            className={styles.inlineButton}
-            onClick={onReloadContent}
-          >
-            Повторить
-          </Button>
         </Message>
       )}
 

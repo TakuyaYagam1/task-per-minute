@@ -16,6 +16,7 @@ import {
   operatorApi,
   type Tournament,
   type TournamentContentSelection,
+  type OperatorCommandIntent,
 } from "../../shared/api";
 import { useAdminLiveRefresh } from "../../features/admin-live";
 import { catalogFormatLabel } from "../../entities/tournament";
@@ -57,6 +58,11 @@ type TournamentAdminPanelProps = Readonly<{
 
 type LoadState = "loading" | "ready" | "error";
 type LoadOptions = Readonly<{ silent?: boolean }>;
+type DeleteTarget = Readonly<{
+  id: string;
+  name: string;
+  revision: number;
+}>;
 
 const PAGE_SIZE = 200;
 const MAX_TOURNAMENT_NAME_LENGTH = 120;
@@ -215,9 +221,21 @@ export const TournamentAdminPanel = ({
   const [formError, setFormError] = useState<string | null>(null);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [deleteNotice, setDeleteNotice] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const creatingRef = useRef(false);
+  const deletingRef = useRef(false);
   const createNameInputRef = useRef<HTMLInputElement | null>(null);
   const createTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const listCreateButtonRef = useRef<HTMLButtonElement | null>(null);
+  const deleteTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const deleteCancelButtonRef = useRef<HTMLButtonElement | null>(null);
+  const deleteIntentRef = useRef<OperatorCommandIntent | null>(null);
+  const deleteControllerRef = useRef<AbortController | null>(null);
+  const deleteRunRef = useRef(0);
   const mountedRef = useRef(false);
   const createRunRef = useRef(0);
   const navigationContextRef = useRef({ activeView, selectedTournamentId });
@@ -457,6 +475,8 @@ export const TournamentAdminPanel = ({
       createRunRef.current += 1;
       tournamentsControllerRef.current?.abort();
       contentControllerRef.current?.abort();
+      deleteRunRef.current += 1;
+      deleteControllerRef.current?.abort();
       requestGenerationRef.current += 1;
     };
   }, [loadContent, loadTournaments]);
@@ -598,6 +618,181 @@ export const TournamentAdminPanel = ({
     }
   };
 
+  const closeDeleteDialog = useCallback((): void => {
+    if (deletingRef.current) {
+      return;
+    }
+    setDeleteDialogOpen(false);
+    setDeleteTarget(null);
+    setDeleteError(null);
+    deleteIntentRef.current = null;
+  }, []);
+
+  const openDeleteDialog = useCallback(
+    (tournament: Tournament, trigger: HTMLButtonElement): void => {
+      if (deletingRef.current) {
+        return;
+      }
+      deleteTriggerRef.current = trigger;
+      deleteIntentRef.current = createOperatorCommandIntent();
+      setDeleteTarget({
+        id: tournament.id,
+        name: tournament.name,
+        revision: tournament.revision,
+      });
+      setDeleteError(null);
+      setDeleteNotice(null);
+      setDeleteDialogOpen(true);
+    },
+    [],
+  );
+
+  const handleDelete = async (): Promise<void> => {
+    const target = deleteTarget;
+    if (deletingRef.current || !target) {
+      return;
+    }
+    const intent = deleteIntentRef.current ?? createOperatorCommandIntent();
+    deleteIntentRef.current = intent;
+    const runId = deleteRunRef.current + 1;
+    deleteRunRef.current = runId;
+    const controller = new AbortController();
+    deleteControllerRef.current = controller;
+    const canApply = (): boolean =>
+      mountedRef.current && deleteRunRef.current === runId;
+    deletingRef.current = true;
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      await operatorApi.deleteTournament(
+        target.id,
+        { expected_revision: target.revision, confirmed: true },
+        intent,
+        controller.signal,
+      );
+      if (!canApply()) {
+        return;
+      }
+      if (listCreateButtonRef.current) {
+        deleteTriggerRef.current = listCreateButtonRef.current;
+      }
+      setDeleteDialogOpen(false);
+      setDeleteTarget(null);
+      setDeleteError(null);
+      setDeleteNotice(null);
+      deleteIntentRef.current = null;
+      setTournaments((current) =>
+        current.filter((tournament) => tournament.id !== target.id),
+      );
+      if (selectedTournamentId === target.id) {
+        onNavigate(null, "overview");
+      }
+      void loadTournaments({ silent: true });
+    } catch (error) {
+      if (!canApply()) {
+        return;
+      }
+      if (error instanceof ApiError && error.status === 401) {
+        onSessionExpired?.();
+        setDeleteError("Сессия истекла. Войдите снова и повторите удаление.");
+      } else if (error instanceof ApiError && error.status === 409) {
+        if (listCreateButtonRef.current) {
+          deleteTriggerRef.current = listCreateButtonRef.current;
+        }
+        setDeleteDialogOpen(false);
+        setDeleteTarget(null);
+        setDeleteError(null);
+        deleteIntentRef.current = null;
+        setDeleteNotice(
+          "Данные соревнования изменились. Проверьте актуальную карточку и подтвердите удаление снова.",
+        );
+        await loadTournaments();
+      } else if (error instanceof ApiError && error.status === 404) {
+        if (listCreateButtonRef.current) {
+          deleteTriggerRef.current = listCreateButtonRef.current;
+        }
+        setDeleteDialogOpen(false);
+        setDeleteTarget(null);
+        setDeleteError(null);
+        deleteIntentRef.current = null;
+        setDeleteNotice(
+          "Соревнование уже удалено или больше недоступно. Список обновляется.",
+        );
+        setTournaments((current) =>
+          current.filter((tournament) => tournament.id !== target.id),
+        );
+        if (selectedTournamentId === target.id) {
+          onNavigate(null, "overview");
+        }
+        await loadTournaments({ silent: true });
+      } else {
+        setDeleteError(problemMessage(error, "Не удалось удалить соревнование"));
+      }
+    } finally {
+      if (deleteControllerRef.current === controller) {
+        deleteControllerRef.current = null;
+      }
+      if (deleteRunRef.current === runId) {
+        deletingRef.current = false;
+        if (mountedRef.current) {
+          setDeleting(false);
+        }
+      }
+    }
+  };
+
+  const renderDeleteDialog = (): ReactNode => (
+    <Dialog
+      open={deleteDialogOpen}
+      title="Удалить соревнование"
+      size="small"
+      initialFocusRef={deleteCancelButtonRef}
+      returnFocusRef={deleteTriggerRef}
+      closeLabel="Закрыть подтверждение удаления"
+      closeOnEscape={!deleting}
+      showCloseButton={!deleting}
+      onOpenChange={(nextOpen) => {
+        if (!nextOpen) {
+          closeDeleteDialog();
+        }
+      }}
+    >
+      <div className={styles.form}>
+        <p className={styles.deleteDialogText}>
+          Удалить соревнование <strong>{deleteTarget?.name ?? "это соревнование"}</strong>?
+        </p>
+        <p className={styles.formHint}>
+          Активное соревнование будет автоматически отменено. История результатов сохранится.
+        </p>
+        {deleteError ? (
+          <Message tone="error" title="Удаление не выполнено">
+            {deleteError}
+          </Message>
+        ) : null}
+        <div className={styles.formActions}>
+          <Button
+            type="button"
+            variant="danger"
+            loading={deleting}
+            loadingLabel="Удаляем соревнование"
+            onClick={() => void handleDelete()}
+          >
+            Удалить соревнование
+          </Button>
+          <Button
+            ref={deleteCancelButtonRef}
+            type="button"
+            variant="secondary"
+            onClick={closeDeleteDialog}
+            disabled={deleting}
+          >
+            Отменить
+          </Button>
+        </div>
+      </div>
+    </Dialog>
+  );
+
   const renderCreateDialog = (): ReactNode => (
     <Dialog
       open={createDialogOpen}
@@ -659,29 +854,23 @@ export const TournamentAdminPanel = ({
             <option value="16">16 участников</option>
           </select>
         </div>
-        {contentState === "loading" || contentState === "error" ? (
+        {contentEmpty ? (
+          <p className={styles.formHint}>
+            Сначала добавьте задачи в разделе &quot;Задачи&quot;.
+          </p>
+        ) : null}
+        {contentState === "loading" ? (
           <div className={styles.revisionBlock}>
-            {contentState === "loading" ? (
-              <Message tone="loading" title="Проверяем публикацию">
-                Получаем опубликованные задачи.
-              </Message>
-            ) : null}
-            {contentState === "error" ? (
-              <Message
-                tone={contentEmpty ? "empty" : "error"}
-                title={contentEmpty ? "Публикации пока нет" : "Публикация недоступна"}
-              >
-                {contentError}
-                <button
-                  className={styles.inlineAction}
-                  type="button"
-                  disabled={creating}
-                  onClick={() => void loadContent()}
-                >
-                  Повторить
-                </button>
-              </Message>
-            ) : null}
+            <Message tone="loading" title="Проверяем публикацию">
+              Получаем опубликованные задачи.
+            </Message>
+          </div>
+        ) : null}
+        {contentState === "error" && !contentEmpty ? (
+          <div className={styles.revisionBlock}>
+            <Message tone="error" title="Публикация недоступна">
+              {contentError}
+            </Message>
           </div>
         ) : null}
         {formError ? (
@@ -713,6 +902,7 @@ export const TournamentAdminPanel = ({
 
   const renderTournamentList = (): ReactNode => (
     <>
+      {renderDeleteDialog()}
       {renderCreateDialog()}
       <Panel
         as="article"
@@ -729,13 +919,21 @@ export const TournamentAdminPanel = ({
                 </p>
               )}
             </div>
-            <Button onClick={(event) => openCreateDialog(event.currentTarget)}>
+            <Button
+              ref={listCreateButtonRef}
+              onClick={(event) => openCreateDialog(event.currentTarget)}
+            >
               Создать соревнование
             </Button>
           </div>
         }
         className={styles.listPanel}
       >
+        {deleteNotice ? (
+          <Message tone="info" title="Требуется новое подтверждение">
+            {deleteNotice}
+          </Message>
+        ) : null}
         {tournamentsState === "ready" && tournaments.length > 0 ? (
           <div className={styles.listToolbar} aria-label="Фильтры соревнований">
             <div className={styles.filterField}>
@@ -800,8 +998,8 @@ export const TournamentAdminPanel = ({
           </Message>
         )}
         {tournamentsState === "ready" && tournaments.length === 0 && (
-          <Message tone="empty" title="Каталог пуст">
-            Пока нет созданных соревнований
+          <Message tone="empty" title="Соревнований пока нет">
+            Создайте первое соревнование, чтобы начать работу.
           </Message>
         )}
         {tournamentsState === "ready" && tournaments.length > 0 && (
@@ -839,12 +1037,22 @@ export const TournamentAdminPanel = ({
                   </dl>
                   <div className={styles.tournamentCardActions}>
                     <Button
+                      type="button"
                       variant="secondary"
                       size="small"
                       aria-label={`Открыть соревнование ${tournament.name}`}
                       onClick={() => onNavigate(tournament.id, "overview")}
                     >
                       Открыть
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="danger"
+                      size="small"
+                      aria-label={`Удалить соревнование ${tournament.name}`}
+                      onClick={(event) => openDeleteDialog(tournament, event.currentTarget)}
+                    >
+                      Удалить
                     </Button>
                   </div>
                 </article>
@@ -874,9 +1082,21 @@ export const TournamentAdminPanel = ({
             <Message tone="loading" title="Загружаем соревнование">
               Проверяем данные выбранного соревнования.
             </Message>
+          ) : tournamentsState === "ready" ? (
+            <Message tone="empty" title="Соревнование не найдено">
+              Выбранное соревнование больше не входит в список. Вернитесь к списку и выберите другое.
+            </Message>
           ) : (
-            <Message tone="error" title="Соревнование не найдено">
-              {tournamentsError || "Список не содержит выбранное соревнование."}
+            <Message tone="error" title="Не удалось загрузить соревнование">
+              {tournamentsError}
+              <Button
+                variant="secondary"
+                size="small"
+                className={styles.inlineButton}
+                onClick={() => void loadTournaments()}
+              >
+                Повторить
+              </Button>
             </Message>
           )}
         </section>

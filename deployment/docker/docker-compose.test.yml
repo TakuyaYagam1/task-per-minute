@@ -1,0 +1,230 @@
+name: task-per-minute-test
+
+include:
+  - path:
+      - ./docker-compose.yml
+      - ./docker-compose.release.yml
+      - ./docker-compose.test.production.override.yml
+  - path:
+      - ../../test-data/web/docker-compose.yml
+      - ./docker-compose.test.web.override.yml
+
+services:
+  test-data-seed:
+    build:
+      context: ../../test-data/importer
+      dockerfile: Dockerfile
+    entrypoint: ["python", "/usr/local/bin/seed.py"]
+    user: "0:0"
+    read_only: true
+    network_mode: none
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    volumes:
+      - test-task-seed:/seed
+    restart: "no"
+
+  test-data-importer:
+    build:
+      context: ../../test-data/importer
+      dockerfile: Dockerfile
+    environment:
+      BASE_URL: "http://backend:${BACKEND_PORT:-8080}"
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?ADMIN_PASSWORD is required (set it in the local environment)}
+      TEST_DATA_ROOT: /test-data
+      TEST_TASK_SEED_FILE: /seed/key
+      TASK_WEB_SCHEME: ${TASK_WEB_SCHEME:-https}
+      TASK_COOKIE_DOMAIN: ${TASK_COOKIE_DOMAIN:-myfirstsite.${APP_DOMAIN:?APP_DOMAIN is required for Caddy task certificates}}
+      TASK_ARCHIVE_DOMAIN: ${TASK_ARCHIVE_DOMAIN:-archive.${APP_DOMAIN:?APP_DOMAIN is required for Caddy task certificates}}
+      TASK_SAMOVAR_DOMAIN: ${TASK_SAMOVAR_DOMAIN:-samovar.${APP_DOMAIN:?APP_DOMAIN is required for Caddy task certificates}}
+      TASK_VKONTAKTE_DOMAIN: ${TASK_VKONTAKTE_DOMAIN:-vkontakte.${APP_DOMAIN:?APP_DOMAIN is required for Caddy task certificates}}
+      TASK_DEDYS_DOMAIN: ${TASK_DEDYS_DOMAIN:-dedys.${APP_DOMAIN:?APP_DOMAIN is required for Caddy task certificates}}
+      TASK_COOKIE_URL: ${TASK_COOKIE_URL:-}
+      TASK_ARCHIVE_URL: ${TASK_ARCHIVE_URL:-}
+      TASK_SAMOVAR_URL: ${TASK_SAMOVAR_URL:-}
+      TASK_VKONTAKTE_URL: ${TASK_VKONTAKTE_URL:-}
+      TASK_DEDYS_URL: ${TASK_DEDYS_URL:-}
+      TEST_TASK_DIFFICULTY: ${TEST_TASK_DIFFICULTY:-medium}
+      TEST_TASK_TIME_LIMIT: ${TEST_TASK_TIME_LIMIT:-180}
+      PYTHONDONTWRITEBYTECODE: "1"
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=16m
+    networks:
+      - internal
+    volumes:
+      - type: volume
+        source: test-task-seed
+        target: /seed
+        read_only: true
+      - type: bind
+        source: ../../test-data/web/task01-cookie/user
+        target: /test-data/web/task01-cookie/user
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ../../test-data/web/task01-cookie/admin/flag.txt
+        target: /test-data/web/task01-cookie/admin/flag.txt
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ../../test-data/web/task02-robots/user
+        target: /test-data/web/task02-robots/user
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ../../test-data/web/task02-robots/admin/flag.txt
+        target: /test-data/web/task02-robots/admin/flag.txt
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ../../test-data/web/task03-status/user
+        target: /test-data/web/task03-status/user
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ../../test-data/web/task03-status/admin/flag.txt
+        target: /test-data/web/task03-status/admin/flag.txt
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ../../test-data/web/task04-sqli/user
+        target: /test-data/web/task04-sqli/user
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ../../test-data/web/task04-sqli/admin/flag.txt
+        target: /test-data/web/task04-sqli/admin/flag.txt
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ../../test-data/web/task05-xss/user
+        target: /test-data/web/task05-xss/user
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ../../test-data/web/task05-xss/admin/flag.txt
+        target: /test-data/web/task05-xss/admin/flag.txt
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ../../test-data/crypto/task06-caesar/user
+        target: /test-data/crypto/task06-caesar/user
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ../../test-data/crypto/task06-caesar/admin/flag.txt
+        target: /test-data/crypto/task06-caesar/admin/flag.txt
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ../../test-data/crypto/task07-xor/user
+        target: /test-data/crypto/task07-xor/user
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ../../test-data/crypto/task07-xor/admin/flag.txt
+        target: /test-data/crypto/task07-xor/admin/flag.txt
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ../../test-data/crypto/task08-atbash/user
+        target: /test-data/crypto/task08-atbash/user
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ../../test-data/crypto/task08-atbash/admin/flag.txt
+        target: /test-data/crypto/task08-atbash/admin/flag.txt
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ../../test-data/reverse/task09-js-checker/user
+        target: /test-data/reverse/task09-js-checker/user
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ../../test-data/reverse/task09-js-checker/admin/flag.txt
+        target: /test-data/reverse/task09-js-checker/admin/flag.txt
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ../../test-data/reverse/task10-bytecode/user
+        target: /test-data/reverse/task10-bytecode/user
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ../../test-data/reverse/task10-bytecode/admin/flag.txt
+        target: /test-data/reverse/task10-bytecode/admin/flag.txt
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ../../test-data/forensics/task11-png-comment/user
+        target: /test-data/forensics/task11-png-comment/user
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ../../test-data/forensics/task11-png-comment/admin/flag.txt
+        target: /test-data/forensics/task11-png-comment/admin/flag.txt
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ../../test-data/pwn/task12-stack-bytes/user
+        target: /test-data/pwn/task12-stack-bytes/user
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ../../test-data/pwn/task12-stack-bytes/admin/flag.txt
+        target: /test-data/pwn/task12-stack-bytes/admin/flag.txt
+        read_only: true
+        bind:
+          create_host_path: false
+    depends_on:
+      test-data-seed:
+        condition: service_completed_successfully
+      backend:
+        condition: service_healthy
+      caddy:
+        condition: service_healthy
+      task-cookie:
+        condition: service_healthy
+      task-archive:
+        condition: service_healthy
+      task-samovar:
+        condition: service_healthy
+      task-vkontakte:
+        condition: service_healthy
+      task-dedys:
+        condition: service_healthy
+    restart: "no"
+
+volumes:
+  test-task-seed:

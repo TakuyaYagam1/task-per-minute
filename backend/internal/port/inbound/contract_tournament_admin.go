@@ -50,6 +50,7 @@ type TournamentAdminUseCase interface {
 	UnlockRoster(ctx context.Context, command AdminUnlockRosterCommand) (AdminRosterView, error)
 	ConfigurePairings(ctx context.Context, command AdminPairingCommand) (AdminSwissRoundView, error)
 	ApplyTournamentAction(ctx context.Context, command AdminTournamentActionCommand) (TournamentView, error)
+	DeleteTournament(ctx context.Context, command AdminTournamentDeletionCommand) (AdminTournamentDeletionRecord, error)
 	ControlWave(ctx context.Context, command AdminWaveCommand) (AdminWaveView, error)
 	ResolveNoShow(ctx context.Context, command AdminNoShowCommand) error
 	AssignReserve(ctx context.Context, command AdminReserveCommand) error
@@ -270,6 +271,26 @@ type AdminTournamentActionCommand struct {
 	Action                     AdminTournamentAction
 	Confirmed                  bool
 	Reason                     string
+}
+
+type AdminTournamentDeletionCommand struct {
+	AdminCommandScope
+
+	ExpectedRevision int64
+	Confirmed        bool
+}
+
+type AdminTournamentDeletionRecord struct {
+	CommandID         uuid.UUID
+	TournamentID      uuid.UUID
+	ActorID           uuid.UUID
+	SourceRevision    int64
+	ResultingRevision int64
+	SourceState       domain.TournamentState
+	Cancelled         bool
+	Reason            string
+	DeletedAt         time.Time
+	CreatedAt         time.Time
 }
 
 type AdminNoShowCommand struct {

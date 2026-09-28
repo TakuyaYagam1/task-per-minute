@@ -49,7 +49,8 @@ RETURNING id,
     name,
     public_id,
     planned_roster_size,
-    content_revision
+    content_revision,
+    deleted_at
 `
 
 type CreateTournamentParams struct {
@@ -85,6 +86,7 @@ func (q *Queries) CreateTournament(ctx context.Context, arg CreateTournamentPara
 		&i.PublicID,
 		&i.PlannedRosterSize,
 		&i.ContentRevision,
+		&i.DeletedAt,
 	)
 	return i, err
 }
@@ -147,9 +149,11 @@ SELECT id,
     name,
     public_id,
     planned_roster_size,
-    content_revision
+    content_revision,
+    deleted_at
 FROM tournaments
 WHERE id = $1
+    AND deleted_at IS NULL
 `
 
 func (q *Queries) GetTournament(ctx context.Context, id uuid.UUID) (Tournament, error) {
@@ -169,6 +173,7 @@ func (q *Queries) GetTournament(ctx context.Context, id uuid.UUID) (Tournament, 
 		&i.PublicID,
 		&i.PlannedRosterSize,
 		&i.ContentRevision,
+		&i.DeletedAt,
 	)
 	return i, err
 }
@@ -265,6 +270,7 @@ FROM tournaments AS tournament
 INNER JOIN rosters AS roster ON roster.tournament_id = tournament.id
 LEFT JOIN participants AS participant ON participant.roster_id = roster.id
 WHERE tournament.id = $1
+    AND tournament.deleted_at IS NULL
 GROUP BY tournament.id,
     roster.id
 `
@@ -659,6 +665,7 @@ SELECT tournament.id,
 FROM tournaments AS tournament
 INNER JOIN rosters AS roster ON roster.tournament_id = tournament.id
 LEFT JOIN participants AS participant ON participant.roster_id = roster.id
+WHERE tournament.deleted_at IS NULL
 GROUP BY tournament.id,
     roster.id
 ORDER BY tournament.created_at DESC,
@@ -732,8 +739,10 @@ SELECT id,
     name,
     public_id,
     planned_roster_size,
-    content_revision
+    content_revision,
+    deleted_at
 FROM tournaments
+WHERE deleted_at IS NULL
 ORDER BY created_at DESC,
     id
 `
@@ -761,6 +770,7 @@ func (q *Queries) ListTournaments(ctx context.Context) ([]Tournament, error) {
 			&i.PublicID,
 			&i.PlannedRosterSize,
 			&i.ContentRevision,
+			&i.DeletedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -1068,7 +1078,8 @@ RETURNING id,
     name,
     public_id,
     planned_roster_size,
-    content_revision
+    content_revision,
+    deleted_at
 `
 
 type UpdateTournamentCASParams struct {
@@ -1108,6 +1119,7 @@ func (q *Queries) UpdateTournamentCAS(ctx context.Context, arg UpdateTournamentC
 		&i.PublicID,
 		&i.PlannedRosterSize,
 		&i.ContentRevision,
+		&i.DeletedAt,
 	)
 	return i, err
 }

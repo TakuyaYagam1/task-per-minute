@@ -35,6 +35,10 @@ type LifecyclePort interface {
 	ApplyTournamentAction(ctx context.Context, command TournamentActionCommand) (usecase.TournamentView, error)
 }
 
+type DeletionPort interface {
+	DeleteTournament(ctx context.Context, command TournamentDeletionCommand) (TournamentDeletionRecord, error)
+}
+
 func validTournamentActionCommand(command TournamentActionCommand) bool {
 	return validCommandScope(command.CommandScope) && command.ExpectedProjectionRevision >= 1 &&
 		command.Action.valid() && command.Confirmed && validOptionalText(command.Reason, maxReasonRunes)

@@ -1,0 +1,13 @@
+services:
+  caddy:
+    environment:
+      TASK_COOKIE_UPSTREAM: task-cookie:3001
+      TASK_ARCHIVE_UPSTREAM: task-archive:3002
+      TASK_SAMOVAR_UPSTREAM: task-samovar:3003
+      TASK_VKONTAKTE_UPSTREAM: task-vkontakte:3004
+      TASK_DEDYS_UPSTREAM: task-dedys:3005
+
+networks:
+  tasks:
+    name: ${TASK_WEB_NETWORK:-task-per-minute-test_tasks}
+    internal: true

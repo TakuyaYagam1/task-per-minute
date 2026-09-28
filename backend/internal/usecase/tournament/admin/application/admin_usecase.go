@@ -27,6 +27,7 @@ type AdminDependencies struct {
 	Preflight  rosterusecase.PreflightPort
 	Pairing    executionusecase.PairingPort
 	Lifecycle  lifecycleusecase.LifecyclePort
+	Deletion   lifecycleusecase.DeletionPort
 	Wave       executionusecase.WavePort
 	NoShow     resultusecase.NoShowPort
 	Reserve    replayusecase.ReservePort
@@ -45,6 +46,7 @@ type AdminUseCase struct {
 	preflight  rosterusecase.PreflightPort
 	pairing    executionusecase.PairingPort
 	lifecycle  lifecycleusecase.LifecyclePort
+	deletion   lifecycleusecase.DeletionPort
 	wave       executionusecase.WavePort
 	noShow     resultusecase.NoShowPort
 	reserve    replayusecase.ReservePort
@@ -60,7 +62,7 @@ type AdminUseCase struct {
 func AdminNewUseCase(deps AdminDependencies) *AdminUseCase {
 	return &AdminUseCase{
 		catalog: deps.Catalog, roster: deps.Roster, preflight: deps.Preflight, pairing: deps.Pairing,
-		lifecycle: deps.Lifecycle, wave: deps.Wave, noShow: deps.NoShow,
+		lifecycle: deps.Lifecycle, deletion: deps.Deletion, wave: deps.Wave, noShow: deps.NoShow,
 		reserve: deps.Reserve, forfeit: deps.Forfeit, replay: deps.Replay,
 		correction: deps.Correction, audit: deps.Audit, incidents: deps.Incidents,
 		signer: deps.Signer, snapshots: deps.Snapshots,
@@ -182,6 +184,28 @@ func (a *AdminUseCase) ApplyTournamentAction(
 		return usecase.TournamentView{}, domain.ErrInternal
 	}
 	return view, nil
+}
+
+func (a *AdminUseCase) DeleteTournament(
+	ctx context.Context,
+	command lifecycleusecase.TournamentDeletionCommand,
+) (lifecycleusecase.TournamentDeletionRecord, error) {
+	if ctx == nil || !lifecycleusecase.ValidTournamentDeletionCommand(command) {
+		return lifecycleusecase.TournamentDeletionRecord{}, domain.ErrValidation
+	}
+	if a == nil || a.deletion == nil {
+		return lifecycleusecase.TournamentDeletionRecord{}, domain.ErrInternal
+	}
+	record, err := a.deletion.DeleteTournament(ctx, command)
+	if err != nil {
+		return lifecycleusecase.TournamentDeletionRecord{}, normalizeAdminError(err)
+	}
+	if record.CommandID != command.CommandID || record.TournamentID != command.TournamentID ||
+		record.ActorID != command.Operator.ActorID || record.SourceRevision != command.ExpectedRevision ||
+		record.ResultingRevision <= record.SourceRevision || record.Reason != lifecycleusecase.TournamentDeletionReason {
+		return lifecycleusecase.TournamentDeletionRecord{}, domain.ErrInternal
+	}
+	return record, nil
 }
 
 func (a *AdminUseCase) ControlWave(ctx context.Context, command executionusecase.WaveCommand) (executionusecase.WaveView, error) {

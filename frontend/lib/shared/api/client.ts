@@ -145,10 +145,10 @@ const clearReadableCookie = (name: string): void => {
   }
 };
 
-const tokenFromMemoryOrCookie = (
+const tokenFromCookieOrMemory = (
   memoryToken: string | null,
   cookieName: string,
-): string | null => memoryToken || readCookie(cookieName);
+): string | null => readCookie(cookieName) || memoryToken;
 
 const linkSignals = (signals: Array<AbortSignal | undefined>): LinkedAbortSignal => {
   const controller = new AbortController();
@@ -231,13 +231,13 @@ export const isCurrentPlayerSessionEpoch = (epoch: number): boolean =>
   epoch === playerSessionEpoch;
 
 const readPlayerCSRFToken = (): string | null =>
-  tokenFromMemoryOrCookie(playerCSRFToken, CSRF_COOKIE_NAME);
+  tokenFromCookieOrMemory(playerCSRFToken, CSRF_COOKIE_NAME);
 
 const readAdminAccessCSRFToken = (): string | null =>
-  tokenFromMemoryOrCookie(adminAccessCSRFToken, ADMIN_ACCESS_CSRF_COOKIE_NAME);
+  tokenFromCookieOrMemory(adminAccessCSRFToken, ADMIN_ACCESS_CSRF_COOKIE_NAME);
 
 const readAdminRefreshCSRFToken = (): string | null =>
-  tokenFromMemoryOrCookie(adminRefreshCSRFToken, ADMIN_REFRESH_CSRF_COOKIE_NAME);
+  tokenFromCookieOrMemory(adminRefreshCSRFToken, ADMIN_REFRESH_CSRF_COOKIE_NAME);
 
 export const canResumeAdminSession = (): boolean =>
   readAdminRefreshCSRFToken() !== null;
@@ -314,13 +314,15 @@ const syncCSRFTokenFromResponse = (
   }
 
   const pathname = new URL(request.url).pathname;
-  if (pathname === "/api/v1/admin/login" || pathname === "/api/v1/admin/refresh") {
-    if (!response.ok) {
-      return;
-    }
+  if (role === "admin" && response.ok) {
     const adminAccessToken = response.headers.get(CSRF_HEADER_NAME);
     if (adminAccessToken) {
       adminAccessCSRFToken = adminAccessToken;
+    }
+  }
+  if (pathname === "/api/v1/admin/login" || pathname === "/api/v1/admin/refresh") {
+    if (!response.ok) {
+      return;
     }
     const adminRefreshToken = response.headers.get(ADMIN_REFRESH_CSRF_HEADER_NAME);
     if (adminRefreshToken) {

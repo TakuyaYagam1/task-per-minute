@@ -3,6 +3,7 @@ SELECT roster.id
 FROM tournaments AS tournament
 JOIN rosters AS roster ON roster.tournament_id = tournament.id
 WHERE tournament.id = sqlc.arg(tournament_id)
+    AND tournament.deleted_at IS NULL
 FOR UPDATE OF tournament, roster;
 
 -- name: LockTournamentLifecycleAuthority :one
@@ -41,6 +42,7 @@ JOIN LATERAL (
     WHERE participant.roster_id = roster.id
 ) AS roster_size ON TRUE
 WHERE tournament.id = sqlc.arg(tournament_id)
+    AND tournament.deleted_at IS NULL
 FOR UPDATE OF tournament, roster;
 
 -- name: FindTournamentLifecycleCommand :one

@@ -270,6 +270,21 @@ func (e CorrectionRejectionCode) Valid() bool {
 	}
 }
 
+// Defines values for DeleteTournamentRequestConfirmed.
+const (
+	DeleteTournamentRequestConfirmedTrue DeleteTournamentRequestConfirmed = true
+)
+
+// Valid indicates whether the value is a known member of the DeleteTournamentRequestConfirmed enum.
+func (e DeleteTournamentRequestConfirmed) Valid() bool {
+	switch e {
+	case DeleteTournamentRequestConfirmedTrue:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for DependencyStatusHealth.
 const (
 	DependencyStatusHealthDegraded DependencyStatusHealth = "degraded"
@@ -2158,6 +2173,15 @@ type CreateTournamentRequest struct {
 type CurrentPlayerResponse struct {
 	Player PlayerResponse `json:"player"`
 }
+
+// DeleteTournamentRequest defines model for DeleteTournamentRequest.
+type DeleteTournamentRequest struct {
+	Confirmed        DeleteTournamentRequestConfirmed `json:"confirmed"`
+	ExpectedRevision int64                            `json:"expected_revision"`
+}
+
+// DeleteTournamentRequestConfirmed defines model for DeleteTournamentRequest.Confirmed.
+type DeleteTournamentRequestConfirmed bool
 
 // DeliveryReceipt defines model for DeliveryReceipt.
 type DeliveryReceipt struct {
@@ -4290,6 +4314,14 @@ type CreateTournamentParams struct {
 	XCSRFToken AdminCSRFToken `json:"X-CSRF-Token"`
 }
 
+// DeleteTournamentParams defines parameters for DeleteTournament.
+type DeleteTournamentParams struct {
+	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
+
+	// XCSRFToken Cookie-bound CSRF token required for this admin mutation.
+	XCSRFToken AdminCSRFToken `json:"X-CSRF-Token"`
+}
+
 // ApplyTournamentActionParams defines parameters for ApplyTournamentAction.
 type ApplyTournamentActionParams struct {
 	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
@@ -4558,6 +4590,9 @@ type UploadTaskSourceMultipartRequestBody UploadTaskSourceMultipartBody
 
 // CreateTournamentJSONRequestBody defines body for CreateTournament for application/json ContentType.
 type CreateTournamentJSONRequestBody = CreateTournamentRequest
+
+// DeleteTournamentJSONRequestBody defines body for DeleteTournament for application/json ContentType.
+type DeleteTournamentJSONRequestBody = DeleteTournamentRequest
 
 // ApplyTournamentActionJSONRequestBody defines body for ApplyTournamentAction for application/json ContentType.
 type ApplyTournamentActionJSONRequestBody = TournamentActionRequest

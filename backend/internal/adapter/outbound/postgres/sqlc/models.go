@@ -2632,6 +2632,7 @@ type Tournament struct {
 	PublicID          string
 	PlannedRosterSize int32
 	ContentRevision   int64
+	DeletedAt         pgtype.Timestamptz
 }
 
 type TournamentCancellation struct {
@@ -2784,6 +2785,19 @@ type TournamentCreateCommandReceipt struct {
 	ResultChanged          bool
 	ResultDocument         []byte
 	CreatedAt              pgtype.Timestamptz
+}
+
+type TournamentDeletion struct {
+	CommandID         uuid.UUID
+	TournamentID      uuid.UUID
+	ActorID           uuid.UUID
+	SourceRevision    int64
+	ResultingRevision int64
+	SourceState       string
+	Cancelled         bool
+	Reason            string
+	DeletedAt         pgtype.Timestamptz
+	CreatedAt         pgtype.Timestamptz
 }
 
 type TournamentLifecycleCommand struct {

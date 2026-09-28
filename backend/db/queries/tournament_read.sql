@@ -6,7 +6,13 @@ FROM projection_revisions AS revision
 LEFT JOIN tournament_outbox_cursors AS outbox_cursor
     ON outbox_cursor.tournament_id = revision.tournament_id
 WHERE revision.tournament_id = sqlc.arg(tournament_id)
-    AND revision.state = 'published';
+    AND revision.state = 'published'
+    AND EXISTS (
+        SELECT 1
+        FROM tournaments AS tournament
+        WHERE tournament.id = revision.tournament_id
+            AND tournament.deleted_at IS NULL
+    );
 
 -- name: GetParticipantReadIdentity :one
 SELECT participant.id
@@ -227,6 +233,7 @@ FROM tournaments AS tournament
 JOIN rosters AS roster ON roster.tournament_id = tournament.id
 LEFT JOIN participants AS participant ON participant.roster_id = roster.id
 WHERE tournament.id = sqlc.arg(tournament_id)
+    AND tournament.deleted_at IS NULL
 GROUP BY tournament.id;
 
 -- name: GetTournamentReadProjectionPayloads :one
@@ -560,6 +567,12 @@ LEFT JOIN participants AS current_actor
     AND current_actor.roster_id = draft.roster_id
 LEFT JOIN players AS current_actor_player ON current_actor_player.id = current_actor.player_id
 WHERE series.tournament_id = sqlc.arg(tournament_id)
+    AND EXISTS (
+        SELECT 1
+        FROM tournaments AS tournament
+        WHERE tournament.id = series.tournament_id
+            AND tournament.deleted_at IS NULL
+    )
     AND revision.state <> 'superseded'
 ORDER BY draft.created_at DESC,
     draft.id DESC

@@ -328,6 +328,7 @@ type Querier interface {
 	CreateTournamentConfigurationEditUnlockIntent(ctx context.Context, arg CreateTournamentConfigurationEditUnlockIntentParams) (TournamentConfigurationEditUnlockIntent, error)
 	CreateTournamentContentConfiguration(ctx context.Context, arg CreateTournamentContentConfigurationParams) (uuid.UUID, error)
 	CreateTournamentContentStageDefault(ctx context.Context, arg CreateTournamentContentStageDefaultParams) error
+	CreateTournamentDeletion(ctx context.Context, arg CreateTournamentDeletionParams) (TournamentDeletion, error)
 	CreateTournamentLifecycleCommand(ctx context.Context, arg CreateTournamentLifecycleCommandParams) (uuid.UUID, error)
 	// The lifecycle coordinator locks tournament and roster first. Progression
 	// then locks these sources in the fixed order below: Swiss rounds and Waves,
@@ -416,6 +417,7 @@ type Querier interface {
 	FindReplayReplacementCommand(ctx context.Context, commandID uuid.UUID) (ReplayReplacement, error)
 	FindSwissPairingCommand(ctx context.Context, arg FindSwissPairingCommandParams) (SwissPairingCommand, error)
 	FindTournamentCancellation(ctx context.Context, arg FindTournamentCancellationParams) (FindTournamentCancellationRow, error)
+	FindTournamentDeletion(ctx context.Context, arg FindTournamentDeletionParams) (TournamentDeletion, error)
 	FindTournamentLifecycleCommand(ctx context.Context, arg FindTournamentLifecycleCommandParams) (TournamentLifecycleCommand, error)
 	FindTournamentRosterOperation(ctx context.Context, arg FindTournamentRosterOperationParams) (TournamentRosterOperation, error)
 	FindTournamentStageProgression(ctx context.Context, arg FindTournamentStageProgressionParams) (FindTournamentStageProgressionRow, error)
@@ -989,6 +991,7 @@ type Querier interface {
 	LockTournamentConfigurationEditAuthority(ctx context.Context, arg LockTournamentConfigurationEditAuthorityParams) (LockTournamentConfigurationEditAuthorityRow, error)
 	LockTournamentConfigurationEditReservations(ctx context.Context, arg LockTournamentConfigurationEditReservationsParams) ([]LockTournamentConfigurationEditReservationsRow, error)
 	LockTournamentCreateCommand(ctx context.Context, commandID string) (int32, error)
+	LockTournamentDeletionScope(ctx context.Context, tournamentID uuid.UUID) (LockTournamentDeletionScopeRow, error)
 	LockTournamentLifecycleAssignments(ctx context.Context, arg LockTournamentLifecycleAssignmentsParams) ([]uuid.UUID, error)
 	LockTournamentLifecycleAuthority(ctx context.Context, tournamentID uuid.UUID) (LockTournamentLifecycleAuthorityRow, error)
 	LockTournamentLifecycleChildPauses(ctx context.Context, arg LockTournamentLifecycleChildPausesParams) ([]uuid.UUID, error)
@@ -1160,6 +1163,7 @@ type Querier interface {
 	MarkGoldenMembershipNoShow(ctx context.Context, arg MarkGoldenMembershipNoShowParams) (GoldenMembership, error)
 	MarkGoldenMembershipReady(ctx context.Context, arg MarkGoldenMembershipReadyParams) (GoldenMembership, error)
 	MarkRealtimeOutboxTerminal(ctx context.Context, arg MarkRealtimeOutboxTerminalParams) (uuid.UUID, error)
+	MarkTournamentDeleted(ctx context.Context, arg MarkTournamentDeletedParams) (MarkTournamentDeletedRow, error)
 	MarkTournamentRosterExecutionStartedCAS(ctx context.Context, arg MarkTournamentRosterExecutionStartedCASParams) (Roster, error)
 	MarkWaveMemberReadyCAS(ctx context.Context, arg MarkWaveMemberReadyCASParams) (WaveReadiness, error)
 	MarkWaveReadinessCAS(ctx context.Context, arg MarkWaveReadinessCASParams) (Wave, error)

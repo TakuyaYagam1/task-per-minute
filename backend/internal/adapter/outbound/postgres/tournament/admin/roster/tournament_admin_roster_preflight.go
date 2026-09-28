@@ -2,8 +2,10 @@ package roster
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strconv"
 	"time"
 
@@ -54,15 +56,16 @@ func (r *TournamentAdminRosterPostgres) LoadPreflightInput(
 		},
 		TaskHealth: loadedContent.taskHealth,
 		Runtime: tournamentPreflightRuntime(
-			authority, evaluatedAt, rosterSize, content, loadedContent.taskVersions,
+			authority, evaluatedAt, rosterSize, content, loadedContent.stageCategories, loadedContent.taskVersions,
 		),
 	}, nil
 }
 
 type tournamentPreflightContent struct {
-	configuration domain.ContentConfiguration
-	taskHealth    tournamentpreflight.TaskHealthInput
-	taskVersions  []capacity.TaskVersion
+	configuration   domain.ContentConfiguration
+	stageCategories map[domain.TournamentStage][]domain.Category
+	taskHealth      tournamentpreflight.TaskHealthInput
+	taskVersions    []capacity.TaskVersion
 }
 
 // PreflightContent is the published content authority consumed by execution
@@ -118,7 +121,7 @@ func loadTournamentPreflightContent(
 	if err != nil {
 		return tournamentPreflightContent{}, err
 	}
-	stageDefaults, err := loadTournamentPreflightStageDefaults(ctx, querier, configuration.ID)
+	stageDefaults, stageCategories, err := loadTournamentPreflightStageDefaults(ctx, querier, configuration.ID, categoryPools)
 	if err != nil {
 		return tournamentPreflightContent{}, err
 	}
@@ -155,7 +158,8 @@ func loadTournamentPreflightContent(
 		)
 	}
 	return tournamentPreflightContent{
-		configuration: content,
+		configuration:   content,
+		stageCategories: stageCategories,
 		taskHealth: tournamentpreflight.TaskHealthInput{
 			NormalPool: content.NormalPool,
 			GoldenPool: content.GoldenPool,
@@ -224,28 +228,70 @@ func loadTournamentPreflightStageDefaults(
 	ctx context.Context,
 	querier *sqlc.Queries,
 	configurationID uuid.UUID,
-) ([]domain.StageContentDefault, error) {
-	rows, err := querier.ListTournamentContentStageDefaults(ctx, configurationID)
+	pools []domain.CategoryPoolRevision,
+) ([]domain.StageContentDefault, map[domain.TournamentStage][]domain.Category, error) {
+	rows, err := querier.ListTournamentConfigurationEditStageDefaults(ctx, configurationID)
 	if err != nil {
-		return nil, fmt.Errorf("TournamentAdminRosterPostgres - LoadPreflightInput - content defaults: %w", err)
+		return nil, nil, fmt.Errorf("TournamentAdminRosterPostgres - LoadPreflightInput - content defaults: %w", err)
 	}
 	defaults := make([]domain.StageContentDefault, 0, len(rows))
+	stageCategories := make(map[domain.TournamentStage][]domain.Category, len(rows))
+	poolsByID := make(map[uuid.UUID]domain.CategoryPoolRevision, len(pools))
+	for _, pool := range pools {
+		poolsByID[pool.ID] = pool
+	}
 	for _, row := range rows {
 		if row.ConfigurationID != configurationID {
-			return nil, fmt.Errorf(
+			return nil, nil, fmt.Errorf(
 				"TournamentAdminRosterPostgres - LoadPreflightInput - foreign content default: %w",
 				domain.ErrInvalidContentConfiguration,
 			)
 		}
+		stage := domain.TournamentStage(row.Stage)
+		mode := domain.CategoryMode(row.CategoryMode)
+		pool, exists := poolsByID[row.CategoryPoolRevisionID]
+		if !stage.IsValid() || !mode.IsValid() || !exists || pool.Format != domain.SeriesFormat(row.Format) {
+			return nil, nil, domain.ErrInvalidContentConfiguration
+		}
+		var categories []domain.Category
+		if err := json.Unmarshal(row.Categories, &categories); err != nil {
+			return nil, nil, fmt.Errorf("decode content stage categories: %w", domain.ErrInvalidContentConfiguration)
+		}
+		if len(categories) == 0 {
+			// Older content revisions did not persist effective categories.
+			// Match the configuration reader's compatibility selection.
+			categories = append([]domain.Category(nil), pool.Categories...)
+			if mode != domain.CategoryModeDraft {
+				categories = categories[:1]
+			}
+		}
+		sort.Slice(categories, func(i, j int) bool { return categories[i] < categories[j] })
+		if mode == domain.CategoryModeDraft && len(categories) != len(pool.Categories) ||
+			mode != domain.CategoryModeDraft && len(categories) != 1 {
+			return nil, nil, domain.ErrInvalidContentConfiguration
+		}
+		allowed := make(map[domain.Category]struct{}, len(pool.Categories))
+		for _, category := range pool.Categories {
+			allowed[category] = struct{}{}
+		}
+		for i, category := range categories {
+			if _, ok := allowed[category]; !ok || i > 0 && categories[i-1] == category {
+				return nil, nil, domain.ErrInvalidContentConfiguration
+			}
+		}
+		if _, duplicate := stageCategories[stage]; duplicate {
+			return nil, nil, domain.ErrInvalidContentConfiguration
+		}
+		stageCategories[stage] = categories
 		defaults = append(defaults, domain.StageContentDefault{
-			Stage:                  domain.TournamentStage(row.Stage),
+			Stage:                  stage,
 			Format:                 domain.SeriesFormat(row.Format),
 			CategoryMode:           domain.CategoryMode(row.CategoryMode),
 			CategoryPoolRevisionID: row.CategoryPoolRevisionID,
 			TaskPoolKind:           domain.AssignmentTaskKind(row.TaskPoolKind),
 		})
 	}
-	return defaults, nil
+	return defaults, stageCategories, nil
 }
 
 func tournamentPreflightTaskPools(
@@ -439,6 +485,7 @@ func tournamentPreflightRuntime(
 	evaluatedAt time.Time,
 	rosterSize int,
 	content domain.ContentConfiguration,
+	stageCategories map[domain.TournamentStage][]domain.Category,
 	taskVersions []capacity.TaskVersion,
 ) tournamentpreflight.RuntimeInput {
 	storageRevision := "postgres:" + authority.ProjectionRevisionID.String() + "@" +
@@ -456,7 +503,7 @@ func tournamentPreflightRuntime(
 			AuthoritativeStorage: storage,
 			Submission:           storage,
 		},
-		Capacity: tournamentPreflightCertification(authority, evaluatedAt, content, taskVersions),
+		Capacity: tournamentPreflightCertification(authority, evaluatedAt, content, stageCategories, taskVersions),
 		Clock:    tournamentpreflight.ClockHealth{ReferenceAt: evaluatedAt, MaxSkew: time.Second},
 		Dependencies: []tournamentpreflight.DependencyHealth{
 			{Name: tournamentpreflight.DependencyPostgres, Healthy: true, Revision: storageRevision},
@@ -469,6 +516,7 @@ func tournamentPreflightCertification(
 	authority rostercapability.RosterAuthority,
 	certifiedAt time.Time,
 	content domain.ContentConfiguration,
+	stageCategories map[domain.TournamentStage][]domain.Category,
 	taskVersions []capacity.TaskVersion,
 ) *tournamentpreflight.Certification {
 	participantIDs := make([]uuid.UUID, len(authority.Roster.Participants))
@@ -480,11 +528,16 @@ func tournamentPreflightCertification(
 	normal := capacity.ProveNormal(capacity.NormalInput{
 		Preset: authority.TournamentPreset, ParticipantIDs: participantIDs,
 		ReserveCount:  content.ReserveCount,
-		CategoryPools: content.CategoryPools, NormalPool: content.NormalPool, Versions: normalVersions,
+		CategoryPools: content.CategoryPools, StageCategories: map[domain.TournamentStage][]domain.Category{
+			domain.TournamentStageSwiss:     stageCategories[domain.TournamentStageSwiss],
+			domain.TournamentStageSemifinal: stageCategories[domain.TournamentStageSemifinal],
+			domain.TournamentStageFinal:     stageCategories[domain.TournamentStageFinal],
+		}, NormalPool: content.NormalPool, Versions: normalVersions,
 	})
 	golden := capacity.ProveGolden(capacity.GoldenInput{
 		Preset: authority.TournamentPreset, ParticipantIDs: participantIDs,
 		ReserveCount: content.ReserveCount,
+		Category:     stageCategories[domain.TournamentStageGolden][0],
 		NormalPool:   content.NormalPool, GoldenPool: content.GoldenPool, Versions: goldenVersions,
 	})
 	if !normal.Certified || !golden.Certified {

@@ -18,21 +18,23 @@ import (
 )
 
 const (
-	adminReplaceRosterReceiptNamespace    = "admin-roster-replace"
-	adminRunPreflightReceiptNamespace     = "admin-preflight-run"
-	adminLockRosterReceiptNamespace       = "admin-roster-lock"
-	adminUnlockRosterReceiptNamespace     = "admin-roster-unlock"
-	adminPairingReceiptNamespace          = "admin-pairing-configure"
-	adminTournamentActionReceiptNamespace = "admin-tournament-action"
-	adminWaveReceiptNamespace             = "admin-wave-control"
-	adminNoShowReceiptNamespace           = "admin-no-show-resolve"
-	adminReserveReceiptNamespace          = "admin-reserve-assign"
-	adminForfeitReceiptNamespace          = "admin-forfeit-record"
-	adminReplayReceiptNamespace           = "admin-game-replay"
-	adminCorrectionReceiptNamespace       = "admin-result-correct"
+	adminReplaceRosterReceiptNamespace      = "admin-roster-replace"
+	adminRunPreflightReceiptNamespace       = "admin-preflight-run"
+	adminLockRosterReceiptNamespace         = "admin-roster-lock"
+	adminUnlockRosterReceiptNamespace       = "admin-roster-unlock"
+	adminPairingReceiptNamespace            = "admin-pairing-configure"
+	adminTournamentActionReceiptNamespace   = "admin-tournament-action"
+	adminTournamentDeletionReceiptNamespace = "admin-tournament-delete"
+	adminWaveReceiptNamespace               = "admin-wave-control"
+	adminNoShowReceiptNamespace             = "admin-no-show-resolve"
+	adminReserveReceiptNamespace            = "admin-reserve-assign"
+	adminForfeitReceiptNamespace            = "admin-forfeit-record"
+	adminReplayReceiptNamespace             = "admin-game-replay"
+	adminCorrectionReceiptNamespace         = "admin-result-correct"
 )
 
 const tournamentActionReceiptVersion = "tournament-admin-lifecycle-receipt-v1"
+const tournamentDeletionReceiptVersion = "tournament-admin-deletion-receipt-v1"
 
 func replaceRosterReceipt(command rosterusecase.ReplaceRosterCommand) (idempotency.Command, error) {
 	return rosterReceipt(adminReplaceRosterReceiptNamespace, rosterusecase.RosterOperationReplace, command.CommandID, command)
@@ -84,6 +86,14 @@ func tournamentActionReceipt(command lifecycleusecase.TournamentActionCommand) (
 		adminTournamentActionReceiptNamespace,
 		command.CommandID,
 		tournamentActionReceiptDigest(command),
+	)
+}
+
+func tournamentDeletionReceipt(command lifecycleusecase.TournamentDeletionCommand) (idempotency.Command, error) {
+	return adminReceipt(
+		adminTournamentDeletionReceiptNamespace,
+		command.CommandID,
+		tournamentDeletionReceiptDigest(command),
 	)
 }
 
@@ -155,6 +165,21 @@ func tournamentActionReceiptDigest(command lifecycleusecase.TournamentActionComm
 		payload.WriteByte(0)
 	}
 	writeReceiptString(&payload, command.Reason)
+	return sha256.Sum256(payload.Bytes())
+}
+
+func tournamentDeletionReceiptDigest(command lifecycleusecase.TournamentDeletionCommand) [sha256.Size]byte {
+	var payload bytes.Buffer
+	writeReceiptString(&payload, tournamentDeletionReceiptVersion)
+	writeReceiptString(&payload, adminTournamentDeletionReceiptNamespace)
+	writeReceiptUUID(&payload, command.Operator.ActorID)
+	writeReceiptUUID(&payload, command.TournamentID)
+	writeReceiptInt64(&payload, command.ExpectedRevision)
+	if command.Confirmed {
+		payload.WriteByte(1)
+	} else {
+		payload.WriteByte(0)
+	}
 	return sha256.Sum256(payload.Bytes())
 }
 

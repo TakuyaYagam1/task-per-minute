@@ -1,0 +1,13 @@
+{
+  "name": "task5-xss",
+  "version": "1.0.0",
+  "description": "CTF Task 5 - XSS",
+  "main": "app.js",
+  "scripts": {
+    "start": "node app.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "express-session": "^1.19.0"
+  }
+}

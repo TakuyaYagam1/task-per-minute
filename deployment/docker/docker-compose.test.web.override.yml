@@ -1,0 +1,6 @@
+networks:
+  tasks:
+    name: ${TASK_WEB_NETWORK:-task-per-minute-test_tasks}
+    driver: bridge
+    internal: true
+    external: false

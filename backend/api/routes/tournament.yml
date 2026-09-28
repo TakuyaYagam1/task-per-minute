@@ -122,6 +122,48 @@
         $ref: '../components/responses.yml#/RateLimitedProblem'
       default:
         $ref: '../components/responses.yml#/UnexpectedServerProblem'
+/api/v1/admin/tournaments/{tournament_id}:
+  parameters:
+    - $ref: '../components/parameters.yml#/TournamentId'
+  delete:
+    operationId: deleteTournament
+    tags: [tournament]
+    summary: Soft-delete a tournament
+    description: >-
+      Hides the tournament from operator and public catalogs while retaining
+      its result and audit history. A live tournament is cancelled as part of
+      the same transaction before its deletion tombstone is written.
+    x-auth-scope: tournament:manage
+    security:
+      - AdminSessionAuth: []
+    parameters:
+      - $ref: '../components/parameters.yml#/IdempotencyKey'
+      - $ref: '../components/parameters.yml#/AdminCSRFToken'
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '../components/schemas.yml#/DeleteTournamentRequest'
+    responses:
+      '204':
+        description: Tournament deleted.
+      '400':
+        $ref: '../components/responses.yml#/InvalidRequestProblem'
+      '401':
+        $ref: '../components/responses.yml#/UnauthorizedProblem'
+      '403':
+        $ref: '../components/responses.yml#/ForbiddenProblem'
+      '404':
+        $ref: '../components/responses.yml#/NotFoundProblem'
+      '409':
+        $ref: '../components/responses.yml#/TournamentRevisionConflictProblem'
+      '413':
+        $ref: '../components/responses.yml#/RequestEntityTooLargeProblem'
+      '415':
+        $ref: '../components/responses.yml#/UnsupportedMediaTypeProblem'
+      default:
+        $ref: '../components/responses.yml#/UnexpectedServerProblem'
 /api/v1/admin/tournaments/{tournament_id}/configuration:
   parameters:
     - $ref: '../components/parameters.yml#/TournamentId'

@@ -115,6 +115,7 @@ export const TournamentCatalog = ({
 }: TournamentCatalogProps) => {
   const isInitialLoading = state.status === "loading" && state.items.length === 0;
   const hasItems = state.items.length > 0;
+  const hasCatalogFilters = query.q.trim().length > 0 || query.group !== "all";
 
   return (
     <section className={styles.catalog} aria-labelledby="arena-catalog-title">
@@ -196,8 +197,15 @@ export const TournamentCatalog = ({
       )}
 
       {state.status === "empty" && (
-        <Message tone="empty" title="Соревнования не найдены">
-          <p>Измените поиск или фильтры.</p>
+        <Message
+          tone="empty"
+          title={hasCatalogFilters ? "Соревнования не найдены" : "Соревнований пока нет"}
+        >
+          <p>
+            {hasCatalogFilters
+              ? "Измените поиск или фильтры."
+              : "Соревнования появятся здесь после открытия регистрации."}
+          </p>
         </Message>
       )}
 

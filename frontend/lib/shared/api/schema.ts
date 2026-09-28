@@ -367,6 +367,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/tournaments/{tournament_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tournament_id: components["parameters"]["TournamentId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Soft-delete a tournament
+         * @description Hides the tournament from operator and public catalogs while retaining its result and audit history. A live tournament is cancelled as part of the same transaction before its deletion tombstone is written.
+         */
+        delete: operations["deleteTournament"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/tournament-content": {
         parameters: {
             query?: never;
@@ -1583,6 +1605,12 @@ export interface components {
             /** Format: int64 */
             current_revision: number;
             current_state?: components["schemas"]["TournamentState"];
+        };
+        DeleteTournamentRequest: {
+            /** @enum {boolean} */
+            confirmed: true;
+            /** Format: int64 */
+            expected_revision: number;
         };
         /**
          * @description The currently published content selection that can be bound to a new
@@ -3675,20 +3703,20 @@ export interface components {
                 "application/problem+json": components["schemas"]["ProblemDetails"];
             };
         };
-        /** @description The authenticated participant exceeded the command rate limit. */
-        RateLimitedProblem: {
+        /** @description The requested tournament resource was not found. */
+        NotFoundProblem: {
             headers: {
-                /** @description Seconds until the participant may retry the command. */
-                "Retry-After"?: number;
                 [name: string]: unknown;
             };
             content: {
                 "application/problem+json": components["schemas"]["ProblemDetails"];
             };
         };
-        /** @description The requested tournament resource was not found. */
-        NotFoundProblem: {
+        /** @description The authenticated participant exceeded the command rate limit. */
+        RateLimitedProblem: {
             headers: {
+                /** @description Seconds until the participant may retry the command. */
+                "Retry-After"?: number;
                 [name: string]: unknown;
             };
             content: {
@@ -5070,6 +5098,42 @@ export interface operations {
                     "application/problem+json": components["schemas"]["ProblemDetails"];
                 };
             };
+            default: components["responses"]["UnexpectedServerProblem"];
+        };
+    };
+    deleteTournament: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+                /** @description Cookie-bound CSRF token required for this admin mutation. */
+                "X-CSRF-Token": components["parameters"]["AdminCSRFToken"];
+            };
+            path: {
+                tournament_id: components["parameters"]["TournamentId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DeleteTournamentRequest"];
+            };
+        };
+        responses: {
+            /** @description Tournament deleted. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["InvalidRequestProblem"];
+            401: components["responses"]["UnauthorizedProblem"];
+            403: components["responses"]["ForbiddenProblem"];
+            404: components["responses"]["NotFoundProblem"];
+            409: components["responses"]["TournamentRevisionConflictProblem"];
+            413: components["responses"]["RequestEntityTooLargeProblem"];
+            415: components["responses"]["UnsupportedMediaTypeProblem"];
             default: components["responses"]["UnexpectedServerProblem"];
         };
     };

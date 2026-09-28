@@ -167,6 +167,16 @@ func (service *ObservedService) ApplyTournamentAction(
 	return view, err
 }
 
+func (service *ObservedService) DeleteTournament(
+	ctx context.Context,
+	command lifecycleworkflow.TournamentDeletionCommand,
+) (record lifecycleworkflow.TournamentDeletionRecord, err error) {
+	if service == nil || service.next == nil {
+		return lifecycleworkflow.TournamentDeletionRecord{}, domain.ErrInternal
+	}
+	return service.next.DeleteTournament(ctx, command)
+}
+
 func (service *ObservedService) ControlWave(
 	ctx context.Context,
 	command executionusecase.WaveCommand,

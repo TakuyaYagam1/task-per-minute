@@ -92,6 +92,7 @@ func TestProvideTournamentAdminLifecycleRequiresProgression(t *testing.T) {
 	workflow := provideTournamentAdminLifecycle(
 		tournamentadminlifecyclemocks.NewMockLifecycleTransactionManager(t),
 		tournamentadminlifecyclemocks.NewMockLifecycleWorkflowRepository(t),
+		nil,
 		tournamentadminlifecyclemocks.NewMockLifecycleTransitioner(t),
 		tournamentadminlifecyclemocks.NewMockLifecyclePauser(t),
 		tournamentadminlifecyclemocks.NewMockLifecycleCanceller(t),
