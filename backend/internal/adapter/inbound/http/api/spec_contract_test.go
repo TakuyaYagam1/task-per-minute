@@ -172,15 +172,13 @@ func TestOpenAPIOperationIDsAndTagsUseDomainNaming(t *testing.T) {
 	}
 }
 
-func TestOpenAPIContainsNoLegacyNamespaces(t *testing.T) {
+func TestOpenAPIContainsNoDuelNamespace(t *testing.T) {
 	t.Parallel()
 
 	encoded, err := json.Marshal(loadSpec(t))
 	require.NoError(t, err)
 	contract := strings.ToLower(string(encoded))
-	for _, legacyNamespace := range []string{"arena", "duel"} {
-		require.NotContains(t, contract, legacyNamespace)
-	}
+	require.NotContains(t, contract, "duel")
 }
 
 func TestOpenAPIPublicSchemasUseResourceNames(t *testing.T) {

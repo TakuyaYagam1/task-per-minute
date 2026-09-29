@@ -241,57 +241,84 @@ func loadTournamentPreflightStageDefaults(
 		poolsByID[pool.ID] = pool
 	}
 	for _, row := range rows {
-		if row.ConfigurationID != configurationID {
-			return nil, nil, fmt.Errorf(
-				"TournamentAdminRosterPostgres - LoadPreflightInput - foreign content default: %w",
-				domain.ErrInvalidContentConfiguration,
-			)
+		stageDefault, categories, err := decodeTournamentPreflightStageDefault(row, configurationID, poolsByID)
+		if err != nil {
+			return nil, nil, err
 		}
-		stage := domain.TournamentStage(row.Stage)
-		mode := domain.CategoryMode(row.CategoryMode)
-		pool, exists := poolsByID[row.CategoryPoolRevisionID]
-		if !stage.IsValid() || !mode.IsValid() || !exists || pool.Format != domain.SeriesFormat(row.Format) {
+		if _, duplicate := stageCategories[stageDefault.Stage]; duplicate {
 			return nil, nil, domain.ErrInvalidContentConfiguration
 		}
-		var categories []domain.Category
-		if err := json.Unmarshal(row.Categories, &categories); err != nil {
-			return nil, nil, fmt.Errorf("decode content stage categories: %w", domain.ErrInvalidContentConfiguration)
-		}
-		if len(categories) == 0 {
-			// Older content revisions did not persist effective categories.
-			// Match the configuration reader's compatibility selection.
-			categories = append([]domain.Category(nil), pool.Categories...)
-			if mode != domain.CategoryModeDraft {
-				categories = categories[:1]
-			}
-		}
-		sort.Slice(categories, func(i, j int) bool { return categories[i] < categories[j] })
-		if mode == domain.CategoryModeDraft && len(categories) != len(pool.Categories) ||
-			mode != domain.CategoryModeDraft && len(categories) != 1 {
-			return nil, nil, domain.ErrInvalidContentConfiguration
-		}
-		allowed := make(map[domain.Category]struct{}, len(pool.Categories))
-		for _, category := range pool.Categories {
-			allowed[category] = struct{}{}
-		}
-		for i, category := range categories {
-			if _, ok := allowed[category]; !ok || i > 0 && categories[i-1] == category {
-				return nil, nil, domain.ErrInvalidContentConfiguration
-			}
-		}
-		if _, duplicate := stageCategories[stage]; duplicate {
-			return nil, nil, domain.ErrInvalidContentConfiguration
-		}
-		stageCategories[stage] = categories
-		defaults = append(defaults, domain.StageContentDefault{
-			Stage:                  stage,
-			Format:                 domain.SeriesFormat(row.Format),
-			CategoryMode:           domain.CategoryMode(row.CategoryMode),
-			CategoryPoolRevisionID: row.CategoryPoolRevisionID,
-			TaskPoolKind:           domain.AssignmentTaskKind(row.TaskPoolKind),
-		})
+		stageCategories[stageDefault.Stage] = categories
+		defaults = append(defaults, stageDefault)
 	}
 	return defaults, stageCategories, nil
+}
+
+func decodeTournamentPreflightStageDefault(
+	row sqlc.ListTournamentConfigurationEditStageDefaultsRow,
+	configurationID uuid.UUID,
+	poolsByID map[uuid.UUID]domain.CategoryPoolRevision,
+) (domain.StageContentDefault, []domain.Category, error) {
+	if row.ConfigurationID != configurationID {
+		return domain.StageContentDefault{}, nil, fmt.Errorf(
+			"TournamentAdminRosterPostgres - LoadPreflightInput - foreign content default: %w",
+			domain.ErrInvalidContentConfiguration,
+		)
+	}
+	stage := domain.TournamentStage(row.Stage)
+	mode := domain.CategoryMode(row.CategoryMode)
+	pool, exists := poolsByID[row.CategoryPoolRevisionID]
+	if !stage.IsValid() || !mode.IsValid() || !exists || pool.Format != domain.SeriesFormat(row.Format) {
+		return domain.StageContentDefault{}, nil, domain.ErrInvalidContentConfiguration
+	}
+	categories, err := decodeTournamentPreflightStageCategories(row.Categories, mode, pool.Categories)
+	if err != nil {
+		return domain.StageContentDefault{}, nil, err
+	}
+	return domain.StageContentDefault{
+		Stage:                  stage,
+		Format:                 domain.SeriesFormat(row.Format),
+		CategoryMode:           mode,
+		CategoryPoolRevisionID: row.CategoryPoolRevisionID,
+		TaskPoolKind:           domain.AssignmentTaskKind(row.TaskPoolKind),
+	}, categories, nil
+}
+
+func decodeTournamentPreflightStageCategories(
+	raw []byte,
+	mode domain.CategoryMode,
+	poolCategories []domain.Category,
+) ([]domain.Category, error) {
+	var categories []domain.Category
+	if err := json.Unmarshal(raw, &categories); err != nil {
+		return nil, fmt.Errorf("decode content stage categories: %w", domain.ErrInvalidContentConfiguration)
+	}
+	if len(categories) == 0 {
+		if len(poolCategories) == 0 {
+			return nil, domain.ErrInvalidContentConfiguration
+		}
+		// Older content revisions did not persist effective categories.
+		// Match the configuration reader's compatibility selection.
+		categories = append([]domain.Category(nil), poolCategories...)
+		if mode != domain.CategoryModeDraft {
+			categories = categories[:1]
+		}
+	}
+	sort.Slice(categories, func(i, j int) bool { return categories[i] < categories[j] })
+	if mode == domain.CategoryModeDraft && len(categories) != len(poolCategories) ||
+		mode != domain.CategoryModeDraft && len(categories) != 1 {
+		return nil, domain.ErrInvalidContentConfiguration
+	}
+	allowed := make(map[domain.Category]struct{}, len(poolCategories))
+	for _, category := range poolCategories {
+		allowed[category] = struct{}{}
+	}
+	for i, category := range categories {
+		if _, ok := allowed[category]; !ok || i > 0 && categories[i-1] == category {
+			return nil, domain.ErrInvalidContentConfiguration
+		}
+	}
+	return categories, nil
 }
 
 func tournamentPreflightTaskPools(

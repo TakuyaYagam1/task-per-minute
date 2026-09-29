@@ -7,7 +7,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain/pause"
 	reconnectusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/reconnect"
 )
@@ -89,7 +88,7 @@ func TestDoubleDisconnectSerialization(t *testing.T) {
 	t.Run("exhausted_counters_commit_one_terminal_outcome", func(t *testing.T) {
 		authority := task045Authority(now, false, false)
 		for index := range authority.Counters {
-			task045AddCompletedRoots(&authority, index, domain.ReconnectCycleLimit, now)
+			task045ExhaustDisconnects(&authority, index, now)
 		}
 		task045SetResumedClock(&authority, now)
 		repository := newTask045RepositoryHarness(t, authority)

@@ -167,7 +167,7 @@ func TestTournamentPreflightReadsPublishedContentAuthority(t *testing.T) {
 		"GetCurrentTournamentContentConfiguration",
 		"ListTournamentContentCategoryPoolRevisions",
 		"ListTournamentContentCategoryPoolMemberships",
-		"ListTournamentContentStageDefaults",
+		"ListTournamentConfigurationEditStageDefaults",
 		"ListTaskPoolVersionHealth",
 		"domain.CreateContentConfiguration",
 		"TaskHealth: loadedContent.taskHealth",

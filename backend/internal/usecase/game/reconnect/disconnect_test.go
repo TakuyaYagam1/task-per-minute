@@ -71,9 +71,32 @@ func TestDisconnectCycleLimit(t *testing.T) {
 		})
 	}
 
-	t.Run("third_fresh_disconnect_is_immediate_autoloss", func(t *testing.T) {
+	t.Run("third_fresh_disconnect_opens_grace", func(t *testing.T) {
 		authority := task045Authority(now, false, false)
 		task045AddCompletedRoots(&authority, 0, domain.ReconnectCycleLimit, now)
+		task045SetResumedClock(&authority, now)
+		command := reconnectusecase.DisconnectCommand{Scope: authority.Scope, CommandID: task045ID(130),
+			ParticipantID: authority.Series.FirstParticipantID, IntervalID: task045ID(131),
+			Deadline: now.Add(30 * time.Second), Settlement: task045SettlementIDs(132)}
+		repository := newTask045RepositoryHarness(t, authority)
+		record, changed, err := reconnectusecase.NewDisconnectUseCase(repository, newReconnectClock(t, now)).Disconnect(t.Context(), command)
+		if err != nil || !changed || repository.writeCount() != 1 {
+			t.Fatalf("Disconnect(third) error = %v, changed = %v, writes = %d", err, changed, repository.writeCount())
+		}
+		counter := task045Counter(t, record.ReconnectAuthority, command.ParticipantID)
+		if len(record.ReconnectAuthority.Reconnect) != domain.ReconnectCycleLimit+1 || counter.Used != domain.ReconnectCycleLimit+1 || counter.Limit != domain.GameReconnectCycleLimit {
+			t.Fatalf("third disconnect did not open grace: intervals = %d, counter = %+v", len(record.ReconnectAuthority.Reconnect), counter)
+		}
+		if task045Presence(t, record.ReconnectAuthority, command.ParticipantID).State != pause.PresenceStateDisconnected ||
+			record.ReconnectAuthority.Game.State != domain.GameStatePaused || record.GameResultRevision != nil || record.ScoreRevision != nil ||
+			task045Interval(t, record.ReconnectAuthority, command.IntervalID).State != pause.ReconnectStateOpen {
+			t.Fatalf("third disconnect state = %+v", record)
+		}
+	})
+
+	t.Run("exhausted_disconnects_terminalize_game", func(t *testing.T) {
+		authority := task045Authority(now, false, false)
+		task045ExhaustDisconnects(&authority, 0, now)
 		task045SetResumedClock(&authority, now)
 		beforeClock := authority.GameClock
 		command := reconnectusecase.DisconnectCommand{Scope: authority.Scope, CommandID: task045ID(130),
@@ -82,16 +105,16 @@ func TestDisconnectCycleLimit(t *testing.T) {
 		repository := newTask045RepositoryHarness(t, authority)
 		terminal, changed, err := reconnectusecase.NewDisconnectUseCase(repository, newReconnectClock(t, now)).Disconnect(t.Context(), command)
 		if err != nil || !changed || repository.writeCount() != 1 {
-			t.Fatalf("Disconnect(third) error = %v, changed = %v, writes = %d", err, changed, repository.writeCount())
+			t.Fatalf("Disconnect(exhausted) error = %v, changed = %v, writes = %d", err, changed, repository.writeCount())
 		}
-		if len(terminal.ReconnectAuthority.Reconnect) != domain.ReconnectCycleLimit || task045Counter(t, terminal.ReconnectAuthority, command.ParticipantID).Used != domain.ReconnectCycleLimit {
-			t.Fatalf("third disconnect consumed another slot: intervals = %d, counter = %+v", len(terminal.ReconnectAuthority.Reconnect), task045Counter(t, terminal.ReconnectAuthority, command.ParticipantID))
+		if len(terminal.ReconnectAuthority.Reconnect) != domain.GameReconnectCycleLimit || task045Counter(t, terminal.ReconnectAuthority, command.ParticipantID).Used != domain.GameReconnectCycleLimit {
+			t.Fatalf("exhausted disconnect consumed another slot: intervals = %d, counter = %+v", len(terminal.ReconnectAuthority.Reconnect), task045Counter(t, terminal.ReconnectAuthority, command.ParticipantID))
 		}
 		if task045Presence(t, terminal.ReconnectAuthority, command.ParticipantID).State != pause.PresenceStateDisconnected ||
 			terminal.ReconnectAuthority.Game.State != domain.GameStateCompleted || terminal.ReconnectAuthority.Game.ResultReason != domain.GameResultReasonOperatorForfeit ||
 			terminal.ReconnectAuthority.Game.WinnerID == nil || *terminal.ReconnectAuthority.Game.WinnerID != authority.Series.SecondParticipantID ||
 			terminal.ScoreRevision == nil || terminal.ScoreRevision.ScoreAfter.SecondParticipantWins != 1 {
-			t.Fatalf("third disconnect terminal = %+v", terminal)
+			t.Fatalf("exhausted disconnect terminal = %+v", terminal)
 		}
 		clock := terminal.ReconnectAuthority.GameClock
 		if clock.ResumedAt != nil || clock.ResumedDeadline != nil || !clock.FrozenAt.Equal(now) ||
@@ -104,9 +127,9 @@ func TestDisconnectCycleLimit(t *testing.T) {
 
 	t.Run("replacement_game_keeps_stable_disconnect_quota", func(t *testing.T) {
 		authority := task045Authority(now, false, false)
-		task045AddCompletedRoots(&authority, 0, domain.ReconnectCycleLimit, now)
+		task045ExhaustDisconnects(&authority, 0, now)
 		prior := task045ReplaceCurrentGame(&authority, task045ID(825), now)
-		if authority.Counters[0].Used != domain.ReconnectCycleLimit || authority.Game.AttemptNo != 2 ||
+		if authority.Counters[0].Used != domain.GameReconnectCycleLimit || authority.Game.AttemptNo != 2 ||
 			len(authority.Series.Slots[0].Attempts) != 2 || authority.Series.Slots[0].Attempts[0].State != domain.GameStateVoid {
 			t.Fatalf("replacement fixture is not durable: authority = %+v", authority)
 		}
@@ -122,9 +145,9 @@ func TestDisconnectCycleLimit(t *testing.T) {
 		terminal, changed, err := reconnectusecase.NewDisconnectUseCase(repository, newReconnectClock(t, now)).Disconnect(t.Context(), command)
 		if err != nil || !changed || repository.writeCount() != 1 || terminal.ReconnectAuthority.Game.WinnerID == nil ||
 			*terminal.ReconnectAuthority.Game.WinnerID != authority.Series.SecondParticipantID ||
-			task045Counter(t, terminal.ReconnectAuthority, command.ParticipantID).Used != domain.ReconnectCycleLimit ||
-			len(terminal.ReconnectAuthority.Reconnect) != domain.ReconnectCycleLimit {
-			t.Fatalf("Disconnect(replacement third) error = %v, changed = %v, writes = %d, record = %+v", err, changed, repository.writeCount(), terminal)
+			task045Counter(t, terminal.ReconnectAuthority, command.ParticipantID).Used != domain.GameReconnectCycleLimit ||
+			len(terminal.ReconnectAuthority.Reconnect) != domain.GameReconnectCycleLimit {
+			t.Fatalf("Disconnect(replacement exhausted) error = %v, changed = %v, writes = %d, record = %+v", err, changed, repository.writeCount(), terminal)
 		}
 	})
 
@@ -205,9 +228,9 @@ func TestDisconnectCycleLimit(t *testing.T) {
 		}
 	})
 
-	t.Run("third_disconnect_while_both_absent_routes_replay_and_cancels_open_opponent", func(t *testing.T) {
+	t.Run("exhausted_disconnect_while_both_absent_routes_replay_and_cancels_open_opponent", func(t *testing.T) {
 		authority := task045Authority(now, false, true)
-		task045AddCompletedRoots(&authority, 0, domain.ReconnectCycleLimit, now)
+		task045ExhaustDisconnects(&authority, 0, now)
 		opponentInterval := authority.Reconnect[0]
 		command := reconnectusecase.DisconnectCommand{Scope: authority.Scope, CommandID: task045ID(135),
 			ParticipantID: authority.Series.FirstParticipantID, IntervalID: task045ID(136),
@@ -216,7 +239,7 @@ func TestDisconnectCycleLimit(t *testing.T) {
 		terminal, changed, err := reconnectusecase.NewDisconnectUseCase(repository, newReconnectClock(t, now)).Disconnect(t.Context(), command)
 		if err != nil || !changed || terminal.ReconnectAuthority.Game.State != domain.GameStateVoid ||
 			terminal.ReconnectAuthority.Series.State != domain.SeriesStateReplayRequired || terminal.ReplayRoute == nil {
-			t.Fatalf("Disconnect(third both absent) error = %v, changed = %v, record = %+v", err, changed, terminal)
+			t.Fatalf("Disconnect(exhausted both absent) error = %v, changed = %v, record = %+v", err, changed, terminal)
 		}
 		closed := task045Interval(t, terminal.ReconnectAuthority, opponentInterval.ID)
 		if closed.State != pause.ReconnectStateCancelled || closed.ClosedAt == nil || !closed.ClosedAt.Equal(now) ||
@@ -389,7 +412,7 @@ func TestDisconnectCycleLimit(t *testing.T) {
 			{name: "authority overflow", intervalID: task045ID(197), mutate: func(value *reconnectusecase.ReconnectAuthority) { value.Revision = math.MaxInt64 }, want: reconnectusecase.ErrInvalidMutation, detail: "revision overflow"},
 			{name: "counter overflow", intervalID: task045ID(199), mutate: func(value *reconnectusecase.ReconnectAuthority) { value.Counters[0].Revision = math.MaxInt64 }, want: reconnectusecase.ErrInvalidMutation, detail: "counter revision overflow"},
 			{name: "ordinal overflow", intervalID: task045ID(198), mutate: func(value *reconnectusecase.ReconnectAuthority) {
-				task045AddCompletedRoots(value, 0, domain.ReconnectCycleLimit, now)
+				task045ExhaustDisconnects(value, 0, now)
 				value.CurrentOrdinal = int(^uint(0) >> 1)
 			}, want: reconnectusecase.ErrInvalidMutation, detail: "terminal lineage overflow"},
 		} {
@@ -427,7 +450,7 @@ func TestDisconnectCycleLimit(t *testing.T) {
 
 		t.Run("cancelled_opponent_interval", func(t *testing.T) {
 			authority := task045Authority(now, false, true)
-			task045AddCompletedRoots(&authority, 0, domain.ReconnectCycleLimit, now)
+			task045ExhaustDisconnects(&authority, 0, now)
 			authority.Reconnect[0].UpdatedAt = now
 			repository := newTask045RepositoryHarness(t, authority)
 			_, changed, err := reconnectusecase.NewDisconnectUseCase(repository, newReconnectClock(t, now)).Disconnect(t.Context(), reconnectusecase.DisconnectCommand{
@@ -479,7 +502,7 @@ func TestDisconnectCycleLimit(t *testing.T) {
 		} {
 			t.Run(test.name, func(t *testing.T) {
 				authority := task045Authority(now, false, false)
-				task045AddCompletedRoots(&authority, 0, domain.ReconnectCycleLimit, now)
+				task045ExhaustDisconnects(&authority, 0, now)
 				ids := task045SettlementIDs(781)
 				test.mutate(&authority, &ids)
 				repository := newTask045RepositoryHarness(t, authority)

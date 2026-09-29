@@ -79,7 +79,7 @@ func task045AddCompletedRoots(authority *reconnectusecase.ReconnectAuthority, in
 	}
 	authority.Reconnect = kept
 	for cycle := 1; cycle <= count; cycle++ {
-		openedAt := now.Add(time.Duration(-120+cycle*20+index*5) * time.Second)
+		openedAt := now.Add(time.Duration(-20*(max(count, 4)-cycle+2)+index*5) * time.Second)
 		closedAt := openedAt.Add(5 * time.Second)
 		authority.Reconnect = append(authority.Reconnect, pause.PauseReconnectInterval{
 			ID: task045ID(700 + index*20 + cycle), PauseID: authority.PauseID, RosterID: authority.Scope.RosterID,
@@ -97,6 +97,11 @@ func task045AddCompletedRoots(authority *reconnectusecase.ReconnectAuthority, in
 	authority.Counters[index].Used = count
 	authority.Counters[index].Revision = int64(count + 1)
 	task045RecalculateLifecycleRevisions(authority, now)
+}
+
+func task045ExhaustDisconnects(authority *reconnectusecase.ReconnectAuthority, index int, now time.Time) {
+	authority.Counters[index].Limit = domain.GameReconnectCycleLimit
+	task045AddCompletedRoots(authority, index, domain.GameReconnectCycleLimit, now)
 }
 
 func task045AddPriorRootForCurrentCycle(authority *reconnectusecase.ReconnectAuthority, index int, now time.Time) {

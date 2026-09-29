@@ -701,6 +701,18 @@ WITH scope AS MATERIALIZED (
             WHERE round.roster_id = roster.id
         )
     GROUP BY roster.id, roster.tournament_id, roster.revision, tournament.planned_roster_size
+), input AS MATERIALIZED (
+    SELECT participant_input.participant_id,
+        player_input.player_id,
+        seed_input.seed,
+        attendance_input.attendance
+    FROM UNNEST($5::UUID[]) WITH ORDINALITY AS participant_input(participant_id, ordinal)
+    JOIN UNNEST($6::UUID[]) WITH ORDINALITY AS player_input(player_id, ordinal)
+        USING (ordinal)
+    JOIN UNNEST($7::INTEGER[]) WITH ORDINALITY AS seed_input(seed, ordinal)
+        USING (ordinal)
+    JOIN UNNEST($8::VARCHAR[]) WITH ORDINALITY AS attendance_input(attendance, ordinal)
+        USING (ordinal)
 ), requested AS MATERIALIZED (
     SELECT input.participant_id,
         input.player_id,
@@ -714,12 +726,7 @@ WITH scope AS MATERIALIZED (
             PARTITION BY input.seed::BIGINT % scope.planned_roster_size
             ORDER BY input.seed, input.player_id
         ) AS seat_sequence
-    FROM ROWS FROM (
-        UNNEST($5::UUID[]),
-        UNNEST($6::UUID[]),
-        UNNEST($7::INTEGER[]),
-        UNNEST($8::VARCHAR[])
-    ) AS input(participant_id, player_id, seed, attendance)
+    FROM input
     CROSS JOIN scope
 ), desired AS MATERIALIZED (
     SELECT requested.participant_id,

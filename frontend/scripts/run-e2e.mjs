@@ -205,12 +205,12 @@ try {
         ...process.env,
         PLAYWRIGHT_JSON_OUTPUT_NAME: executionReportPath,
       },
-      stdio: ["ignore", "pipe", "pipe"],
+      stdio: ["ignore", "ignore", "pipe"],
       encoding: "utf8",
     },
   );
   if (result.stderr) process.stderr.write(result.stderr);
-  const report = parseExecutionReport(executionReportPath, result.stdout || "");
+  const report = parseExecutionReport(executionReportPath, "");
   if (result.status !== 0) {
     throw new Error(`Playwright execution failed with status ${result.status}`);
   }

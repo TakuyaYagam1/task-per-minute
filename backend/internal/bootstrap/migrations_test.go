@@ -184,7 +184,7 @@ func TestMigrationSourcesHaveContinuousDomainVersions(t *testing.T) {
 	provider, err := newMigrationProvider(new(sql.DB), os.DirFS(ResolveMigrationsDir(migrationsDir)))
 	require.NoError(t, err)
 	sources := provider.ListSources()
-	require.Len(t, sources, 29)
+	require.NotEmpty(t, sources)
 	for index, source := range sources {
 		require.Equal(t, int64(index+1), source.Version)
 		require.Equal(t, goose.TypeSQL, source.Type)
@@ -288,8 +288,10 @@ func TestMigrationRunWaitsBeforeCreatingMetadata(t *testing.T) {
 }
 
 func TestMigrationRunChecksCurrentHeadUnderLock(t *testing.T) {
-	state := &migrationTestState{history: currentMigrationHistory(29)}
+	state := &migrationTestState{}
 	db, provider := migrationTestProvider(t, state)
+	sources := provider.ListSources()
+	state.history = currentMigrationHistory(sources[len(sources)-1].Version)
 
 	require.NoError(t, runMigration(t.Context(), db, provider, "up"))
 

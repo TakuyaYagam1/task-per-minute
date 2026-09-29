@@ -23,6 +23,7 @@ func TestProvideRESTServerWithClockUsesSharedClock(t *testing.T) {
 	auth := newOperatorTestAuth(revocations, clock, "tournament-rest-clock-test-secret")
 	server := provideRESTServerWithClock(
 		nil,
+		nil,
 		auth,
 		nil,
 		nil,

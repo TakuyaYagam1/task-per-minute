@@ -249,11 +249,10 @@ func (r *TournamentAdmissionPostgres) checkInInTransaction(
 	if current.ParticipantID == uuid.Nil {
 		return admissionusecase.AdmissionRecord{}, false, domain.ErrConflict
 	}
-	switch current.Attendance {
-	case domain.AttendanceStateCheckedIn:
+	if current.Attendance == domain.AttendanceStateCheckedIn {
 		return current, false, nil
-	case domain.AttendanceStateRegistered:
-	default:
+	}
+	if current.Attendance != domain.AttendanceStateRegistered {
 		return admissionusecase.AdmissionRecord{}, false, domain.ErrConflict
 	}
 	if _, err := querier.CheckInRegisteredParticipant(ctx, sqlc.CheckInRegisteredParticipantParams{

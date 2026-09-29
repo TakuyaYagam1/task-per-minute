@@ -113,7 +113,6 @@ func replayPairingAgainstAuthority(
 	return view, err
 }
 
-//nolint:gocyclo // One locked workflow owns replay, strict pairing policy, persistence, and receipt publication.
 func (w *ExecutionWorkflow) createPairingsLocked(
 	ctx context.Context,
 	command PairingCommand,
