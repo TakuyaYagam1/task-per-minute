@@ -108,7 +108,10 @@ runtime_identities = {
     "yq": ("--version", "yq (https://github.com/mikefarah/yq/) version v4.53.3"),
     "docker": ("--version", "Docker version 29.6.2, build v29.6.2"),
     "docker-compose": ("version", "Docker Compose version 5.3.1"),
-    "govulncheck": ("-version", "Go: go1.26.5\nScanner: govulncheck@1.6.0\nDB: https://vuln.go.dev"),
+    "govulncheck": (
+        ("version", "-m"),
+        "go1.26.5\npath golang.org/x/vuln/cmd/govulncheck\nmod golang.org/x/vuln (devel)\nbuild GOOS=linux\nbuild GOARCH=amd64",
+    ),
     "gitleaks": ("version", "8.30.1"),
     "semgrep": ("--version", "1.161.0"),
     "trivy": ("--version", "Version: 0.72.0"),
@@ -126,6 +129,27 @@ def tool_script(argument: str, output: str) -> bytes:
     ).encode()
 
 
+def go_tool_script(module_path: str = "golang.org/x/vuln/cmd/govulncheck") -> bytes:
+    return (
+        "#!/bin/sh\n"
+        "if [ \"$#\" -eq 1 ] && [ \"${1:-}\" = 'version' ]; then\n"
+        "  printf '%s\\n' 'go version go1.26.8 linux/amd64'\n"
+        "  exit 0\n"
+        "fi\n"
+        "if [ \"$#\" -eq 3 ] && [ \"$1\" = 'version' ] && [ \"$2\" = '-m' ]; then\n"
+        "  printf '%s\\n' \"$3: go1.26.5\"\n"
+        f"  printf '%s\\n' '\tpath\t{module_path}'\n"
+        "  printf '%s\\n' '\tmod\tgolang.org/x/vuln\t(devel)'\n"
+        "  printf '%s\\n' '\tbuild\t-buildmode=exe'\n"
+        "  printf '%s\\n' '\tbuild\t-compiler=gc'\n"
+        "  printf '%s\\n' '\tbuild\tGOARCH=amd64'\n"
+        "  printf '%s\\n' '\tbuild\tGOOS=linux'\n"
+        "  exit 0\n"
+        "fi\n"
+        "exit 64\n"
+    ).encode()
+
+
 tools = []
 tool_paths: dict[str, pathlib.Path] = {}
 for name, version in versions.items():
@@ -133,7 +157,12 @@ for name, version in versions.items():
     executable = root / "bin" / name
     executable.parent.mkdir(parents=True)
     argument, output = runtime_identities[name]
-    executable.write_bytes(tool_script(argument, output))
+    if name == "go":
+        executable.write_bytes(go_tool_script())
+    elif name == "govulncheck":
+        executable.write_bytes(b"#!/bin/sh\nexit 64\n")
+    else:
+        executable.write_bytes(tool_script(argument, output))
     executable.chmod(0o555)
     tool_paths[name] = executable
     provisioning: dict[str, object] = {
@@ -156,7 +185,7 @@ for name, version in versions.items():
             },
         },
         "runtime_identity": {
-            "arguments": [argument],
+            "arguments": list(argument) if isinstance(argument, (tuple, list)) else [argument],
             "expected_output": output,
             "timeout_seconds": 3,
         },
@@ -218,26 +247,34 @@ image_policy = {
         "https://github.com/caddyserver/caddy-docker",
         "caddy:2-alpine",
         "docker.io/library/caddy",
+        "Apache-2.0",
+        "https://github.com/caddyserver/caddy/blob/v2.11.4/LICENSE",
     ),
     "postgres": (
         "https://github.com/docker-library/postgres",
         "postgres:18.3-alpine3.23",
         "docker.io/library/postgres",
+        "PostgreSQL",
+        "https://www.postgresql.org/about/licence/",
     ),
     "redis": (
         "https://github.com/docker-library/redis",
         "redis:8.6.2-alpine3.23",
         "docker.io/library/redis",
+        "AGPL-3.0-only",
+        "https://github.com/redis/redis/blob/8.6.2/LICENSE.txt",
     ),
     "seaweedfs": (
         "https://github.com/seaweedfs/seaweedfs",
         "chrislusf/seaweedfs:4.20",
         "docker.io/chrislusf/seaweedfs",
+        "Apache-2.0",
+        "https://github.com/seaweedfs/seaweedfs/blob/4.20/LICENSE",
     ),
 }
 images = []
 inventory = []
-for name, (source, requested_tag, repository) in image_policy.items():
+for name, (source, requested_tag, repository, license_spdx, license_evidence) in image_policy.items():
     repository_digest = hashlib.sha256(f"{name}-repository".encode()).hexdigest()
     config_digest = "sha256:" + hashlib.sha256(f"{name}-config".encode()).hexdigest()
     reference = f"{repository}@sha256:{repository_digest}"
@@ -250,10 +287,10 @@ for name, (source, requested_tag, repository) in image_policy.items():
         "config_digest": config_digest,
         "source": source,
         "license": {
-            "spdx": "Apache-2.0",
+            "spdx": license_spdx,
             "reviewed_at": "2026-09-02",
             "status": "accepted",
-            "evidence_url": f"https://licenses.example.invalid/images/{name}",
+            "evidence_url": license_evidence,
         },
     })
     inventory.append({
@@ -391,8 +428,15 @@ elif mutation == "image_wrong_repository":
     inventory[0]["repo_digests"] = [reference]
 elif mutation == "image_wrong_digest":
     inventory[0]["repo_digests"] = ["docker.io/library/caddy@sha256:" + "0" * 64]
+elif mutation == "image_license_mismatch":
+    lock["validation_images"][0]["license"]["spdx"] = "MIT"
 elif mutation == "image_missing":
     inventory.pop(0)
+elif mutation == "govulncheck_buildinfo_mismatch":
+    tool_paths["go"].chmod(0o755)
+    tool_paths["go"].write_bytes(go_tool_script("golang.org/x/vuln/cmd/other"))
+    tool_paths["go"].chmod(0o555)
+    tools_by_name["go"]["provisioning"]["executable_sha256"] = sha256(tool_paths["go"])
 elif mutation == "trivy_metadata_digest":
     lock["trivy_database"]["metadata_sha256"] = "0" * 64
 elif mutation == "trivy_db_digest":
@@ -583,7 +627,9 @@ run_fixture image-tag image_tag fail "must match exactly one schema branch"
 run_fixture image-requested-tag image_requested_tag fail "caddy validation image requested tag mismatch"
 run_fixture image-wrong-repository image_wrong_repository fail "caddy validation image repository is not the reviewed release repository"
 run_fixture image-wrong-digest image_wrong_digest fail "caddy validation image repository digest mismatch"
+run_fixture image-license-mismatch image_license_mismatch fail "caddy validation image license evidence mismatch"
 run_fixture image-missing image_missing fail "caddy validation image is missing"
+run_fixture govulncheck-buildinfo-mismatch govulncheck_buildinfo_mismatch fail "govulncheck build metadata module path mismatch" backend
 run_fixture trivy-metadata trivy_metadata_digest fail "Trivy metadata SHA-256 mismatch"
 run_fixture trivy-database trivy_db_digest fail "Trivy vulnerability DB SHA-256 mismatch"
 run_fixture trivy-stale trivy_stale fail "Trivy vulnerability DB is stale"

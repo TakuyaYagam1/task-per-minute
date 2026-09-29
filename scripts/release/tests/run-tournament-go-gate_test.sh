@@ -267,7 +267,7 @@ event("pass", Elapsed=1.25)
 PY
       ;;
     environment)
-      expected_path='/nix/store/dv8vg7k21fdi9v79g5x4b87kwqhl8ykv-go-1.26.8/bin:/nix/store/6f0qqak4qbcrbw4f750phr88c9yhpf5s-git-2.55.0/bin:/nix/store/5y8jchf95jisr09cjx2q7lgz3qwnfi5j-coreutils-full-9.11/bin:/nix/store/bwry105g7v5jspr41bx9x3fcfqsmfkq2-bash-interactive-5.3p15/bin:/nix/store/gxzhl7aaiid7zp3y47jqqiq7zg5mqpwp-python3-3.14.6/bin'
+      expected_path='/nix/store/62rzn370ba6jc0sfvmb9a93s4619f6kv-go-1.26.8/bin:/nix/store/6f0qqak4qbcrbw4f750phr88c9yhpf5s-git-2.55.0/bin:/nix/store/5y8jchf95jisr09cjx2q7lgz3qwnfi5j-coreutils-full-9.11/bin:/nix/store/bwry105g7v5jspr41bx9x3fcfqsmfkq2-bash-interactive-5.3p15/bin:/nix/store/gxzhl7aaiid7zp3y47jqqiq7zg5mqpwp-python3-3.14.6/bin'
       [[ "$PATH" == "$expected_path" ]]
       [[ -z "${GOROOT+x}" ]]
       [[ -z "${TMPDIR+x}" ]]
@@ -275,7 +275,7 @@ PY
       [[ "$GOCACHE" == '/home/takuya/.cache/go-build' ]]
       [[ "$GOMODCACHE" == '/home/takuya/go/pkg/mod' ]]
       [[ "$GOPATH" == '/home/takuya/go' ]]
-      [[ "$(command -v go)" == '/nix/store/dv8vg7k21fdi9v79g5x4b87kwqhl8ykv-go-1.26.8/bin/go' ]]
+      [[ "$(command -v go)" == '/nix/store/62rzn370ba6jc0sfvmb9a93s4619f6kv-go-1.26.8/bin/go' ]]
       [[ "$(command -v git)" == '/nix/store/6f0qqak4qbcrbw4f750phr88c9yhpf5s-git-2.55.0/bin/git' ]]
       [[ "$(command -v env)" == '/nix/store/5y8jchf95jisr09cjx2q7lgz3qwnfi5j-coreutils-full-9.11/bin/env' ]]
       [[ "$(command -v bash)" == '/nix/store/bwry105g7v5jspr41bx9x3fcfqsmfkq2-bash-interactive-5.3p15/bin/bash' ]]
@@ -1001,16 +1001,31 @@ deleted_migration_repo="$test_tmp/deleted-migration-repo"
 git clone --quiet --no-hardlinks -- "$repo_root" "$deleted_migration_repo"
 cp -- "$runner" "$deleted_migration_repo/scripts/release/run-tournament-go-gate.sh"
 for refactored_artifact in \
-  backend/internal/adapter/outbound/postgres/game.go \
-  backend/internal/adapter/outbound/postgres/tournament.go \
-  backend/integration_test/tournament_migration_test.go \
-  backend/integration_test/tournament_roster_migration_test.go \
-  backend/integration_test/swiss_migration_test.go \
-  backend/integration_test/game_migration_test.go \
-  backend/integration_test/draft_migration_action_test.go \
-  backend/integration_test/draft_migration_fixture_test.go \
-  backend/integration_test/draft_migration_flow_test.go \
-  backend/integration_test/reconnect_migration_assertion_fixture_test.go \
+  backend/internal/adapter/outbound/postgres/execution/game/game.go \
+  backend/internal/adapter/outbound/postgres/tournament/roster/tournament_roster.go \
+  backend/integration_test/tournament/main_test.go \
+  backend/integration_test/tournament/tournament_migration_test.go \
+  backend/integration_test/tournament/tournament_migration_flow.go \
+  backend/integration_test/tournament/tournament_roster_migration_test.go \
+  backend/integration_test/tournament/tournament_roster_migration_flow.go \
+  backend/integration_test/swiss/main_test.go \
+  backend/integration_test/swiss/runner.go \
+  backend/integration_test/swiss/swiss_migration_test.go \
+  backend/integration_test/game/main_test.go \
+  backend/integration_test/game/runner.go \
+  backend/integration_test/game/game_migration_test.go \
+  backend/integration_test/draft/main_test.go \
+  backend/integration_test/draft/runner.go \
+  backend/integration_test/draft/draft_migration_test.go \
+  backend/integration_test/draft/draft_migration_action.go \
+  backend/integration_test/draft/draft_migration_fixture.go \
+  backend/integration_test/draft/draft_migration_flow.go \
+  backend/integration_test/reconnect/main_test.go \
+  backend/integration_test/reconnect/runner.go \
+  backend/integration_test/reconnect/reconnect_migration_test.go \
+  backend/integration_test/reconnect/migration_helpers.go \
+  backend/integration_test/reconnect/migration_lock_helpers.go \
+  backend/integration_test/reconnect/migration_scenarios.go \
   backend/integration_test/reconnect_migration_presence_test.go \
   backend/integration_test/reconnect_migration_setup_test.go; do
   cp -- "$repo_root/$refactored_artifact" "$deleted_migration_repo/$refactored_artifact"

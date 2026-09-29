@@ -1,7 +1,7 @@
 {
   "schema": "security/tools/release-tools.schema.json",
   "schema_version": 1,
-  "reviewed_at": "2026-09-11",
+  "reviewed_at": "2026-09-29",
   "platform": {
     "os": "linux",
     "arch": "amd64"
@@ -16,7 +16,7 @@
         "license": {"spdx": "BSD-3-Clause", "reviewed_at": "2026-09-11", "status": "accepted", "evidence_url": "https://go.dev/LICENSE"}
       },
       "runtime_identity": {"arguments": ["version"], "expected_output": "go version go1.26.8 linux/amd64", "timeout_seconds": 5},
-      "provisioning": {"kind": "nix_store", "immutable_root": "/nix/store/dv8vg7k21fdi9v79g5x4b87kwqhl8ykv-go-1.26.8", "relative_path": "bin/go", "executable_sha256": "d9a2fa19c7ef8b57f420012c21f49f235c46f08a68c12077d9c753dbb6ccdc34", "nar_hash": "sha256:1s8nf1a8q1hqkimvhyk044r105dzwrplk19kxg6mwpbkjd24hlxx"},
+      "provisioning": {"kind": "nix_store", "immutable_root": "/nix/store/62rzn370ba6jc0sfvmb9a93s4619f6kv-go-1.26.8", "relative_path": "bin/go", "executable_sha256": "d9a2fa19c7ef8b57f420012c21f49f235c46f08a68c12077d9c753dbb6ccdc34", "nar_hash": "sha256:1s8nf1a8q1hqkimvhyk044r105dzwrplk19kxg6mwpbkjd24hlxx"},
       "trust_decision": {"status": "accepted", "rationale": "Official linux-amd64 archive d0f743b33e8d8945e6b1f432edd15785c70507121d6e2a723b21285eddf8b57b is locked by exact Nix root, NAR identity, executable digest, and runtime version."}
     },
     {
@@ -123,9 +123,9 @@
         "release_url": "https://pkg.go.dev/golang.org/x/vuln/cmd/govulncheck@v1.6.0",
         "license": {"spdx": "BSD-3-Clause", "reviewed_at": "2026-09-02", "status": "accepted", "evidence_url": "https://github.com/golang/vuln/blob/v1.6.0/LICENSE"}
       },
-      "runtime_identity": {"arguments": ["-version"], "expected_output": "Go: go1.26.5\nScanner: govulncheck@1.6.0\nDB: https://vuln.go.dev", "timeout_seconds": 5},
+      "runtime_identity": {"arguments": ["version", "-m"], "expected_output": "go1.26.5\npath golang.org/x/vuln/cmd/govulncheck\nmod golang.org/x/vuln (devel)\nbuild GOOS=linux\nbuild GOARCH=amd64", "timeout_seconds": 5},
       "provisioning": {"kind": "nix_store", "immutable_root": "/nix/store/jal1aq2n1kn41h6akxgghnn9zbsdahml-govulncheck-1.6.0", "relative_path": "bin/govulncheck", "executable_sha256": "8d79e0e0eed3dd53544ae92784535e1fb21fe8877828b2d9e645338ea9f1f0fd", "nar_hash": "sha256:1kknlv6nd8xax32nbw30mnrvx3fyprxlr62sclzr5z5wyfqmjl9n"},
-      "trust_decision": {"status": "unresolved", "rationale": "The artifact is content-locked, but its version command also emits mutable vulnerability database state."}
+      "trust_decision": {"status": "accepted", "rationale": "Offline nix path-info confirmed the govulncheck-1.6.0 deriver path and cache.nixos.org-1 signature; the exact NAR root and executable digest are locked. The gate checks Go build metadata with the pinned Go 1.26.8 toolchain, matching module path, compiler version, and linux/amd64 fields while disabling toolchain and module network access; it does not run the networked -version command or depend on mutable vulnerability DB timestamps."}
     },
     {
       "name": "gitleaks",
@@ -149,7 +149,7 @@
       },
       "runtime_identity": {"arguments": ["--version"], "expected_output": "1.161.0", "timeout_seconds": 15},
       "provisioning": {"kind": "nix_store", "immutable_root": "/nix/store/0jfw4qyzrnj8psfa5lns526j9mhbrpkf-python3.13-semgrep-1.161.0", "relative_path": "bin/semgrep", "executable_sha256": "2de5c309b7c309527635507ff648ce4375c0d595b92aa4a40233cf696708b0b8", "nar_hash": "sha256:0k0d2cy3lsp2lkjxvs77qnqf7s17h1p6yfiwsxh44lwfxa4df0a3"},
-      "trust_decision": {"status": "unresolved", "rationale": "Artifact identity is locked, but the version probe requires an undeclared runtime helper and remains fail-closed."}
+      "trust_decision": {"status": "accepted", "rationale": "The immutable Nix root and executable digest are locked. A bounded version probe uses an independently hash- and NAR-pinned coreutils helper with metrics and version checks disabled; strace observed no external connect or send calls."}
     },
     {
       "name": "trivy",
@@ -176,10 +176,10 @@
     "chromium_executable_sha256": "ef4c0f78ac9f95d43f9f42a9d3b2188e6b053213238cb55836bb1061dafdab05"
   },
   "validation_images": [
-    {"status": "unresolved", "name": "caddy", "requested_tag": "caddy:2-alpine", "source": "https://github.com/caddyserver/caddy-docker", "reason": "Required image is absent and no reviewed repository digest or config digest is available."},
-    {"status": "unresolved", "name": "postgres", "requested_tag": "postgres:18.3-alpine3.23", "source": "https://github.com/docker-library/postgres", "reason": "Required image is absent and no reviewed repository digest or config digest is available."},
-    {"status": "unresolved", "name": "redis", "requested_tag": "redis:8.6.2-alpine3.23", "source": "https://github.com/docker-library/redis", "reason": "Required image is absent and no reviewed repository digest or config digest is available."},
-    {"status": "unresolved", "name": "seaweedfs", "requested_tag": "chrislusf/seaweedfs:4.20", "source": "https://github.com/seaweedfs/seaweedfs", "reason": "Required image is absent and no reviewed repository digest or config digest is available."}
+    {"status": "accepted", "name": "caddy", "requested_tag": "caddy:2-alpine", "reference": "docker.io/library/caddy@sha256:040e9f7480b80b6d4a7e5013a21159b950a63dcbdb956e38abe2387fb28d9ec0", "platform": "linux/amd64", "config_digest": "sha256:2d8b1708bf8008935c0e2a9b6564f7f080cf9a73af3b27718f286230449b7101", "source": "https://github.com/caddyserver/caddy-docker", "license": {"spdx": "Apache-2.0", "reviewed_at": "2026-09-29", "status": "accepted", "evidence_url": "https://github.com/caddyserver/caddy/blob/v2.11.4/LICENSE"}},
+    {"status": "accepted", "name": "postgres", "requested_tag": "postgres:18.3-alpine3.23", "reference": "docker.io/library/postgres@sha256:1b13c640ae11f2f165d1e89667e5862b0017baf4c80fec2fb7377d86319859ba", "platform": "linux/amd64", "config_digest": "sha256:f6d4985d97e69bb9de4d5e24f9f24cbfaa90d30877ce935a8ee872f62efbb621", "source": "https://github.com/docker-library/postgres", "license": {"spdx": "PostgreSQL", "reviewed_at": "2026-09-29", "status": "accepted", "evidence_url": "https://www.postgresql.org/about/licence/"}},
+    {"status": "accepted", "name": "redis", "requested_tag": "redis:8.6.2-alpine3.23", "reference": "docker.io/library/redis@sha256:c5e375abb885e6b2021c0377879e4890bf76f9065b8922ffc113f2b226b9fc17", "platform": "linux/amd64", "config_digest": "sha256:13b871aaf97fdce1787aef62e24345c07906bdca4f38e947550286d917b737ee", "source": "https://github.com/docker-library/redis", "license": {"spdx": "AGPL-3.0-only", "reviewed_at": "2026-09-29", "status": "accepted", "evidence_url": "https://github.com/redis/redis/blob/8.6.2/LICENSE.txt"}},
+    {"status": "accepted", "name": "seaweedfs", "requested_tag": "chrislusf/seaweedfs:4.20", "reference": "docker.io/chrislusf/seaweedfs@sha256:07f6a37b063e14bc15b7c5c49b8c2ea745aaccd2a29a514a7eb90e58b727d13f", "platform": "linux/amd64", "config_digest": "sha256:108b44778e7f9916b8f5834191f7e752bea1f4f3c004e53c533a29dbf08ff10b", "source": "https://github.com/seaweedfs/seaweedfs", "license": {"spdx": "Apache-2.0", "reviewed_at": "2026-09-29", "status": "accepted", "evidence_url": "https://github.com/seaweedfs/seaweedfs/blob/4.20/LICENSE"}}
   ],
   "trivy_database": {
     "status": "accepted",
@@ -187,9 +187,9 @@
     "immutable_root": "/home/takuya/.cache/trivy/db",
     "metadata_relative_path": "metadata.json",
     "database_relative_path": "trivy.db",
-    "metadata_sha256": "526ff2a5b5fbc099342c0ef5e2bda49fa67468ba166295facaa4ce2404cfcdcd",
-    "database_sha256": "5b9a2be561c5d1788c1df9e5974654bda5780f3e511eb20ae3a50945302ed502",
-    "updated_at": "2026-08-09T07:04:26.972846897Z",
+    "metadata_sha256": "4f3c14b26a7d3b7890c4e291170a6f5a0499b7721f9eac01ab7a6f4dc34a7c93",
+    "database_sha256": "b3c1bef699d2fb9fed55c280ddfe9f681cf43b117cc73e54f852c1d840d8399e",
+    "updated_at": "2026-09-29T13:11:12.644596957Z",
     "max_age_hours": 168
   }
 }

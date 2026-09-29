@@ -139,11 +139,13 @@ import json
 import os
 import pathlib
 import platform
+import pwd
 import re
 import stat
 import subprocess
 import sys
 import tarfile
+import tempfile
 from typing import Any
 
 
@@ -162,7 +164,7 @@ class StrictJsonError(ValueError):
 CANONICAL_SCHEMA_ID = "https://task-per-minute.local/schemas/release-tools.schema.json"
 CANONICAL_LOCK_SCHEMA = "security/tools/release-tools.schema.json"
 CANONICAL_LOCK_SCHEMA_VERSION = 1
-CANONICAL_LOCK_SHA256 = "1737eb54cbb74f5a7df99f5460524a1d8b337c6968285c0014970f32ef388d72"
+CANONICAL_LOCK_SHA256 = "e6220da1cc29ca14c9d351d00e5f36ecff85cbb2aa8df7c0636dbedd3496f503"
 CANONICAL_SCHEMA_SHA256 = "e88e299e4eaf307ce59b7f1f9ddeaa4074384e183a05aac6cb627a8381aedc86"
 CANONICAL_ROOT_FIELDS = frozenset(
     {
@@ -228,8 +230,8 @@ TOOL_POLICY: dict[str, tuple[str, str, set[str], tuple[str, ...], str]] = {
         "1.6.0",
         "https://github.com/golang/vuln",
         {"BSD-3-Clause"},
-        ("-version",),
-        "Go: go1.26.5\nScanner: govulncheck@1.6.0\nDB: https://vuln.go.dev",
+        ("version", "-m"),
+        "go1.26.5\npath golang.org/x/vuln/cmd/govulncheck\nmod golang.org/x/vuln (devel)\nbuild GOOS=linux\nbuild GOARCH=amd64",
     ),
     "gitleaks": (
         "8.30.1",
@@ -273,24 +275,38 @@ IMAGE_POLICY = {
         "https://github.com/caddyserver/caddy-docker",
         "caddy:2-alpine",
         "docker.io/library/caddy",
+        "Apache-2.0",
+        "https://github.com/caddyserver/caddy/blob/v2.11.4/LICENSE",
     ),
     "postgres": (
         "https://github.com/docker-library/postgres",
         "postgres:18.3-alpine3.23",
         "docker.io/library/postgres",
+        "PostgreSQL",
+        "https://www.postgresql.org/about/licence/",
     ),
     "redis": (
         "https://github.com/docker-library/redis",
         "redis:8.6.2-alpine3.23",
         "docker.io/library/redis",
+        "AGPL-3.0-only",
+        "https://github.com/redis/redis/blob/8.6.2/LICENSE.txt",
     ),
     "seaweedfs": (
         "https://github.com/seaweedfs/seaweedfs",
         "chrislusf/seaweedfs:4.20",
         "docker.io/chrislusf/seaweedfs",
+        "Apache-2.0",
+        "https://github.com/seaweedfs/seaweedfs/blob/4.20/LICENSE",
     ),
 }
 TRIVY_DATABASE_SOURCE = "https://github.com/aquasecurity/trivy-db"
+SEMGREP_HELPER_ROOT = pathlib.Path(
+    "/nix/store/si964wmmwd8qc03hwxy47iw27dp4bcmj-coreutils-full-9.11"
+)
+SEMGREP_HELPER_NAR_HASH = "sha256:17dazp85nz7vg4vay7nwfwxc059sf2wq62dvsy1fhlkmpk2jvxlx"
+SEMGREP_HELPER_SHA256 = "a942e6422d472d03a5410319221631c0e36b30c946b0321801d995dfbbf23951"
+SEMGREP_HELPER_PATH = SEMGREP_HELPER_ROOT / "bin"
 
 
 def exact_regular_file(path_text: str, label: str) -> pathlib.Path:
@@ -516,7 +532,12 @@ def safe_member(root: pathlib.Path, relative_text: str, label: str) -> pathlib.P
     return current
 
 
-def run_exact(command: list[str], timeout: int, label: str) -> str:
+def run_exact(
+    command: list[str],
+    timeout: int,
+    label: str,
+    env_overrides: dict[str, str] | None = None,
+) -> str:
     env = {
         "HOME": "/nonexistent",
         "LANG": "C",
@@ -527,6 +548,8 @@ def run_exact(command: list[str], timeout: int, label: str) -> str:
         "TRIVY_SKIP_DB_UPDATE": "true",
         "TRIVY_SKIP_JAVA_DB_UPDATE": "true",
     }
+    if env_overrides is not None:
+        env.update(env_overrides)
     try:
         completed = subprocess.run(
             command,
@@ -543,6 +566,96 @@ def run_exact(command: list[str], timeout: int, label: str) -> str:
     if completed.returncode != 0:
         raise VerificationError(f"{label} exited with status {completed.returncode}")
     return completed.stdout.strip()
+
+
+def verify_semgrep_helper() -> pathlib.Path:
+    root = safe_root(str(SEMGREP_HELPER_ROOT), "Semgrep helper root")
+    nix_store = pathlib.Path("/run/current-system/sw/bin/nix-store")
+    if not nix_store.is_file():
+        raise VerificationError("fixed nix-store verifier is unavailable")
+    nar_hash = run_exact(
+        [str(nix_store), "-q", "--hash", str(root)],
+        10,
+        "Semgrep helper NAR identity probe",
+    )
+    if nar_hash != SEMGREP_HELPER_NAR_HASH:
+        raise VerificationError("Semgrep helper NAR identity mismatch")
+    executable = safe_member(root, "bin/coreutils", "Semgrep helper executable")
+    mode = executable.stat().st_mode
+    if not stat.S_ISREG(mode) or mode & (stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH) == 0:
+        raise VerificationError("Semgrep helper is not a regular executable file")
+    if mode & (stat.S_IWGRP | stat.S_IWOTH):
+        raise VerificationError("Semgrep helper is group/world writable")
+    if sha256_file(executable) != SEMGREP_HELPER_SHA256:
+        raise VerificationError("Semgrep helper executable SHA-256 mismatch")
+    return SEMGREP_HELPER_PATH
+
+
+def private_scratch_root() -> pathlib.Path:
+    uid = os.getuid()
+    home = pathlib.Path(pwd.getpwuid(uid).pw_dir)
+    home = safe_root(str(home), "owner home directory")
+    if home.lstat().st_uid != uid:
+        raise VerificationError("owner home directory has an unexpected owner")
+    codex_root = safe_root(str(home / ".codex"), "Codex scratch parent")
+    if codex_root.lstat().st_uid != uid:
+        raise VerificationError("Codex scratch parent has an unexpected owner")
+    if codex_root.stat().st_mode & (stat.S_IWGRP | stat.S_IWOTH):
+        raise VerificationError("Codex scratch parent is group/world writable")
+
+    scratch = codex_root / ".tmp"
+    try:
+        scratch.lstat()
+    except FileNotFoundError:
+        try:
+            scratch.mkdir(mode=0o700)
+        except FileExistsError:
+            pass
+        except OSError as exc:
+            raise VerificationError(f"private scratch directory is unavailable: {exc}") from exc
+    except OSError as exc:
+        raise VerificationError(f"private scratch directory is unavailable: {exc}") from exc
+    exact_scratch = safe_root(str(scratch), "private scratch directory")
+    metadata = exact_scratch.lstat()
+    if metadata.st_uid != uid or stat.S_IMODE(metadata.st_mode) != 0o700:
+        raise VerificationError("private scratch directory owner or mode mismatch")
+    return exact_scratch
+
+
+def govulncheck_build_identity(output: str) -> str:
+    lines = output.splitlines()
+    if not lines:
+        raise VerificationError("govulncheck build metadata is empty")
+    compiler_match = re.fullmatch(r".+: (go[0-9]+(?:\.[0-9]+){1,2})", lines[0])
+    if compiler_match is None:
+        raise VerificationError("govulncheck build metadata has no Go compiler version")
+
+    path_records = [line.split() for line in lines[1:] if line.split()[:1] == ["path"]]
+    module_records = [line.split() for line in lines[1:] if line.split()[:1] == ["mod"]]
+    build_records = [line.split() for line in lines[1:] if line.split()[:1] == ["build"]]
+    if len(path_records) != 1 or len(path_records[0]) != 2:
+        raise VerificationError("govulncheck build metadata has an invalid module path")
+    if len(module_records) != 1 or len(module_records[0]) < 3:
+        raise VerificationError("govulncheck build metadata has an invalid module record")
+    if path_records[0][1] != "golang.org/x/vuln/cmd/govulncheck":
+        raise VerificationError("govulncheck build metadata module path mismatch")
+    if module_records[0][1:] != ["golang.org/x/vuln", "(devel)"]:
+        raise VerificationError("govulncheck build metadata module identity mismatch")
+
+    build_values = [record[1] for record in build_records if len(record) == 2]
+    if build_values.count("GOOS=linux") != 1 or build_values.count("GOARCH=amd64") != 1:
+        raise VerificationError("govulncheck build metadata platform mismatch")
+    if build_values.count("-compiler=gc") != 1:
+        raise VerificationError("govulncheck build metadata compiler mismatch")
+    return "\n".join(
+        (
+            compiler_match.group(1),
+            f"path {path_records[0][1]}",
+            f"mod {module_records[0][1]} {module_records[0][2]}",
+            "build GOOS=linux",
+            "build GOARCH=amd64",
+        )
+    )
 
 
 def verify_archive(archive_root: pathlib.Path, tool: dict[str, Any], executable_digest: str) -> None:
@@ -582,6 +695,7 @@ def verify_tool(
     test_root: pathlib.Path | None,
     archive_root: pathlib.Path | None,
     project_root: pathlib.Path | None,
+    verified_tools: dict[str, tuple[pathlib.Path, str]],
 ) -> tuple[pathlib.Path, str]:
     name = tool["name"]
     provisioning = tool["provisioning"]
@@ -643,11 +757,56 @@ def verify_tool(
         if not playwright_cli.is_file():
             raise VerificationError("Playwright CLI is not a regular file")
         command = [str(executable), str(playwright_cli), *identity["arguments"]]
-    output = run_exact(
-        command,
-        identity["timeout_seconds"],
-        f"{name} runtime identity probe",
-    )
+    env_overrides: dict[str, str] | None = None
+    if name == "govulncheck":
+        go_executable = verified_tools.get("go", (None, ""))[0]
+        if go_executable is None:
+            raise VerificationError("govulncheck pinned Go toolchain is unavailable")
+        # govulncheck -version contacts vuln.go.dev; inspect only static build metadata.
+        go_env = {
+            "GOTOOLCHAIN": "local",
+            "GOPROXY": "off",
+            "GOSUMDB": "off",
+        }
+        output = govulncheck_build_identity(
+            run_exact(
+                [str(go_executable), *identity["arguments"], str(executable)],
+                identity["timeout_seconds"],
+                "govulncheck Go build metadata probe",
+                env_overrides=go_env,
+            )
+        )
+    elif name == "semgrep" and canonical:
+        helper_path = verify_semgrep_helper()
+        scratch_root = private_scratch_root()
+        with tempfile.TemporaryDirectory(
+            prefix="release-semgrep-home-",
+            dir=str(scratch_root),
+        ) as temp_home:
+            os.chmod(temp_home, 0o700)
+            env_overrides = {
+                "HOME": temp_home,
+                "XDG_CACHE_HOME": f"{temp_home}/cache",
+                "XDG_CONFIG_HOME": f"{temp_home}/config",
+                "XDG_DATA_HOME": f"{temp_home}/data",
+                "PATH": str(helper_path),
+                # Disable both sources of Semgrep's outbound version/metrics requests.
+                "SEMGREP_SEND_METRICS": "off",
+                "SEMGREP_ENABLE_VERSION_CHECK": "0",
+            }
+            output = run_exact(
+                command,
+                identity["timeout_seconds"],
+                f"{name} runtime identity probe",
+                env_overrides=env_overrides,
+            )
+    else:
+        output = run_exact(
+            command,
+            identity["timeout_seconds"],
+            f"{name} runtime identity probe",
+            env_overrides=env_overrides,
+        )
     if output != identity["expected_output"]:
         raise VerificationError(f"{name} runtime/version identity mismatch")
     return executable, digest
@@ -748,9 +907,41 @@ def load_image_inventory(path_text: str) -> dict[str, dict[str, Any]]:
     return result
 
 
+def verified_rootless_docker_host() -> str:
+    uid = os.getuid()
+    if uid == 0:
+        raise VerificationError("rootless container socket is unavailable for uid 0")
+    runtime_root = pathlib.Path(f"/run/user/{uid}")
+    podman_root = runtime_root / "podman"
+    socket_path = podman_root / "podman.sock"
+    for directory, expected_owner, expected_mode, label in (
+        (runtime_root, uid, 0o700, "rootless runtime directory"),
+        (podman_root, uid, None, "rootless Podman directory"),
+    ):
+        exact = safe_root(str(directory), label)
+        metadata = exact.lstat()
+        if metadata.st_uid != expected_owner:
+            raise VerificationError(f"{label} has an unexpected owner")
+        if expected_mode is not None and stat.S_IMODE(metadata.st_mode) != expected_mode:
+            raise VerificationError(f"{label} has an unexpected mode")
+        if expected_mode is None and metadata.st_mode & (stat.S_IWGRP | stat.S_IWOTH):
+            raise VerificationError(f"{label} is group/world writable")
+
+    try:
+        metadata = socket_path.lstat()
+    except OSError as exc:
+        raise VerificationError(f"rootless Podman socket is unavailable: {exc}") from exc
+    if not stat.S_ISSOCK(metadata.st_mode) or stat.S_ISLNK(metadata.st_mode):
+        raise VerificationError("rootless Podman endpoint is not a direct Unix socket")
+    if metadata.st_uid != uid or stat.S_IMODE(metadata.st_mode) != 0o660:
+        raise VerificationError("rootless Podman socket owner or mode mismatch")
+    return f"unix://{socket_path}"
+
+
 def docker_inspect(docker: pathlib.Path, reference: str) -> dict[str, Any]:
+    host = verified_rootless_docker_host()
     output = run_exact(
-        [str(docker), "image", "inspect", reference],
+        [str(docker), "--host", host, "image", "inspect", reference],
         10,
         f"Docker image inspect for {reference}",
     )
@@ -780,7 +971,13 @@ def verify_images(
     docker = verified.get("docker", (None, ""))[0]
     for image in images:
         name = image["name"]
-        expected_source, expected_tag, expected_repository = IMAGE_POLICY[name]
+        (
+            expected_source,
+            expected_tag,
+            expected_repository,
+            expected_license,
+            expected_license_evidence,
+        ) = IMAGE_POLICY[name]
         if image["source"] != expected_source:
             errors.append(f"{name} validation image uses an unofficial source")
         if image["requested_tag"] != expected_tag:
@@ -790,6 +987,12 @@ def verify_images(
             continue
         if image["license"]["status"] != "accepted":
             errors.append(f"{name} validation image license review is not accepted")
+            continue
+        if (
+            image["license"]["spdx"] != expected_license
+            or image["license"]["evidence_url"] != expected_license_evidence
+        ):
+            errors.append(f"{name} validation image license evidence mismatch")
             continue
         reference = image["reference"]
         if "@sha256:" not in reference:
@@ -964,6 +1167,7 @@ try:
                 test_root,
                 archive_root,
                 project_root,
+                verified,
             )
             print(f"verified tool {name} {tools[name]['version']}")
         except VerificationError as exc:

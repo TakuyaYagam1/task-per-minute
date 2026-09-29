@@ -107,7 +107,7 @@ PINNED_PYTHON = pathlib.Path(
 )
 PINNED_PYTHON_SHA256 = "465d82f95e8e1069347b0ebf288d14d37802a1ae6cb831c15953cba0859ff766"
 PINNED_GO = pathlib.Path(
-    "/nix/store/dv8vg7k21fdi9v79g5x4b87kwqhl8ykv-go-1.26.8/bin/go"
+    "/nix/store/62rzn370ba6jc0sfvmb9a93s4619f6kv-go-1.26.8/bin/go"
 )
 PINNED_GO_SHA256 = "d9a2fa19c7ef8b57f420012c21f49f235c46f08a68c12077d9c753dbb6ccdc34"
 PINNED_GIT = pathlib.Path(
@@ -371,18 +371,33 @@ def artifact_digest_records(
             [
                 "backend/go.mod",
                 "backend/go.sum",
-                "backend/internal/adapter/outbound/postgres/game.go",
-                "backend/internal/adapter/outbound/postgres/tournament.go",
+                "backend/internal/adapter/outbound/postgres/execution/game/game.go",
+                "backend/internal/adapter/outbound/postgres/tournament/roster/tournament_roster.go",
                 "backend/internal/adapter/outbound/postgres/tx_manager.go",
                 "backend/integration_test/main_test.go",
-                "backend/integration_test/tournament_migration_test.go",
-                "backend/integration_test/tournament_roster_migration_test.go",
-                "backend/integration_test/swiss_migration_test.go",
-                "backend/integration_test/game_migration_test.go",
-                "backend/integration_test/draft_migration_action_test.go",
-                "backend/integration_test/draft_migration_fixture_test.go",
-                "backend/integration_test/draft_migration_flow_test.go",
-                "backend/integration_test/reconnect_migration_assertion_fixture_test.go",
+                "backend/integration_test/tournament/main_test.go",
+                "backend/integration_test/tournament/tournament_migration_test.go",
+                "backend/integration_test/tournament/tournament_migration_flow.go",
+                "backend/integration_test/tournament/tournament_roster_migration_test.go",
+                "backend/integration_test/tournament/tournament_roster_migration_flow.go",
+                "backend/integration_test/swiss/main_test.go",
+                "backend/integration_test/swiss/runner.go",
+                "backend/integration_test/swiss/swiss_migration_test.go",
+                "backend/integration_test/game/main_test.go",
+                "backend/integration_test/game/runner.go",
+                "backend/integration_test/game/game_migration_test.go",
+                "backend/integration_test/draft/main_test.go",
+                "backend/integration_test/draft/runner.go",
+                "backend/integration_test/draft/draft_migration_test.go",
+                "backend/integration_test/draft/draft_migration_action.go",
+                "backend/integration_test/draft/draft_migration_fixture.go",
+                "backend/integration_test/draft/draft_migration_flow.go",
+                "backend/integration_test/reconnect/main_test.go",
+                "backend/integration_test/reconnect/runner.go",
+                "backend/integration_test/reconnect/reconnect_migration_test.go",
+                "backend/integration_test/reconnect/migration_helpers.go",
+                "backend/integration_test/reconnect/migration_lock_helpers.go",
+                "backend/integration_test/reconnect/migration_scenarios.go",
                 "backend/integration_test/reconnect_migration_presence_test.go",
                 "backend/integration_test/reconnect_migration_setup_test.go",
                 "backend/integration_test/tournament_capacity_nominal_test.go",
