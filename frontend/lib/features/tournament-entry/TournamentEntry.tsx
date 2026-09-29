@@ -17,6 +17,7 @@ import { ApiError } from "../../shared/api/client";
 import { ApiContractError } from "../../shared/api/guards";
 import {
   getTournamentAdmissionStatus,
+  checkInTournamentAdmission,
   joinTournamentAdmission,
   cancelTournamentAdmission,
   createTournamentAdmissionCommandIntent,
@@ -57,13 +58,19 @@ export type TournamentEntryProps = Readonly<{
   tournamentId: string;
 }>;
 
-type BusyAction = "join" | "cancel" | "refresh" | "workspace" | null;
+type BusyAction = "join" | "checkin" | "cancel" | "refresh" | "workspace" | null;
 type Phase = "idle" | "loading" | "ready" | "error";
 
 type Notice = Readonly<{
   body: string;
+  kind?: "admission_removal";
   title: string;
   tone: MessageTone;
+}>;
+
+type AdmissionRemovalContext = Readonly<{
+  playerId: string;
+  tournamentId: string;
 }>;
 
 const EXECUTION_STATES: ReadonlySet<TournamentState> = new Set([
@@ -81,8 +88,8 @@ const TERMINAL_STATES: ReadonlySet<TournamentState> = new Set([
 const statusLabels: Record<TournamentAdmissionStatus, string> = {
   not_registered: "Регистрация не оформлена",
   invited: "Приглашение ожидает ответа",
-  registered: "Ожидает подтверждения",
-  checked_in: "Участие подтверждено",
+  registered: "Зарегистрирован",
+  checked_in: "Готов",
   withdrawn: "Регистрация отменена",
 };
 
@@ -92,6 +99,24 @@ const statusTones: Record<TournamentAdmissionStatus, StatusTone> = {
   registered: "success",
   checked_in: "success",
   withdrawn: "disabled",
+};
+
+const ACTIVE_ADMISSION_STATUSES: ReadonlySet<TournamentAdmissionStatus> = new Set([
+  "invited",
+  "registered",
+  "checked_in",
+]);
+
+const REMOVAL_STATUSES: ReadonlySet<TournamentAdmissionStatus> = new Set([
+  "not_registered",
+  "withdrawn",
+]);
+
+const admissionRemovalNotice: Notice = {
+  body: "Организатор удалил вас из состава соревнования. Место освобождено. Если регистрация открыта, вы можете зарегистрироваться снова.",
+  kind: "admission_removal",
+  title: "Вас удалили из состава",
+  tone: "warning",
 };
 
 const isAbortError = (error: unknown): boolean =>
@@ -287,6 +312,8 @@ export const TournamentEntry = ({
   const [workspaceReady, setWorkspaceReady] = useState(false);
   const [visibilityTick, setVisibilityTick] = useState(0);
   const lastAdmissionRefreshVersionRef = useRef(admissionRefreshVersion);
+  const currentViewRef = useRef<TournamentAdmissionView | null>(null);
+  const admissionRemovalContextRef = useRef<AdmissionRemovalContext | null>(null);
   const busyActionRef = useRef<BusyAction>(null);
   busyActionRef.current = busyAction;
 
@@ -312,6 +339,9 @@ export const TournamentEntry = ({
     version: number;
   } => {
     actionControllerRef.current?.abort();
+    if (action !== "refresh") {
+      admissionRemovalContextRef.current = null;
+    }
     const controller = new AbortController();
     const version = requestVersionRef.current + 1;
     requestVersionRef.current = version;
@@ -324,6 +354,7 @@ export const TournamentEntry = ({
     if (!viewMatchesContext(nextView, tournamentId, nextPlayer.id)) {
       setPhase("error");
       setView(null);
+      currentViewRef.current = null;
       setWorkspaceReady(false);
       setNotice({
         body: "Данные матча не совпали с текущим игроком. Обновите страницу.",
@@ -332,6 +363,7 @@ export const TournamentEntry = ({
       });
       return false;
     }
+    currentViewRef.current = nextView;
     setView(nextView);
     onRosterSizeChange?.(nextView.roster_size);
     const publicationReady = isWorkspacePublicationReady(state, nextView.tournament_state);
@@ -357,7 +389,9 @@ export const TournamentEntry = ({
     }
     const { controller, version } = startRequest("refresh");
     setPhase("loading");
-    setNotice(null);
+    setNotice((current) => (
+      current?.kind === "admission_removal" ? current : null
+    ));
     let currentPlayer = candidate;
     try {
       if (refreshSession) {
@@ -411,8 +445,31 @@ export const TournamentEntry = ({
       if (!isCurrentRequest(version, controller.signal)) {
         return;
       }
+      const previousView = currentViewRef.current;
       if (applyView(nextView, currentPlayer)) {
-        setNotice(null);
+        const newlyRemoved = Boolean(
+          previousView?.player_id === currentPlayer.id &&
+          previousView.tournament_id === tournamentId &&
+          ACTIVE_ADMISSION_STATUSES.has(previousView.status) &&
+          REMOVAL_STATUSES.has(nextView.status)
+        );
+        if (newlyRemoved) {
+          admissionRemovalContextRef.current = {
+            playerId: currentPlayer.id,
+            tournamentId,
+          };
+        }
+        const removalContext = admissionRemovalContextRef.current;
+        const removalNoticeApplies =
+          removalContext?.playerId === currentPlayer.id &&
+          removalContext.tournamentId === tournamentId &&
+          REMOVAL_STATUSES.has(nextView.status);
+        if (removalNoticeApplies) {
+          setNotice(admissionRemovalNotice);
+        } else {
+          admissionRemovalContextRef.current = null;
+          setNotice(null);
+        }
       }
     } catch (error) {
       if (!isCurrentRequest(version, controller.signal) || isAbortError(error)) {
@@ -436,12 +493,21 @@ export const TournamentEntry = ({
       setPhase("error");
       setView(null);
       setWorkspaceReady(false);
-      setNotice(
-        apiNotice(
+      const removalContext = admissionRemovalContextRef.current;
+      const currentView = currentViewRef.current;
+      const removalNoticeApplies =
+        currentPlayer !== null &&
+        removalContext?.playerId === currentPlayer.id &&
+        removalContext.tournamentId === tournamentId &&
+        currentView?.player_id === currentPlayer.id &&
+        currentView.tournament_id === tournamentId &&
+        REMOVAL_STATUSES.has(currentView.status);
+      setNotice(removalNoticeApplies
+        ? admissionRemovalNotice
+        : apiNotice(
           error,
           currentPlayer === null ? "проверить сессию" : "загрузить статус участия",
-        ),
-      );
+        ));
     } finally {
       if (isCurrentRequest(version, controller.signal)) {
         setBusyAction(null);
@@ -515,12 +581,15 @@ export const TournamentEntry = ({
   ): void => {
     if (result.status === "success") {
       if (applyView(result.value.view, expectedPlayer)) {
+        const nextStatus = result.value.view.status;
         setNotice({
-          body: result.value.view.status === "withdrawn"
+          body: nextStatus === "withdrawn"
             ? "Регистрация отменена."
-            : "Вы записаны на соревнование.",
+            : nextStatus === "checked_in"
+              ? "Вы подтвердили участие."
+              : "Вы зарегистрированы на соревнование.",
           title: result.value.changed ? "Изменения сохранены" : "Участие уже оформлено",
-          tone: result.value.view.status === "withdrawn" ? "warning" : "success",
+          tone: nextStatus === "withdrawn" ? "warning" : "success",
         });
       }
       return;
@@ -671,11 +740,47 @@ export const TournamentEntry = ({
     }
   };
 
+  const handleCheckIn = async (): Promise<void> => {
+    if (busyAction !== null || !player || view?.status !== "registered") {
+      return;
+    }
+    const { controller, version } = startRequest("checkin");
+    setNotice(null);
+    try {
+      const result = await checkInTournamentAdmission(
+        tournamentId,
+        createTournamentAdmissionCommandIntent(),
+        controller.signal,
+      );
+      if (!isCurrentRequest(version, controller.signal)) {
+        return;
+      }
+      if (result.status === "unauthorized") {
+        setPlayer(null);
+        setView(null);
+        setPhase("idle");
+        setNameFormOpen(true);
+      }
+      handleMutationResult(result, player);
+    } catch (error) {
+      if (!isCurrentRequest(version, controller.signal) || isAbortError(error)) {
+        return;
+      }
+      setPhase("error");
+      setNotice(apiNotice(error, "подтвердить участие"));
+    } finally {
+      if (isCurrentRequest(version, controller.signal)) {
+        setBusyAction(null);
+      }
+    }
+  };
+
   const handleWorkspaceCheck = async (): Promise<void> => {
     if (
       !player ||
       !view ||
       view.participant_id === null ||
+      view.status !== "checked_in" ||
       !isWorkspacePublicationReady(state, view.tournament_state) ||
       busyAction !== null
     ) {
@@ -700,8 +805,8 @@ export const TournamentEntry = ({
       }
       setWorkspaceReady(true);
       setNotice({
-        body: "Участие подтверждено. Откройте страницу матча, чтобы увидеть следующий шаг.",
-        title: "Участие подтверждено",
+        body: "Матч подтвержден. Откройте страницу матча, чтобы увидеть следующий шаг.",
+        title: "Матч готов",
         tone: "success",
       });
     } catch (error) {
@@ -742,7 +847,7 @@ export const TournamentEntry = ({
                 loadingLabel="Подключение"
                 disabled={busyAction !== null || username.trim().length === 0}
               >
-                Подтвердить участие
+                Зарегистрироваться
               </Button>
               <Button
                 variant="secondary"
@@ -819,13 +924,13 @@ export const TournamentEntry = ({
           <p className={styles.copy}>Подтвердите приглашение, чтобы сохранить место.</p>
         )}
         {view.status === "registered" && (
-          <p className={styles.copy}>Ожидайте подтверждения участия.</p>
+          <p className={styles.copy}>Регистрация завершена. Подтвердите участие, чтобы перейти к соревнованию.</p>
         )}
         {view.status === "checked_in" && (
           <p className={styles.copy}>
             {workspacePublicationReady
               ? "Откройте страницу матча, чтобы увидеть следующий шаг."
-              : "Участие подтверждено. Страница матча откроется после старта соревнования."}
+              : "Вы подтвердили участие. Страница матча откроется после старта соревнования."}
           </p>
         )}
         {view.status === "withdrawn" && (
@@ -853,6 +958,17 @@ export const TournamentEntry = ({
               disabled={busyAction !== null && busyAction !== "join"}
               onClick={handleJoinExisting}
             >
+              Принять приглашение
+            </Button>
+          )}
+          {view.status === "registered" && (
+            <Button
+              type="button"
+              loading={busyAction === "checkin"}
+              loadingLabel="Подтверждаем участие"
+              disabled={busyAction !== null && busyAction !== "checkin"}
+              onClick={handleCheckIn}
+            >
               Подтвердить участие
             </Button>
           )}
@@ -864,7 +980,7 @@ export const TournamentEntry = ({
           {view.status === "checked_in" && !workspacePublicationReady && (
             <Status tone="info">Матч откроется после старта соревнования</Status>
           )}
-          {view.status === "registered" && workspacePublicationReady && !workspaceReady && (
+          {view.status === "checked_in" && workspacePublicationReady && !workspaceReady && (
             <Button
               type="button"
               variant="secondary"
@@ -874,11 +990,6 @@ export const TournamentEntry = ({
             >
               Проверить матч
             </Button>
-          )}
-          {view.status === "registered" && workspacePublicationReady && workspaceReady && (
-            <Link className={styles.primaryLink} href={workspaceHref}>
-              Открыть мой матч
-            </Link>
           )}
           {canCancel && (
             <Button

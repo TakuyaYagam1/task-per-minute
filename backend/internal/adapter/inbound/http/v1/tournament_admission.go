@@ -74,6 +74,36 @@ func (s *Server) JoinTournamentAdmission(
 	response.WriteJSON(w, http.StatusOK, payload)
 }
 
+func (s *Server) CheckInTournamentAdmission(
+	w http.ResponseWriter,
+	r *http.Request,
+	tournamentID api.TournamentId,
+	params api.CheckInTournamentAdmissionParams,
+) {
+	actor, ok := participantIdentityFromRequest(w, r)
+	if !ok {
+		return
+	}
+	if s == nil || s.tournamentAdmission == nil {
+		errmap.HandleError(w, r, domain.ErrInternal)
+		return
+	}
+
+	mutation, err := s.tournamentAdmission.CheckIn(r.Context(), inbound.TournamentAdmissionCheckInCommand{
+		Actor: actor, TournamentID: tournamentID, CommandID: params.IdempotencyKey,
+	})
+	if err != nil {
+		writeTournamentAdmissionError(w, r, err)
+		return
+	}
+	payload, err := tournamentAdmissionMutationResponse(mutation)
+	if err != nil {
+		errmap.HandleError(w, r, domain.ErrInternal)
+		return
+	}
+	response.WriteJSON(w, http.StatusOK, payload)
+}
+
 func (s *Server) CancelTournamentAdmission(
 	w http.ResponseWriter,
 	r *http.Request,

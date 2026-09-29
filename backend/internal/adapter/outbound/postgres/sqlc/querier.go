@@ -56,6 +56,7 @@ type Querier interface {
 	// Normal Wave pause suspension remains owned by the normal-pause adapter.
 	CancelTournamentReconnectIntervalCAS(ctx context.Context, arg CancelTournamentReconnectIntervalCASParams) (ReconnectInterval, error)
 	CancelTournamentTechnicalPause(ctx context.Context, arg CancelTournamentTechnicalPauseParams) (uuid.UUID, error)
+	CheckInRegisteredParticipant(ctx context.Context, arg CheckInRegisteredParticipantParams) (Participant, error)
 	ClaimPlayerSessionByUsername(ctx context.Context, arg ClaimPlayerSessionByUsernameParams) (Player, error)
 	ClaimRealtimeDelivery(ctx context.Context, arg ClaimRealtimeDeliveryParams) (uuid.UUID, error)
 	ClaimRealtimeOutboxEvents(ctx context.Context, arg ClaimRealtimeOutboxEventsParams) ([]ClaimRealtimeOutboxEventsRow, error)
@@ -383,7 +384,6 @@ type Querier interface {
 	DeleteSwissPairings(ctx context.Context, roundID uuid.UUID) error
 	DeleteSwissRepeatOverride(ctx context.Context, roundID uuid.UUID) error
 	DeleteTask(ctx context.Context, id uuid.UUID) error
-	DeleteTournamentAdminRosterParticipants(ctx context.Context, arg DeleteTournamentAdminRosterParticipantsParams) (int64, error)
 	// Once an unstarted Series successor is attached, remove only the superseded
 	// execution membership.  The old Series and edit lineage remain retained, but
 	// runtime Wave reads cannot mistake both generations for active members.
@@ -583,7 +583,6 @@ type Querier interface {
 	HasWavePendingDrafts(ctx context.Context, waveID uuid.UUID) (bool, error)
 	InsertParticipantConnectionLease(ctx context.Context, arg InsertParticipantConnectionLeaseParams) (ParticipantConnectionLease, error)
 	InsertRegisteredParticipant(ctx context.Context, arg InsertRegisteredParticipantParams) (Participant, error)
-	InsertTournamentAdminRosterParticipant(ctx context.Context, arg InsertTournamentAdminRosterParticipantParams) (Participant, error)
 	InsertTournamentCreateReceipt(ctx context.Context, arg InsertTournamentCreateReceiptParams) (TournamentCreateCommandReceipt, error)
 	InsertTournamentParticipant(ctx context.Context, arg InsertTournamentParticipantParams) (Participant, error)
 	// Receipt persistence is intentionally last in CommitMutation.  The primary
@@ -1175,6 +1174,10 @@ type Querier interface {
 	OpenRealtimeSubscription(ctx context.Context, arg OpenRealtimeSubscriptionParams) (OpenRealtimeSubscriptionRow, error)
 	OpenReplayReplacementWaveCAS(ctx context.Context, arg OpenReplayReplacementWaveCASParams) (uuid.UUID, error)
 	OpenWaveReadyWindowCAS(ctx context.Context, arg OpenWaveReadyWindowCASParams) (Wave, error)
+	// Park active participants and rebase legacy withdrawn rows that still occupy
+	// a planned seat. Keeping participant rows preserves admission identity and
+	// historical references. Seeds stay congruent to their prior seats.
+	ParkTournamentAdminRosterParticipants(ctx context.Context, arg ParkTournamentAdminRosterParticipantsParams) (ParkTournamentAdminRosterParticipantsRow, error)
 	PauseTournamentAdminNormalGameCAS(ctx context.Context, arg PauseTournamentAdminNormalGameCASParams) (uuid.UUID, error)
 	PauseTournamentAdminNormalSeriesCAS(ctx context.Context, arg PauseTournamentAdminNormalSeriesCASParams) (uuid.UUID, error)
 	PauseTournamentAdminNormalTournamentCAS(ctx context.Context, arg PauseTournamentAdminNormalTournamentCASParams) (uuid.UUID, error)
@@ -1221,6 +1224,9 @@ type Querier interface {
 	ReleaseOtherAssignmentBranches(ctx context.Context, arg ReleaseOtherAssignmentBranchesParams) ([]uuid.UUID, error)
 	ReleaseRealtimeOutboxClaims(ctx context.Context, workerID uuid.NullUUID) (int64, error)
 	ReleaseTournamentAdminCorrectionReservationCAS(ctx context.Context, arg ReleaseTournamentAdminCorrectionReservationCASParams) (ReleaseTournamentAdminCorrectionReservationCASRow, error)
+	// Release stale tournament reservations for participants omitted from the
+	// replacement. Roster changes are allowed only while the roster is unlocked.
+	ReleaseTournamentAdminRosterReservations(ctx context.Context, arg ReleaseTournamentAdminRosterReservationsParams) (int64, error)
 	// Reserved undisclosed rows may be released. Committed undisclosed rows must
 	// remain committed evidence and are superseded instead. Disclosed rows cannot
 	// match this mutation and therefore cannot be made available again.
@@ -1307,6 +1313,9 @@ type Querier interface {
 	// this predicate is the application-visible CAS result.
 	UpdateTournamentReconnectPresenceCAS(ctx context.Context, arg UpdateTournamentReconnectPresenceCASParams) (PresenceState, error)
 	UpsertPlayerLeaderboardOverride(ctx context.Context, arg UpsertPlayerLeaderboardOverrideParams) (PlayerLeaderboardOverride, error)
+	// Existing participant rows are updated in place, including rows previously
+	// withdrawn by an admin. New withdrawn inputs receive an out-of-range seed.
+	UpsertTournamentAdminRosterParticipants(ctx context.Context, arg UpsertTournamentAdminRosterParticipantsParams) ([]Participant, error)
 	WithdrawAdmissionParticipant(ctx context.Context, arg WithdrawAdmissionParticipantParams) (Participant, error)
 }
 

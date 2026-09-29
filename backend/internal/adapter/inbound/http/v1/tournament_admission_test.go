@@ -21,9 +21,10 @@ import (
 )
 
 type tournamentAdmissionStub struct {
-	join   func(context.Context, inbound.TournamentAdmissionJoinCommand) (inbound.TournamentAdmissionMutation, error)
-	status func(context.Context, inbound.TournamentAdmissionStatusQuery) (inbound.TournamentAdmissionView, error)
-	cancel func(context.Context, inbound.TournamentAdmissionCancelCommand) (inbound.TournamentAdmissionMutation, error)
+	join    func(context.Context, inbound.TournamentAdmissionJoinCommand) (inbound.TournamentAdmissionMutation, error)
+	checkIn func(context.Context, inbound.TournamentAdmissionCheckInCommand) (inbound.TournamentAdmissionMutation, error)
+	status  func(context.Context, inbound.TournamentAdmissionStatusQuery) (inbound.TournamentAdmissionView, error)
+	cancel  func(context.Context, inbound.TournamentAdmissionCancelCommand) (inbound.TournamentAdmissionMutation, error)
 }
 
 func (s *tournamentAdmissionStub) Join(ctx context.Context, command inbound.TournamentAdmissionJoinCommand) (inbound.TournamentAdmissionMutation, error) {
@@ -31,6 +32,13 @@ func (s *tournamentAdmissionStub) Join(ctx context.Context, command inbound.Tour
 		return inbound.TournamentAdmissionMutation{}, nil
 	}
 	return s.join(ctx, command)
+}
+
+func (s *tournamentAdmissionStub) CheckIn(ctx context.Context, command inbound.TournamentAdmissionCheckInCommand) (inbound.TournamentAdmissionMutation, error) {
+	if s.checkIn == nil {
+		return inbound.TournamentAdmissionMutation{}, nil
+	}
+	return s.checkIn(ctx, command)
 }
 
 func (s *tournamentAdmissionStub) GetStatus(ctx context.Context, query inbound.TournamentAdmissionStatusQuery) (inbound.TournamentAdmissionView, error) {

@@ -194,6 +194,80 @@ func (r *TournamentAdmissionPostgres) joinRegisteredInTransaction(
 	return record, true, err
 }
 
+func (r *TournamentAdmissionPostgres) CheckIn(
+	ctx context.Context,
+	input admissionusecase.CheckInInput,
+) (admissionusecase.AdmissionRecord, bool, error) {
+	if !validCheckInInput(ctx, r, input) {
+		return admissionusecase.AdmissionRecord{}, false, domain.ErrValidation
+	}
+
+	var record admissionusecase.AdmissionRecord
+	changed := false
+	err := r.tx.Do(ctx, func(txCtx context.Context) error {
+		var err error
+		record, changed, err = r.checkInInTransaction(txCtx, input)
+		return err
+	})
+	if err != nil {
+		return admissionusecase.AdmissionRecord{}, false, err
+	}
+	return record, changed, nil
+}
+
+func (r *TournamentAdmissionPostgres) checkInInTransaction(
+	ctx context.Context,
+	input admissionusecase.CheckInInput,
+) (admissionusecase.AdmissionRecord, bool, error) {
+	querier := r.tx.Querier(ctx)
+	scope, err := querier.LockTournamentAdmissionScope(ctx, input.TournamentID)
+	if err != nil {
+		return admissionusecase.AdmissionRecord{}, false, admissionLookupError("CheckIn - lock scope", err)
+	}
+	if err := validateAdmissionScope(scope); err != nil {
+		return admissionusecase.AdmissionRecord{}, false, err
+	}
+	if scope.TournamentState == string(domain.TournamentStateDraft) {
+		return admissionusecase.AdmissionRecord{}, false, domain.ErrTournamentNotFound
+	}
+	if scope.TournamentState != string(domain.TournamentStateRegistration) || scope.RosterLocked || scope.RosterExecutionStarted {
+		return admissionusecase.AdmissionRecord{}, false, admissionusecase.ErrTournamentAdmissionClosed
+	}
+	if _, err := querier.LockAdmissionPlayer(ctx, input.PlayerID); err != nil {
+		return admissionusecase.AdmissionRecord{}, false, admissionPlayerLookupError("CheckIn - lock player", err)
+	}
+	status, err := querier.GetTournamentAdmissionStatus(ctx, sqlc.GetTournamentAdmissionStatusParams{
+		PlayerID: input.PlayerID, TournamentID: input.TournamentID,
+	})
+	if err != nil {
+		return admissionusecase.AdmissionRecord{}, false, admissionLookupError("CheckIn - read status", err)
+	}
+	current, err := admissionRecordFromStatus(status, input.PlayerID)
+	if err != nil {
+		return admissionusecase.AdmissionRecord{}, false, err
+	}
+	if current.ParticipantID == uuid.Nil {
+		return admissionusecase.AdmissionRecord{}, false, domain.ErrConflict
+	}
+	switch current.Attendance {
+	case domain.AttendanceStateCheckedIn:
+		return current, false, nil
+	case domain.AttendanceStateRegistered:
+	default:
+		return admissionusecase.AdmissionRecord{}, false, domain.ErrConflict
+	}
+	if _, err := querier.CheckInRegisteredParticipant(ctx, sqlc.CheckInRegisteredParticipantParams{
+		PlayerID: input.PlayerID, RosterID: scope.RosterID, UpdatedAt: admissionTimestamp(input.CheckedInAt),
+	}); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return admissionusecase.AdmissionRecord{}, false, domain.ErrConflict
+		}
+		return admissionusecase.AdmissionRecord{}, false, admissionMutationError("CheckIn - update participant", err)
+	}
+	record, err := r.statusInTransaction(ctx, input.TournamentID, input.PlayerID)
+	return record, true, err
+}
+
 func availableAdmissionSeed(
 	ctx context.Context,
 	querier *sqlc.Queries,
@@ -383,6 +457,11 @@ func validJoinInput(ctx context.Context, r *TournamentAdmissionPostgres, input a
 func validCancelInput(ctx context.Context, r *TournamentAdmissionPostgres, input admissionusecase.CancelInput) bool {
 	return ctx != nil && r != nil && r.tx != nil && input.TournamentID != uuid.Nil && input.PlayerID != uuid.Nil &&
 		input.CommandID != uuid.Nil && validServerTime(input.CancelledAt)
+}
+
+func validCheckInInput(ctx context.Context, r *TournamentAdmissionPostgres, input admissionusecase.CheckInInput) bool {
+	return ctx != nil && r != nil && r.tx != nil && input.TournamentID != uuid.Nil && input.PlayerID != uuid.Nil &&
+		input.CommandID != uuid.Nil && validServerTime(input.CheckedInAt)
 }
 
 func validServerTime(value time.Time) bool {

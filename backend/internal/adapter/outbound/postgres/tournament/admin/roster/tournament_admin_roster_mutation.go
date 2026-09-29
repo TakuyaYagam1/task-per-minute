@@ -28,41 +28,65 @@ func (r *TournamentAdminRosterPostgres) ReplaceRosterParticipants(
 		return rostercapability.RosterView{}, domain.ErrValidation
 	}
 	querier := r.tx.Querier(ctx)
-	deleted, err := querier.DeleteTournamentAdminRosterParticipants(
-		ctx,
-		sqlc.DeleteTournamentAdminRosterParticipantsParams{
-			RosterID: authority.Roster.ID, TournamentID: authority.Roster.TournamentID,
-			ExpectedRosterRevision: authority.Roster.Revision,
-		},
-	)
-	if err != nil {
-		return rostercapability.RosterView{}, tournamentAdminRosterMutationError("ReplaceRoster - delete", err)
-	}
-	if deleted != int64(len(authority.Roster.Participants)) {
-		return rostercapability.RosterView{}, domain.ErrConflict
-	}
 	ordered := append([]rostercapability.RosterParticipantInput(nil), participants...)
 	slices.SortFunc(ordered, func(first, second rostercapability.RosterParticipantInput) int {
 		return first.Seed - second.Seed
 	})
-	for _, participant := range ordered {
-		_, err = querier.InsertTournamentAdminRosterParticipant(ctx, sqlc.InsertTournamentAdminRosterParticipantParams{
-			ID:       tournamentRosterParticipantID(authority.Roster.ID, participant.PlayerID),
-			PlayerID: participant.PlayerID, Seed: int32(participant.Seed), //nolint:gosec // Application validation caps seeds at 16.
-			Attendance: string(participant.Attendance), CreatedAt: tstz(updatedAt),
+	participantIDs := make([]uuid.UUID, len(ordered))
+	playerIDs := make([]uuid.UUID, len(ordered))
+	seeds := make([]int32, len(ordered))
+	attendances := make([]string, len(ordered))
+	for index, participant := range ordered {
+		participantIDs[index] = tournamentRosterParticipantID(authority.Roster.ID, participant.PlayerID)
+		playerIDs[index] = participant.PlayerID
+		seeds[index] = int32(participant.Seed) //nolint:gosec // The roster is capped at 16 participants.
+		attendances[index] = string(participant.Attendance)
+	}
+	parked, err := querier.ParkTournamentAdminRosterParticipants(
+		ctx,
+		sqlc.ParkTournamentAdminRosterParticipantsParams{
 			RosterID: authority.Roster.ID, TournamentID: authority.Roster.TournamentID,
+			ExpectedRosterRevision: authority.Roster.Revision, UpdatedAt: tstz(updatedAt),
+		},
+	)
+	if err != nil {
+		return rostercapability.RosterView{}, tournamentAdminRosterMutationError("ReplaceRoster - park", err)
+	}
+	if parked.ActiveCandidateCount != int64(len(authority.Roster.Participants)) ||
+		parked.ParkedCount != parked.CandidateCount {
+		return rostercapability.RosterView{}, domain.ErrConflict
+	}
+	_, err = querier.ReleaseTournamentAdminRosterReservations(
+		ctx,
+		sqlc.ReleaseTournamentAdminRosterReservationsParams{
+			RosterID: authority.Roster.ID, TournamentID: authority.Roster.TournamentID,
+			ExpectedRosterRevision: authority.Roster.Revision, KeepPlayerIds: playerIDs,
+		},
+	)
+	if err != nil {
+		return rostercapability.RosterView{}, tournamentAdminRosterMutationError("ReplaceRoster - reservations", err)
+	}
+	upserted, err := querier.UpsertTournamentAdminRosterParticipants(
+		ctx,
+		sqlc.UpsertTournamentAdminRosterParticipantsParams{
+			ParticipantIds: participantIDs, PlayerIds: playerIDs, Seeds: seeds, Attendances: attendances,
+			CreatedAt: tstz(updatedAt), RosterID: authority.Roster.ID,
+			TournamentID:           authority.Roster.TournamentID,
 			ExpectedRosterRevision: authority.Roster.Revision,
-		})
-		if err != nil {
-			if errors.Is(err, pgx.ErrNoRows) {
-				return rostercapability.RosterView{}, &adminoperation.RevisionConflictError{
-					ExpectedRevision: authority.ProjectionRevision,
-					CurrentRevision:  authority.ProjectionRevision,
-					CurrentState:     authority.TournamentState,
-				}
+		},
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return rostercapability.RosterView{}, &adminoperation.RevisionConflictError{
+				ExpectedRevision: authority.ProjectionRevision,
+				CurrentRevision:  authority.ProjectionRevision,
+				CurrentState:     authority.TournamentState,
 			}
-			return rostercapability.RosterView{}, tournamentAdminRosterMutationError("ReplaceRoster - insert", err)
 		}
+		return rostercapability.RosterView{}, tournamentAdminRosterMutationError("ReplaceRoster - upsert", err)
+	}
+	if len(upserted) != len(ordered) {
+		return rostercapability.RosterView{}, domain.ErrConflict
 	}
 	if _, err = querier.AdvanceTournamentAdminRosterRevision(
 		ctx,

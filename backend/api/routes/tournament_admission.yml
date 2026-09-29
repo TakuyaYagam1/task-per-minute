@@ -110,3 +110,48 @@
         $ref: '../components/responses.yml#/RateLimitedProblem'
       default:
         $ref: '../components/responses.yml#/UnexpectedServerProblem'
+/api/v1/tournaments/{tournament_id}/participant/queue/check-in:
+  parameters:
+    - $ref: '../components/parameters.yml#/TournamentId'
+  post:
+    operationId: checkInTournamentAdmission
+    tags: [tournament]
+    summary: Confirm participation in the authenticated player's tournament
+    description: >-
+      The request has no body. Player identity comes from the authenticated
+      session and the idempotency key identifies the command. Only a registered
+      player may confirm participation. Repeating the command while checked in
+      returns the current status with changed false; command responses are not
+      replayed from a stored receipt. Check-in is accepted only while tournament
+      registration remains open and the roster remains unlocked.
+    x-auth-scope: tournament:participate
+    security:
+      - PlayerSessionAuth: []
+    parameters:
+      - $ref: '../components/parameters.yml#/IdempotencyKey'
+      - $ref: '../components/parameters.yml#/RequiredPlayerCSRFToken'
+    responses:
+      '200':
+        description: Current admission view after the idempotent check-in command.
+        content:
+          application/json:
+            schema:
+              $ref: '../components/schemas.yml#/TournamentAdmissionMutation'
+      '400':
+        $ref: '../components/responses.yml#/InvalidRequestProblem'
+      '401':
+        $ref: '../components/responses.yml#/UnauthorizedProblem'
+      '403':
+        $ref: '../components/responses.yml#/ForbiddenProblem'
+      '404':
+        $ref: '../components/responses.yml#/NotFoundProblem'
+      '409':
+        description: The tournament is closed or the player is not registered.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/TournamentAdmissionConflictProblem'
+      '429':
+        $ref: '../components/responses.yml#/RateLimitedProblem'
+      default:
+        $ref: '../components/responses.yml#/UnexpectedServerProblem'

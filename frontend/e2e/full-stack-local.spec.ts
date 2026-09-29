@@ -1828,9 +1828,6 @@ test.describe('local compose full stack e2e', () => {
         );
       }
 
-      await rosterRegion.getByRole('group').nth(0)
-        .getByRole('combobox', { name: 'Участие' })
-        .selectOption('checked_in');
       const replacementGroup = rosterRegion.getByRole('group').nth(1);
       await replacementGroup.getByRole('combobox', { name: 'Игрок' }).fill(players[4].username);
       await replacementGroup.getByRole('option', { name: players[4].username, exact: true }).click();
@@ -1859,7 +1856,7 @@ test.describe('local compose full stack e2e', () => {
       );
       expect(replacedParticipants.map((item) => item.seed)).toEqual([1, 2, 3, 4]);
       expect(replacedParticipants.map((item) => item.attendance)).toEqual([
-        'checked_in',
+        'invited',
         'invited',
         'invited',
         'invited',
@@ -1932,7 +1929,7 @@ test.describe('local compose full stack e2e', () => {
       await page.getByRole('button', { name: 'Участники', exact: true }).click();
       await expect(rosterRegion).toBeVisible({ timeout: 15_000 });
       expect((await preflightRosterResponse).status()).toBe(200);
-      await expect(rosterRegion.getByText('На месте', { exact: true })).toHaveCount(4);
+      await expect(rosterRegion.getByText('Готов', { exact: true })).toHaveCount(4);
 
       const browserPreflightResponse = page.waitForResponse(
         (response) =>
@@ -6538,9 +6535,9 @@ test.describe('local compose full stack e2e', () => {
           new URL(response.url()).pathname === `/api/v1/tournaments/${primaryTournament.id}/participant/queue`
           && response.request().method() === 'POST',
         );
-        await playerPage.getByRole('button', { name: 'Подтвердить участие', exact: true }).click();
+        await playerPage.getByRole('button', { name: 'Зарегистрироваться', exact: true }).click();
         expect((await queuePost).status()).toBe(200);
-        await expect(playerPage.getByTestId('tournament-admission-status')).toContainText('Ожидает подтверждения');
+        await expect(playerPage.getByTestId('tournament-admission-status')).toContainText('Зарегистрирован');
       } else {
         await joinAsPlayer(playerPage, username);
       }
@@ -6570,7 +6567,7 @@ test.describe('local compose full stack e2e', () => {
       await participateButton.click();
       expect((await queuePost).status()).toBe(200);
       await expect(playerPage.getByTestId('tournament-admission-status')).toContainText(
-        'Ожидает подтверждения',
+        'Зарегистрирован',
       );
     };
 
@@ -6598,7 +6595,7 @@ test.describe('local compose full stack e2e', () => {
     expect(initialPlayerID, 'new page must not restore player identity from sessionStorage').toBeNull();
     await expectNoSensitiveAuthStorage(restoredPrimaryPage);
     await expect(restoredPrimaryPage.getByTestId('tournament-admission-status')).toContainText(
-      'Ожидает подтверждения',
+        'Зарегистрирован',
     );
     const restoredPlayerID = await restoredPrimaryPage.evaluate(() => window.sessionStorage.getItem('player_id'));
     expect(restoredPlayerID, 'cookie-backed restore should repopulate the current player id').toBe(

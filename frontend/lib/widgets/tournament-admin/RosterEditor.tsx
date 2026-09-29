@@ -15,7 +15,7 @@ import {
 } from "../../shared/api";
 import { useAdminLiveRefresh } from "../../features/admin-live";
 import { formatTournamentState, PREFLIGHT_CODE_LABELS } from "../../shared/lib";
-import { Button, Message, Panel, Status, TechnicalDetails } from "../../shared/ui";
+import { Button, Message, Panel, Status, TechnicalDetails, type StatusTone } from "../../shared/ui";
 
 import { PlayerPicker } from "./PlayerPicker";
 import styles from "./RosterEditor.module.css";
@@ -54,16 +54,16 @@ const MAX_UNLOCK_REASON_LENGTH = 512;
 const ATTENDANCE_LABELS: Readonly<Record<AttendanceState, string>> = {
   invited: "Приглашен",
   registered: "Зарегистрирован",
-  checked_in: "На месте",
+  checked_in: "Готов",
   withdrawn: "Отказался",
 };
 
-const ATTENDANCE_STATES: readonly AttendanceState[] = [
-  "invited",
-  "registered",
-  "checked_in",
-  "withdrawn",
-];
+const ATTENDANCE_TONES: Readonly<Record<AttendanceState, StatusTone>> = {
+  invited: "info",
+  registered: "success",
+  checked_in: "success",
+  withdrawn: "disabled",
+};
 
 const isAbortError = (error: unknown): boolean =>
   error instanceof DOMException &&
@@ -411,7 +411,7 @@ export const RosterEditor = ({
 
   const updateDraftParticipant = (
     participantId: string,
-    patch: Partial<Pick<DraftParticipant, "attendance" | "seed">>,
+    patch: Partial<Pick<DraftParticipant, "seed">>,
   ): void => {
     if (rosterEditingLocked) {
       return;
@@ -443,7 +443,9 @@ export const RosterEditor = ({
     setDraftParticipants((current) =>
       current.map((participant) =>
         participant.id === participantId
-          ? { ...participant, playerId }
+          ? participant.playerId === playerId
+            ? participant
+            : { ...participant, participantId: null, playerId, attendance: "invited" }
           : participant,
       ),
     );
@@ -504,16 +506,19 @@ export const RosterEditor = ({
     if (rosterEditingLocked || savingRoster) {
       return;
     }
-    setDraftParticipants((current) =>
-      current.filter((participant) => participant.id !== participantId),
-    );
-    resetPreflight();
-    setRosterError(null);
-    setRosterNotice(null);
-    setControlError(null);
+    const remaining = draftParticipants
+      .filter((participant) => participant.id !== participantId)
+      .map((participant, index) => ({ ...participant, seed: String(index + 1) }));
+    if (remaining.length === draftParticipants.length) {
+      return;
+    }
+    setDraftParticipants(remaining);
+    void handleSaveRoster(remaining);
   };
 
-  const handleSaveRoster = async (): Promise<void> => {
+  const handleSaveRoster = async (
+    participantsToSave: DraftParticipant[] = draftParticipants,
+  ): Promise<void> => {
     if (
       !selectedTournament ||
       !roster ||
@@ -522,34 +527,30 @@ export const RosterEditor = ({
     ) {
       return;
     }
-    if (draftParticipants.length > MAX_ROSTER_SIZE) {
+    if (participantsToSave.length > MAX_ROSTER_SIZE) {
       setRosterError("Нельзя сохранить больше 16 участников в одном составе.");
       return;
     }
-    if (draftParticipants.length < MIN_ROSTER_SIZE) {
-      setRosterError("В составе должно быть не менее 4 участников.");
-      return;
-    }
-    if (draftParticipants.some((participant) => !participant.playerId)) {
+    if (participantsToSave.some((participant) => !participant.playerId)) {
       setRosterError("Выберите игрока для каждой строки состава.");
       return;
     }
-    const playerIds = draftParticipants.map((participant) => participant.playerId);
+    const playerIds = participantsToSave.map((participant) => participant.playerId);
     if (new Set(playerIds).size !== playerIds.length) {
       setRosterError("В составе не должно быть повторяющихся игроков.");
       return;
     }
-    const seeds = draftParticipants.map((participant) => Number(participant.seed));
+    const seeds = participantsToSave.map((participant) => Number(participant.seed));
     if (
       seeds.some(
         (seed) =>
           !Number.isSafeInteger(seed) ||
           seed < 1 ||
-          seed > participantCount,
+          seed > participantsToSave.length,
       )
     ) {
       setRosterError(
-        `Позиция должна быть целым числом от 1 до ${participantCount}.`,
+        `Позиция должна быть целым числом от 1 до ${participantsToSave.length}.`,
       );
       return;
     }
@@ -564,11 +565,21 @@ export const RosterEditor = ({
     setRosterNotice(null);
     setControlError(null);
     try {
+      const snapshot = await operatorApi.getSnapshot(selectedTournament.id);
+      if (
+        snapshot.roster.id !== roster.id ||
+        snapshot.roster.revision !== roster.revision
+      ) {
+        setRosterError(
+          "Состав изменился после открытия формы. Ваши правки остались в форме. Откройте раздел заново, чтобы увидеть актуальный состав.",
+        );
+        return;
+      }
       const savedRoster = await operatorApi.replaceRoster(
         selectedTournament.id,
         {
-          expected_projection_revision: selectedTournament.revision,
-          participants: draftParticipants.map(toRosterInput),
+          expected_projection_revision: snapshot.next_cursor.projection_revision,
+          participants: participantsToSave.map(toRosterInput),
         },
         createOperatorCommandIntent(),
       );
@@ -584,7 +595,9 @@ export const RosterEditor = ({
       if (error instanceof ApiError && error.status === 409) {
         resetPreflight();
         setRosterError(
-          `${error.problem?.detail || "Данные соревнования изменились."} Ваши изменения сохранены в форме. Перезагрузите данные перед новой попыткой.`,
+          error.problem?.detail === "projection revision conflict"
+            ? "Данные соревнования изменились во время сохранения. Ваши правки остались в форме. Повторите сохранение. Если состав изменился, откройте раздел заново."
+            : `${error.problem?.detail || "Данные соревнования изменились."} Ваши изменения сохранены в форме. Проверьте состав перед новой попыткой.`,
         );
       } else {
         setRosterError(
@@ -703,7 +716,7 @@ export const RosterEditor = ({
       return;
     }
     if (checkedInPlayerIds.length < MIN_ROSTER_SIZE) {
-      setControlError("Для фиксации состава отметьте минимум 4 игроков как присутствующих.");
+      setControlError("Для фиксации состава дождитесь подтверждения участия минимум от 4 игроков.");
       return;
     }
 
@@ -857,8 +870,8 @@ export const RosterEditor = ({
             </div>
             <dl className={styles.meta}>
               <div>
-                <dt>Участников</dt>
-                <dd>{draftParticipants.length} / 16</dd>
+                <dt>Сохранено участников</dt>
+                <dd>{roster.participants.length} / {selectedTournament.planned_roster_size}</dd>
               </div>
               <div>
                 <dt>Плановый размер</dt>
@@ -1005,7 +1018,7 @@ export const RosterEditor = ({
                 Сохранить состав
               </Button>
               <span className={styles.hint}>
-                Максимум 16 участников. После изменений сохраните состав.
+                Удаление сохраняется сразу. Для запуска нужны минимум 4 готовых игрока.
               </span>
             </div>
 
@@ -1085,7 +1098,9 @@ export const RosterEditor = ({
                       <p className={styles.preflightExplanation}>
                         {check.passed
                           ? "Готово. Это условие выполнено."
-                          : "Исправьте этот пункт и запустите проверку повторно."}
+                          : check.code === "tournament.preflight.structure.attendance"
+                            ? "Не все участники подтвердили участие. Проверьте статусы в составе и запустите проверку повторно."
+                            : "Исправьте этот пункт и запустите проверку повторно."}
                       </p>
                       <TechnicalDetails>
                         <p>Подробности: {check.explanation}</p>
@@ -1122,7 +1137,7 @@ export const RosterEditor = ({
                 Зафиксировать состав
               </Button>
               <span className={styles.hint}>
-                Фиксация доступна только после успешной проверки и при наличии минимум 4 присутствующих игроков.
+                Фиксация доступна после успешной проверки и подтверждения участия минимум 4 игроками.
               </span>
             </div>
             </section>
@@ -1228,24 +1243,10 @@ export const RosterEditor = ({
                         />
                       </div>
                       <div className={styles.field}>
-                        <label htmlFor={`roster-attendance-${participant.id}`}>
-                          Участие
-                        </label>
-                        <select
-                          id={`roster-attendance-${participant.id}`}
-                          value={participant.attendance}
-                          onChange={(event) =>
-                            updateDraftParticipant(participant.id, {
-                              attendance: event.target.value as AttendanceState,
-                            })
-                          }
-                        >
-                          {ATTENDANCE_STATES.map((attendance) => (
-                            <option key={attendance} value={attendance}>
-                              {ATTENDANCE_LABELS[attendance]}
-                            </option>
-                          ))}
-                        </select>
+                        <span>Участие</span>
+                        <Status tone={ATTENDANCE_TONES[participant.attendance]}>
+                          {ATTENDANCE_LABELS[participant.attendance]}
+                        </Status>
                       </div>
                       <Button
                         type="button"

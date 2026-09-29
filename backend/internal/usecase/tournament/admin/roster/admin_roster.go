@@ -105,7 +105,6 @@ func validRosterQuery(query RosterQuery) bool {
 
 func validReplaceRosterCommand(command ReplaceRosterCommand) bool {
 	if !validCommandScope(command.CommandScope) || command.ExpectedProjectionRevision < 1 ||
-		len(command.Participants) < domain.TournamentMinParticipants ||
 		len(command.Participants) > domain.TournamentMaxParticipants {
 		return false
 	}

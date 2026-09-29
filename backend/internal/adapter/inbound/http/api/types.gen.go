@@ -4519,6 +4519,14 @@ type JoinTournamentAdmissionParams struct {
 	XCSRFToken RequiredPlayerCSRFToken `json:"X-CSRF-Token"`
 }
 
+// CheckInTournamentAdmissionParams defines parameters for CheckInTournamentAdmission.
+type CheckInTournamentAdmissionParams struct {
+	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
+
+	// XCSRFToken Session-bound CSRF token required for this player mutation.
+	XCSRFToken RequiredPlayerCSRFToken `json:"X-CSRF-Token"`
+}
+
 // SubmitParticipantDraftActionParams defines parameters for SubmitParticipantDraftAction.
 type SubmitParticipantDraftActionParams struct {
 	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`

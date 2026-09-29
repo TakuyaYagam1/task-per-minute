@@ -215,6 +215,34 @@ RETURNING participant.id,
     participant.created_at,
     participant.updated_at;
 
+-- name: CheckInRegisteredParticipant :one
+WITH locked_roster AS MATERIALIZED (
+    UPDATE rosters AS roster
+    SET revision = roster.revision + 1,
+        updated_at = sqlc.arg(updated_at)
+    FROM tournaments AS tournament
+    WHERE roster.id = sqlc.arg(roster_id)
+        AND tournament.id = roster.tournament_id
+        AND tournament.state = 'registration'
+        AND roster.locked_at IS NULL
+        AND roster.execution_started_at IS NULL
+    RETURNING roster.id
+)
+UPDATE participants AS participant
+SET attendance = 'checked_in',
+    updated_at = sqlc.arg(updated_at)
+FROM locked_roster AS roster
+WHERE participant.roster_id = roster.id
+    AND participant.player_id = sqlc.arg(player_id)
+    AND participant.attendance = 'registered'
+RETURNING participant.id,
+    participant.roster_id,
+    participant.player_id,
+    participant.seed,
+    participant.attendance,
+    participant.created_at,
+    participant.updated_at;
+
 -- name: RegisterWithdrawnParticipant :one
 WITH locked_roster AS MATERIALIZED (
     UPDATE rosters AS roster

@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ApiError,
   listPublicTournaments,
+  openPublicTournamentEvents,
 } from "../../shared/api";
 import {
   catalogQueryKey,
@@ -99,6 +100,122 @@ export const useTournamentCatalog = (query: CatalogQuery): TournamentCatalogStat
       controller.abort();
     };
   }, [query, retryVersion]);
+
+  useEffect(() => {
+    if (typeof document === "undefined") {
+      return undefined;
+    }
+
+    let active = true;
+    let source: EventSource | null = null;
+    let retryTimer: number | undefined;
+    let invalidationTimer: number | undefined;
+    let retryAttempt = 0;
+
+    const closeSource = (): void => {
+      if (source === null) {
+        return;
+      }
+      source.onerror = null;
+      source.close();
+      source = null;
+    };
+
+    const scheduleRetry = (): void => {
+      if (!active || document.visibilityState !== "visible" || retryTimer !== undefined) {
+        return;
+      }
+      const delay = Math.min(30_000, 1_000 * 2 ** Math.min(retryAttempt, 5));
+      retryAttempt += 1;
+      retryTimer = window.setTimeout(() => {
+        retryTimer = undefined;
+        connect();
+      }, delay);
+    };
+
+    const connect = (): void => {
+      if (!active || source !== null || document.visibilityState !== "visible") {
+        return;
+      }
+      try {
+        const nextSource = openPublicTournamentEvents();
+        source = nextSource;
+        nextSource.addEventListener("ready", () => {
+          if (!active) {
+            return;
+          }
+          retryAttempt = 0;
+          setRetryVersion((current) => current + 1);
+        });
+        nextSource.addEventListener("changed", (event: Event) => {
+          if (!active) {
+            return;
+          }
+          let payload: unknown;
+          try {
+            payload = JSON.parse((event as MessageEvent<string>).data) as unknown;
+          } catch {
+            return;
+          }
+          if (
+            typeof payload !== "object" ||
+            payload === null ||
+            !("topic" in payload) ||
+            payload.topic !== "tournaments" ||
+            invalidationTimer !== undefined
+          ) {
+            return;
+          }
+          invalidationTimer = window.setTimeout(() => {
+            invalidationTimer = undefined;
+            if (active && document.visibilityState === "visible") {
+              setRetryVersion((current) => current + 1);
+            }
+          }, 150);
+        });
+        nextSource.onerror = () => {
+          closeSource();
+          scheduleRetry();
+        };
+      } catch {
+        scheduleRetry();
+      }
+    };
+
+    const handleVisibilityChange = (): void => {
+      if (document.visibilityState !== "visible") {
+        if (retryTimer !== undefined) {
+          window.clearTimeout(retryTimer);
+          retryTimer = undefined;
+        }
+        if (invalidationTimer !== undefined) {
+          window.clearTimeout(invalidationTimer);
+          invalidationTimer = undefined;
+        }
+        closeSource();
+        return;
+      }
+      if (retryTimer !== undefined) {
+        window.clearTimeout(retryTimer);
+        retryTimer = undefined;
+      }
+      connect();
+    };
+
+    connect();
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      active = false;
+      if (retryTimer !== undefined) {
+        window.clearTimeout(retryTimer);
+      }
+      if (invalidationTimer !== undefined) {
+        window.clearTimeout(invalidationTimer);
+      }
+      closeSource();
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, []);
 
   return { ...state, retry };
 };

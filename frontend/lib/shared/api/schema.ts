@@ -959,6 +959,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/tournaments/{tournament_id}/participant/queue/check-in": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tournament_id: components["parameters"]["TournamentId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Confirm participation in the authenticated player's tournament
+         * @description The request has no body. Player identity comes from the authenticated session and the idempotency key identifies the command. Only a registered player may confirm participation. Repeating the command while checked in returns the current status with changed false; command responses are not replayed from a stored receipt. Check-in is accepted only while tournament registration remains open and the roster remains unlocked.
+         */
+        post: operations["checkInTournamentAdmission"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/tournaments/{tournament_id}/participant/assignments/{assignment_id}": {
         parameters: {
             query?: never;
@@ -6196,6 +6218,47 @@ export interface operations {
             403: components["responses"]["ForbiddenProblem"];
             404: components["responses"]["NotFoundProblem"];
             /** @description The tournament is closed or the admission state cannot be withdrawn. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["TournamentAdmissionConflictProblem"];
+                };
+            };
+            429: components["responses"]["RateLimitedProblem"];
+            default: components["responses"]["UnexpectedServerProblem"];
+        };
+    };
+    checkInTournamentAdmission: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+                /** @description Session-bound CSRF token required for this player mutation. */
+                "X-CSRF-Token": components["parameters"]["RequiredPlayerCSRFToken"];
+            };
+            path: {
+                tournament_id: components["parameters"]["TournamentId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Current admission view after the idempotent check-in command. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TournamentAdmissionMutation"];
+                };
+            };
+            400: components["responses"]["InvalidRequestProblem"];
+            401: components["responses"]["UnauthorizedProblem"];
+            403: components["responses"]["ForbiddenProblem"];
+            404: components["responses"]["NotFoundProblem"];
+            /** @description The tournament is closed or the player is not registered. */
             409: {
                 headers: {
                     [name: string]: unknown;

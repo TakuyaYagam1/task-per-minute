@@ -13,6 +13,7 @@ import (
 // session by the inbound adapter.
 type TournamentAdmissionUseCase interface {
 	Join(ctx context.Context, command TournamentAdmissionJoinCommand) (TournamentAdmissionMutation, error)
+	CheckIn(ctx context.Context, command TournamentAdmissionCheckInCommand) (TournamentAdmissionMutation, error)
 	GetStatus(ctx context.Context, query TournamentAdmissionStatusQuery) (TournamentAdmissionView, error)
 	Cancel(ctx context.Context, command TournamentAdmissionCancelCommand) (TournamentAdmissionMutation, error)
 }
@@ -26,6 +27,12 @@ type TournamentAdmissionJoinCommand struct {
 type TournamentAdmissionStatusQuery struct {
 	Actor        Identity
 	TournamentID uuid.UUID
+}
+
+type TournamentAdmissionCheckInCommand struct {
+	Actor        Identity
+	TournamentID uuid.UUID
+	CommandID    uuid.UUID
 }
 
 type TournamentAdmissionCancelCommand struct {

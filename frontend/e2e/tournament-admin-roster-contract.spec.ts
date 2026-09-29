@@ -391,9 +391,6 @@ const rosterRegion = (page: Page) =>
 const rosterGroup = (page: Page, index: number) =>
   rosterRegion(page).getByRole("group").nth(index - 1);
 
-const attendanceControl = (group: ReturnType<Page["getByRole"]>) =>
-  group.getByRole("combobox", { name: "Участие" });
-
 const selectPlayerByName = async (
   group: ReturnType<Page["getByRole"]>,
   username: string,
@@ -413,7 +410,7 @@ test("загружает игроков и roster, отображает русс
   await expect(region).toContainText("Алиса");
   await expect(region).toContainText("Зарегистрирован");
   await expect(region).toContainText("Боб");
-  await expect(region).toContainText("На месте");
+  await expect(region).toContainText("Готов");
   const visibleText = await region.innerText();
   expect(visibleText).not.toMatch(
     /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i,
@@ -515,7 +512,7 @@ test("явно ограничивает 17-го участника", async ({ pa
   await expect(fullRegion.getByRole("alert")).toContainText(/16|максим|переполн/i);
 });
 
-test("изменяет attendance, заменяет и удаляет участника, отправляет полный roster с revision и принимает серверный порядок", async ({ page }) => {
+test("заменяет и удаляет участника, отправляет полный roster с revision и принимает серверный порядок", async ({ page }) => {
   const players = [
     player(0, "Алиса"),
     player(1, "Боб"),
@@ -524,8 +521,8 @@ test("изменяет attendance, заменяет и удаляет участ
     player(4, "Дима"),
   ];
   const returnedRoster = roster([
-    participant(0, players[2].id, "checked_in", 4),
-    participant(1, players[0].id, "checked_in", 3),
+    participant(0, players[2].id, "invited", 4),
+    participant(1, players[0].id, "registered", 3),
     participant(2, players[3].id, "registered", 2),
     participant(3, players[1].id, "registered", 1),
   ], { revision: 8 });
@@ -537,10 +534,11 @@ test("изменяет attendance, заменяет и удаляет участ
     participant(4, players[2].id, "registered", 5),
   ]), {
     players,
+    projectionRevision: 9,
     onReplace: async (route, bodyParticipants) => {
       expect(bodyParticipants).toEqual([
-        { player_id: players[0].id, seed: 4, attendance: "checked_in" },
-        { player_id: players[2].id, seed: 3, attendance: "registered" },
+        { player_id: players[0].id, seed: 4, attendance: "registered" },
+        { player_id: players[2].id, seed: 3, attendance: "invited" },
         { player_id: players[3].id, seed: 2, attendance: "registered" },
         { player_id: players[4].id, seed: 1, attendance: "registered" },
       ]);
@@ -556,15 +554,13 @@ test("изменяет attendance, заменяет и удаляет участ
   await rosterGroup(page, 1).getByRole("spinbutton", { name: "Позиция" }).fill("4");
   await rosterGroup(page, 3).getByRole("spinbutton", { name: "Позиция" }).fill("2");
   await rosterGroup(page, 4).getByRole("spinbutton", { name: "Позиция" }).fill("1");
-  await attendanceControl(rosterGroup(page, 1)).selectOption("checked_in");
-
   await region.getByRole("button", { name: /Сохранить состав/i }).click();
   await expect.poll(() => replaceRequests.length).toBe(1);
-  expect(replaceRequests[0].body).toMatchObject({ expected_projection_revision: 1 });
+  expect(replaceRequests[0].body).toMatchObject({ expected_projection_revision: 9 });
   expect(replaceRequests[0].key).toMatch(/^[0-9a-f-]{36}$/i);
   await expect(rosterGroup(page, 1)).toContainText("Вера");
   await expect(rosterGroup(page, 1).getByRole("spinbutton", { name: "Позиция" })).toHaveValue("4");
-  await expect(attendanceControl(rosterGroup(page, 1))).toHaveValue("checked_in");
+  await expect(rosterGroup(page, 1)).toContainText("Приглашен");
   await expect(rosterGroup(page, 2)).toContainText("Алиса");
   await expect(rosterGroup(page, 2).getByRole("spinbutton", { name: "Позиция" })).toHaveValue("3");
   await expect(rosterGroup(page, 3)).toContainText("Глеб");
@@ -599,10 +595,10 @@ test("сохраняет draft при русском 409 и показывает
   });
   await openRoster(page);
   const region = rosterRegion(page);
-  await attendanceControl(rosterGroup(page, 1)).selectOption("checked_in");
+  await rosterGroup(page, 1).getByRole("spinbutton", { name: "Позиция" }).fill("4");
   await region.getByRole("button", { name: /Сохранить состав/i }).click();
   await expect(region.getByRole("alert")).toContainText("Игрок уже зарезервирован в другом турнире");
-  await expect(attendanceControl(rosterGroup(page, 1))).toHaveValue("checked_in");
+  await expect(rosterGroup(page, 1).getByRole("spinbutton", { name: "Позиция" })).toHaveValue("4");
   expect(replaceCalls).toBe(1);
 
   await page.reload();
@@ -617,7 +613,7 @@ test("сохраняет draft при русском 409 и показывает
   await expect(lockedRegion.getByRole("button", { name: /Добавить участника/i })).toHaveCount(0);
   await expect(lockedRegion.getByRole("button", { name: /Сохранить состав/i })).toHaveCount(0);
   await expect(lockedRegion.getByRole("button", { name: "Удалить" })).toHaveCount(0);
-  await expect(lockedRegion).toContainText("На месте");
+  await expect(lockedRegion).toContainText("Готов");
   await lockedRegion.getByRole("button", { name: "Перейти к запуску" }).click();
   await expect(page).toHaveURL(new RegExp(`[?&]tournament=${tournamentID}(?:&|$)`));
   await expect(page).toHaveURL(new RegExp(`[?&]view=overview(?:&|$)`));

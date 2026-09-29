@@ -155,36 +155,6 @@ func (q *Queries) CreateTournamentRosterOperation(ctx context.Context, arg Creat
 	return command_id, err
 }
 
-const deleteTournamentAdminRosterParticipants = `-- name: DeleteTournamentAdminRosterParticipants :execrows
-DELETE FROM participants AS participant
-USING rosters AS roster
-WHERE participant.roster_id = roster.id
-    AND roster.id = $1
-    AND roster.tournament_id = $2
-    AND roster.revision = $3
-    AND roster.locked_at IS NULL
-    AND roster.execution_started_at IS NULL
-    AND NOT EXISTS (
-        SELECT 1
-        FROM swiss_rounds AS round
-        WHERE round.roster_id = roster.id
-    )
-`
-
-type DeleteTournamentAdminRosterParticipantsParams struct {
-	RosterID               uuid.UUID
-	TournamentID           uuid.UUID
-	ExpectedRosterRevision int64
-}
-
-func (q *Queries) DeleteTournamentAdminRosterParticipants(ctx context.Context, arg DeleteTournamentAdminRosterParticipantsParams) (int64, error) {
-	result, err := q.db.Exec(ctx, deleteTournamentAdminRosterParticipants, arg.RosterID, arg.TournamentID, arg.ExpectedRosterRevision)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected(), nil
-}
-
 const findTournamentRosterOperation = `-- name: FindTournamentRosterOperation :one
 SELECT command_id,
     tournament_id,
@@ -290,87 +260,6 @@ func (q *Queries) GetTournamentPreflightRound(ctx context.Context, rosterID uuid
 	row := q.db.QueryRow(ctx, getTournamentPreflightRound, rosterID)
 	var i GetTournamentPreflightRoundRow
 	err := row.Scan(&i.ID, &i.Revision, &i.ByeParticipantID)
-	return i, err
-}
-
-const insertTournamentAdminRosterParticipant = `-- name: InsertTournamentAdminRosterParticipant :one
-INSERT INTO participants (
-    id,
-    roster_id,
-    player_id,
-    seed,
-    attendance,
-    created_at,
-    updated_at
-)
-SELECT $1::uuid AS participant_id,
-    roster.id AS roster_id,
-    player.id AS player_id,
-    $2,
-    $3,
-    $4,
-    $4
-FROM rosters AS roster
-JOIN players AS player
-    ON player.id = $5
-    AND player.deleted_at IS NULL
-WHERE roster.id = $6
-    AND roster.tournament_id = $7
-    AND roster.revision = $8
-    AND roster.locked_at IS NULL
-    AND roster.execution_started_at IS NULL
-    AND NOT EXISTS (
-        SELECT 1
-        FROM swiss_rounds AS round
-        WHERE round.roster_id = roster.id
-    )
-    AND NOT EXISTS (
-        SELECT 1
-        FROM participant_reservations AS reservation
-        WHERE reservation.player_id = player.id
-            AND reservation.tournament_id <> roster.tournament_id
-    )
-RETURNING participants.id,
-    participants.roster_id,
-    participants.player_id,
-    participants.seed,
-    participants.attendance,
-    participants.created_at,
-    participants.updated_at
-`
-
-type InsertTournamentAdminRosterParticipantParams struct {
-	ID                     uuid.UUID
-	Seed                   int32
-	Attendance             string
-	CreatedAt              pgtype.Timestamptz
-	PlayerID               uuid.UUID
-	RosterID               uuid.UUID
-	TournamentID           uuid.UUID
-	ExpectedRosterRevision int64
-}
-
-func (q *Queries) InsertTournamentAdminRosterParticipant(ctx context.Context, arg InsertTournamentAdminRosterParticipantParams) (Participant, error) {
-	row := q.db.QueryRow(ctx, insertTournamentAdminRosterParticipant,
-		arg.ID,
-		arg.Seed,
-		arg.Attendance,
-		arg.CreatedAt,
-		arg.PlayerID,
-		arg.RosterID,
-		arg.TournamentID,
-		arg.ExpectedRosterRevision,
-	)
-	var i Participant
-	err := row.Scan(
-		&i.ID,
-		&i.RosterID,
-		&i.PlayerID,
-		&i.Seed,
-		&i.Attendance,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
 	return i, err
 }
 
@@ -616,6 +505,96 @@ func (q *Queries) LockTournamentRosterAuthority(ctx context.Context, tournamentI
 	return i, err
 }
 
+const parkTournamentAdminRosterParticipants = `-- name: ParkTournamentAdminRosterParticipants :one
+WITH scope AS MATERIALIZED (
+    SELECT roster.id AS roster_id,
+        tournament.planned_roster_size::BIGINT AS planned_roster_size,
+        COALESCE(MAX(participant.seed)::BIGINT, 0) AS max_seed
+    FROM rosters AS roster
+    JOIN tournaments AS tournament ON tournament.id = roster.tournament_id
+    LEFT JOIN participants AS participant ON participant.roster_id = roster.id
+    WHERE roster.id = $1
+        AND roster.tournament_id = $2
+        AND roster.revision = $3
+        AND roster.locked_at IS NULL
+        AND roster.execution_started_at IS NULL
+        AND NOT EXISTS (
+            SELECT 1
+            FROM swiss_rounds AS round
+            WHERE round.roster_id = roster.id
+        )
+    GROUP BY roster.id, tournament.planned_roster_size
+), candidates AS MATERIALIZED (
+    SELECT participant.id,
+        participant.seed::BIGINT AS original_seed,
+        scope.planned_roster_size,
+        scope.max_seed,
+        (participant.attendance <> 'withdrawn')::BOOLEAN AS was_active,
+        ROW_NUMBER() OVER (
+            PARTITION BY participant.seed::BIGINT % scope.planned_roster_size
+            ORDER BY participant.seed, participant.id
+        ) AS seat_sequence
+    FROM participants AS participant
+    JOIN scope ON scope.roster_id = participant.roster_id
+    WHERE participant.attendance <> 'withdrawn'
+        OR participant.seed <= scope.planned_roster_size
+), parked_seeds AS MATERIALIZED (
+    SELECT candidates.id,
+        candidates.was_active,
+        candidates.original_seed + candidates.planned_roster_size * (
+            (GREATEST(candidates.max_seed, candidates.planned_roster_size) - candidates.original_seed)
+                / candidates.planned_roster_size
+                + candidates.seat_sequence
+        ) AS parked_seed
+    FROM candidates
+), updated AS (
+    UPDATE participants AS participant
+    SET seed = parked_seeds.parked_seed::INTEGER,
+        attendance = 'withdrawn',
+        updated_at = $4
+    FROM parked_seeds
+    WHERE participant.id = parked_seeds.id
+        AND parked_seeds.parked_seed > 0
+        AND parked_seeds.parked_seed <= 2147483647
+    RETURNING participant.id
+)
+SELECT (
+        SELECT COUNT(*)::BIGINT
+        FROM candidates
+        WHERE candidates.was_active
+    ) AS active_candidate_count,
+    (SELECT COUNT(*)::BIGINT FROM candidates) AS candidate_count,
+    (SELECT COUNT(*)::BIGINT FROM updated) AS parked_count
+`
+
+type ParkTournamentAdminRosterParticipantsParams struct {
+	RosterID               uuid.UUID
+	TournamentID           uuid.UUID
+	ExpectedRosterRevision int64
+	UpdatedAt              pgtype.Timestamptz
+}
+
+type ParkTournamentAdminRosterParticipantsRow struct {
+	ActiveCandidateCount int64
+	CandidateCount       int64
+	ParkedCount          int64
+}
+
+// Park active participants and rebase legacy withdrawn rows that still occupy
+// a planned seat. Keeping participant rows preserves admission identity and
+// historical references. Seeds stay congruent to their prior seats.
+func (q *Queries) ParkTournamentAdminRosterParticipants(ctx context.Context, arg ParkTournamentAdminRosterParticipantsParams) (ParkTournamentAdminRosterParticipantsRow, error) {
+	row := q.db.QueryRow(ctx, parkTournamentAdminRosterParticipants,
+		arg.RosterID,
+		arg.TournamentID,
+		arg.ExpectedRosterRevision,
+		arg.UpdatedAt,
+	)
+	var i ParkTournamentAdminRosterParticipantsRow
+	err := row.Scan(&i.ActiveCandidateCount, &i.CandidateCount, &i.ParkedCount)
+	return i, err
+}
+
 const readTournamentRosterTime = `-- name: ReadTournamentRosterTime :one
 SELECT clock_timestamp()::TIMESTAMPTZ AS observed_at
 `
@@ -625,6 +604,45 @@ func (q *Queries) ReadTournamentRosterTime(ctx context.Context) (pgtype.Timestam
 	var observed_at pgtype.Timestamptz
 	err := row.Scan(&observed_at)
 	return observed_at, err
+}
+
+const releaseTournamentAdminRosterReservations = `-- name: ReleaseTournamentAdminRosterReservations :execrows
+DELETE FROM participant_reservations AS reservation
+USING rosters AS roster
+WHERE roster.id = $1
+    AND roster.tournament_id = $2
+    AND roster.revision = $3
+    AND roster.locked_at IS NULL
+    AND roster.execution_started_at IS NULL
+    AND reservation.tournament_id = roster.tournament_id
+    AND NOT (reservation.player_id = ANY($4::UUID[]))
+    AND NOT EXISTS (
+        SELECT 1
+        FROM swiss_rounds AS round
+        WHERE round.roster_id = roster.id
+    )
+`
+
+type ReleaseTournamentAdminRosterReservationsParams struct {
+	RosterID               uuid.UUID
+	TournamentID           uuid.UUID
+	ExpectedRosterRevision int64
+	KeepPlayerIds          []uuid.UUID
+}
+
+// Release stale tournament reservations for participants omitted from the
+// replacement. Roster changes are allowed only while the roster is unlocked.
+func (q *Queries) ReleaseTournamentAdminRosterReservations(ctx context.Context, arg ReleaseTournamentAdminRosterReservationsParams) (int64, error) {
+	result, err := q.db.Exec(ctx, releaseTournamentAdminRosterReservations,
+		arg.RosterID,
+		arg.TournamentID,
+		arg.ExpectedRosterRevision,
+		arg.KeepPlayerIds,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const transitionTournamentForRosterCAS = `-- name: TransitionTournamentForRosterCAS :one
@@ -660,4 +678,155 @@ func (q *Queries) TransitionTournamentForRosterCAS(ctx context.Context, arg Tran
 	var id uuid.UUID
 	err := row.Scan(&id)
 	return id, err
+}
+
+const upsertTournamentAdminRosterParticipants = `-- name: UpsertTournamentAdminRosterParticipants :many
+WITH scope AS MATERIALIZED (
+    SELECT roster.id AS roster_id,
+        roster.tournament_id,
+        roster.revision,
+        tournament.planned_roster_size::BIGINT AS planned_roster_size,
+        COALESCE(MAX(participant.seed)::BIGINT, 0) AS max_seed
+    FROM rosters AS roster
+    JOIN tournaments AS tournament ON tournament.id = roster.tournament_id
+    LEFT JOIN participants AS participant ON participant.roster_id = roster.id
+    WHERE roster.id = $2
+        AND roster.tournament_id = $3
+        AND roster.revision = $4
+        AND roster.locked_at IS NULL
+        AND roster.execution_started_at IS NULL
+        AND NOT EXISTS (
+            SELECT 1
+            FROM swiss_rounds AS round
+            WHERE round.roster_id = roster.id
+        )
+    GROUP BY roster.id, roster.tournament_id, roster.revision, tournament.planned_roster_size
+), requested AS MATERIALIZED (
+    SELECT input.participant_id,
+        input.player_id,
+        input.seed::BIGINT AS requested_seed,
+        input.attendance,
+        scope.roster_id,
+        scope.tournament_id,
+        scope.planned_roster_size,
+        scope.max_seed,
+        ROW_NUMBER() OVER (
+            PARTITION BY input.seed::BIGINT % scope.planned_roster_size
+            ORDER BY input.seed, input.player_id
+        ) AS seat_sequence
+    FROM ROWS FROM (
+        UNNEST($5::UUID[]),
+        UNNEST($6::UUID[]),
+        UNNEST($7::INTEGER[]),
+        UNNEST($8::VARCHAR[])
+    ) AS input(participant_id, player_id, seed, attendance)
+    CROSS JOIN scope
+), desired AS MATERIALIZED (
+    SELECT requested.participant_id,
+        requested.player_id,
+        requested.roster_id,
+        requested.tournament_id,
+        requested.requested_seed,
+        requested.attendance,
+        CASE
+            WHEN requested.attendance = 'withdrawn' THEN requested.requested_seed
+                + requested.planned_roster_size * (
+                    (GREATEST(requested.max_seed, requested.planned_roster_size) - requested.requested_seed)
+                        / requested.planned_roster_size
+                        + requested.seat_sequence
+                )
+            ELSE requested.requested_seed
+        END AS stored_seed
+    FROM requested
+)
+INSERT INTO participants (
+    id,
+    roster_id,
+    player_id,
+    seed,
+    attendance,
+    created_at,
+    updated_at
+)
+SELECT desired.participant_id,
+    desired.roster_id,
+    desired.player_id,
+    desired.stored_seed::INTEGER,
+    desired.attendance,
+    $1,
+    $1
+FROM desired
+JOIN players AS player
+    ON player.id = desired.player_id
+    AND player.deleted_at IS NULL
+WHERE desired.stored_seed > 0
+    AND desired.stored_seed <= 2147483647
+    AND NOT EXISTS (
+        SELECT 1
+        FROM participant_reservations AS reservation
+        WHERE reservation.player_id = player.id
+            AND reservation.tournament_id <> desired.tournament_id
+    )
+ORDER BY desired.requested_seed, desired.player_id
+ON CONFLICT ON CONSTRAINT participants_roster_player_key DO UPDATE
+SET seed = EXCLUDED.seed,
+    attendance = EXCLUDED.attendance,
+    updated_at = EXCLUDED.updated_at
+RETURNING participants.id,
+    participants.roster_id,
+    participants.player_id,
+    participants.seed,
+    participants.attendance,
+    participants.created_at,
+    participants.updated_at
+`
+
+type UpsertTournamentAdminRosterParticipantsParams struct {
+	CreatedAt              pgtype.Timestamptz
+	RosterID               uuid.UUID
+	TournamentID           uuid.UUID
+	ExpectedRosterRevision int64
+	ParticipantIds         []uuid.UUID
+	PlayerIds              []uuid.UUID
+	Seeds                  []int32
+	Attendances            []string
+}
+
+// Existing participant rows are updated in place, including rows previously
+// withdrawn by an admin. New withdrawn inputs receive an out-of-range seed.
+func (q *Queries) UpsertTournamentAdminRosterParticipants(ctx context.Context, arg UpsertTournamentAdminRosterParticipantsParams) ([]Participant, error) {
+	rows, err := q.db.Query(ctx, upsertTournamentAdminRosterParticipants,
+		arg.CreatedAt,
+		arg.RosterID,
+		arg.TournamentID,
+		arg.ExpectedRosterRevision,
+		arg.ParticipantIds,
+		arg.PlayerIds,
+		arg.Seeds,
+		arg.Attendances,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Participant{}
+	for rows.Next() {
+		var i Participant
+		if err := rows.Scan(
+			&i.ID,
+			&i.RosterID,
+			&i.PlayerID,
+			&i.Seed,
+			&i.Attendance,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }

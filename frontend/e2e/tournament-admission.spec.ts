@@ -192,9 +192,9 @@ test("anonymous detail keeps queue idle until the player explicitly participates
 
   await page.getByRole("button", { name: "Участвовать", exact: true }).click();
   await page.getByLabel("Никнейм").fill("alice_01");
-  await page.getByRole("button", { name: "Подтвердить участие", exact: true }).click();
+  await page.getByRole("button", { name: "Зарегистрироваться", exact: true }).click();
 
-  await expect(page.getByTestId("tournament-admission-status")).toContainText("Ожидает подтверждения");
+  await expect(page.getByTestId("tournament-admission-status")).toContainText("Зарегистрирован");
   expect(playerJoins).toBe(1);
   expect(queueGets).toBe(0);
   expect(queuePosts).toBe(1);
@@ -220,7 +220,7 @@ test("stored player restores durable registration without a join command", async
   });
 
   await page.goto(detailURL());
-  await expect(page.getByTestId("tournament-admission-status")).toContainText("Ожидает подтверждения");
+  await expect(page.getByTestId("tournament-admission-status")).toContainText("Зарегистрирован");
   await expect(page.getByText("alice_01", { exact: true })).toBeVisible();
   expect(queueGets).toBe(1);
   expect(queuePosts).toBe(0);
@@ -236,7 +236,7 @@ test("cookie-backed player restores admission when the local session cache is em
   });
 
   await page.goto(detailURL());
-  await expect(page.getByTestId("tournament-admission-status")).toContainText("Ожидает подтверждения");
+  await expect(page.getByTestId("tournament-admission-status")).toContainText("Зарегистрирован");
   await expect(page.getByText("alice_01", { exact: true })).toBeVisible();
   await expect(page.getByLabel("Никнейм")).toHaveCount(0);
 });
@@ -252,7 +252,7 @@ test(
   });
 
   await page.goto(detailURL());
-  await expect(page.getByTestId("tournament-admission-status")).toContainText("Участие подтверждено");
+  await expect(page.getByTestId("tournament-admission-status")).toContainText("Готов");
   const workspaceLink = page.getByRole("link", { name: "Открыть мой матч" });
   await expect(workspaceLink).toHaveAttribute(
     "href",
@@ -278,7 +278,7 @@ test("checked in prestart status waits for publication before offering participa
   });
 
   await page.goto(detailURL());
-  await expect(page.getByText("Участие подтверждено. Страница матча откроется после старта соревнования.")).toBeVisible();
+  await expect(page.getByText("Вы подтвердили участие. Страница матча откроется после старта соревнования.")).toBeVisible();
   await expect(page.getByRole("link", { name: "Открыть мой матч" })).toHaveCount(0);
 });
 
@@ -305,13 +305,13 @@ test("checked in player can withdraw before the registration roster is locked", 
   expect(deleteCalls).toBe(1);
 });
 
-test("registered status requires a confirmed participant lobby before opening workspace", async ({ page }) => {
+test("checked in status requires a confirmed participant lobby before opening workspace", async ({ page }) => {
   const fixtureSet = createTournamentFixtureSet();
   await installStoredSession(page);
   await installDetail(page, liveCatalogItem);
   await installPlayerMe(page);
   await page.route(`**${queuePath}`, async (route) => {
-    await fulfillJSON(route, admissionView("registered"));
+    await fulfillJSON(route, admissionView("checked_in"));
   });
   let lobbyCalls = 0;
   await page.route(`**${tournamentId}/participant/lobby`, async (route) => {
@@ -332,7 +332,7 @@ test("registered status requires a confirmed participant lobby before opening wo
   expect(lobbyCalls).toBe(1);
 });
 
-test("registered player can cancel and sees terminal withdrawn state", async ({ page }) => {
+test("registered player can cancel and sees the rejoin action", async ({ page }) => {
   await installStoredSession(page);
   await installDetail(page);
   await installPlayerMe(page);
@@ -351,10 +351,11 @@ test("registered player can cancel and sees terminal withdrawn state", async ({ 
   });
 
   await page.goto(detailURL());
-  await expect(page.getByTestId("tournament-admission-status")).toContainText("Ожидает подтверждения");
+  await expect(page.getByTestId("tournament-admission-status")).toContainText("Зарегистрирован");
   await page.getByRole("button", { name: "Отменить регистрацию", exact: true }).click();
   await expect(page.getByTestId("tournament-admission-status")).toContainText("Регистрация отменена");
-  await expect(page.getByText("Повторная регистрация доступна только после решения оператора.")).toBeVisible();
+  await expect(page.getByText("Регистрация отменена. Пока набор открыт, можно подать заявку повторно.")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Подать заявку повторно", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Отменить регистрацию", exact: true })).toHaveCount(0);
   expect(deleteCalls).toBe(1);
   expect(deleteKey).toMatch(/^[0-9a-f-]{36}$/i);
@@ -477,6 +478,6 @@ test("a stale admission response cannot replace a newer status after navigation"
   await secondQueueStarted;
   releaseFirstResponse();
   await reload;
-  await expect(page.getByTestId("tournament-admission-status")).toContainText("Участие подтверждено");
+  await expect(page.getByTestId("tournament-admission-status")).toContainText("Готов");
   expect(queueGets).toBe(2);
 });

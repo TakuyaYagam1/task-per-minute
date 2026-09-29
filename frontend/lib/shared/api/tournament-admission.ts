@@ -267,6 +267,24 @@ export const joinTournamentAdmission = async (
     }),
   );
 
+export const checkInTournamentAdmission = async (
+  tournamentId: string,
+  intent: TournamentAdmissionCommandIntent,
+  signal?: AbortSignal,
+): Promise<TournamentAdmissionMutationResult> =>
+  readMutationResponse(
+    publicClient.POST(
+      "/api/v1/tournaments/{tournament_id}/participant/queue/check-in",
+      {
+        params: {
+          path: admissionPath(tournamentId),
+          header: mutationHeaders(intent),
+        },
+        signal,
+      },
+    ),
+  );
+
 export const cancelTournamentAdmission = async (
   tournamentId: string,
   intent: TournamentAdmissionCommandIntent,
@@ -285,6 +303,7 @@ export const cancelTournamentAdmission = async (
 export const tournamentAdmissionApi = {
   getStatus: getTournamentAdmissionStatus,
   join: joinTournamentAdmission,
+  checkIn: checkInTournamentAdmission,
   cancel: cancelTournamentAdmission,
 } as const;
 

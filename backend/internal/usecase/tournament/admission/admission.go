@@ -48,6 +48,34 @@ func (a *AdmissionUseCase) Join(
 	return usecase.TournamentAdmissionMutation{View: view, Changed: changed}, nil
 }
 
+func (a *AdmissionUseCase) CheckIn(
+	ctx context.Context,
+	command usecase.TournamentAdmissionCheckInCommand,
+) (usecase.TournamentAdmissionMutation, error) {
+	if !a.available() || ctx == nil || !validCheckInCommand(command) {
+		return usecase.TournamentAdmissionMutation{}, domain.ErrValidation
+	}
+	checkedInAt := a.clock.Now()
+	if !domain.IsValidServerTime(checkedInAt) {
+		return usecase.TournamentAdmissionMutation{}, domain.ErrValidation
+	}
+
+	record, changed, err := a.repository.CheckIn(ctx, CheckInInput{
+		TournamentID: command.TournamentID,
+		PlayerID:     command.Actor.PlayerID,
+		CommandID:    command.CommandID,
+		CheckedInAt:  checkedInAt,
+	})
+	if err != nil {
+		return usecase.TournamentAdmissionMutation{}, mapAdmissionError(err)
+	}
+	view, err := admissionView(record, command.TournamentID, command.Actor.PlayerID)
+	if err != nil {
+		return usecase.TournamentAdmissionMutation{}, err
+	}
+	return usecase.TournamentAdmissionMutation{View: view, Changed: changed}, nil
+}
+
 func (a *AdmissionUseCase) GetStatus(
 	ctx context.Context,
 	query usecase.TournamentAdmissionStatusQuery,
@@ -103,6 +131,10 @@ func validJoinCommand(command usecase.TournamentAdmissionJoinCommand) bool {
 
 func validStatusQuery(query usecase.TournamentAdmissionStatusQuery) bool {
 	return validIdentity(query.Actor, query.TournamentID)
+}
+
+func validCheckInCommand(command usecase.TournamentAdmissionCheckInCommand) bool {
+	return validIdentity(command.Actor, command.TournamentID) && command.CommandID != uuid.Nil
 }
 
 func validCancelCommand(command usecase.TournamentAdmissionCancelCommand) bool {

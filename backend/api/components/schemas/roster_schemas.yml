@@ -223,7 +223,6 @@ ReplaceRosterRequest:
       minimum: 1
     participants:
       type: array
-      minItems: 4
       maxItems: 16
       items:
         $ref: '#/RosterParticipantInput'

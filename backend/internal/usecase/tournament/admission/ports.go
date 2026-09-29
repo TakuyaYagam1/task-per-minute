@@ -56,8 +56,16 @@ type CancelInput struct {
 	CancelledAt  time.Time
 }
 
+type CheckInInput struct {
+	TournamentID uuid.UUID
+	PlayerID     uuid.UUID
+	CommandID    uuid.UUID
+	CheckedInAt  time.Time
+}
+
 type AdmissionRepository interface {
 	Join(ctx context.Context, input JoinInput) (AdmissionRecord, bool, error)
+	CheckIn(ctx context.Context, input CheckInInput) (AdmissionRecord, bool, error)
 	GetStatus(ctx context.Context, tournamentID, playerID uuid.UUID) (AdmissionRecord, error)
 	Cancel(ctx context.Context, input CancelInput) (AdmissionRecord, bool, error)
 }

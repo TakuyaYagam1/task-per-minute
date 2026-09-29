@@ -12,6 +12,56 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const checkInRegisteredParticipant = `-- name: CheckInRegisteredParticipant :one
+WITH locked_roster AS MATERIALIZED (
+    UPDATE rosters AS roster
+    SET revision = roster.revision + 1,
+        updated_at = $1
+    FROM tournaments AS tournament
+    WHERE roster.id = $3
+        AND tournament.id = roster.tournament_id
+        AND tournament.state = 'registration'
+        AND roster.locked_at IS NULL
+        AND roster.execution_started_at IS NULL
+    RETURNING roster.id
+)
+UPDATE participants AS participant
+SET attendance = 'checked_in',
+    updated_at = $1
+FROM locked_roster AS roster
+WHERE participant.roster_id = roster.id
+    AND participant.player_id = $2
+    AND participant.attendance = 'registered'
+RETURNING participant.id,
+    participant.roster_id,
+    participant.player_id,
+    participant.seed,
+    participant.attendance,
+    participant.created_at,
+    participant.updated_at
+`
+
+type CheckInRegisteredParticipantParams struct {
+	UpdatedAt pgtype.Timestamptz
+	PlayerID  uuid.UUID
+	RosterID  uuid.UUID
+}
+
+func (q *Queries) CheckInRegisteredParticipant(ctx context.Context, arg CheckInRegisteredParticipantParams) (Participant, error) {
+	row := q.db.QueryRow(ctx, checkInRegisteredParticipant, arg.UpdatedAt, arg.PlayerID, arg.RosterID)
+	var i Participant
+	err := row.Scan(
+		&i.ID,
+		&i.RosterID,
+		&i.PlayerID,
+		&i.Seed,
+		&i.Attendance,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const findFirstAvailableParticipantSeed = `-- name: FindFirstAvailableParticipantSeed :one
 SELECT candidate.seed::INTEGER
 FROM generate_series(1, $1::INTEGER) AS candidate(seed)

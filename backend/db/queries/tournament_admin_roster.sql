@@ -81,15 +81,82 @@ WHERE tournament_id = sqlc.arg(tournament_id)
 -- name: ReadTournamentRosterTime :one
 SELECT clock_timestamp()::TIMESTAMPTZ AS observed_at;
 
--- name: DeleteTournamentAdminRosterParticipants :execrows
-DELETE FROM participants AS participant
+-- Park active participants and rebase legacy withdrawn rows that still occupy
+-- a planned seat. Keeping participant rows preserves admission identity and
+-- historical references. Seeds stay congruent to their prior seats.
+-- name: ParkTournamentAdminRosterParticipants :one
+WITH scope AS MATERIALIZED (
+    SELECT roster.id AS roster_id,
+        tournament.planned_roster_size::BIGINT AS planned_roster_size,
+        COALESCE(MAX(participant.seed)::BIGINT, 0) AS max_seed
+    FROM rosters AS roster
+    JOIN tournaments AS tournament ON tournament.id = roster.tournament_id
+    LEFT JOIN participants AS participant ON participant.roster_id = roster.id
+    WHERE roster.id = sqlc.arg(roster_id)
+        AND roster.tournament_id = sqlc.arg(tournament_id)
+        AND roster.revision = sqlc.arg(expected_roster_revision)
+        AND roster.locked_at IS NULL
+        AND roster.execution_started_at IS NULL
+        AND NOT EXISTS (
+            SELECT 1
+            FROM swiss_rounds AS round
+            WHERE round.roster_id = roster.id
+        )
+    GROUP BY roster.id, tournament.planned_roster_size
+), candidates AS MATERIALIZED (
+    SELECT participant.id,
+        participant.seed::BIGINT AS original_seed,
+        scope.planned_roster_size,
+        scope.max_seed,
+        (participant.attendance <> 'withdrawn')::BOOLEAN AS was_active,
+        ROW_NUMBER() OVER (
+            PARTITION BY participant.seed::BIGINT % scope.planned_roster_size
+            ORDER BY participant.seed, participant.id
+        ) AS seat_sequence
+    FROM participants AS participant
+    JOIN scope ON scope.roster_id = participant.roster_id
+    WHERE participant.attendance <> 'withdrawn'
+        OR participant.seed <= scope.planned_roster_size
+), parked_seeds AS MATERIALIZED (
+    SELECT candidates.id,
+        candidates.was_active,
+        candidates.original_seed + candidates.planned_roster_size * (
+            (GREATEST(candidates.max_seed, candidates.planned_roster_size) - candidates.original_seed)
+                / candidates.planned_roster_size
+                + candidates.seat_sequence
+        ) AS parked_seed
+    FROM candidates
+), updated AS (
+    UPDATE participants AS participant
+    SET seed = parked_seeds.parked_seed::INTEGER,
+        attendance = 'withdrawn',
+        updated_at = sqlc.arg(updated_at)
+    FROM parked_seeds
+    WHERE participant.id = parked_seeds.id
+        AND parked_seeds.parked_seed > 0
+        AND parked_seeds.parked_seed <= 2147483647
+    RETURNING participant.id
+)
+SELECT (
+        SELECT COUNT(*)::BIGINT
+        FROM candidates
+        WHERE candidates.was_active
+    ) AS active_candidate_count,
+    (SELECT COUNT(*)::BIGINT FROM candidates) AS candidate_count,
+    (SELECT COUNT(*)::BIGINT FROM updated) AS parked_count;
+
+-- Release stale tournament reservations for participants omitted from the
+-- replacement. Roster changes are allowed only while the roster is unlocked.
+-- name: ReleaseTournamentAdminRosterReservations :execrows
+DELETE FROM participant_reservations AS reservation
 USING rosters AS roster
-WHERE participant.roster_id = roster.id
-    AND roster.id = sqlc.arg(roster_id)
+WHERE roster.id = sqlc.arg(roster_id)
     AND roster.tournament_id = sqlc.arg(tournament_id)
     AND roster.revision = sqlc.arg(expected_roster_revision)
     AND roster.locked_at IS NULL
     AND roster.execution_started_at IS NULL
+    AND reservation.tournament_id = roster.tournament_id
+    AND NOT (reservation.player_id = ANY(sqlc.arg(keep_player_ids)::UUID[]))
     AND NOT EXISTS (
         SELECT 1
         FROM swiss_rounds AS round
@@ -118,7 +185,67 @@ RETURNING rosters.id,
     rosters.created_at,
     rosters.updated_at;
 
--- name: InsertTournamentAdminRosterParticipant :one
+-- Existing participant rows are updated in place, including rows previously
+-- withdrawn by an admin. New withdrawn inputs receive an out-of-range seed.
+-- name: UpsertTournamentAdminRosterParticipants :many
+WITH scope AS MATERIALIZED (
+    SELECT roster.id AS roster_id,
+        roster.tournament_id,
+        roster.revision,
+        tournament.planned_roster_size::BIGINT AS planned_roster_size,
+        COALESCE(MAX(participant.seed)::BIGINT, 0) AS max_seed
+    FROM rosters AS roster
+    JOIN tournaments AS tournament ON tournament.id = roster.tournament_id
+    LEFT JOIN participants AS participant ON participant.roster_id = roster.id
+    WHERE roster.id = sqlc.arg(roster_id)
+        AND roster.tournament_id = sqlc.arg(tournament_id)
+        AND roster.revision = sqlc.arg(expected_roster_revision)
+        AND roster.locked_at IS NULL
+        AND roster.execution_started_at IS NULL
+        AND NOT EXISTS (
+            SELECT 1
+            FROM swiss_rounds AS round
+            WHERE round.roster_id = roster.id
+        )
+    GROUP BY roster.id, roster.tournament_id, roster.revision, tournament.planned_roster_size
+), requested AS MATERIALIZED (
+    SELECT input.participant_id,
+        input.player_id,
+        input.seed::BIGINT AS requested_seed,
+        input.attendance,
+        scope.roster_id,
+        scope.tournament_id,
+        scope.planned_roster_size,
+        scope.max_seed,
+        ROW_NUMBER() OVER (
+            PARTITION BY input.seed::BIGINT % scope.planned_roster_size
+            ORDER BY input.seed, input.player_id
+        ) AS seat_sequence
+    FROM ROWS FROM (
+        UNNEST(sqlc.arg(participant_ids)::UUID[]),
+        UNNEST(sqlc.arg(player_ids)::UUID[]),
+        UNNEST(sqlc.arg(seeds)::INTEGER[]),
+        UNNEST(sqlc.arg(attendances)::VARCHAR[])
+    ) AS input(participant_id, player_id, seed, attendance)
+    CROSS JOIN scope
+), desired AS MATERIALIZED (
+    SELECT requested.participant_id,
+        requested.player_id,
+        requested.roster_id,
+        requested.tournament_id,
+        requested.requested_seed,
+        requested.attendance,
+        CASE
+            WHEN requested.attendance = 'withdrawn' THEN requested.requested_seed
+                + requested.planned_roster_size * (
+                    (GREATEST(requested.max_seed, requested.planned_roster_size) - requested.requested_seed)
+                        / requested.planned_roster_size
+                        + requested.seat_sequence
+                )
+            ELSE requested.requested_seed
+        END AS stored_seed
+    FROM requested
+)
 INSERT INTO participants (
     id,
     roster_id,
@@ -128,33 +255,30 @@ INSERT INTO participants (
     created_at,
     updated_at
 )
-SELECT sqlc.arg(id)::uuid AS participant_id,
-    roster.id AS roster_id,
-    player.id AS player_id,
-    sqlc.arg(seed),
-    sqlc.arg(attendance),
+SELECT desired.participant_id,
+    desired.roster_id,
+    desired.player_id,
+    desired.stored_seed::INTEGER,
+    desired.attendance,
     sqlc.arg(created_at),
     sqlc.arg(created_at)
-FROM rosters AS roster
+FROM desired
 JOIN players AS player
-    ON player.id = sqlc.arg(player_id)
+    ON player.id = desired.player_id
     AND player.deleted_at IS NULL
-WHERE roster.id = sqlc.arg(roster_id)
-    AND roster.tournament_id = sqlc.arg(tournament_id)
-    AND roster.revision = sqlc.arg(expected_roster_revision)
-    AND roster.locked_at IS NULL
-    AND roster.execution_started_at IS NULL
-    AND NOT EXISTS (
-        SELECT 1
-        FROM swiss_rounds AS round
-        WHERE round.roster_id = roster.id
-    )
+WHERE desired.stored_seed > 0
+    AND desired.stored_seed <= 2147483647
     AND NOT EXISTS (
         SELECT 1
         FROM participant_reservations AS reservation
         WHERE reservation.player_id = player.id
-            AND reservation.tournament_id <> roster.tournament_id
+            AND reservation.tournament_id <> desired.tournament_id
     )
+ORDER BY desired.requested_seed, desired.player_id
+ON CONFLICT ON CONSTRAINT participants_roster_player_key DO UPDATE
+SET seed = EXCLUDED.seed,
+    attendance = EXCLUDED.attendance,
+    updated_at = EXCLUDED.updated_at
 RETURNING participants.id,
     participants.roster_id,
     participants.player_id,
