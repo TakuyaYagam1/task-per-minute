@@ -82,7 +82,7 @@ func testReconnectContinuationIdentityAndCounters(t *testing.T) {
 			resetMigrationTables(ctx, t)
 			t.Cleanup(func() { resetMigrationTables(ctx, t) })
 
-			fixture, sourceID, sourceDeadline, suspendedAt := createCancelledReconnectRoot(ctx, t, 1)
+			fixture, sourceID, sourceDeadline, suspendedAt := createCancelledReconnectRoot(ctx, t, 2)
 			openedAt := suspendedAt.Add(30 * time.Second)
 			input := reconnectContinuationInput{
 				id:                 uuid.New(),
@@ -152,7 +152,7 @@ func testReconnectContinuationIdentityAndCounters(t *testing.T) {
 		resetMigrationTables(ctx, t)
 		t.Cleanup(func() { resetMigrationTables(ctx, t) })
 
-		fixture := createReconnectMigrationFixtureWithSlotLimit(ctx, t, 1)
+		fixture := createReconnectMigrationFixtureWithSlotLimit(ctx, t, 2)
 		participantID := fixture.draft.participantIDs[0]
 		sourceID, _ := disconnectParticipant(
 			ctx, t,
@@ -188,7 +188,7 @@ func testReconnectContinuationIdentityAndCounters(t *testing.T) {
 		resetMigrationTables(ctx, t)
 		t.Cleanup(func() { resetMigrationTables(ctx, t) })
 
-		fixture, sourceID, sourceDeadline, suspendedAt := createCancelledReconnectRoot(ctx, t, 1)
+		fixture, sourceID, sourceDeadline, suspendedAt := createCancelledReconnectRoot(ctx, t, 2)
 		openedAt := suspendedAt.Add(30 * time.Second)
 		err := insertReconnectContinuation(ctx, fixture, reconnectContinuationInput{
 			id:                 uuid.New(),
@@ -212,7 +212,7 @@ func testReconnectContinuationIdentityAndCounters(t *testing.T) {
 		resetMigrationTables(ctx, t)
 		t.Cleanup(func() { resetMigrationTables(ctx, t) })
 
-		fixture, sourceID, sourceDeadline, suspendedAt := createCancelledReconnectRoot(ctx, t, 1)
+		fixture, sourceID, sourceDeadline, suspendedAt := createCancelledReconnectRoot(ctx, t, 2)
 		openedAt := suspendedAt.Add(30 * time.Second)
 		err := insertReconnectContinuation(ctx, fixture, reconnectContinuationInput{
 			id:                 uuid.New(),
@@ -236,7 +236,7 @@ func testReconnectContinuationIdentityAndCounters(t *testing.T) {
 		resetMigrationTables(ctx, t)
 		t.Cleanup(func() { resetMigrationTables(ctx, t) })
 
-		fixture := createReconnectMigrationFixtureWithSlotLimit(ctx, t, 1)
+		fixture := createReconnectMigrationFixtureWithSlotLimit(ctx, t, 2)
 		participantID := fixture.draft.participantIDs[0]
 		sourceID, sourceDeadline := disconnectParticipant(
 			ctx, t,
@@ -270,7 +270,7 @@ func testReconnectContinuationIdentityAndCounters(t *testing.T) {
 		resetMigrationTables(ctx, t)
 		t.Cleanup(func() { resetMigrationTables(ctx, t) })
 
-		fixture := createReconnectMigrationFixtureWithSlotLimit(ctx, t, 1)
+		fixture := createReconnectMigrationFixtureWithSlotLimit(ctx, t, 2)
 		participantID := fixture.draft.participantIDs[0]
 		sourceID, sourceDeadline := disconnectParticipant(
 			ctx, t,

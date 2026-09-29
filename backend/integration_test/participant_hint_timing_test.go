@@ -225,7 +225,7 @@ func prepareParticipantHintTimingContent(ctx context.Context, t testing.TB) part
 				title, description, category, difficulty, time_limit, flag,
 				hint_1, hint_2, hint_3, source_file_url, kind
 			)
-			VALUES ($1, 'participant hint timing Golden fixture', 'web', 'easy', 180, $2,
+			VALUES ($1, 'participant hint timing Golden fixture', 'crypto', 'easy', 180, $2,
 				$3, $4, $5, $6, 'golden')`,
 			title, content.flag, content.hints[0], content.hints[1], content.hints[2], content.sourceURL,
 		)

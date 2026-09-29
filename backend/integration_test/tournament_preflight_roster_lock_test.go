@@ -111,7 +111,7 @@ func preparePreflightCapacityContent(ctx context.Context, t *testing.T, rosterSi
 		{kind: "normal", category: "reverse", count: sharedCount},
 		{kind: "normal", category: "pwn", count: chainSize},
 		{kind: "normal", category: "forensics", count: chainSize},
-		{kind: "golden", category: "misc", count: rosterSize / 2 * chainSize},
+		{kind: "golden", category: "crypto", count: rosterSize / 2 * chainSize},
 	} {
 		for index := range fixture.count {
 			_, err = sharedPool.Exec(ctx, `

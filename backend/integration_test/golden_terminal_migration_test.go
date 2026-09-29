@@ -233,7 +233,7 @@ func TestGoldenTerminalMigrationRejectsMultipleUnresolved(t *testing.T) {
 	defer parallelDatabaseMigrationMu.Unlock()
 	pool, database := testkit.CreateIsolatedDatabase(ctx, t, sharedPool, "golden_terminal_multiple")
 	require.NoError(t, goose.SetDialect("postgres"))
-	require.NoError(t, goose.UpToContext(ctx, database, bootstrap.ResolveMigrationsDir("db/migrations"), 29))
+	require.NoError(t, goose.UpContext(ctx, database, bootstrap.ResolveMigrationsDir("db/migrations")))
 	previousPool := sharedPool
 	sharedPool = pool
 	t.Cleanup(func() { sharedPool = previousPool })

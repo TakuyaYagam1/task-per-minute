@@ -20,7 +20,7 @@ func runReconnectContinuationWaveMembershipFence(t *testing.T) {
 		resetMigrationTables(ctx, t)
 		t.Cleanup(func() { resetMigrationTables(ctx, t) })
 
-		fixture := createReconnectMigrationFixtureWithSlotLimit(ctx, t, 1)
+		fixture := createReconnectMigrationFixtureWithSlotLimit(ctx, t, 2)
 		createdAt := fixture.pausedAt.Add(time.Second)
 		firstWaveID := uuid.New()
 		secondWaveID := uuid.New()
@@ -86,7 +86,7 @@ func runReconnectContinuationWaveMembershipFence(t *testing.T) {
 		resetMigrationTables(ctx, t)
 		t.Cleanup(func() { resetMigrationTables(ctx, t) })
 
-		fixture := createReconnectMigrationFixtureWithSlotLimit(ctx, t, 1)
+		fixture := createReconnectMigrationFixtureWithSlotLimit(ctx, t, 2)
 		firstParticipantID := fixture.draft.participantIDs[0]
 		lateParticipantID := fixture.draft.participantIDs[1]
 		disconnectParticipant(
@@ -141,7 +141,7 @@ func runReconnectContinuationWaveMembershipFence(t *testing.T) {
 		resetMigrationTables(ctx, t)
 		t.Cleanup(func() { resetMigrationTables(ctx, t) })
 
-		fixture := createReconnectMigrationFixtureWithSlotLimit(ctx, t, 1)
+		fixture := createReconnectMigrationFixtureWithSlotLimit(ctx, t, 2)
 		firstParticipantID := fixture.draft.participantIDs[0]
 		lateParticipantID := fixture.draft.participantIDs[1]
 		disconnectParticipant(

@@ -20,7 +20,7 @@ func testReconnectContinuationLifecycle(t *testing.T) {
 		resetMigrationTables(ctx, t)
 		t.Cleanup(func() { resetMigrationTables(ctx, t) })
 
-		fixture, sourceID, sourceDeadline, suspendedAt := createCancelledReconnectRoot(ctx, t, 1)
+		fixture, sourceID, sourceDeadline, suspendedAt := createCancelledReconnectRoot(ctx, t, 2)
 		assertNormalPauseIsSeparateFromGameChain(ctx, t, fixture)
 		participantID := fixture.draft.participantIDs[0]
 		before := loadReconnectIntervalSnapshot(ctx, t, sourceID)
@@ -191,7 +191,7 @@ func testReconnectContinuationLifecycle(t *testing.T) {
 			resetMigrationTables(ctx, t)
 			t.Cleanup(func() { resetMigrationTables(ctx, t) })
 
-			fixture, sourceID, sourceDeadline, suspendedAt := createCancelledReconnectRoot(ctx, t, 1)
+			fixture, sourceID, sourceDeadline, suspendedAt := createCancelledReconnectRoot(ctx, t, 2)
 			openedAt := suspendedAt.Add(30 * time.Second)
 			input := reconnectContinuationInput{
 				id:                 uuid.New(),
@@ -218,7 +218,7 @@ func testReconnectContinuationLifecycle(t *testing.T) {
 		resetMigrationTables(ctx, t)
 		t.Cleanup(func() { resetMigrationTables(ctx, t) })
 
-		fixture := createReconnectMigrationFixtureWithSlotLimit(ctx, t, 1)
+		fixture := createReconnectMigrationFixtureWithSlotLimit(ctx, t, 2)
 		participantID := fixture.draft.participantIDs[0]
 		openedAt := fixture.pausedAt.Add(time.Second)
 		disconnectPresence(ctx, t, fixture, participantID, openedAt)

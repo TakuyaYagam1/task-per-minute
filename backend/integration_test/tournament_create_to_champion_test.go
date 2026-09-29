@@ -410,7 +410,7 @@ func prepareCreateToChampionContentWithCountsAndNormalTimeLimit(
 		var taskVersion int
 		err := sharedPool.QueryRow(ctx, `
 			INSERT INTO tasks (title, description, category, difficulty, time_limit, flag, kind, task_url)
-			VALUES ($1, $2, 'web', 'easy', 180, $3, 'golden', $4)
+			VALUES ($1, $2, 'crypto', 'easy', 180, $3, 'golden', $4)
 			RETURNING id, current_version`, title, description, flag, taskURLValue).Scan(&taskID, &taskVersion)
 		require.NoError(t, err)
 		catalog.flags[taskID] = flag

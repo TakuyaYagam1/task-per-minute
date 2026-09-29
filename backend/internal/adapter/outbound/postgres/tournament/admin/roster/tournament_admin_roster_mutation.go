@@ -54,7 +54,7 @@ func (r *TournamentAdminRosterPostgres) ReplaceRosterParticipants(
 	}
 	if parked.ActiveCandidateCount != int64(len(authority.Roster.Participants)) ||
 		parked.ParkedCount != parked.CandidateCount {
-		return rostercapability.RosterView{}, domain.ErrConflict
+		return rostercapability.RosterView{}, rosterMutationConflict(authority)
 	}
 	_, err = querier.ReleaseTournamentAdminRosterReservations(
 		ctx,
@@ -86,7 +86,7 @@ func (r *TournamentAdminRosterPostgres) ReplaceRosterParticipants(
 		return rostercapability.RosterView{}, tournamentAdminRosterMutationError("ReplaceRoster - upsert", err)
 	}
 	if len(upserted) != len(ordered) {
-		return rostercapability.RosterView{}, domain.ErrConflict
+		return rostercapability.RosterView{}, rosterMutationConflict(authority)
 	}
 	if _, err = querier.AdvanceTournamentAdminRosterRevision(
 		ctx,
@@ -254,6 +254,15 @@ func tournamentAdminRosterMutationError(operation string, err error) error {
 		return domain.WrapError(err, domain.ErrConflict)
 	}
 	return fmt.Errorf("TournamentAdminRosterPostgres - %s: %w", operation, err)
+}
+
+func rosterMutationConflict(authority rostercapability.RosterAuthority) error {
+	return &adminoperation.RevisionConflictError{
+		ExpectedRevision: authority.ProjectionRevision,
+		CurrentRevision:  authority.ProjectionRevision,
+		CurrentState:     authority.TournamentState,
+		Detail:           "roster participants changed or are unavailable",
+	}
 }
 
 func tournamentAdminRosterConstraintConflict(err error) bool {

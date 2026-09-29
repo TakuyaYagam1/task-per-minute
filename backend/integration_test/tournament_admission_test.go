@@ -209,8 +209,12 @@ func TestTournamentAdmissionDuplicateJoinAndCancelAreIdempotent(t *testing.T) {
 
 	participants, err := fixture.roster.ListParticipants(ctx, roster.ID)
 	require.NoError(t, err)
-	require.Len(t, participants, 1)
-	require.Equal(t, domain.AttendanceStateWithdrawn, participants[0].Attendance)
+	require.Empty(t, participants)
+	var storedAttendance domain.AttendanceState
+	require.NoError(t, sharedPool.QueryRow(ctx, `
+		SELECT attendance FROM participants WHERE id = $1`, withdrawn.ParticipantID,
+	).Scan(&storedAttendance))
+	require.Equal(t, domain.AttendanceStateWithdrawn, storedAttendance)
 }
 
 func TestTournamentAdmissionHidesDraftAndRejectsClosedRoster(t *testing.T) {

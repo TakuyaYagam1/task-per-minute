@@ -27,7 +27,7 @@ func TestReconnectContinuationLocks(t *testing.T) {
 			t.Cleanup(func() { resetMigrationTables(ctx, t) })
 
 			fixture, sourceID, sourceDeadline, suspendedAt :=
-				createCancelledReconnectRoot(ctx, t, 1)
+				createCancelledReconnectRoot(ctx, t, 2)
 			participantID := fixture.draft.participantIDs[0]
 			holder, err := sharedPool.Begin(ctx)
 			require.NoError(t, err)
@@ -90,7 +90,7 @@ func TestReconnectContinuationDeadlockOrder(t *testing.T) {
 		resetMigrationTables(ctx, t)
 		t.Cleanup(func() { resetMigrationTables(ctx, t) })
 
-		fixture := createReconnectMigrationFixtureWithSlotLimit(ctx, t, 1)
+		fixture := createReconnectMigrationFixtureWithSlotLimit(ctx, t, 2)
 		participantID := fixture.draft.participantIDs[0]
 		sourceID, _ := disconnectParticipant(
 			ctx, t,
@@ -178,7 +178,7 @@ func TestReconnectContinuationDeadlockOrder(t *testing.T) {
 		t.Cleanup(func() { resetMigrationTables(ctx, t) })
 
 		fixture, sourceID, sourceDeadline, suspendedAt :=
-			createCancelledReconnectRoot(ctx, t, 1)
+			createCancelledReconnectRoot(ctx, t, 2)
 		participantID := fixture.draft.participantIDs[0]
 		openedAt := suspendedAt.Add(30 * time.Second)
 
@@ -242,7 +242,7 @@ func TestReconnectContinuationDeadlockOrder(t *testing.T) {
 		resetMigrationTables(ctx, t)
 		t.Cleanup(func() { resetMigrationTables(ctx, t) })
 
-		fixture := createReconnectMigrationFixtureWithSlotLimit(ctx, t, 1)
+		fixture := createReconnectMigrationFixtureWithSlotLimit(ctx, t, 2)
 		participantID := fixture.draft.participantIDs[0]
 		sourceID, _ := disconnectParticipant(
 			ctx, t,
@@ -329,7 +329,7 @@ func TestReconnectContinuationDeadlockOrder(t *testing.T) {
 		t.Cleanup(func() { resetMigrationTables(ctx, t) })
 
 		fixture, sourceID, sourceDeadline, suspendedAt :=
-			createCancelledReconnectRoot(ctx, t, 1)
+			createCancelledReconnectRoot(ctx, t, 2)
 		participantID := fixture.draft.participantIDs[0]
 		openedAt := suspendedAt.Add(30 * time.Second)
 		continuationID := uuid.New()
@@ -385,7 +385,7 @@ func TestReconnectContinuationDeadlockOrder(t *testing.T) {
 		t.Cleanup(func() { resetMigrationTables(ctx, t) })
 
 		fixture, sourceID, sourceDeadline, suspendedAt :=
-			createCancelledReconnectRoot(ctx, t, 1)
+			createCancelledReconnectRoot(ctx, t, 2)
 		participantID := fixture.draft.participantIDs[0]
 		waveID := createCoveringWave(ctx, t, fixture, fixture.pausedAt)
 		waveStartedAt := suspendedAt.Add(30 * time.Second)
@@ -439,7 +439,7 @@ func TestReconnectContinuationDeadlockOrder(t *testing.T) {
 		t.Cleanup(func() { resetMigrationTables(ctx, t) })
 
 		fixture, sourceID, sourceDeadline, suspendedAt :=
-			createCancelledReconnectRoot(ctx, t, 1)
+			createCancelledReconnectRoot(ctx, t, 2)
 		participantID := fixture.draft.participantIDs[0]
 		openedAt := suspendedAt.Add(30 * time.Second)
 		continuationTx, err := sharedPool.Begin(ctx)

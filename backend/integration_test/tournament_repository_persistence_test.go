@@ -99,9 +99,9 @@ func TestTournamentRepository(t *testing.T) {
 
 	participants, err := fixture.roster.ListParticipants(ctx, firstRoster.ID)
 	require.NoError(t, err)
-	require.Len(t, participants, 3)
+	require.Len(t, participants, 2)
 	require.Equal(t, firstTournament.ID, participants[0].TournamentID)
-	require.Equal(t, []int{1, 2, 3}, []int{participants[0].Seed, participants[1].Seed, participants[2].Seed})
+	require.Equal(t, []int{1, 2}, []int{participants[0].Seed, participants[1].Seed})
 	firstRoster, err = fixture.roster.GetRoster(ctx, firstRoster.ID)
 	require.NoError(t, err)
 	secondRoster, err = fixture.roster.GetRoster(ctx, secondRoster.ID)

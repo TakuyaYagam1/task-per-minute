@@ -19,7 +19,7 @@ func testReconnectContinuationPauseCommit(t *testing.T) {
 		resetMigrationTables(ctx, t)
 		t.Cleanup(func() { resetMigrationTables(ctx, t) })
 
-		fixture := createReconnectMigrationFixtureWithSlotLimit(ctx, t, 1)
+		fixture := createReconnectMigrationFixtureWithSlotLimit(ctx, t, 2)
 		disconnectParticipant(
 			ctx, t,
 			fixture,
@@ -54,7 +54,7 @@ func testReconnectContinuationPauseCommit(t *testing.T) {
 		resetMigrationTables(ctx, t)
 		t.Cleanup(func() { resetMigrationTables(ctx, t) })
 
-		fixture := createReconnectMigrationFixtureWithSlotLimit(ctx, t, 1)
+		fixture := createReconnectMigrationFixtureWithSlotLimit(ctx, t, 2)
 		participantID := fixture.draft.participantIDs[0]
 		sourceID, _ := disconnectParticipant(
 			ctx, t,
@@ -100,7 +100,7 @@ func testReconnectContinuationPauseCommit(t *testing.T) {
 		resetMigrationTables(ctx, t)
 		t.Cleanup(func() { resetMigrationTables(ctx, t) })
 
-		fixture := createReconnectMigrationFixtureWithSlotLimit(ctx, t, 1)
+		fixture := createReconnectMigrationFixtureWithSlotLimit(ctx, t, 2)
 		participantID := fixture.draft.participantIDs[0]
 		openedAt := fixture.pausedAt.Add(time.Second)
 		suspendedAt := fixture.pausedAt.Add(20 * time.Second)
@@ -150,7 +150,7 @@ func testReconnectContinuationPauseCommit(t *testing.T) {
 		resetMigrationTables(ctx, t)
 		t.Cleanup(func() { resetMigrationTables(ctx, t) })
 
-		fixture := createReconnectMigrationFixtureWithSlotLimit(ctx, t, 1)
+		fixture := createReconnectMigrationFixtureWithSlotLimit(ctx, t, 2)
 		participantID := fixture.draft.participantIDs[0]
 		suspendedAt := fixture.pausedAt.Add(20 * time.Second)
 		sourceID, sourceDeadline := disconnectParticipant(
@@ -186,7 +186,7 @@ func testReconnectContinuationPauseCommit(t *testing.T) {
 		resetMigrationTables(ctx, t)
 		t.Cleanup(func() { resetMigrationTables(ctx, t) })
 
-		fixture := createReconnectMigrationFixtureWithSlotLimit(ctx, t, 1)
+		fixture := createReconnectMigrationFixtureWithSlotLimit(ctx, t, 2)
 		participantID := fixture.draft.participantIDs[0]
 		waveID := createCoveringWave(ctx, t, fixture, fixture.pausedAt)
 		suspendedAt := fixture.pausedAt.Add(20 * time.Second)

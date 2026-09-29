@@ -24,9 +24,9 @@ func TestRosterLockReusesOnlyOwnedReservations(t *testing.T) {
 	t.Run("reuses same tournament reservations and adds missing player", func(t *testing.T) {
 		require.NoError(t, truncateTables(ctx, pool))
 
-		tournamentID, rosterID, playerIDs := createReservationLockFixture(ctx, t, pool)
+		tournamentID, rosterID, playerIDs, rosterCreatedAt := createReservationLockFixture(ctx, t, pool)
 
-		acquiredAt := time.Date(2026, time.September, 27, 12, 0, 0, 0, time.UTC)
+		acquiredAt := rosterCreatedAt.UTC().Add(time.Second)
 		updatedAt := acquiredAt.Add(time.Second)
 		for _, playerID := range playerIDs[:3] {
 			insertTournamentReservation(ctx, t, pool, playerID, tournamentID, 7, acquiredAt, updatedAt)
@@ -58,10 +58,10 @@ func TestRosterLockReusesOnlyOwnedReservations(t *testing.T) {
 	t.Run("foreign reservation aborts and preserves all original rows", func(t *testing.T) {
 		require.NoError(t, truncateTables(ctx, pool))
 
-		tournamentID, rosterID, playerIDs := createReservationLockFixture(ctx, t, pool)
+		tournamentID, rosterID, playerIDs, rosterCreatedAt := createReservationLockFixture(ctx, t, pool)
 		foreignTournamentID := createReservationLockTournament(ctx, t, pool)
 
-		acquiredAt := time.Date(2026, time.September, 27, 13, 0, 0, 0, time.UTC)
+		acquiredAt := rosterCreatedAt.UTC().Add(time.Second)
 		updatedAt := acquiredAt.Add(time.Second)
 		for _, playerID := range playerIDs[:2] {
 			insertTournamentReservation(ctx, t, pool, playerID, tournamentID, 7, acquiredAt, updatedAt)
@@ -113,14 +113,15 @@ func createReservationLockFixture(
 	ctx context.Context,
 	tb testing.TB,
 	pool *pgxpool.Pool,
-) (uuid.UUID, uuid.UUID, []uuid.UUID) {
+) (uuid.UUID, uuid.UUID, []uuid.UUID, time.Time) {
 	tb.Helper()
 	tournamentID := createReservationLockTournament(ctx, tb, pool)
 	var rosterID uuid.UUID
+	var rosterCreatedAt time.Time
 	err := pool.QueryRow(ctx, `
 		INSERT INTO rosters (tournament_id)
 		VALUES ($1)
-		RETURNING id`, tournamentID).Scan(&rosterID)
+		RETURNING id, created_at`, tournamentID).Scan(&rosterID, &rosterCreatedAt)
 	require.NoError(tb, err)
 
 	playerIDs := make([]uuid.UUID, 4)
@@ -135,7 +136,7 @@ func createReservationLockFixture(
 			VALUES ($1, $2, $3, 'checked_in')`, rosterID, playerIDs[index], index+1)
 		require.NoError(tb, err)
 	}
-	return tournamentID, rosterID, playerIDs
+	return tournamentID, rosterID, playerIDs, rosterCreatedAt
 }
 
 func createReservationLockTournament(ctx context.Context, tb testing.TB, pool *pgxpool.Pool) uuid.UUID {

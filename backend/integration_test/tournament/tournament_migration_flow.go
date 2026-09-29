@@ -90,10 +90,10 @@ func RunTournamentMigration(t *testing.T, pool *pgxpool.Pool) {
 		VALUES (0)`)
 	require.Error(t, err)
 
-	assertSingleActiveSlot(ctx, t, pool, createdAt, startedAt, finishedAt)
+	assertConcurrentActiveTournaments(ctx, t, pool, createdAt, startedAt, finishedAt)
 }
 
-func assertSingleActiveSlot(
+func assertConcurrentActiveTournaments(
 	ctx context.Context, t *testing.T, pool *pgxpool.Pool,
 	createdAt time.Time,
 	startedAt time.Time,
@@ -132,18 +132,16 @@ func assertSingleActiveSlot(
 	}
 	close(start)
 
-	var activeID uuid.UUID
-	failures := 0
+	activeIDs := make([]uuid.UUID, 0, len(states))
 	for range states {
 		result := <-results
-		if result.err != nil {
-			failures++
-			continue
-		}
-		activeID = result.id
+		require.NoError(t, result.err)
+		activeIDs = append(activeIDs, result.id)
 	}
-	require.NotEqual(t, uuid.Nil, activeID)
-	require.Equal(t, 1, failures)
+	require.Len(t, activeIDs, len(states))
+	require.NotEqual(t, uuid.Nil, activeIDs[0])
+	require.NotEqual(t, uuid.Nil, activeIDs[1])
+	require.NotEqual(t, activeIDs[0], activeIDs[1])
 
 	var activeCount int
 	err := pool.QueryRow(ctx, `
@@ -151,7 +149,7 @@ func assertSingleActiveSlot(
 		FROM tournaments
 		WHERE state IN ('swiss', 'golden', 'playoffs', 'technical_pause')`).Scan(&activeCount)
 	require.NoError(t, err)
-	require.Equal(t, 1, activeCount)
+	require.Equal(t, 2, activeCount)
 
 	_, err = pool.Exec(ctx, `
 		UPDATE tournaments
@@ -160,7 +158,7 @@ func assertSingleActiveSlot(
 			revision = revision + 1,
 			updated_at = $2,
 			finished_at = $2
-		WHERE id = $1`, activeID, finishedAt)
+		WHERE id = $1`, activeIDs[0], finishedAt)
 	require.NoError(t, err)
 
 	_, err = pool.Exec(ctx, `

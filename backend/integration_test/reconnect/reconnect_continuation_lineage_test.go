@@ -44,7 +44,7 @@ func testReconnectContinuationDeadlineAndLineage(t *testing.T) {
 			resetMigrationTables(ctx, t)
 			t.Cleanup(func() { resetMigrationTables(ctx, t) })
 
-			fixture, sourceID, sourceDeadline, suspendedAt := createCancelledReconnectRoot(ctx, t, 1)
+			fixture, sourceID, sourceDeadline, suspendedAt := createCancelledReconnectRoot(ctx, t, 2)
 			openedAt := testCase.openedAt(suspendedAt)
 			err := insertReconnectContinuation(ctx, fixture, reconnectContinuationInput{
 				id:                 uuid.New(),
@@ -69,7 +69,7 @@ func testReconnectContinuationDeadlineAndLineage(t *testing.T) {
 		resetMigrationTables(ctx, t)
 		t.Cleanup(func() { resetMigrationTables(ctx, t) })
 
-		fixture, _, sourceDeadline, suspendedAt := createCancelledReconnectRoot(ctx, t, 1)
+		fixture, _, sourceDeadline, suspendedAt := createCancelledReconnectRoot(ctx, t, 2)
 		openedAt := suspendedAt.Add(30 * time.Second)
 		missingID := uuid.New()
 		err := insertReconnectContinuation(ctx, fixture, reconnectContinuationInput{
@@ -113,7 +113,7 @@ func testReconnectContinuationDeadlineAndLineage(t *testing.T) {
 			resetMigrationTables(ctx, t)
 			t.Cleanup(func() { resetMigrationTables(ctx, t) })
 
-			fixture, sourceID, sourceDeadline, suspendedAt := createCancelledReconnectRoot(ctx, t, 1)
+			fixture, sourceID, sourceDeadline, suspendedAt := createCancelledReconnectRoot(ctx, t, 2)
 			openedAt := suspendedAt.Add(30 * time.Second)
 			input := reconnectContinuationInput{
 				id:                 uuid.New(),

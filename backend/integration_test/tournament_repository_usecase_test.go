@@ -208,45 +208,40 @@ func TestTournamentLifecycleUseCase(t *testing.T) {
 	}
 	close(start)
 	concurrent := []startResult{<-results, <-results}
-	var winner, loser startResult
 	for _, result := range concurrent {
-		if result.changed {
-			winner = result
-		} else {
-			loser = result
-		}
+		require.NotNil(t, result.record)
+		require.NoError(t, result.err)
+		require.True(t, result.changed)
 	}
-	require.NotNil(t, winner.record)
-	require.NoError(t, winner.err)
-	require.ErrorIs(t, loser.err, domain.ErrConflict)
-	require.False(t, loser.changed)
+	firstStarted := concurrent[0]
+	secondStarted := concurrent[1]
 
 	retried, changed, err := useCase.Transition(ctx, lifecycleusecase.TournamentLifecycleCommand{
-		TournamentID: winner.id, ExpectedRevision: 3, NextState: domain.TournamentStateSwiss,
+		TournamentID: firstStarted.id, ExpectedRevision: 3, NextState: domain.TournamentStateSwiss,
 	})
 	require.NoError(t, err)
 	require.False(t, changed)
-	require.Equal(t, winner.id, retried.ID)
+	require.Equal(t, firstStarted.id, retried.ID)
 
 	playoffs, changed, err := useCase.Transition(ctx, lifecycleusecase.TournamentLifecycleCommand{
-		TournamentID: winner.id, ExpectedRevision: winner.record.Revision,
+		TournamentID: firstStarted.id, ExpectedRevision: firstStarted.record.Revision,
 		NextState: domain.TournamentStatePlayoffs,
 	})
 	require.NoError(t, err)
 	require.True(t, changed)
 	_, changed, err = useCase.Transition(ctx, lifecycleusecase.TournamentLifecycleCommand{
-		TournamentID: winner.id, ExpectedRevision: playoffs.Revision,
+		TournamentID: firstStarted.id, ExpectedRevision: playoffs.Revision,
 		NextState: domain.TournamentStateCompleted,
 	})
 	require.NoError(t, err)
 	require.True(t, changed)
 
 	started, changed, err := useCase.Transition(ctx, lifecycleusecase.TournamentLifecycleCommand{
-		TournamentID: loser.id, ExpectedRevision: 3, NextState: domain.TournamentStateSwiss,
+		TournamentID: secondStarted.id, ExpectedRevision: 3, NextState: domain.TournamentStateSwiss,
 	})
 	require.NoError(t, err)
-	require.True(t, changed)
-	require.Equal(t, loser.id, started.ID)
+	require.False(t, changed)
+	require.Equal(t, secondStarted.id, started.ID)
 }
 
 func TestTournamentAttendanceCapsConcurrentInvitations(t *testing.T) {
