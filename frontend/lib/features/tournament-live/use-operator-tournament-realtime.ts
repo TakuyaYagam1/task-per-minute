@@ -35,8 +35,7 @@ export type OperatorTournamentRealtime = Readonly<{
   retry: () => void;
 }>;
 
-const MAX_RECONNECTS = 3;
-const RECONNECT_DELAYS_MS = [250, 500, 1_000] as const;
+const RECONNECT_DELAYS_MS = [250, 500, 1_000, 2_000, 5_000] as const;
 const TERMINAL_CLOSE_CODES = new Set([1008, 4001, 4003, 4401, 4403]);
 
 const isPausedState = (state: OperatorRealtimeState | null): boolean =>
@@ -45,7 +44,6 @@ const isPausedState = (state: OperatorRealtimeState | null): boolean =>
 export const useOperatorTournamentRealtime = ({
   enabled,
   recovery,
-  recoveryReceivedAtMonotonicMs,
   tournamentId,
 }: UseOperatorTournamentRealtimeInput): OperatorTournamentRealtime => {
   const [state, setState] = useState<OperatorRealtimeState | null>(null);
@@ -59,7 +57,6 @@ export const useOperatorTournamentRealtime = ({
   const confirmedResumeIdRef = useRef<string | null>(null);
   const activeTournamentRef = useRef<string | null>(null);
   const connectRef = useRef<(() => void) | null>(null);
-  const stateRecoveryRef = useRef<RoleAwareRecoveryState | null>(null);
   stateRef.current = state;
   const hasRecovery = recovery !== null;
 
@@ -82,7 +79,6 @@ export const useOperatorTournamentRealtime = ({
     terminalGenerationRef.current = null;
     clearSocket();
     stateRef.current = null;
-    stateRecoveryRef.current = null;
     setState(null);
 
     if (activeTournamentRef.current !== tournamentId) {
@@ -110,12 +106,11 @@ export const useOperatorTournamentRealtime = ({
       ) {
         return;
       }
-      if (reconnectCountRef.current >= MAX_RECONNECTS) {
-        setStatus("error");
-        return;
-      }
-      const delay = RECONNECT_DELAYS_MS[reconnectCountRef.current] ?? 1_000;
-      reconnectCountRef.current += 1;
+      const delay = RECONNECT_DELAYS_MS[reconnectCountRef.current] ?? 5_000;
+      reconnectCountRef.current = Math.min(
+        reconnectCountRef.current + 1,
+        RECONNECT_DELAYS_MS.length,
+      );
       setStatus("reconnecting");
       reconnectTimerRef.current = setTimeout(() => {
         reconnectTimerRef.current = null;
@@ -168,7 +163,6 @@ export const useOperatorTournamentRealtime = ({
             const nextState = openOperatorRealtime(value, tournamentId);
             confirmedResumeIdRef.current = nextState.resumeId;
             stateRef.current = nextState;
-            stateRecoveryRef.current = recovery;
             receivedInitialFrame = true;
             reconnectCountRef.current = 0;
             setState(nextState);
@@ -183,7 +177,6 @@ export const useOperatorTournamentRealtime = ({
           if (applied.outcome === "applied") {
             confirmedResumeIdRef.current = applied.state.resumeId;
             stateRef.current = applied.state;
-            stateRecoveryRef.current = recovery;
             setState(applied.state);
             setStatus(isPausedState(applied.state) ? "paused" : "connected");
           }
@@ -225,19 +218,22 @@ export const useOperatorTournamentRealtime = ({
       connectRef.current = null;
       clearSocket();
     };
-  }, [clearSocket, enabled, hasRecovery, recovery, recoveryReceivedAtMonotonicMs, tournamentId]);
+  }, [clearSocket, enabled, hasRecovery, tournamentId]);
 
   const retry = useCallback(() => {
     reconnectCountRef.current = 0;
     terminalGenerationRef.current = null;
     stateRef.current = null;
-    stateRecoveryRef.current = null;
     setState(null);
     setStatus("connecting");
     connectRef.current?.();
   }, []);
 
-  const exposedState = recovery !== null && stateRecoveryRef.current === recovery ? state : null;
+  const exposedState = recovery !== null &&
+    state?.projectionRevision !== undefined &&
+    state.projectionRevision >= recovery.cursor.projection_revision
+    ? state
+    : null;
 
   return {
     state: exposedState,

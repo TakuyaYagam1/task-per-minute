@@ -9,6 +9,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/http/middleware"
 	"github.com/TakuyaYagam1/task-per-minute/internal/observability"
 	usecase "github.com/TakuyaYagam1/task-per-minute/internal/port/inbound"
+	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/notification"
 )
 
 var _ api.ServerInterface = (*Server)(nil)
@@ -27,6 +28,7 @@ type HealthChecks struct {
 // The bootstrap package constructs it from concrete use case implementations.
 type Dependencies struct {
 	Players                              PlayerService
+	PlayerNotifications                  notification.PlayerNotifications
 	AdminAuth                            AdminAuthService
 	Tasks                                AdminTaskService
 	AdminPlayers                         AdminPlayerService
@@ -61,6 +63,7 @@ type Server struct {
 	*tournamentController
 
 	players                              PlayerService
+	playerNotifications                  notification.PlayerNotifications
 	adminAuth                            AdminAuthService
 	tasks                                AdminTaskService
 	adminPlayers                         AdminPlayerService
@@ -99,6 +102,7 @@ func New(deps Dependencies) *Server {
 		publicTournamentCatalog:              deps.PublicTournamentCatalog,
 		tournamentAdmission:                  deps.TournamentAdmission,
 		players:                              deps.Players,
+		playerNotifications:                  deps.PlayerNotifications,
 		adminAuth:                            deps.AdminAuth,
 		tasks:                                deps.Tasks,
 		adminPlayers:                         deps.AdminPlayers,

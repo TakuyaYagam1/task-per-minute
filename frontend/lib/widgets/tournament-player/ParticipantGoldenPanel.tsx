@@ -276,7 +276,11 @@ export const ParticipantGoldenPanel = ({
             <div><dt>Лимит</dt><dd>{snapshot.task.time_limit_seconds} с</dd></div>
           </dl>
           <div className={styles.taskLinks}>
-            {taskHref !== null && <a href={taskHref}>Открыть задание дополнительного отбора</a>}
+            {taskHref !== null && (
+              <a href={taskHref} rel="noopener noreferrer" target="_blank">
+                Открыть задание дополнительного отбора
+              </a>
+            )}
             {snapshot.task.source_file_available && (
               <Button
                 disabled={sourceFile.status === "loading"}

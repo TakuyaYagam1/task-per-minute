@@ -1,0 +1,56 @@
+/api/v1/players/notifications:
+  get:
+    operationId: listPlayerNotifications
+    tags: [player]
+    summary: List active notifications for the current player
+    description: >
+      Returns notifications created during the last 30 minutes. The player is
+      resolved from the authenticated HttpOnly session cookie. Expired
+      notifications are omitted automatically.
+    security:
+      - PlayerSessionAuth: []
+    responses:
+      '200':
+        description: Up to 100 active player notifications, newest first.
+        content:
+          application/json:
+            schema:
+              $ref: '../components/schemas.yml#/PlayerNotificationsResponse'
+      '401':
+        description: Missing or invalid player session.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      default:
+        $ref: '../components/responses.yml#/UnexpectedServerProblem'
+
+/api/v1/players/notifications/events:
+  get:
+    operationId: streamPlayerNotifications
+    tags: [player]
+    summary: Stream player notification invalidations
+    description: |
+      Player-session-authenticated Server-Sent Events stream with a maximum
+      five-minute lifetime. It emits `ready` on connection and `changed` after
+      a notification is inserted. Both events
+      have an empty object payload. Clients reload the active notification
+      snapshot from GET /api/v1/players/notifications after either event. The
+      stream contains no player identifier or notification content.
+    security:
+      - PlayerSessionAuth: []
+    responses:
+      '200':
+        description: SSE invalidation stream with heartbeat comments.
+        content:
+          text/event-stream:
+            schema:
+              type: string
+      '401':
+        description: Missing or invalid player session.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      default:
+        $ref: '../components/responses.yml#/UnexpectedServerProblem'

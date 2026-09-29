@@ -1727,6 +1727,16 @@ type PlayerLeaderboardOverride struct {
 	UpdatedAt          pgtype.Timestamptz
 }
 
+type PlayerNotification struct {
+	ID               uuid.UUID
+	PlayerID         uuid.UUID
+	NotificationType string
+	TournamentID     uuid.UUID
+	TournamentName   string
+	CreatedAt        pgtype.Timestamptz
+	ExpiresAt        pgtype.Timestamptz
+}
+
 type PresenceState struct {
 	ID             uuid.UUID
 	TournamentID   uuid.UUID

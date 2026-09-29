@@ -118,11 +118,15 @@ func validateReconnectCounterSet(authority ReconnectAuthority) (map[uuid.UUID]pa
 
 func validateReconnectCounter(authority ReconnectAuthority, counter pause.PauseReconnectCounter, seen map[uuid.UUID]pause.PauseReconnectCounter) error {
 	if counter.Validate() != nil || counter.PauseID != authority.PauseID || counter.RosterID != authority.Scope.RosterID ||
-		counter.Limit != domain.ReconnectCycleLimit || !reconnectSeriesHasParticipant(authority.Series, counter.ParticipantID) {
+		!validGameReconnectCycleLimit(counter.Limit) || !reconnectSeriesHasParticipant(authority.Series, counter.ParticipantID) {
 		return reconnectError("invalid reconnect counter")
 	}
 	if _, exists := seen[counter.ParticipantID]; exists {
 		return reconnectError("duplicate reconnect counter")
 	}
 	return nil
+}
+
+func validGameReconnectCycleLimit(limit int) bool {
+	return limit == domain.ReconnectCycleLimit || limit == domain.GameReconnectCycleLimit
 }

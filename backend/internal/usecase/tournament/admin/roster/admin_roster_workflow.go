@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
+	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/notification"
 	tournamentpreflight "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/preflight"
 )
 
@@ -16,11 +17,13 @@ type RosterWorkflow struct {
 	transactions  RosterTransactionManager
 	repository    RosterWorkflowRepository
 	runtimeHealth PreflightRuntimeHealthSource
+	removals      notification.RemovalRecorder
 }
 
 func NewRosterWorkflow(deps RosterWorkflowDependencies) *RosterWorkflow {
 	return &RosterWorkflow{
 		transactions: deps.Transactions, repository: deps.Repository, runtimeHealth: deps.RuntimeHealth,
+		removals: deps.RemovalRecorder,
 	}
 }
 
@@ -59,7 +62,15 @@ func (w *RosterWorkflow) ReplaceRoster(
 			if err != nil {
 				return RosterView{}, err
 			}
-			return w.repository.ReplaceRosterParticipants(txCtx, authority, command.Participants, executedAt)
+			participants := preserveRosterAttendance(authority.Roster.Participants, command.Participants)
+			view, err := w.repository.ReplaceRosterParticipants(txCtx, authority, participants, executedAt)
+			if err != nil {
+				return RosterView{}, err
+			}
+			if err := w.recordRemovedPlayers(txCtx, command.TournamentID, authority.Roster.Participants, participants); err != nil {
+				return RosterView{}, err
+			}
+			return view, nil
 		})
 }
 
@@ -292,6 +303,54 @@ func (w *RosterWorkflow) lockAuthority(ctx context.Context, tournamentID uuid.UU
 
 func (w *RosterWorkflow) available() bool {
 	return w != nil && w.transactions != nil && w.repository != nil
+}
+
+func preserveRosterAttendance(
+	current []RosterParticipantView,
+	desired []RosterParticipantInput,
+) []RosterParticipantInput {
+	currentAttendance := make(map[uuid.UUID]domain.AttendanceState, len(current))
+	for _, participant := range current {
+		if participant.PlayerID == uuid.Nil || participant.Attendance == domain.AttendanceStateWithdrawn {
+			continue
+		}
+		currentAttendance[participant.PlayerID] = participant.Attendance
+	}
+
+	result := append([]RosterParticipantInput(nil), desired...)
+	for index := range result {
+		if attendance, exists := currentAttendance[result[index].PlayerID]; exists {
+			result[index].Attendance = attendance
+		}
+	}
+	return result
+}
+
+func (w *RosterWorkflow) recordRemovedPlayers(
+	ctx context.Context,
+	tournamentID uuid.UUID,
+	current []RosterParticipantView,
+	desired []RosterParticipantInput,
+) error {
+	retained := make(map[uuid.UUID]struct{}, len(desired))
+	for _, participant := range desired {
+		retained[participant.PlayerID] = struct{}{}
+	}
+	for _, participant := range current {
+		if participant.Attendance == domain.AttendanceStateWithdrawn || participant.PlayerID == uuid.Nil {
+			continue
+		}
+		if _, exists := retained[participant.PlayerID]; exists {
+			continue
+		}
+		if w.removals == nil {
+			return fmt.Errorf("RosterWorkflow - ReplaceRoster - player removal recorder unavailable")
+		}
+		if err := w.removals.RecordTournamentPlayerRemoved(ctx, participant.PlayerID, tournamentID); err != nil {
+			return fmt.Errorf("RosterWorkflow - ReplaceRoster - record player removal: %w", err)
+		}
+	}
+	return nil
 }
 
 func rosterConflict(expected int64, authority RosterAuthority) error {

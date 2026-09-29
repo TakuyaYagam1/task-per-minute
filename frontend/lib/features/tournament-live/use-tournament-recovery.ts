@@ -79,7 +79,11 @@ export const useTournamentRecovery = (
     setView((current) => ({
       ...current,
       error: null,
-      status: previous === null ? "connecting" : "recovering",
+      status: previous === null
+        ? "connecting"
+        : current.status === "live"
+          ? "live"
+          : "recovering",
     }));
 
     const accept = async (fresh: boolean): Promise<boolean> => {

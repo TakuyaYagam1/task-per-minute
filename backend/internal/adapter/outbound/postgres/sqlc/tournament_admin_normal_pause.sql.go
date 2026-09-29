@@ -14,13 +14,18 @@ import (
 
 const advanceTournamentAdminNormalPauseCounterCAS = `-- name: AdvanceTournamentAdminNormalPauseCounterCAS :one
 UPDATE reconnect_slot_counters
-SET slots_used = slots_used + 1, revision = revision + 1,
+SET slot_limit = CASE
+        WHEN slots_used = slot_limit AND slot_limit = 2 THEN 10
+        ELSE slot_limit
+    END,
+    slots_used = slots_used + 1, revision = revision + 1,
     updated_at = $1
 WHERE pause_id = $2
     AND participant_id = $3
     AND revision = $4
     AND slots_used = $5
-    AND slots_used < slot_limit
+    AND ((slot_limit = 2 AND slots_used <= 2)
+        OR (slot_limit = 10 AND slots_used < 10))
 RETURNING participant_id
 `
 

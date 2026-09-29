@@ -73,7 +73,7 @@ func prepareDisconnectMutation(authority ReconnectAuthority, command DisconnectC
 }
 
 func validDisconnectParticipant(authority ReconnectAuthority, presence *pause.PausePresence, counter *pause.PauseReconnectCounter) bool {
-	return presence != nil && counter != nil && counter.PauseID == authority.PauseID && counter.Limit == domain.ReconnectCycleLimit &&
+	return presence != nil && counter != nil && counter.PauseID == authority.PauseID && validGameReconnectCycleLimit(counter.Limit) &&
 		counter.Used >= 0 && counter.Used <= counter.Limit
 }
 
@@ -82,7 +82,10 @@ func buildFreshDisconnect(expectedRevision int64, prepared reconnectDisconnectCo
 		return ReconnectRecord{}, false, err
 	}
 	markReconnectDisconnected(prepared.presence, now)
-	if prepared.counter.Used >= domain.ReconnectCycleLimit {
+	if prepared.counter.Used == domain.ReconnectCycleLimit && prepared.counter.Limit == domain.ReconnectCycleLimit {
+		prepared.counter.Limit = domain.GameReconnectCycleLimit
+	}
+	if prepared.counter.Used >= prepared.counter.Limit {
 		return buildTerminalDisconnect(prepared.authority, command, now)
 	}
 	return buildOpenDisconnect(expectedRevision, prepared, command, now)

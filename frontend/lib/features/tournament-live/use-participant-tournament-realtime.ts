@@ -17,11 +17,12 @@ export type ParticipantRealtimeConnectionStatus =
 type UseParticipantTournamentRealtimeInput = Readonly<{
   enabled: boolean;
   recovery: RoleAwareRecoveryState | null;
-  retry: () => void;
+  retry: () => Promise<boolean> | void;
   tournamentId: string;
 }>;
 
 export type ParticipantTournamentRealtime = Readonly<{
+  connectionNoticeVisible: boolean;
   refreshSequence: number;
   status: ParticipantRealtimeConnectionStatus;
   retry: () => void;
@@ -31,8 +32,8 @@ type ParticipantRealtimeEnvelope = Readonly<{
   resumeId: string | null;
 }>;
 
-const MAX_RECONNECTS = 3;
-const RECONNECT_DELAYS_MS = [250, 500, 1_000] as const;
+const RECONNECT_DELAYS_MS = [250, 500, 1_000, 2_000, 5_000] as const;
+const REST_REFRESH_INTERVAL_MS = 5_000;
 const NORMAL_CLOSE_CODE = 1000;
 const TERMINAL_CLOSE_CODES = new Set([1008, 4001, 4003, 4401, 4403]);
 const PARTICIPANT_REJECTION_CODES = new Set([
@@ -206,16 +207,47 @@ export const useParticipantTournamentRealtime = ({
   tournamentId,
 }: UseParticipantTournamentRealtimeInput): ParticipantTournamentRealtime => {
   const [status, setStatus] = useState<ParticipantRealtimeConnectionStatus>("idle");
+  const [connectionNoticeVisible, setConnectionNoticeVisible] = useState(false);
   const [refreshSequence, setRefreshSequence] = useState(0);
   const socketRef = useRef<WebSocket | null>(null);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const generationRef = useRef(0);
   const reconnectCountRef = useRef(0);
   const terminalGenerationRef = useRef<number | null>(null);
+  const connectionNoticeRef = useRef(false);
+  const hasOpenedConnectionRef = useRef(false);
   const confirmedResumeIdRef = useRef<string | null>(null);
   const activeTournamentRef = useRef<string | null>(null);
   const connectRef = useRef<(() => void) | null>(null);
+  const previousParticipantCursorRef = useRef<string | null>(null);
   const hasRecovery = recovery !== null;
+  const participantCursorKey = recovery?.role === "participant" &&
+      "participant_view_revision" in recovery.cursor
+    ? [
+        recovery.cursor.event_sequence,
+        recovery.cursor.participant_view_revision,
+        recovery.cursor.projection_revision,
+      ].join(":")
+    : null;
+
+  const setReconnectNotice = useCallback((visible: boolean) => {
+    connectionNoticeRef.current = visible;
+    setConnectionNoticeVisible(visible);
+  }, []);
+
+  useEffect(() => {
+    if (participantCursorKey === null) {
+      previousParticipantCursorRef.current = null;
+      return;
+    }
+    if (
+      previousParticipantCursorRef.current !== null &&
+      previousParticipantCursorRef.current !== participantCursorKey
+    ) {
+      setRefreshSequence((current) => current + 1);
+    }
+    previousParticipantCursorRef.current = participantCursorKey;
+  }, [participantCursorKey]);
 
   const clearSocket = useCallback(() => {
     if (reconnectTimerRef.current !== null) {
@@ -238,15 +270,84 @@ export const useParticipantTournamentRealtime = ({
     if (activeTournamentRef.current !== tournamentId) {
       activeTournamentRef.current = tournamentId;
       confirmedResumeIdRef.current = null;
+      reconnectCountRef.current = 0;
+      hasOpenedConnectionRef.current = false;
+      setReconnectNotice(false);
     }
 
     if (!active) {
       setStatus("idle");
+      setReconnectNotice(false);
       connectRef.current = null;
       return () => clearSocket();
     }
 
     let disposed = false;
+    let recoveryRefreshTimer: ReturnType<typeof setTimeout> | null = null;
+    let recoveryRefreshInFlight = false;
+    let recoveryRefreshQueued = false;
+    let clearNoticeAfterQueuedRefresh = false;
+
+    const refreshRecovery = async (
+      generation: number,
+      clearNoticeAfterSuccess = false,
+    ): Promise<boolean> => {
+      if (disposed || generation !== generationRef.current) {
+        return false;
+      }
+      if (recoveryRefreshInFlight) {
+        recoveryRefreshQueued = true;
+        clearNoticeAfterQueuedRefresh ||= clearNoticeAfterSuccess;
+        return false;
+      }
+
+      recoveryRefreshInFlight = true;
+      let succeeded = false;
+      try {
+        succeeded = (await retry()) !== false;
+      } catch {
+        succeeded = false;
+      } finally {
+        recoveryRefreshInFlight = false;
+      }
+
+      if (
+        succeeded &&
+        clearNoticeAfterSuccess &&
+        !disposed &&
+        generation === generationRef.current
+      ) {
+        setReconnectNotice(false);
+      }
+
+      if (!disposed && recoveryRefreshQueued) {
+        const clearNotice = clearNoticeAfterQueuedRefresh;
+        recoveryRefreshQueued = false;
+        clearNoticeAfterQueuedRefresh = false;
+        void refreshRecovery(generationRef.current, clearNotice);
+      }
+      return succeeded;
+    };
+
+    const scheduleRecoveryRefresh = (): void => {
+      if (disposed || recoveryRefreshTimer !== null) {
+        return;
+      }
+      recoveryRefreshTimer = setTimeout(() => {
+        recoveryRefreshTimer = null;
+        if (typeof document !== "undefined" && document.visibilityState !== "visible") {
+          scheduleRecoveryRefresh();
+          return;
+        }
+        void refreshRecovery(generationRef.current).finally(scheduleRecoveryRefresh);
+      }, REST_REFRESH_INTERVAL_MS);
+    };
+
+    const refreshWhenVisible = (): void => {
+      if (document.visibilityState === "visible") {
+        void refreshRecovery(generationRef.current);
+      }
+    };
 
     const scheduleReconnect = (generation: number): void => {
       if (
@@ -256,14 +357,13 @@ export const useParticipantTournamentRealtime = ({
       ) {
         return;
       }
-      if (reconnectCountRef.current >= MAX_RECONNECTS) {
-        terminalGenerationRef.current = generation;
-        setStatus("error");
-        return;
-      }
-      const delay = RECONNECT_DELAYS_MS[reconnectCountRef.current] ?? 1_000;
-      reconnectCountRef.current += 1;
+      const delay = RECONNECT_DELAYS_MS[reconnectCountRef.current] ?? 5_000;
+      reconnectCountRef.current = Math.min(
+        reconnectCountRef.current + 1,
+        RECONNECT_DELAYS_MS.length,
+      );
       setStatus("reconnecting");
+      setReconnectNotice(true);
       reconnectTimerRef.current = setTimeout(() => {
         reconnectTimerRef.current = null;
         connectRef.current?.();
@@ -273,17 +373,17 @@ export const useParticipantTournamentRealtime = ({
     const closeAsInvalid = (generation: number, socket: WebSocket): void => {
       terminalGenerationRef.current = generation;
       setStatus("error");
+      setReconnectNotice(true);
       socket.close(NORMAL_CLOSE_CODE, "invalid participant realtime frame");
     };
 
-    const acceptFrame = (envelope: ParticipantRealtimeEnvelope): void => {
+    const acceptFrame = (generation: number, envelope: ParticipantRealtimeEnvelope): void => {
       if (envelope.resumeId !== null) {
         confirmedResumeIdRef.current = envelope.resumeId;
       }
       reconnectCountRef.current = 0;
       setStatus("connected");
-      setRefreshSequence((current) => current + 1);
-      retry();
+      void refreshRecovery(generation, true);
     };
 
     const connect = (): void => {
@@ -310,7 +410,11 @@ export const useParticipantTournamentRealtime = ({
         if (disposed || generation !== generationRef.current) {
           return;
         }
+        hasOpenedConnectionRef.current = true;
         setStatus("connecting");
+        if (connectionNoticeRef.current) {
+          void refreshRecovery(generation, true);
+        }
       };
 
       socket.onmessage = (event) => {
@@ -325,6 +429,7 @@ export const useParticipantTournamentRealtime = ({
           if (isParticipantRealtimeRejection(value)) {
             terminalGenerationRef.current = generation;
             setStatus("rejected");
+            setReconnectNotice(true);
             socket.close(NORMAL_CLOSE_CODE, "participant realtime rejected");
             return;
           }
@@ -332,12 +437,12 @@ export const useParticipantTournamentRealtime = ({
             terminalGenerationRef.current = generation;
             setStatus("recovering");
             setRefreshSequence((current) => current + 1);
-            retry();
+            void refreshRecovery(generation, true);
             socket.close(1000, "participant realtime terminal");
             return;
           }
           const envelope = parseParticipantRealtimeMessage(value, tournamentId);
-          acceptFrame(envelope);
+          acceptFrame(generation, envelope);
         } catch {
           closeAsInvalid(generation, socket);
         }
@@ -348,6 +453,9 @@ export const useParticipantTournamentRealtime = ({
           return;
         }
         setStatus("reconnecting");
+        if (hasOpenedConnectionRef.current) {
+          setReconnectNotice(true);
+        }
       };
 
       socket.onclose = (event) => {
@@ -366,6 +474,7 @@ export const useParticipantTournamentRealtime = ({
         if (TERMINAL_CLOSE_CODES.has(event.code)) {
           terminalGenerationRef.current = generation;
           setStatus("rejected");
+          setReconnectNotice(true);
           return;
         }
         scheduleReconnect(generation);
@@ -374,21 +483,30 @@ export const useParticipantTournamentRealtime = ({
 
     connectRef.current = connect;
     connect();
+    scheduleRecoveryRefresh();
+    document.addEventListener("visibilitychange", refreshWhenVisible);
 
     return () => {
       disposed = true;
       generationRef.current += 1;
       connectRef.current = null;
+      if (recoveryRefreshTimer !== null) {
+        clearTimeout(recoveryRefreshTimer);
+        recoveryRefreshTimer = null;
+      }
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
       clearSocket();
     };
-  }, [clearSocket, enabled, hasRecovery, retry, tournamentId]);
+  }, [clearSocket, enabled, hasRecovery, retry, setReconnectNotice, tournamentId]);
 
   const reconnect = useCallback(() => {
     reconnectCountRef.current = 0;
     terminalGenerationRef.current = null;
+    setConnectionNoticeVisible(true);
+    connectionNoticeRef.current = true;
     setStatus("connecting");
     connectRef.current?.();
   }, []);
 
-  return { refreshSequence, status, retry: reconnect };
+  return { connectionNoticeVisible, refreshSequence, status, retry: reconnect };
 };

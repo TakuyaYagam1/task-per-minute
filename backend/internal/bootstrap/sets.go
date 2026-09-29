@@ -62,6 +62,7 @@ import (
 	goldenruntime "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/runtime"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/idempotency"
 	leaderboardusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/leaderboard"
+	notificationusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/notification"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/participantarchive"
 	playerusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/player"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/playoff"
@@ -129,6 +130,7 @@ var ReposSet = wire.NewSet(
 	wire.Bind(new(tournamentparticipant.ParticipantTransactionManager), new(*postgres.TxManager)),
 	wire.Bind(new(tournamentpause.PauseTransactionManager), new(*postgres.TxManager)),
 	wire.Bind(new(recovery.TransactionManager), new(*postgres.TxManager)),
+	wire.Bind(new(notificationusecase.TransactionManager), new(*postgres.TxManager)),
 
 	schemarepo.NewSchemaVersionPostgres,
 	wire.Bind(new(restv1.SchemaVersionReader), new(*schemarepo.SchemaVersionPostgres)),

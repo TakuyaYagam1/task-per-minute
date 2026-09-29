@@ -38,8 +38,9 @@ func (r ReadyWindowSourceRevisions) IsValid() bool {
 }
 
 const (
-	ReadyWindowDuration = 30 * time.Second
-	ReconnectCycleLimit = 2
+	ReadyWindowDuration     = 30 * time.Second
+	ReconnectCycleLimit     = 2
+	GameReconnectCycleLimit = 10
 )
 
 func IsValidReadyWindowInterval(openedAt, deadline time.Time) bool {

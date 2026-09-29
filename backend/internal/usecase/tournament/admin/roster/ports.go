@@ -8,6 +8,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
+	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/notification"
 	operationusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/operation"
 	tournamentpreflight "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/preflight"
 )
@@ -111,7 +112,8 @@ func (fn PreflightRuntimeHealthSourceFunc) RuntimeHealth(ctx context.Context) to
 }
 
 type RosterWorkflowDependencies struct {
-	Transactions  RosterTransactionManager
-	Repository    RosterWorkflowRepository
-	RuntimeHealth PreflightRuntimeHealthSource
+	Transactions    RosterTransactionManager
+	Repository      RosterWorkflowRepository
+	RuntimeHealth   PreflightRuntimeHealthSource
+	RemovalRecorder notification.RemovalRecorder
 }

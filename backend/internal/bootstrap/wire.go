@@ -19,6 +19,7 @@ func initializeApp(runtime *RuntimeContext, cfg *config.Config, log logkit.Logge
 		SeaweedFSSet,
 		ReposSet,
 		UseCasesSet,
+		PlayerNotificationsSet,
 		MiddlewareSet,
 		WebSocketSet,
 		HTTPSet,

@@ -17,6 +17,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/execution/authority"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/execution/wave"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/leaderboard"
+	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/notification"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/participantarchive"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/player"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/projection"
@@ -45,6 +46,7 @@ import (
 	snapshot2 "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/snapshot"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/swiss/deadline"
 	assignment2 "github.com/TakuyaYagam1/task-per-minute/internal/usecase/assignment"
+	notification2 "github.com/TakuyaYagam1/task-per-minute/internal/usecase/notification"
 	configuration2 "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/configuration"
 	"github.com/wahrwelt-kit/go-logkit"
 )
@@ -68,6 +70,9 @@ func initializeApp(runtime *RuntimeContext, cfg *config.Config, log logkit.Logge
 	playerPostgres := player.NewPlayerPostgres(v2)
 	bootstrapClockFunc := provideClock()
 	sessionUseCase := providePlayerSessionUseCase(cfg, v2, playerPostgres, bootstrapClockFunc)
+	repository := notification.NewRepository(v2)
+	eventsPostgres := notification.NewEventsPostgres(pool)
+	service := notification2.New(v2, repository, eventsPostgres)
 	authConfig := provideAuthConfig(cfg)
 	redisConfig := provideRedisConfig(cfg)
 	client, cleanup2, err := provideRedis(context, redisConfig)
@@ -101,7 +106,7 @@ func initializeApp(runtime *RuntimeContext, cfg *config.Config, log logkit.Logge
 	tournamentContentPostgres := configuration.NewTournamentContentPostgres(v2)
 	commandReceiptStore := provideTournamentCommandReceipts(client)
 	catalogUseCase := provideTournamentApplication(deterministicIDGenerator, bootstrapClockFunc, tournamentUseCase, tournamentCreatePostgres, tournamentContentPostgres, commandReceiptStore)
-	service := providePublicTournamentCatalog(tournamentCatalogPostgres)
+	publiccatalogService := providePublicTournamentCatalog(tournamentCatalogPostgres)
 	tournamentAdmissionPostgres := admission.NewTournamentAdmissionPostgres(v2)
 	admissionUseCase := provideTournamentAdmission(tournamentAdmissionPostgres, bootstrapClockFunc)
 	tournamentAdminRosterPostgres := roster.NewTournamentAdminRosterPostgres(v2)
@@ -185,12 +190,12 @@ func initializeApp(runtime *RuntimeContext, cfg *config.Config, log logkit.Logge
 		return nil, nil, err
 	}
 	participantConnectionPostgres := provideParticipantConnectionRepository(v2, controller)
-	repository := provideTournamentExecutionRepository(v2)
-	tournamentPausedPresencePostgres := provideTournamentPausedPresenceRepository(v2, repository)
+	executionRepository := provideTournamentExecutionRepository(v2)
+	tournamentPausedPresencePostgres := provideTournamentPausedPresenceRepository(v2, executionRepository)
 	wavePostgres := wave.NewWavePostgres(v2)
 	participantReadinessRepository := readiness.NewParticipantReadinessRepository(v2, wavePostgres)
 	readinessUseCase := provideParticipantReadiness(participantReadinessRepository, bootstrapClockFunc)
-	coordinator, err := provideParticipantConnectionCoordinator(v2, participantConnectionPostgres, tournamentPausedPresencePostgres, repository, readinessUseCase, v4, bootstrapClockFunc, reconnectObserver)
+	coordinator, err := provideParticipantConnectionCoordinator(v2, participantConnectionPostgres, tournamentPausedPresencePostgres, executionRepository, readinessUseCase, v4, bootstrapClockFunc, reconnectObserver)
 	if err != nil {
 		cleanup2()
 		cleanup()
@@ -202,6 +207,7 @@ func initializeApp(runtime *RuntimeContext, cfg *config.Config, log logkit.Logge
 		cleanup()
 		return nil, nil, err
 	}
+	cleanupWorker := providePlayerNotificationCleanupWorker(repository)
 	recoveryObserver := provideRecoveryObserver(bootstrapEventTelemetry)
 	deadlineSweep := provideRecoveryDeadlineSweep(recoveryPostgres, recoveryObserver)
 	recoveryWorker, err := provideRecoveryWorker(deadlineSweep, bootstrapClockFunc, deadlineScheduler)
@@ -211,15 +217,15 @@ func initializeApp(runtime *RuntimeContext, cfg *config.Config, log logkit.Logge
 		return nil, nil, err
 	}
 	runtimeWorkerHeartbeats := provideRuntimeWorkerHeartbeats(client)
-	bootstrapRuntimeWorkers, err := provideRuntimeWorkers(tournamentEventDispatcher, worker, realtimeDelivery, receiptRetentionWorker, availabilityMonitor, deadlineScheduler, deadlineWorker, recoveryRunner, reaper, recoveryWorker, bootstrapClockFunc, runtimeWorkerHeartbeats)
+	bootstrapRuntimeWorkers, err := provideRuntimeWorkers(tournamentEventDispatcher, worker, realtimeDelivery, receiptRetentionWorker, availabilityMonitor, deadlineScheduler, deadlineWorker, recoveryRunner, reaper, eventsPostgres, cleanupWorker, recoveryWorker, bootstrapClockFunc, runtimeWorkerHeartbeats)
 	if err != nil {
 		cleanup2()
 		cleanup()
 		return nil, nil, err
 	}
 	rosterPreflightRuntimeHealthSource := providePreflightRuntimeHealthSource(bootstrapClockFunc, availabilityMonitor, privateTaskAvailabilityPostgres, realtimeDelivery, bootstrapRuntimeWorkers, runtimeWorkerHeartbeats, client, seaweedStorage, pool)
-	rosterWorkflow := provideTournamentAdminRoster(v2, tournamentAdminRosterPostgres, rosterPreflightRuntimeHealthSource)
-	executionWorkflow := provideTournamentAdminExecution(v2, repository, repository, repository, controller, bootstrapClockFunc)
+	rosterWorkflow := provideTournamentAdminRoster(v2, tournamentAdminRosterPostgres, service, rosterPreflightRuntimeHealthSource)
+	executionWorkflow := provideTournamentAdminExecution(v2, executionRepository, executionRepository, executionRepository, controller, bootstrapClockFunc)
 	tournamentAdminLifecyclePostgres := lifecycle.NewTournamentAdminLifecyclePostgres(v2)
 	tournamentLifecyclePostgres := lifecycle2.NewTournamentLifecyclePostgres(v2)
 	tournamentLifecycleUseCase := provideTournamentLifecycle(tournamentLifecyclePostgres, bootstrapClockFunc)
@@ -296,7 +302,7 @@ func initializeApp(runtime *RuntimeContext, cfg *config.Config, log logkit.Logge
 	bootstrapOperatorTournamentMutationRateLimiter := provideOperatorTournamentMutationRateLimiter(client, cfg)
 	bootstrapParticipantTournamentReadRateLimiter := provideParticipantTournamentReadRateLimiter(client, cfg)
 	bootstrapParticipantTournamentMutationRateLimiter := provideParticipantTournamentMutationRateLimiter(client, cfg)
-	server := provideRESTServerWithClock(sessionUseCase, useCase, taskUseCase, managementUseCase, adminPlayerEventsPostgres, adminEventsPostgres, sourceFiles, cache, catalogUseCase, service, admissionUseCase, tournamentAdminUseCase, tournamentConfigurationWorkflow, participantObservedService, participantarchiveService, tournamentSnapshotPostgres, runtimeApplication, healthChecks, bootstrapClockFunc, bootstrapLoginRateLimiter, bootstrapAdminRefreshRateLimiter, bootstrapJoinRateLimiter, bootstrapLeaderboardRateLimiter, bootstrapPublicTournamentReadRateLimiter, bootstrapOperatorTournamentReadRateLimiter, bootstrapOperatorTournamentMutationRateLimiter, bootstrapParticipantTournamentReadRateLimiter, bootstrapParticipantTournamentMutationRateLimiter, log)
+	server := provideRESTServerWithClock(sessionUseCase, service, useCase, taskUseCase, managementUseCase, adminPlayerEventsPostgres, adminEventsPostgres, sourceFiles, cache, catalogUseCase, publiccatalogService, admissionUseCase, tournamentAdminUseCase, tournamentConfigurationWorkflow, participantObservedService, participantarchiveService, tournamentSnapshotPostgres, runtimeApplication, healthChecks, bootstrapClockFunc, bootstrapLoginRateLimiter, bootstrapAdminRefreshRateLimiter, bootstrapJoinRateLimiter, bootstrapLeaderboardRateLimiter, bootstrapPublicTournamentReadRateLimiter, bootstrapOperatorTournamentReadRateLimiter, bootstrapOperatorTournamentMutationRateLimiter, bootstrapParticipantTournamentReadRateLimiter, bootstrapParticipantTournamentMutationRateLimiter, log)
 	bootstrapWsHandshakeRateLimiter := provideHandshakeRateLimiter(client, cfg)
 	tournamentProductionSnapshotSource, err := provideTournamentProductionSnapshotSource(tournamentSnapshotPostgres, runtimeApplication)
 	if err != nil {

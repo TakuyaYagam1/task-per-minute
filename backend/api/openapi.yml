@@ -53,6 +53,10 @@ paths:
     $ref: 'routes/player.yml#/~1api~1v1~1players~1me'
   /api/v1/players/logout:
     $ref: 'routes/player.yml#/~1api~1v1~1players~1logout'
+  /api/v1/players/notifications:
+    $ref: 'routes/player_notifications.yml#/~1api~1v1~1players~1notifications'
+  /api/v1/players/notifications/events:
+    $ref: 'routes/player_notifications.yml#/~1api~1v1~1players~1notifications~1events'
 
   /api/v1/leaderboard:
     $ref: 'routes/leaderboard.yml#/~1api~1v1~1leaderboard'

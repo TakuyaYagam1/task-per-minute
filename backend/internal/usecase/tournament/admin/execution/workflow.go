@@ -143,9 +143,6 @@ func (w *ExecutionWorkflow) createPairingsLocked(
 	}
 	view, err := w.repository.CommitPairing(ctx, plan)
 	if err != nil {
-		if errors.Is(err, domain.ErrConflict) {
-			return SwissRoundView{}, executionConflict(command.ExpectedProjectionRevision, authority)
-		}
 		return SwissRoundView{}, fmt.Errorf("commit pairing graph: %w", err)
 	}
 	if !validSwissRoundView(view, command.TournamentID, command.RoundNumber) {

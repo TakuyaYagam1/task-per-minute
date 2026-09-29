@@ -98,7 +98,12 @@ func MaterializeSwissDraftBO1(
 		if err != nil {
 			return err
 		}
-		command := swissDraftAssignmentCommand(ids, execution, authority)
+		command, err := swissDraftAssignmentCommand(
+			ids, execution, authority, content.Configuration.ReserveCount,
+		)
+		if err != nil {
+			return err
+		}
 		if _, _, err := assignmentusecase.NewExactDraftBranchPlanUseCase(repository).PlanAndCommit(ctx, command); err != nil {
 			return fmt.Errorf("reserve Swiss draft branches: %w", err)
 		}
@@ -127,7 +132,15 @@ func swissDraftCategoriesMatch(requested, pool []domain.Category) bool {
 	return true
 }
 
-func swissDraftAssignmentCommand(ids playoff.FinalStageIDs, execution draftusecase.Execution, authority assignmentusecase.ExactDraftBranchPlanAuthority) assignmentusecase.ExactDraftBranchPlanCommand {
+func swissDraftAssignmentCommand(
+	ids playoff.FinalStageIDs,
+	execution draftusecase.Execution,
+	authority assignmentusecase.ExactDraftBranchPlanAuthority,
+	reserveCount int,
+) (assignmentusecase.ExactDraftBranchPlanCommand, error) {
+	if !domain.IsValidAssignmentReserveCount(reserveCount) {
+		return assignmentusecase.ExactDraftBranchPlanCommand{}, domain.ErrValidation
+	}
 	command := assignmentusecase.ExactDraftBranchPlanCommand{
 		PlanID: ids.DraftAssignmentPlanID, PlanRevisionID: ids.DraftAssignmentRevisionID,
 		DraftID: execution.ID, ExpectedDraftRevisionID: execution.RevisionID,
@@ -146,7 +159,7 @@ func swissDraftAssignmentCommand(ids playoff.FinalStageIDs, execution draftuseca
 				Scope: exact.Scope, PlanID: command.PlanID, PlanRevisionID: command.PlanRevisionID,
 				BranchID: child, DecisionEvidenceID: ids.DraftAssignmentDecisionID(source.Key, position+1), CreatedAt: command.CreatedAt,
 			}
-			for reserve := range item.EdgeIDs {
+			for reserve := 0; reserve <= reserveCount; reserve++ {
 				item.EdgeIDs[reserve] = ids.DraftAssignmentEdgeID(source.Key, position+1, reserve+1)
 				item.ReservationIDs[reserve] = ids.DraftAssignmentReservationID(source.Key, position+1, reserve+1)
 				item.SnapshotIDs[reserve] = ids.DraftAssignmentSnapshotID(source.Key, position+1, reserve+1)
@@ -155,5 +168,5 @@ func swissDraftAssignmentCommand(ids playoff.FinalStageIDs, execution draftuseca
 		}
 		command.Branches[index] = branch
 	}
-	return command
+	return command, nil
 }

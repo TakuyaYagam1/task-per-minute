@@ -1255,9 +1255,12 @@ func validateReconnectCounterDelta(before, after []pausedomain.PauseReconnectCou
 		if reflect.DeepEqual(current, next) {
 			continue
 		}
+		limitTransitionValid := next.Limit == current.Limit ||
+			(current.Used == current.Limit && current.Limit == domain.ReconnectCycleLimit &&
+				next.Limit == domain.GameReconnectCycleLimit)
 		if current.Revision == math.MaxInt64 || current.Used == math.MaxInt ||
 			next.Revision != current.Revision+1 || next.Used != current.Used+1 ||
-			next.Limit != current.Limit || next.Used > next.Limit || next.Used > math.MaxInt16 {
+			!limitTransitionValid || next.Used > next.Limit || next.Used > math.MaxInt16 {
 			return domain.ErrValidation
 		}
 	}

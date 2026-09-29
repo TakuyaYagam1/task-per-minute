@@ -480,9 +480,10 @@ export const ArenaRolePage = ({ returnPath, role, tournamentId }: ArenaRolePageP
       {(state.accessStatus === "ready" || state.accessStatus === "completed") && (
         role === "participant" ? (
           <TournamentRecoveryPanel role={role} tournamentId={tournamentId}>
-            {({ participantRefreshSequence, recovery, retry }) => (
-              <>
-                {state.tournament?.state === "golden" && (
+            {({ participantRefreshSequence, receivedAtMonotonicMs, recovery, retry }) => {
+              const playerView = buildParticipantPlayerView(recovery);
+              return <>
+                {playerView?.tournamentState === "golden" && (
                   <ParticipantGoldenPanel
                     refreshToken={`${tournamentId}:${participantRefreshSequence}`}
                     tournamentId={tournamentId}
@@ -517,10 +518,12 @@ export const ArenaRolePage = ({ returnPath, role, tournamentId }: ArenaRolePageP
                     }
                     return result;
                   }}
-                  view={buildParticipantPlayerView(recovery)}
+                  receivedAtMonotonicMs={receivedAtMonotonicMs}
+                  serverTimestamp={recovery?.serverTimestamp ?? null}
+                  view={playerView}
                 />
-              </>
-            )}
+              </>;
+            }}
           </TournamentRecoveryPanel>
         ) : role === "spectator" ? (
           <TournamentRecoveryPanel role={role} tournamentId={tournamentId}>

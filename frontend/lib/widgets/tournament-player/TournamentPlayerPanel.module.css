@@ -633,6 +633,62 @@
   font-weight: 750;
 }
 
+.taskCountdown,
+.deadlineCountdown {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.65rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.taskCountdown {
+  align-items: center;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-small);
+  padding: 0.8rem 1rem;
+  background: var(--accent-soft);
+}
+
+.deadlineCountdown {
+  margin-top: 0.4rem;
+}
+
+.deadlineCountdownLabel {
+  color: var(--secondary);
+  font-size: 0.82rem;
+}
+
+.deadlineCountdownValue {
+  overflow-wrap: anywhere;
+  font-size: 1rem;
+  font-weight: 800;
+}
+
+.taskCountdown .deadlineCountdownLabel {
+  font-size: 0.9rem;
+}
+
+.taskCountdown .deadlineCountdownValue {
+  font-size: clamp(1.5rem, 5vw, 2rem);
+  line-height: 1;
+}
+
+.deadlineCountdown[data-state="awaiting_server"] .deadlineCountdownValue,
+.deadlineCountdownNote {
+  color: var(--warning);
+}
+
+.deadlineCountdown[data-state="paused"] .deadlineCountdownValue {
+  color: var(--secondary);
+}
+
+.deadlineCountdownNote {
+  flex-basis: 100%;
+  font-size: 0.8rem;
+}
+
 .assignmentHints {
   border-top: 1px solid var(--border);
   padding-top: 0.85rem;

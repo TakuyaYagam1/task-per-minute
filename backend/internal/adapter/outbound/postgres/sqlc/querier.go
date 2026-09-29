@@ -224,6 +224,7 @@ type Querier interface {
 	CreateParticipantPostSeriesAction(ctx context.Context, arg CreateParticipantPostSeriesActionParams) (ParticipantPostSeriesAction, error)
 	CreateParticipantReadinessEvent(ctx context.Context, arg CreateParticipantReadinessEventParams) (ReadinessEvent, error)
 	CreatePlayer(ctx context.Context, username string) (Player, error)
+	CreatePlayerRemovedNotification(ctx context.Context, arg CreatePlayerRemovedNotificationParams) (int64, error)
 	// Semifinal category authority is persisted separately from the Swiss
 	// materializer, while retaining the same immutable random decision shape.
 	CreatePlayoffSemifinalCategoryRevision(ctx context.Context, arg CreatePlayoffSemifinalCategoryRevisionParams) (CategoryRevision, error)
@@ -376,6 +377,7 @@ type Querier interface {
 	CreateWaveMember(ctx context.Context, arg CreateWaveMemberParams) error
 	CreateWaveReadinessHead(ctx context.Context, arg CreateWaveReadinessHeadParams) (WaveReadiness, error)
 	CreateWaveSeries(ctx context.Context, arg CreateWaveSeriesParams) error
+	DeleteExpiredPlayerNotifications(ctx context.Context, batchSize int32) (int64, error)
 	DeleteExpiredRealtimeDeliveryReceipts(ctx context.Context, arg DeleteExpiredRealtimeDeliveryReceiptsParams) ([]DeleteExpiredRealtimeDeliveryReceiptsRow, error)
 	DeleteExpiredRealtimeSubscribers(ctx context.Context, arg DeleteExpiredRealtimeSubscribersParams) ([]uuid.UUID, error)
 	DeleteSwissBye(ctx context.Context, roundID uuid.UUID) error
@@ -590,6 +592,7 @@ type Querier interface {
 	// caller maps that unique violation to a retry conflict.
 	InsertTournamentReconnectCommandReceipt(ctx context.Context, arg InsertTournamentReconnectCommandReceiptParams) (uuid.UUID, error)
 	LinkProjectionArtifact(ctx context.Context, arg LinkProjectionArtifactParams) (ProjectionRevisionArtifact, error)
+	ListActivePlayerNotifications(ctx context.Context, playerID uuid.UUID) ([]ListActivePlayerNotificationsRow, error)
 	// The read surface intentionally filters superseded Series identities.  The
 	// old rows remain queryable through the edit ledger and lineage tables.
 	ListActiveTournamentConfigurationEditSeries(ctx context.Context, arg ListActiveTournamentConfigurationEditSeriesParams) ([]ListActiveTournamentConfigurationEditSeriesRow, error)

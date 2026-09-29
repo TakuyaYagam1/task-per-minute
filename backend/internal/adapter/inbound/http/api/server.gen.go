@@ -170,6 +170,12 @@ type ServerInterface interface {
 	// GetCurrentPlayer Resolve the current player session
 	// (GET /api/v1/players/me)
 	GetCurrentPlayer(w http.ResponseWriter, r *http.Request)
+	// ListPlayerNotifications List active notifications for the current player
+	// (GET /api/v1/players/notifications)
+	ListPlayerNotifications(w http.ResponseWriter, r *http.Request)
+	// StreamPlayerNotifications Stream player notification invalidations
+	// (GET /api/v1/players/notifications/events)
+	StreamPlayerNotifications(w http.ResponseWriter, r *http.Request)
 	// ListPublicTournaments List publicly visible tournaments
 	// (GET /api/v1/public/tournaments)
 	ListPublicTournaments(w http.ResponseWriter, r *http.Request, params ListPublicTournamentsParams)
@@ -545,6 +551,18 @@ func (_ Unimplemented) LogoutPlayer(w http.ResponseWriter, r *http.Request, para
 // GetCurrentPlayer Resolve the current player session
 // (GET /api/v1/players/me)
 func (_ Unimplemented) GetCurrentPlayer(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// ListPlayerNotifications List active notifications for the current player
+// (GET /api/v1/players/notifications)
+func (_ Unimplemented) ListPlayerNotifications(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// StreamPlayerNotifications Stream player notification invalidations
+// (GET /api/v1/players/notifications/events)
+func (_ Unimplemented) StreamPlayerNotifications(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -3740,6 +3758,46 @@ func (siw *ServerInterfaceWrapper) GetCurrentPlayer(w http.ResponseWriter, r *ht
 	handler.ServeHTTP(w, r)
 }
 
+// ListPlayerNotifications operation middleware
+func (siw *ServerInterfaceWrapper) ListPlayerNotifications(w http.ResponseWriter, r *http.Request) {
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, PlayerSessionAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListPlayerNotifications(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// StreamPlayerNotifications operation middleware
+func (siw *ServerInterfaceWrapper) StreamPlayerNotifications(w http.ResponseWriter, r *http.Request) {
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, PlayerSessionAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.StreamPlayerNotifications(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ListPublicTournaments operation middleware
 func (siw *ServerInterfaceWrapper) ListPublicTournaments(w http.ResponseWriter, r *http.Request) {
 
@@ -5242,6 +5300,12 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/api/v1/players/logout", wrapper.LogoutPlayer)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/players/notifications", wrapper.ListPlayerNotifications)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/players/notifications/events", wrapper.StreamPlayerNotifications)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/leaderboard", wrapper.GetLeaderboard)
@@ -11410,6 +11474,139 @@ func (response GetCurrentPlayerdefaultApplicationProblemPlusJSONResponse) VisitG
 	return err
 }
 
+type ListPlayerNotificationsRequestObject struct {
+}
+
+type ListPlayerNotificationsResponseObject interface {
+	VisitListPlayerNotificationsResponse(w http.ResponseWriter) error
+}
+
+type ListPlayerNotifications200JSONResponse PlayerNotificationsResponse
+
+func (response ListPlayerNotifications200JSONResponse) VisitListPlayerNotificationsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListPlayerNotifications401ApplicationProblemPlusJSONResponse ProblemDetails
+
+func (response ListPlayerNotifications401ApplicationProblemPlusJSONResponse) VisitListPlayerNotificationsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListPlayerNotificationsdefaultApplicationProblemPlusJSONResponse struct {
+	Body       ProblemDetails
+	StatusCode int
+}
+
+func (response ListPlayerNotificationsdefaultApplicationProblemPlusJSONResponse) VisitListPlayerNotificationsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type StreamPlayerNotificationsRequestObject struct {
+}
+
+type StreamPlayerNotificationsResponseObject interface {
+	VisitStreamPlayerNotificationsResponse(w http.ResponseWriter) error
+}
+
+type StreamPlayerNotifications200TexteventStreamResponse struct {
+	Body          io.Reader
+	ContentLength int64
+}
+
+func (response StreamPlayerNotifications200TexteventStreamResponse) VisitStreamPlayerNotificationsResponse(w http.ResponseWriter) error {
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	if response.ContentLength != 0 {
+		w.Header().Set("Content-Length", fmt.Sprint(response.ContentLength))
+	}
+	w.WriteHeader(200)
+
+	if closer, ok := response.Body.(io.ReadCloser); ok {
+		defer closer.Close()
+	}
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		// If w doesn't support flushing, fall back to io.Copy.
+		_, err := io.Copy(w, response.Body)
+		return err
+	}
+	// text/event-stream messages are typically small; use a
+	// modest buffer and flush after each chunk so clients see
+	// events immediately instead of waiting on OS buffering.
+	buf := make([]byte, 4096)
+	for {
+		n, err := response.Body.Read(buf)
+		if n > 0 {
+			if _, writeErr := w.Write(buf[:n]); writeErr != nil {
+				return writeErr
+			}
+			flusher.Flush()
+		}
+		if err != nil {
+			if err == io.EOF {
+				return nil
+			}
+			return err
+		}
+	}
+}
+
+type StreamPlayerNotifications401ApplicationProblemPlusJSONResponse ProblemDetails
+
+func (response StreamPlayerNotifications401ApplicationProblemPlusJSONResponse) VisitStreamPlayerNotificationsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type StreamPlayerNotificationsdefaultApplicationProblemPlusJSONResponse struct {
+	Body       ProblemDetails
+	StatusCode int
+}
+
+func (response StreamPlayerNotificationsdefaultApplicationProblemPlusJSONResponse) VisitStreamPlayerNotificationsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type ListPublicTournamentsRequestObject struct {
 	Params ListPublicTournamentsParams
 }
@@ -14248,6 +14445,12 @@ type StrictServerInterface interface {
 	// GetCurrentPlayer Resolve the current player session
 	// (GET /api/v1/players/me)
 	GetCurrentPlayer(ctx context.Context, request GetCurrentPlayerRequestObject) (GetCurrentPlayerResponseObject, error)
+	// ListPlayerNotifications List active notifications for the current player
+	// (GET /api/v1/players/notifications)
+	ListPlayerNotifications(ctx context.Context, request ListPlayerNotificationsRequestObject) (ListPlayerNotificationsResponseObject, error)
+	// StreamPlayerNotifications Stream player notification invalidations
+	// (GET /api/v1/players/notifications/events)
+	StreamPlayerNotifications(ctx context.Context, request StreamPlayerNotificationsRequestObject) (StreamPlayerNotificationsResponseObject, error)
 	// ListPublicTournaments List publicly visible tournaments
 	// (GET /api/v1/public/tournaments)
 	ListPublicTournaments(ctx context.Context, request ListPublicTournamentsRequestObject) (ListPublicTournamentsResponseObject, error)
@@ -15865,6 +16068,54 @@ func (sh *strictHandler) GetCurrentPlayer(w http.ResponseWriter, r *http.Request
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(GetCurrentPlayerResponseObject); ok {
 		if err := validResponse.VisitGetCurrentPlayerResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListPlayerNotifications operation middleware
+func (sh *strictHandler) ListPlayerNotifications(w http.ResponseWriter, r *http.Request) {
+	var request ListPlayerNotificationsRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListPlayerNotifications(ctx, request.(ListPlayerNotificationsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListPlayerNotifications")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListPlayerNotificationsResponseObject); ok {
+		if err := validResponse.VisitListPlayerNotificationsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// StreamPlayerNotifications operation middleware
+func (sh *strictHandler) StreamPlayerNotifications(w http.ResponseWriter, r *http.Request) {
+	var request StreamPlayerNotificationsRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.StreamPlayerNotifications(ctx, request.(StreamPlayerNotificationsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "StreamPlayerNotifications")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(StreamPlayerNotificationsResponseObject); ok {
+		if err := validResponse.VisitStreamPlayerNotificationsResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

@@ -278,13 +278,18 @@ RETURNING id;
 
 -- name: AdvanceTournamentAdminNormalPauseCounterCAS :one
 UPDATE reconnect_slot_counters
-SET slots_used = slots_used + 1, revision = revision + 1,
+SET slot_limit = CASE
+        WHEN slots_used = slot_limit AND slot_limit = 2 THEN 10
+        ELSE slot_limit
+    END,
+    slots_used = slots_used + 1, revision = revision + 1,
     updated_at = sqlc.arg(updated_at)
 WHERE pause_id = sqlc.arg(pause_id)
     AND participant_id = sqlc.arg(participant_id)
     AND revision = sqlc.arg(expected_revision)
     AND slots_used = sqlc.arg(expected_slots_used)
-    AND slots_used < slot_limit
+    AND ((slot_limit = 2 AND slots_used <= 2)
+        OR (slot_limit = 10 AND slots_used < 10))
 RETURNING participant_id;
 
 -- name: ResumeTournamentAdminNormalPauseClockCAS :one

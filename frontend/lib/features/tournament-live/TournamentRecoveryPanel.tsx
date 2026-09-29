@@ -228,21 +228,41 @@ const CountdownPanel = ({
   );
 };
 
-const ParticipantRecoveryFallback = ({
+const ParticipantRecoveryNotice = ({
+  connectionNoticeVisible,
+  hasRecovery,
   onRetry,
   status,
 }: Readonly<{
+  connectionNoticeVisible: boolean;
+  hasRecovery: boolean;
   onRetry: () => void;
   status: TournamentLiveConnectionStatus;
 }>) => {
-  if (status !== "stale" && status !== "rejected") {
+  const retryAvailable = status === "stale" || status === "rejected";
+  const visible = hasRecovery && (
+    connectionNoticeVisible || status === "stale" || status === "rejected"
+  );
+  if (!visible) {
     return null;
   }
 
   return (
-    <Message data-testid="participant-recovery-fallback" tone="warning" title="Матч не обновился">
-      <p>Не удалось обновить данные матча. Проверьте соединение и повторите попытку.</p>
-      <Button onClick={onRetry} type="button" variant="secondary">Повторить</Button>
+    <Message
+      className={styles.participantRecoveryNotice}
+      data-testid="participant-recovery-fallback"
+      data-state={status}
+      tone="warning"
+      title={retryAvailable ? "Матч не обновился" : "Восстанавливаем связь с матчем"}
+    >
+      <p>
+        {retryAvailable
+          ? "Не удалось обновить данные матча. Продолжаем попытки подключения."
+          : "Связь с матчем прервалась. Данные обновятся после восстановления соединения."}
+      </p>
+      {retryAvailable && (
+        <Button onClick={onRetry} type="button" variant="secondary">Повторить</Button>
+      )}
     </Message>
   );
 };
@@ -346,10 +366,6 @@ export const TournamentRecoveryPanel = ({
         <dd>{readyMemberCount(operatorRealtime.state)}</dd>
       </div>
       <div>
-        <dt>На связи</dt>
-        <dd>{operatorRealtime.state?.operator.presence.length ?? 0}</dd>
-      </div>
-      <div>
         <dt>Пауза</dt>
         <dd>{operatorRealtime.paused ? "Да" : "Нет"}</dd>
       </div>
@@ -407,7 +423,12 @@ export const TournamentRecoveryPanel = ({
   if (liveRole === "participant") {
     return (
       <>
-        <ParticipantRecoveryFallback onRetry={retryAll} status={panelStatus} />
+        <ParticipantRecoveryNotice
+          connectionNoticeVisible={participantRealtime.connectionNoticeVisible}
+          hasRecovery={recovery !== null}
+          onRetry={retryAll}
+          status={panelStatus}
+        />
         {roleSlot}
       </>
     );

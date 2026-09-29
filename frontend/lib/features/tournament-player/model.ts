@@ -204,6 +204,7 @@ export type ParticipantSeriesResultView = Readonly<{
 
 export type ParticipantPlayerView = Readonly<{
   tournamentId: string;
+  tournamentState: components["schemas"]["TournamentState"];
   participantId: string;
   projectionRevision: number;
   state: ParticipantPlayerState;
@@ -753,6 +754,7 @@ export const buildParticipantPlayerView = (
     taskDeadlineAt: assignmentView?.effectiveDeadline ?? null,
     stateLabel: participantStateCopy[state].label,
     tournamentId: snapshot.tournament_id,
+    tournamentState: lobby.state,
     tournamentLabel: formatTournamentState(lobby.state),
     draft: participantDraftViewFor(snapshot.draft),
     officialOutcome,

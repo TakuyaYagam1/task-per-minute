@@ -7,6 +7,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/config"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/websocket"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
+	notificationrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/notification"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/realtime"
 	redisadapter "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/redis"
 	telemetryadapter "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/telemetry"
@@ -14,6 +15,7 @@ import (
 	draftusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/draft"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/eventdelivery"
 	gamerecovery "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/recovery"
+	notificationusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/notification"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/recovery"
 	taskusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/task"
 	participantconnection "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/connection"
@@ -102,6 +104,8 @@ func provideRuntimeWorkers(
 	swissDraftDeadlines *draftusecase.DeadlineWorker,
 	executionRecovery *gamerecovery.RecoveryRunner,
 	participantConnectionReaper *participantconnection.Reaper,
+	playerNotificationEvents *notificationrepo.EventsPostgres,
+	playerNotificationCleanup *notificationusecase.CleanupWorker,
 	recoveryWorker *recovery.Worker,
 	clock clockFunc,
 	heartbeats *redisadapter.RuntimeWorkerHeartbeats,
@@ -138,6 +142,16 @@ func provideRuntimeWorkers(
 			name:   "participant-connection-recovery",
 			worker: participantConnectionReaper,
 			ready:  participantConnectionReaper.Ready,
+		},
+		{
+			name:   "player-notification-events",
+			worker: playerNotificationEvents,
+			ready:  playerNotificationEvents.Ready,
+		},
+		{
+			name:   "player-notification-cleanup",
+			worker: playerNotificationCleanup,
+			ready:  playerNotificationCleanup.Ready,
 		},
 		{
 			name:   "deadline-recovery",

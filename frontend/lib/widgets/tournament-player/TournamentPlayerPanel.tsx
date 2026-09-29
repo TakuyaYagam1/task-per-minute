@@ -18,6 +18,7 @@ import {
   type ParticipantReadyIntent,
   type ParticipantReadyResult,
 } from "../../features/tournament-player";
+import { formatCountdown, useServerCountdown } from "../../features/tournament-live";
 import { Button, Message, Status } from "../../shared/ui";
 import {
   formatCategory,
@@ -34,9 +35,57 @@ type TournamentPlayerPanelProps = Readonly<{
   onSubmit: (intent: ParticipantSubmissionIntent) => Promise<ParticipantSubmissionResult>;
   onSurrender: (intent: ParticipantSurrenderIntent) => Promise<ParticipantSurrenderResult>;
   onDraft: (intent: ParticipantDraftIntent) => Promise<ParticipantDraftResult>;
+  receivedAtMonotonicMs?: number;
+  serverTimestamp: string | null;
   view: ParticipantPlayerView | null;
   onReady: (intent: ParticipantReadyIntent) => Promise<ParticipantReadyResult>;
 }>;
+
+type ParticipantDeadlineCountdownProps = Readonly<{
+  deadline: string;
+  label: string;
+  paused?: boolean;
+  receivedAtMonotonicMs?: number;
+  serverTimestamp: string;
+  testId: string;
+  variant?: "inline" | "task";
+}>;
+
+const ParticipantDeadlineCountdown = ({
+  deadline,
+  label,
+  paused = false,
+  receivedAtMonotonicMs,
+  serverTimestamp,
+  testId,
+  variant = "inline",
+}: ParticipantDeadlineCountdownProps) => {
+  const countdown = useServerCountdown({
+    deadline,
+    receivedAtMonotonicMs,
+    serverTimestamp,
+  });
+  const value = paused ? "Приостановлен" : formatCountdown(countdown.remainingMs);
+
+  return (
+    <div
+      aria-label={`${label}: ${value}`}
+      className={variant === "task" ? styles.taskCountdown : styles.deadlineCountdown}
+      data-state={paused ? "paused" : countdown.status}
+      data-testid={testId}
+      role="timer"
+      aria-live="off"
+    >
+      <span className={styles.deadlineCountdownLabel}>{label}</span>
+      <strong className={styles.deadlineCountdownValue}>{value}</strong>
+      {!paused && countdown.status === "awaiting_server" && (
+        <span className={styles.deadlineCountdownNote}>
+          Время вышло. Ждем обновления матча.
+        </span>
+      )}
+    </div>
+  );
+};
 
 const statusTone = (state: ParticipantPlayerView["state"]): "neutral" | "info" | "success" | "warning" | "error" => {
   switch (state) {
@@ -337,6 +386,8 @@ export const TournamentPlayerPanel = ({
   onReady,
   onSubmit,
   onSurrender,
+  receivedAtMonotonicMs,
+  serverTimestamp,
   view,
 }: TournamentPlayerPanelProps) => {
   const draft = useParticipantDraft({ onDraft, view });
@@ -531,7 +582,20 @@ export const TournamentPlayerPanel = ({
                   <dd>
                     {view.pause.reconnectDeadline === null
                       ? "Не опубликовано"
-                      : formatDeadline(view.pause.reconnectDeadline)}
+                      : (
+                        <>
+                          {formatDeadline(view.pause.reconnectDeadline)}
+                          {serverTimestamp !== null && view.pause.active && (
+                            <ParticipantDeadlineCountdown
+                              deadline={view.pause.reconnectDeadline}
+                              label="Осталось на переподключение"
+                              receivedAtMonotonicMs={receivedAtMonotonicMs}
+                              serverTimestamp={serverTimestamp}
+                              testId="participant-reconnect-countdown"
+                            />
+                          )}
+                        </>
+                      )}
                   </dd>
                 </div>
               </dl>
@@ -968,7 +1032,12 @@ export const TournamentPlayerPanel = ({
           </div>
           <p className={styles.assignmentName}>{view.assignment.title}</p>
           {taskHref !== null ? (
-            <a className={styles.assignmentLink} href={taskHref}>
+            <a
+              className={styles.assignmentLink}
+              href={taskHref}
+              rel="noopener noreferrer"
+              target="_blank"
+            >
               Открыть задание
             </a>
           ) : (
@@ -1000,6 +1069,19 @@ export const TournamentPlayerPanel = ({
             </>
           )}
           <p className={styles.assignmentDescription}>{view.assignment.description}</p>
+          {serverTimestamp !== null &&
+            view.taskDeadlineAt !== null &&
+            (view.assignment.gameState === "active" || view.pause.active) && (
+              <ParticipantDeadlineCountdown
+                deadline={view.taskDeadlineAt}
+                label="До конца задания"
+                paused={view.pause.deadlinesSuppressed}
+                receivedAtMonotonicMs={receivedAtMonotonicMs}
+                serverTimestamp={serverTimestamp}
+                testId="participant-task-countdown"
+                variant="task"
+              />
+            )}
           <dl className={styles.assignmentFacts} aria-label="Параметры задания">
             <div>
               <dt>Версия задания</dt>

@@ -11,5 +11,6 @@ export * from './tournament-catalog';
 export * from './tournament-admission';
 export * from './arena';
 export * from './participant';
+export * from './notifications';
 export * from './golden';
 export { ApiContractError } from './guards';

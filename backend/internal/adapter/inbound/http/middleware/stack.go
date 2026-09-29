@@ -405,6 +405,10 @@ func (w *statusRecorder) Status() int {
 	return w.status
 }
 
+func (w *statusRecorder) Unwrap() http.ResponseWriter {
+	return w.ResponseWriter
+}
+
 type responseStatusRecorder interface {
 	http.ResponseWriter
 	Status() int

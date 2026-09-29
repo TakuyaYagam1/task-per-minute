@@ -978,6 +978,21 @@ func (e PlayerAuditAction) Valid() bool {
 	}
 }
 
+// Defines values for PlayerNotificationType.
+const (
+	PlayerNotificationTypeTournamentPlayerRemoved PlayerNotificationType = "tournament_player_removed"
+)
+
+// Valid indicates whether the value is a known member of the PlayerNotificationType enum.
+func (e PlayerNotificationType) Valid() bool {
+	switch e {
+	case PlayerNotificationTypeTournamentPlayerRemoved:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for PreflightCode.
 const (
 	TournamentPreflightRuntimeAuthoritativeStorage   PreflightCode = "tournament.preflight.runtime.authoritative_storage"
@@ -3124,6 +3139,24 @@ type PlayerManagementView struct {
 	StatsOverridden    bool               `json:"stats_overridden"`
 	Username           string             `json:"username"`
 	Wins               int32              `json:"wins"`
+}
+
+// PlayerNotification defines model for PlayerNotification.
+type PlayerNotification struct {
+	CreatedAt      time.Time              `json:"created_at"`
+	ExpiresAt      time.Time              `json:"expires_at"`
+	Id             openapi_types.UUID     `json:"id"`
+	TournamentId   openapi_types.UUID     `json:"tournament_id"`
+	TournamentName string                 `json:"tournament_name"`
+	Type           PlayerNotificationType `json:"type"`
+}
+
+// PlayerNotificationType defines model for PlayerNotificationType.
+type PlayerNotificationType string
+
+// PlayerNotificationsResponse defines model for PlayerNotificationsResponse.
+type PlayerNotificationsResponse struct {
+	Notifications []PlayerNotification `json:"notifications"`
 }
 
 // PlayerResponse defines model for PlayerResponse.

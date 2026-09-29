@@ -34,6 +34,7 @@ import (
 	gamesubmission "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/submission"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/idempotency"
 	leaderboardusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/leaderboard"
+	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/notification"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/participantarchive"
 	playerusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/player"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/playoff"
@@ -348,12 +349,14 @@ func provideTournamentAdminLifecycle(
 func provideTournamentAdminRoster(
 	transactions tournamentadminroster.RosterTransactionManager,
 	repository tournamentadminroster.RosterWorkflowRepository,
+	removals notification.RemovalRecorder,
 	runtimeHealth tournamentadminroster.PreflightRuntimeHealthSource,
 ) *tournamentadminroster.RosterWorkflow {
 	return tournamentadminroster.NewRosterWorkflow(tournamentadminroster.RosterWorkflowDependencies{
-		Transactions:  transactions,
-		Repository:    repository,
-		RuntimeHealth: runtimeHealth,
+		Transactions:    transactions,
+		Repository:      repository,
+		RuntimeHealth:   runtimeHealth,
+		RemovalRecorder: removals,
 	})
 }
 

@@ -64,6 +64,51 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/players/notifications": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List active notifications for the current player
+         * @description Returns notifications created during the last 30 minutes. The player is resolved from the authenticated HttpOnly session cookie. Expired notifications are omitted automatically.
+         */
+        get: operations["listPlayerNotifications"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/players/notifications/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Stream player notification invalidations
+         * @description Player-session-authenticated Server-Sent Events stream with a maximum
+         *     five-minute lifetime. It emits `ready` on connection and `changed` after
+         *     a notification is inserted. Both events
+         *     have an empty object payload. Clients reload the active notification
+         *     snapshot from GET /api/v1/players/notifications after either event. The
+         *     stream contains no player identifier or notification content.
+         */
+        get: operations["streamPlayerNotifications"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/leaderboard": {
         parameters: {
             query?: never;
@@ -1424,6 +1469,23 @@ export interface components {
         };
         CurrentPlayerResponse: {
             player: components["schemas"]["PlayerResponse"];
+        };
+        /** @enum {string} */
+        PlayerNotificationType: "tournament_player_removed";
+        PlayerNotification: {
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            expires_at: string;
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            tournament_id: string;
+            tournament_name: string;
+            type: components["schemas"]["PlayerNotificationType"];
+        };
+        PlayerNotificationsResponse: {
+            notifications: components["schemas"]["PlayerNotification"][];
         };
         LeaderboardEntry: {
             /** Format: int64 */
@@ -3960,6 +4022,66 @@ export interface operations {
             };
             /** @description CSRF token is invalid for an existing session, or the request origin or referer is not allowed. */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            default: components["responses"]["UnexpectedServerProblem"];
+        };
+    };
+    listPlayerNotifications: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Up to 100 active player notifications, newest first. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlayerNotificationsResponse"];
+                };
+            };
+            /** @description Missing or invalid player session. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            default: components["responses"]["UnexpectedServerProblem"];
+        };
+    };
+    streamPlayerNotifications: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description SSE invalidation stream with heartbeat comments. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": string;
+                };
+            };
+            /** @description Missing or invalid player session. */
+            401: {
                 headers: {
                     [name: string]: unknown;
                 };

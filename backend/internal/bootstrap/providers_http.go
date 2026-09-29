@@ -21,6 +21,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	inbound "github.com/TakuyaYagam1/task-per-minute/internal/port/inbound"
 	authusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/auth"
+	notificationusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/notification"
 )
 
 const (
@@ -30,6 +31,7 @@ const (
 
 func provideRESTServerWithClock(
 	players restv1.PlayerService,
+	playerNotifications notificationusecase.PlayerNotifications,
 	auth restv1.AdminAuthService,
 	tasks restv1.AdminTaskService,
 	adminPlayers restv1.AdminPlayerService,
@@ -65,6 +67,7 @@ func provideRESTServerWithClock(
 	}
 	return restv1.New(restv1.Dependencies{
 		Players:                              players,
+		PlayerNotifications:                  playerNotifications,
 		AdminAuth:                            auth,
 		Tasks:                                tasks,
 		AdminPlayers:                         adminPlayers,
@@ -275,6 +278,11 @@ func provideHTTPHandler(
 	router.Method(http.MethodGet, "/api/v1/admin/players/events", adminPlayerEventsHandler(rest, auth, log, cfg))
 	router.Method(http.MethodGet, "/api/v1/admin/events", adminEventsHandler(rest, auth, log, cfg))
 	router.Method(http.MethodGet, "/api/v1/arena/events", publicTournamentEventsHandler(rest, log, cfg))
+	router.Method(
+		http.MethodGet,
+		"/api/v1/players/notifications/events",
+		playerNotificationsEventsHandler(rest, players, log, cfg),
+	)
 	router.Mount("/", handler)
 
 	return middleware.CORS(cfg.HTTP.AllowedOrigins)(router)
@@ -324,6 +332,27 @@ func publicTournamentEventsHandler(rest *restv1.Server, log logkit.Logger, cfg *
 			errmap.HandleError(w, r, domain.ErrRateLimited)
 		}
 	})
+	if cfg != nil {
+		handler = middleware.BuildStreaming(
+			log,
+			middleware.WithTrustedProxyCIDRs(cfg.HTTP.TrustedProxyCIDRs),
+			middleware.WithAllowedOrigins(cfg.HTTP.AllowedOrigins),
+		)(handler)
+	}
+	return handler
+}
+
+func playerNotificationsEventsHandler(
+	rest *restv1.Server,
+	players middleware.PlayerSessionReader,
+	log logkit.Logger,
+	cfg *config.Config,
+) http.Handler {
+	var handler http.Handler = http.HandlerFunc(rest.StreamPlayerNotifications)
+	if players != nil {
+		handler = middleware.PlayerSession(players)(handler)
+	}
+	handler = middleware.NoStoreSensitiveResponses()(handler)
 	if cfg != nil {
 		handler = middleware.BuildStreaming(
 			log,

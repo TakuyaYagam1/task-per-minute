@@ -11,6 +11,21 @@
   box-shadow: var(--shadow-small);
 }
 
+.participantRecoveryNotice {
+  position: fixed;
+  top: calc(var(--site-header-height, 4rem) + 0.5rem);
+  right: 1rem;
+  z-index: 12;
+  width: min(28rem, calc(100vw - 2rem));
+  max-height: calc(100vh - var(--site-header-height, 4rem) - 1rem);
+  overflow: auto;
+  box-shadow: var(--shadow-small);
+}
+
+.participantRecoveryNotice p {
+  margin: 0 0 0.65rem;
+}
+
 .headingRow {
   display: flex;
   align-items: flex-start;
@@ -165,6 +180,11 @@
 }
 
 @media (max-width: 32rem) {
+  .participantRecoveryNotice {
+    right: 0.75rem;
+    width: calc(100vw - 1.5rem);
+  }
+
   .panel {
     border-radius: var(--radius-small);
   }

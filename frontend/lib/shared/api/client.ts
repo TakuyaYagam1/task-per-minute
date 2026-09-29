@@ -224,6 +224,8 @@ export const advancePlayerSessionEpoch = (): number => {
   return playerSessionEpoch;
 };
 
+export const getPlayerSessionEpoch = (): number => playerSessionEpoch;
+
 export const isCurrentAdminSessionEpoch = (epoch: number): boolean =>
   epoch === adminSessionEpoch;
 

@@ -155,7 +155,7 @@ export const GoldenPlayoffControlPanel = ({
     controllerRef.current = controller;
     const requestGeneration = requestGenerationRef.current + 1;
     requestGenerationRef.current = requestGeneration;
-    if (!silent || goldenRef.current === null) {
+    if (!silent) {
       setGoldenState("loading");
     }
     setLoadError(null);
@@ -238,7 +238,6 @@ export const GoldenPlayoffControlPanel = ({
   }, [loadState]);
 
   const currentState = publicTournament?.state ?? tournament?.state ?? "draft";
-  const projectionRevision = publicTournament?.projection_revision ?? tournament?.revision ?? 0;
   const groups = golden?.groups ?? [];
   const completeGolden = hasCompleteGolden(golden);
   const bracketMatches = useMemo(() => orderedBracketMatches(bracket), [bracket]);
@@ -283,7 +282,6 @@ export const GoldenPlayoffControlPanel = ({
     if (
       commandInFlightRef.current ||
       tournament === null ||
-      projectionRevision < 1 ||
       (action === "start_golden" && !canStartGolden) ||
       (action === "start_playoffs" && !canStartPlayoffs)
     ) {
@@ -293,12 +291,18 @@ export const GoldenPlayoffControlPanel = ({
     setBusyAction(action);
     setCommandError(null);
     try {
+      const freshSnapshot = await operatorApi.getSnapshot(tournament.id);
+      if (freshSnapshot.tournament.state !== currentState) {
+        await loadState({ silent: true });
+        setCommandError("Этап соревнования изменился. Проверьте актуальное состояние.");
+        return;
+      }
       const nextTournament = await operatorApi.applyTournamentAction(
         tournament.id,
         {
           action,
           confirmed: true,
-          expected_projection_revision: projectionRevision,
+          expected_projection_revision: freshSnapshot.next_cursor.projection_revision,
           reason: action === "start_golden"
             ? "Оператор подтвердил переход в дополнительный отбор"
             : "Оператор подтвердил переход в плей-офф",
@@ -325,20 +329,26 @@ export const GoldenPlayoffControlPanel = ({
       commandInFlightRef.current = false;
       setBusyAction(null);
     }
-  }, [canStartGolden, canStartPlayoffs, loadState, onSessionExpired, onTournamentUpdated, projectionRevision, tournament]);
+  }, [canStartGolden, canStartPlayoffs, currentState, loadState, onSessionExpired, onTournamentUpdated, tournament]);
 
   const handleOpenRuntime = useCallback(async (): Promise<void> => {
-    if (commandInFlightRef.current || tournament === null || projectionRevision < 1 || !canOpenRuntime) {
+    if (commandInFlightRef.current || tournament === null || !canOpenRuntime) {
       return;
     }
     commandInFlightRef.current = true;
     setBusyAction("open");
     setCommandError(null);
     try {
+      const freshSnapshot = await operatorApi.getSnapshot(tournament.id);
+      if (freshSnapshot.tournament.state !== "golden") {
+        await loadState({ silent: true });
+        setCommandError("Этап соревнования изменился. Проверьте актуальное состояние.");
+        return;
+      }
       await goldenApi.open(
         tournament.id,
         {
-          expected_projection_revision: projectionRevision,
+          expected_projection_revision: freshSnapshot.next_cursor.projection_revision,
           expected_runtime_revision: runtimeRevision,
         },
         createOperatorCommandIntent(),
@@ -362,7 +372,7 @@ export const GoldenPlayoffControlPanel = ({
       commandInFlightRef.current = false;
       setBusyAction(null);
     }
-  }, [canOpenRuntime, loadState, onSessionExpired, projectionRevision, runtimeRevision, tournament]);
+  }, [canOpenRuntime, loadState, onSessionExpired, runtimeRevision, tournament]);
 
   const handleStartAttempt = useCallback(async (group: GoldenOperatorGroup): Promise<void> => {
     if (
@@ -483,7 +493,7 @@ export const GoldenPlayoffControlPanel = ({
               loadingLabel="Запускаем плей-офф"
               onClick={() => void handleLifecycleAction("start_playoffs")}
             >
-              Подтвердить четверку и начать плей-офф
+              Начать плей-офф
             </Button>
           </div>
           {currentState === "golden" && !completeGolden ? (

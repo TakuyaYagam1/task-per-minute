@@ -1,0 +1,38 @@
+PlayerNotificationType:
+  type: string
+  enum: [tournament_player_removed]
+  x-enum-varnames: [PlayerNotificationTypeTournamentPlayerRemoved]
+
+PlayerNotification:
+  type: object
+  additionalProperties: false
+  required: [id, type, tournament_id, tournament_name, created_at, expires_at]
+  properties:
+    id:
+      type: string
+      format: uuid
+    type:
+      $ref: '#/PlayerNotificationType'
+    tournament_id:
+      type: string
+      format: uuid
+    tournament_name:
+      type: string
+      minLength: 1
+      maxLength: 120
+    created_at:
+      type: string
+      format: date-time
+    expires_at:
+      type: string
+      format: date-time
+
+PlayerNotificationsResponse:
+  type: object
+  additionalProperties: false
+  required: [notifications]
+  properties:
+    notifications:
+      type: array
+      items:
+        $ref: '#/PlayerNotification'
