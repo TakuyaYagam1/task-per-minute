@@ -14,10 +14,93 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Create an available player session
-         * @description Creates a player or reclaims a username only after its previous session expires, then issues an HttpOnly player session cookie. A readable session-bound tpm_player_csrf cookie and X-CSRF-Token response header are issued alongside it for unsafe player REST requests. An active session is never replaced by knowledge of its public username.
+         * Retired nickname-only player join
+         * @deprecated
+         * @description Retired for account-backed player identities. The endpoint rejects all nickname-only requests with 410 Gone. Use registration, email verification, and password login instead.
          */
         post: operations["joinPlayer"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/players/register": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Register a player account
+         * @description Creates a pending account and sends an email verification link. The
+         *     accepted response is the same for an already registered email address.
+         *     A username already reserved by a player returns 409.
+         */
+        post: operations["registerPlayer"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/players/login": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Log in to a verified player account
+         * @description Accepts a case-insensitive username or email address. Invalid credentials
+         *     and unverified accounts return the same response. Success issues the
+         *     existing HttpOnly player session cookie and a session-bound CSRF token.
+         */
+        post: operations["loginPlayer"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/players/verify-email": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Verify a player email address */
+        post: operations["verifyPlayerEmail"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/players/resend-verification": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Resend a player email verification link
+         * @description The accepted response does not reveal whether an account exists or
+         *     whether a resend cooldown prevented delivery.
+         */
+        post: operations["resendPlayerVerification"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1431,10 +1514,6 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
-        JoinPlayerRequest: {
-            /** @example takuya */
-            username: string;
-        };
         /** @description RFC 7807 error envelope used by REST validation and operation errors. */
         ProblemDetails: {
             /** @example username must be 2..50 characters */
@@ -1456,9 +1535,34 @@ export interface components {
              */
             type: string;
         };
+        PlayerRegistrationRequest: {
+            /** Format: email */
+            email: string;
+            /** Format: password */
+            password: string;
+            /** @example takuya */
+            username: string;
+        };
+        PlayerAccountAcceptedResponse: {
+            /** @enum {boolean} */
+            accepted: true;
+        };
+        PlayerLoginRequest: {
+            /** @description Case-insensitive player username or email address. */
+            login: string;
+            /** Format: password */
+            password: string;
+        };
         JoinPlayerResponse: {
             /** Format: uuid */
             player_id: string;
+        };
+        PlayerVerificationRequest: {
+            token: string;
+        };
+        PlayerResendVerificationRequest: {
+            /** Format: email */
+            email: string;
         };
         PlayerResponse: {
             /** Format: date-time */
@@ -3893,32 +3997,8 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["JoinPlayerRequest"];
-            };
-        };
+        requestBody?: never;
         responses: {
-            /** @description Player session created or refreshed. */
-            200: {
-                headers: {
-                    /** @description CSRF token bound to the issued HttpOnly player session cookie. */
-                    "X-CSRF-Token"?: string;
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["JoinPlayerResponse"];
-                };
-            };
-            /** @description Validation error. */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ProblemDetails"];
-                };
-            };
             /** @description Request origin or referer is not allowed. */
             403: {
                 headers: {
@@ -3930,6 +4010,15 @@ export interface operations {
             };
             /** @description Username already has an active session. */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Nickname-only session creation is retired. */
+            410: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -3960,6 +4049,326 @@ export interface operations {
                 headers: {
                     /** @description Seconds until the join rate window resets. */
                     "Retry-After"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            default: components["responses"]["UnexpectedServerProblem"];
+        };
+    };
+    registerPlayer: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PlayerRegistrationRequest"];
+            };
+        };
+        responses: {
+            /** @description Registration was accepted for processing. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlayerAccountAcceptedResponse"];
+                };
+            };
+            /** @description Invalid username, email, or password. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Request origin or referer is not allowed. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Username is already reserved. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Request body exceeds the JSON size limit. */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Request content type must be application/json. */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Too many account requests from the same client IP. */
+            429: {
+                headers: {
+                    "Retry-After"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Email verification is temporarily unavailable. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            default: components["responses"]["UnexpectedServerProblem"];
+        };
+    };
+    loginPlayer: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PlayerLoginRequest"];
+            };
+        };
+        responses: {
+            /** @description Player session created. */
+            200: {
+                headers: {
+                    /** @description CSRF token bound to the issued HttpOnly player session cookie. */
+                    "X-CSRF-Token"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JoinPlayerResponse"];
+                };
+            };
+            /** @description Invalid request body. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Invalid credentials. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Request origin or referer is not allowed. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Request body exceeds the JSON size limit. */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Request content type must be application/json. */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Too many login requests from the same client IP. */
+            429: {
+                headers: {
+                    "Retry-After"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            default: components["responses"]["UnexpectedServerProblem"];
+        };
+    };
+    verifyPlayerEmail: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PlayerVerificationRequest"];
+            };
+        };
+        responses: {
+            /** @description Email verified and player identity created. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Verification token is invalid, expired, or already used. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Request origin or referer is not allowed. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Request body exceeds the JSON size limit. */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Request content type must be application/json. */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Too many verification requests from the same client IP. */
+            429: {
+                headers: {
+                    "Retry-After"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            default: components["responses"]["UnexpectedServerProblem"];
+        };
+    };
+    resendPlayerVerification: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PlayerResendVerificationRequest"];
+            };
+        };
+        responses: {
+            /** @description Resend request was accepted for processing. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlayerAccountAcceptedResponse"];
+                };
+            };
+            /** @description Invalid email address. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Request origin or referer is not allowed. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Request body exceeds the JSON size limit. */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Request content type must be application/json. */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Too many verification requests from the same client IP. */
+            429: {
+                headers: {
+                    "Retry-After"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Email verification is temporarily unavailable. */
+            503: {
+                headers: {
                     [name: string]: unknown;
                 };
                 content: {

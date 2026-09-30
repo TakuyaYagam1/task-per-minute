@@ -12,6 +12,8 @@ const operatorPath = `/api/v1/admin/tournaments/${tournamentId}/snapshot`;
 const adminPlayersPath = "/api/v1/admin/players";
 const adminRefreshPath = "/api/v1/admin/refresh";
 const playerLogoutPath = "/api/v1/players/logout";
+const playerLoginPath = "/api/v1/players/login";
+const playerMePath = "/api/v1/players/me";
 const adminLogoutPath = "/api/v1/admin/logout";
 
 type Role = "participant" | "operator" | "spectator";
@@ -64,6 +66,10 @@ const observeAPI = async (page: Page): Promise<NetworkEvidence> => {
     if (!url.pathname.startsWith("/api/")) {
       return;
     }
+    if (url.pathname === "/api/v1/players/notifications" ||
+        url.pathname === "/api/v1/players/notifications/events") {
+      return;
+    }
     evidence.apiPaths.push(url.pathname);
     const authorization = request.headers().authorization;
     if (authorization !== undefined) {
@@ -73,6 +79,12 @@ const observeAPI = async (page: Page): Promise<NetworkEvidence> => {
 
   await page.route("**/api/**", async (route) => {
     await route.abort("blockedbyclient");
+  });
+  await page.route("**/api/v1/players/notifications", async (route) => {
+    await fulfillJSON(route, { notifications: [] });
+  });
+  await page.route("**/api/v1/players/notifications/events", async (route) => {
+    await route.fulfill({ status: 204, body: "" });
   });
 
   return evidence;
@@ -328,25 +340,54 @@ test("operator access distinguishes 401 from 403", async ({ page }) => {
 test("participant login returns to the requested Arena route", async ({ page }) => {
   const fixtureSet = createTournamentFixtureSet();
   const returnURL = roleURL("participant", "?source=login");
+  const playerID = "00000000-0000-4000-8000-000000000210";
+  let loginCalls = 0;
+  await page.route("**/api/v1/players/notifications", async (route) => {
+    await fulfillJSON(route, { notifications: [] });
+  });
+  await page.route("**/api/v1/players/notifications/events", async (route) => {
+    await route.fulfill({ status: 204, body: "" });
+  });
   await installPublicRoute(page, fixtureSet.public.tournament);
   await installParticipantRoute(page, fixtureSet.participant.lobby);
-  await page.route("**/api/v1/players/join", async (route) => {
+  await page.route(`**${playerLoginPath}`, async (route) => {
+    loginCalls += 1;
+    expect(route.request().postDataJSON()).toEqual({
+      login: "arena_player",
+      password: "correct horse battery",
+    });
     await route.fulfill({
       status: 200,
       headers: {
         "content-type": "application/json",
         "X-CSRF-Token": "arena-player-csrf",
       },
-      body: JSON.stringify({ player_id: "00000000-0000-4000-8000-000000000210" }),
+      body: JSON.stringify({ player_id: playerID }),
+    });
+  });
+  await page.route(`**${playerMePath}`, async (route) => {
+    if (loginCalls === 0) {
+      await fulfillProblem(route, 401, "Unauthorized");
+      return;
+    }
+    await fulfillJSON(route, {
+      player: {
+        id: playerID,
+        username: "arena_player",
+        created_at: new Date().toISOString(),
+      },
     });
   });
 
   await page.goto(`/?next=${encodeURIComponent(returnURL)}`);
-  await page.getByPlaceholder("Введите никнейм...").fill("arena_player");
-  await page.getByRole("button", { name: "ПОДКЛЮЧИТЬСЯ" }).click();
+  await page.getByRole("link", { name: "Войти", exact: true }).click();
+  await page.getByLabel("Логин или email").fill("arena_player");
+  await page.getByLabel("Пароль", { exact: true }).fill("correct horse battery");
+  await page.getByRole("button", { name: "Войти", exact: true }).click();
 
   await expect(page).toHaveURL(new URL(returnURL, page.url()).toString());
   await expect(page.getByTestId("arena-status")).toContainText("Доступ подтвержден");
+  expect(loginCalls).toBe(1);
 });
 
 test("operator login returns to the requested Arena route", async ({ page }) => {

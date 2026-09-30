@@ -108,7 +108,7 @@ func TestOpenAPIRequestValidator_RejectsMissingRequiredBodyAsBadRequest(t *testi
 	handler := validator(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 	}))
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/players/join", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/players/register", nil)
 	rr := httptest.NewRecorder()
 
 	handler.ServeHTTP(rr, req)

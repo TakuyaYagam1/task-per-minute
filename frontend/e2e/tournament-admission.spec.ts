@@ -8,7 +8,6 @@ test.use({ trace: "off" });
 const tournamentId = tournamentFixtureIds.tournament;
 const publicId = "september-contour";
 const detailPath = `/api/v1/public/tournaments/${publicId}`;
-const playerJoinPath = "/api/v1/players/join";
 const playerMePath = "/api/v1/players/me";
 const queuePath = `/api/v1/tournaments/${tournamentId}/participant/queue`;
 const playerId = "00000000-0000-4000-8000-000000000210";
@@ -154,30 +153,28 @@ const detailURL = (): string =>
     "/arena?group=live",
   )}`;
 
-test("anonymous detail keeps queue idle until the player explicitly participates", async ({ page }) => {
+test.beforeEach(async ({ page }) => {
+  await page.route("**/api/v1/players/notifications", async (route) => {
+    await fulfillJSON(route, { notifications: [] });
+  });
+  await page.route("**/api/v1/players/notifications/events", async (route) => {
+    await route.fulfill({ status: 204, body: "" });
+  });
+});
+
+test("anonymous detail sends players to account pages and keeps queue idle", async ({ page }) => {
   await installPlayerMe(page, 401);
   await installDetail(page);
   let queueGets = 0;
-  let playerJoins = 0;
   let queuePosts = 0;
-  let idempotencyKey = "";
-  await page.route(`**${playerJoinPath}`, async (route) => {
-    playerJoins += 1;
-    expect(route.request().postDataJSON()).toEqual({ username: "alice_01" });
-    await fulfillJSON(route, { player_id: playerId }, 200, { "X-CSRF-Token": "admission-csrf" });
-  });
   await page.route(`**${queuePath}`, async (route) => {
     expect(route.request().headers().authorization).toBeUndefined();
     if (route.request().method() === "GET") {
       queueGets += 1;
-      await fulfillJSON(route, admissionView("registered"));
-      return;
+    } else {
+      queuePosts += 1;
     }
-    expect(route.request().method()).toBe("POST");
-    queuePosts += 1;
-    idempotencyKey = route.request().headers()["idempotency-key"] ?? "";
-    expect(route.request().headers()["x-csrf-token"]).toBe("admission-csrf");
-    await fulfillJSON(route, { changed: true, view: admissionView("registered") });
+    await route.abort();
   });
 
   await page.goto(detailURL());
@@ -187,20 +184,13 @@ test("anonymous detail keeps queue idle until the player explicitly participates
   await expect(catalogLinks).toHaveCount(2);
   await expect(catalogLinks.nth(0)).toHaveAttribute("href", "/arena?group=live");
   await expect(catalogLinks.nth(1)).toHaveAttribute("href", "/arena?group=live");
+  await expect(page.getByRole("link", { name: "Войти и участвовать", exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Создать аккаунт", exact: true })).toBeVisible();
+  const loginHref = await page.getByRole("link", { name: "Войти и участвовать", exact: true }).getAttribute("href");
+  expect(new URL(loginHref ?? "", page.url()).pathname).toBe("/login");
+  expect(new URL(loginHref ?? "", page.url()).searchParams.get("next")).toBe(detailURL());
   expect(queueGets).toBe(0);
-  await expect(page.getByRole("button", { name: "Участвовать", exact: true })).toBeVisible();
-
-  await page.getByRole("button", { name: "Участвовать", exact: true }).click();
-  await page.getByLabel("Никнейм").fill("alice_01");
-  await page.getByRole("button", { name: "Зарегистрироваться", exact: true }).click();
-
-  await expect(page.getByTestId("tournament-admission-status")).toContainText("Зарегистрирован");
-  expect(playerJoins).toBe(1);
-  expect(queueGets).toBe(0);
-  expect(queuePosts).toBe(1);
-  expect(idempotencyKey).toMatch(/^[0-9a-f-]{36}$/i);
-  expect(page.url()).toContain(`/arena/tournaments/${publicId}`);
-  expect(page.url()).not.toContain("/arena/participant/");
+  expect(queuePosts).toBe(0);
 });
 
 test("stored player restores durable registration without a join command", async ({ page }) => {
@@ -253,6 +243,18 @@ test(
 
   await page.goto(detailURL());
   await expect(page.getByTestId("tournament-admission-status")).toContainText("Готов");
+  await expect(page.getByRole("button", { name: "Проверить матч", exact: true })).toBeVisible();
+  const fixtureSet = createTournamentFixtureSet();
+  let lobbyCalls = 0;
+  await page.route(`**${tournamentId}/participant/lobby`, async (route) => {
+    lobbyCalls += 1;
+    await fulfillJSON(route, {
+      ...fixtureSet.participant.lobby,
+      participant_id: participantId,
+      tournament_id: tournamentId,
+    });
+  });
+  await page.getByRole("button", { name: "Проверить матч", exact: true }).click();
   const workspaceLink = page.getByRole("link", { name: "Открыть мой матч" });
   await expect(workspaceLink).toHaveAttribute(
     "href",
@@ -266,6 +268,7 @@ test(
   );
   await expect(page.getByText(/место в очереди/i)).toHaveCount(0);
   await expect(page.getByText(/seed|позиция в очереди/i)).toHaveCount(0);
+  expect(lobbyCalls).toBe(1);
   },
 );
 
@@ -417,7 +420,7 @@ test("unauthorized and forbidden admission status remain distinct", async ({ pag
 
   await page.goto(detailURL());
   await expect(page.getByTestId("tournament-entry-message")).toContainText("Сессия истекла");
-  await expect(page.getByLabel("Никнейм")).toBeVisible();
+  await expect(page.getByRole("link", { name: "Войти и участвовать", exact: true })).toBeVisible();
   status = 403;
   await page.reload();
   await expect(page.getByTestId("tournament-entry-message")).toContainText("Доступ запрещен");

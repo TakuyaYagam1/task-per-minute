@@ -24,6 +24,7 @@ func TestProvideRESTServerWithClockUsesSharedClock(t *testing.T) {
 	server := provideRESTServerWithClock(
 		nil,
 		nil,
+		nil,
 		auth,
 		nil,
 		nil,

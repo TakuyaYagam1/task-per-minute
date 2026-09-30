@@ -9,7 +9,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	logkit "github.com/wahrwelt-kit/go-logkit"
@@ -82,36 +81,24 @@ func TestAdminLoginFailureSecurityLogUsesErrorCodeOnly(t *testing.T) {
 	require.Equal(t, string(domain.ErrorCodeInvalidCredentials), entry["error_code"])
 }
 
-func TestPlayerJoinSecurityLogRedactsSessionToken(t *testing.T) {
+func TestPlayerJoinSecurityLogRecordsRetiredRoute(t *testing.T) {
 	t.Parallel()
 
 	var logs bytes.Buffer
-	sessionToken := uuid.New()
-	playerID := uuid.New()
-	players := NewMockPlayerService(t)
-	players.EXPECT().Join(mock.Anything, "alice").Return(&domain.Player{
-		ID:           playerID,
-		Username:     "alice",
-		SessionToken: &sessionToken,
-	}, nil)
 	server := New(Dependencies{
-		Players:     players,
 		JoinLimiter: newAllowingRateLimiter(t),
 		Log:         newV1TestLogger(t, &logs),
 	})
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/players/join", strings.NewReader(`{"username":"alice"}`))
-	req.Header.Set("Content-Type", "application/json")
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/players/join", nil)
 	rr := httptest.NewRecorder()
 
 	server.JoinPlayer(rr, req)
 
-	require.Equal(t, http.StatusOK, rr.Code)
-	rawLogs := logs.String()
-	require.NotContains(t, rawLogs, sessionToken.String())
+	require.Equal(t, http.StatusGone, rr.Code)
 
-	entry := requireSecurityLogEntry(t, rawLogs, "player.join")
-	require.Equal(t, "success", entry["outcome"])
-	require.Equal(t, playerID.String(), entry["player_id"])
+	entry := requireSecurityLogEntry(t, logs.String(), "player.join")
+	require.Equal(t, "failure", entry["outcome"])
+	require.Equal(t, string(domain.ErrorCodePlayerJoinRetired), entry["error_code"])
 }
 
 func newV1TestLogger(t *testing.T, buf *bytes.Buffer) logkit.Logger {

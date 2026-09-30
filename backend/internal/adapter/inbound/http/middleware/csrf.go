@@ -32,10 +32,10 @@ const (
 
 var errInvalidCSRFBinding = errors.New("invalid csrf binding")
 
-// CSRFGuard protects cookie-authenticated REST mutations. The first player
-// join and admin login requests can bootstrap sessions without a token; once a
-// session cookie exists, unsafe requests must echo a session-bound CSRF token
-// in X-CSRF-Token.
+// CSRFGuard protects cookie-authenticated REST mutations. Public player auth
+// flows and admin login bootstrap sessions without a CSRF token; their unsafe
+// requests remain protected by the origin guard. Other player mutations with a
+// session cookie require the session-bound token in X-CSRF-Token.
 func CSRFGuard() func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -86,11 +86,21 @@ func requiresPlayerCSRF(r *http.Request) bool {
 		!strings.HasPrefix(r.URL.Path, tournamentCSRFPathPrefix) {
 		return false
 	}
-	if r.URL.Path == "/api/v1/players/join" {
+	if isPublicPlayerAuthPath(r.URL.Path) {
 		return false
 	}
 	_, ok := PlayerSessionTokenFromRequest(r)
 	return ok
+}
+
+func isPublicPlayerAuthPath(path string) bool {
+	switch path {
+	case "/api/v1/players/join", "/api/v1/players/register", "/api/v1/players/login",
+		"/api/v1/players/verify-email", "/api/v1/players/resend-verification":
+		return true
+	default:
+		return false
+	}
 }
 
 func adminCSRFBinding(r *http.Request) (string, string, bool) {

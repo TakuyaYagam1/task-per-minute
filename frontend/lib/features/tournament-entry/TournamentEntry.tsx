@@ -4,11 +4,9 @@ import Link from "next/link";
 import {
   useCallback,
   useEffect,
-  useId,
   useMemo,
   useRef,
   useState,
-  type FormEvent,
 } from "react";
 
 import { playerModel } from "../../entities/player";
@@ -31,7 +29,6 @@ import type { components } from "../../shared/api/schema";
 import {
   buildArenaPublicTournamentPath,
   getSafeArenaPublicReturnPath,
-  isValidUsername,
   formatTournamentState,
 } from "../../shared/lib";
 import { Button, Message, Panel, Status, type MessageTone, type StatusTone } from "../../shared/ui";
@@ -179,7 +176,7 @@ const apiNotice = (error: unknown, operation: string): Notice => {
   if (error instanceof ApiError) {
     if (error.status === 401) {
       return {
-        body: "Сессия игрока истекла. Введите никнейм еще раз.",
+        body: "Сессия игрока истекла. Войдите, чтобы продолжить участие.",
         title: "Нужен вход",
         tone: "warning",
       };
@@ -298,12 +295,9 @@ export const TournamentEntry = ({
   state,
   tournamentId,
 }: TournamentEntryProps) => {
-  const titleId = useId();
   const mountedRef = useRef(true);
   const requestVersionRef = useRef(0);
   const actionControllerRef = useRef<AbortController | null>(null);
-  const [username, setUsername] = useState("");
-  const [nameFormOpen, setNameFormOpen] = useState(false);
   const [player, setPlayer] = useState<Player | null>(null);
   const [view, setView] = useState<TournamentAdmissionView | null>(null);
   const [phase, setPhase] = useState<Phase>("idle");
@@ -325,6 +319,9 @@ export const TournamentEntry = ({
     () => getSafeArenaCatalogReturnPath(catalogReturnPath) ?? "/arena",
     [catalogReturnPath],
   );
+  const authReturnPath = safeReturnPath;
+  const loginHref = `/login?next=${encodeURIComponent(authReturnPath)}`;
+  const registerHref = `/register?next=${encodeURIComponent(authReturnPath)}`;
   const workspaceHref = useMemo(
     () => participantWorkspacePath(tournamentId, safeReturnPath),
     [safeReturnPath, tournamentId],
@@ -372,7 +369,7 @@ export const TournamentEntry = ({
         return false;
       }
       if (nextView.status === "checked_in") {
-        return true;
+        return current;
       }
       return nextView.status === "registered" ? current : false;
     });
@@ -407,10 +404,9 @@ export const TournamentEntry = ({
           setView(null);
           setPhase("idle");
           setWorkspaceReady(false);
-          setNameFormOpen(Boolean(candidate));
           if (candidate) {
             setNotice({
-              body: "Введите никнейм, чтобы продолжить.",
+              body: "Войдите, чтобы продолжить участие.",
               title: "Сессия истекла",
               tone: "warning",
             });
@@ -421,7 +417,6 @@ export const TournamentEntry = ({
           setPhase("error");
           setView(null);
           setWorkspaceReady(false);
-          setNameFormOpen(false);
           setNotice(
             refreshed.kind === "contract"
               ? apiNotice(new ApiContractError("players/me"), "проверить сессию")
@@ -434,7 +429,6 @@ export const TournamentEntry = ({
           username: refreshed.state.player.username,
         };
         setPlayer(currentPlayer);
-        setUsername(currentPlayer.username);
       }
 
       if (currentPlayer === null) {
@@ -480,10 +474,9 @@ export const TournamentEntry = ({
         setView(null);
         setPhase("idle");
         setWorkspaceReady(false);
-        setNameFormOpen(Boolean(candidate));
         if (candidate) {
           setNotice({
-            body: "Введите никнейм, чтобы продолжить.",
+            body: "Войдите, чтобы продолжить участие.",
             title: "Сессия истекла",
             tone: "warning",
           });
@@ -518,10 +511,6 @@ export const TournamentEntry = ({
   useEffect(() => {
     mountedRef.current = true;
     const candidate = playerModel.getCurrentPlayer();
-    setPlayer(candidate);
-    if (candidate) {
-      setUsername(candidate.username);
-    }
     void restoreStatus(candidate, true);
     return () => {
       actionControllerRef.current?.abort();
@@ -618,7 +607,6 @@ export const TournamentEntry = ({
         setPlayer(null);
         setView(null);
         setPhase("idle");
-        setNameFormOpen(true);
       }
       handleMutationResult(result, nextPlayer);
     } catch (error) {
@@ -635,54 +623,6 @@ export const TournamentEntry = ({
       }
     }
   }, [handleMutationResult, isCurrentRequest, tournamentId]);
-
-  const handleNameSubmit = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
-    event.preventDefault();
-    const nextUsername = username.trim();
-    if (!isValidUsername(nextUsername)) {
-      setNotice({
-        body: "Используйте 2-50 символов: латиница, цифры, _ или -.",
-        title: "Проверьте никнейм",
-        tone: "warning",
-      });
-      return;
-    }
-
-    const { controller, version } = startRequest("join");
-    setNotice(null);
-    try {
-      const result = await playerModel.initializePlayer(nextUsername, controller.signal);
-      if (!isCurrentRequest(version, controller.signal)) {
-        return;
-      }
-      if (result.kind === "aborted") {
-        return;
-      }
-      if (result.kind === "rate_limited") {
-        setPhase("idle");
-        setNotice({
-          body: retryMessage(result.retryAfter),
-          title: "Запрос ограничен",
-          tone: "warning",
-        });
-        return;
-      }
-      if (result.kind !== "ok") {
-        setPhase("error");
-        setNotice(apiNotice(undefined, "оформить вход"));
-        return;
-      }
-      setPlayer(result.player);
-      setUsername(result.player.username);
-      setNameFormOpen(false);
-      setPhase("loading");
-      await joinForPlayer(result.player, controller, version);
-    } finally {
-      if (isCurrentRequest(version, controller.signal)) {
-        setBusyAction(null);
-      }
-    }
-  };
 
   const handleJoinExisting = async (): Promise<void> => {
     if (!player || busyAction !== null) {
@@ -724,7 +664,6 @@ export const TournamentEntry = ({
         setPlayer(null);
         setView(null);
         setPhase("idle");
-        setNameFormOpen(true);
       }
       handleMutationResult(result, player);
     } catch (error) {
@@ -759,7 +698,6 @@ export const TournamentEntry = ({
         setPlayer(null);
         setView(null);
         setPhase("idle");
-        setNameFormOpen(true);
       }
       handleMutationResult(result, player);
     } catch (error) {
@@ -825,42 +763,15 @@ export const TournamentEntry = ({
   const renderAnonymous = () => (
     <div className={styles.contentStack}>
       <p className={styles.copy}>
-        Наблюдать за соревнованием можно без входа. Для регистрации нужен только никнейм.
+        Наблюдать за соревнованием можно без входа. Для участия войдите или создайте аккаунт.
       </p>
       {state === "registration" ? (
-        nameFormOpen ? (
-          <form className={styles.form} onSubmit={handleNameSubmit}>
-            <label className={styles.label} htmlFor={`${titleId}-username`}>Никнейм</label>
-            <input
-              id={`${titleId}-username`}
-              className={styles.input}
-              value={username}
-              onChange={(event) => setUsername(event.target.value)}
-              maxLength={50}
-              autoComplete="nickname"
-              disabled={busyAction !== null}
-            />
-            <div className={styles.actions}>
-              <Button
-                type="submit"
-                loading={busyAction === "join"}
-                loadingLabel="Подключение"
-                disabled={busyAction !== null || username.trim().length === 0}
-              >
-                Зарегистрироваться
-              </Button>
-              <Button
-                variant="secondary"
-                type="button"
-                disabled={busyAction !== null}
-                onClick={() => setNameFormOpen(false)}
-              >
-                Отмена
-              </Button>
-            </div>
-          </form>
-        ) : (
-          phase === "error" ? (
+        <div className={styles.contentStack}>
+          <div className={styles.actions}>
+            <Link className={styles.primaryLink} href={loginHref}>Войти и участвовать</Link>
+            <Link className={styles.returnLink} href={registerHref}>Создать аккаунт</Link>
+          </div>
+          {phase === "error" && (
             <Button
               type="button"
               variant="secondary"
@@ -870,12 +781,8 @@ export const TournamentEntry = ({
             >
               Повторить загрузку
             </Button>
-          ) : (
-            <Button type="button" onClick={() => setNameFormOpen(true)}>
-              Участвовать
-            </Button>
-          )
-        )
+          )}
+        </div>
       ) : (
         <div className={styles.contentStack}>
           <Message tone="info" title="Регистрация недоступна">

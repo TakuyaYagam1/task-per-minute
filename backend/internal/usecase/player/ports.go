@@ -36,20 +36,13 @@ type SessionClock interface {
 	Now() time.Time
 }
 
-// Repository owns player session persistence. JoinByUsername creates a
-// session for a new username or reclaims an expired session. An active
-// username must return domain.ErrUsernameTaken.
+// Repository owns player session persistence for verified account-backed players.
 type Repository interface {
-	JoinByUsername(
-		ctx context.Context,
-		username string,
-		sessionToken uuid.UUID,
-		sessionExpiresAt time.Time,
-	) (*domain.Player, error)
 	GetBySessionToken(ctx context.Context, token uuid.UUID) (*domain.Player, error)
 	UpdateSessionToken(
 		ctx context.Context,
 		id uuid.UUID,
+		expectedToken uuid.UUID,
 		token *uuid.UUID,
 		sessionExpiresAt *time.Time,
 	) (*domain.Player, error)

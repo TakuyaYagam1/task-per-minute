@@ -166,8 +166,10 @@ Participant и operator tournament realtime handshakes используют
 соответствующую session cookie. Query credentials, `X-Session-Token` и bearer
 subprotocols отклоняются.
 
-Player join не заменяет активную session по username. До истечения текущей
-session он возвращает `409`, после чего username можно использовать снова.
+Игроки входят по логину или email и паролю после подтверждения почты.
+`POST /api/v1/players/join` закрыт и возвращает `410`. Старые имена и результаты
+сохраняются, но старые сессии без подтвержденного аккаунта больше не дают
+доступа. Перед обновлением настройте [отправку писем](email.md).
 
 `WS_MAX_CONNECTIONS` ограничивает все принятые tournament realtime connections
 и по умолчанию равен `512`. `WS_MAX_CONNECTIONS_PER_PRINCIPAL` ограничивает

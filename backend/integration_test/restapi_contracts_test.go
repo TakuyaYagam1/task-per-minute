@@ -85,7 +85,7 @@ func TestRESTHandlers_OpenAPIResponseShapes(t *testing.T) {
 	require.Equal(t, http.StatusOK, uploadResp.Code)
 	f.validateResponse(t, uploadReq, uploadResp)
 
-	aliceReq, aliceResp := f.doJSON(t, http.MethodPost, "/api/v1/players/join", `{"username":"`+uniq("alice")+`"}`, "")
+	aliceReq, aliceResp := f.loginPlayerViaHTTP(t, uniq("alice"))
 	require.Equal(t, http.StatusOK, aliceResp.Code)
 	f.validateResponse(t, aliceReq, aliceResp)
 	aliceSession := playerSessionCookieValue(t, aliceResp)
@@ -122,14 +122,14 @@ func TestRESTHandlers_ExpiredPlayerSessionReturns401(t *testing.T) {
 	f := newRESTFixture(t)
 	ctx := context.Background()
 
-	joinReq, joinResp := f.doJSON(t, http.MethodPost, "/api/v1/players/join", `{"username":"`+uniq("alice")+`"}`, "")
+	joinReq, joinResp := f.loginPlayerViaHTTP(t, uniq("alice"))
 	require.Equal(t, http.StatusOK, joinResp.Code)
 	f.validateResponse(t, joinReq, joinResp)
 	joined := decodeJSON[api.JoinPlayerResponse](t, joinResp)
 	sessionToken := uuid.MustParse(playerSessionCookieValue(t, joinResp))
 
 	expiresAt := time.Now().Add(-time.Minute).UTC()
-	_, err := f.players.UpdateSessionToken(ctx, joined.PlayerId, &sessionToken, &expiresAt)
+	_, err := f.players.UpdateSessionToken(ctx, joined.PlayerId, sessionToken, &sessionToken, &expiresAt)
 	require.NoError(t, err)
 
 	meReq, meResp := f.doJSON(t, http.MethodGet, "/api/v1/players/me", "", session(sessionToken))

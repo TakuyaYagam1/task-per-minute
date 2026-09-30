@@ -1,0 +1,68 @@
+.page {
+  display: grid;
+  min-height: calc(100vh - var(--site-header-height, 4rem));
+  place-items: center;
+  padding: clamp(1.5rem, 5vw, 4rem) 1rem;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.panel {
+  width: min(100%, 32rem);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: clamp(1.25rem, 5vw, 2.5rem);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.brand {
+  display: inline-block;
+  color: var(--secondary);
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-decoration: none;
+}
+
+.brand:hover {
+  color: var(--text);
+}
+
+.title {
+  margin: 1.2rem 0 0;
+  color: var(--text);
+  font-size: clamp(1.6rem, 5vw, 2rem);
+  line-height: 1.15;
+}
+
+.description {
+  margin: 0.65rem 0 0;
+  color: var(--secondary);
+  line-height: 1.5;
+}
+
+.content {
+  margin-top: 1.5rem;
+}
+
+.footer {
+  margin-top: 1.5rem;
+  border-top: 1px solid var(--border);
+  padding-top: 1rem;
+  color: var(--secondary);
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.footer a {
+  color: var(--text);
+  font-weight: 700;
+}
+
+.footer a:focus-visible,
+.brand:focus-visible {
+  border-radius: 2px;
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}

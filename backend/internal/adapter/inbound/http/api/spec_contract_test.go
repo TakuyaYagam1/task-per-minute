@@ -91,7 +91,10 @@ func TestOpenAPIJSONMutationsDocumentDecoderFailures(t *testing.T) {
 		method string
 		path   string
 	}{
-		{http.MethodPost, "/api/v1/players/join"},
+		{http.MethodPost, "/api/v1/players/register"},
+		{http.MethodPost, "/api/v1/players/login"},
+		{http.MethodPost, "/api/v1/players/verify-email"},
+		{http.MethodPost, "/api/v1/players/resend-verification"},
 		{http.MethodPost, "/api/v1/admin/login"},
 		{http.MethodPut, "/api/v1/admin/players/{id}"},
 		{http.MethodPost, "/api/v1/admin/tasks"},
@@ -119,6 +122,10 @@ func TestOpenAPISessionAndRateLimitHeaders(t *testing.T) {
 		{http.MethodPost, "/api/v1/admin/login"},
 		{http.MethodPost, "/api/v1/admin/refresh"},
 		{http.MethodPost, "/api/v1/players/join"},
+		{http.MethodPost, "/api/v1/players/register"},
+		{http.MethodPost, "/api/v1/players/login"},
+		{http.MethodPost, "/api/v1/players/verify-email"},
+		{http.MethodPost, "/api/v1/players/resend-verification"},
 		{http.MethodGet, "/api/v1/leaderboard"},
 	} {
 		operation := requireOperation(t, spec, candidate.method, candidate.path)
@@ -129,7 +136,7 @@ func TestOpenAPISessionAndRateLimitHeaders(t *testing.T) {
 		method string
 		path   string
 	}{
-		{http.MethodPost, "/api/v1/players/join"},
+		{http.MethodPost, "/api/v1/players/login"},
 		{http.MethodGet, "/api/v1/players/me"},
 	} {
 		operation := requireOperation(t, spec, candidate.method, candidate.path)
@@ -141,6 +148,15 @@ func TestOpenAPISessionAndRateLimitHeaders(t *testing.T) {
 		requireResponseHeader(t, operation, http.StatusOK, "X-CSRF-Token", path)
 		requireResponseHeader(t, operation, http.StatusOK, "X-Admin-Refresh-CSRF-Token", path)
 	}
+}
+
+func TestOpenAPINicknameJoinIsRetired(t *testing.T) {
+	t.Parallel()
+
+	operation := requireOperation(t, loadSpec(t), http.MethodPost, "/api/v1/players/join")
+	require.True(t, operation.Deprecated)
+	requireResponse(t, operation, http.StatusGone, "nickname-only join")
+	require.Nil(t, operation.Responses.Status(http.StatusOK))
 }
 
 func TestOpenAPIOperationIDsAndTagsUseDomainNaming(t *testing.T) {

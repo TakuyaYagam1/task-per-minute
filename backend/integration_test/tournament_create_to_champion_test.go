@@ -599,9 +599,11 @@ func newTournamentFlowRESTFixture(t *testing.T) *restFixture {
 	)
 	participantObserved := tournamentparticipant.ParticipantNewObservedService(participantIdempotent, clock, nil)
 	limiter := tournamentFlowLimiter{}
+	accounts, _ := newRESTAccountService(t, database)
 	server := restv1.New(restv1.Dependencies{
 		Players: playerusecase.SessionNewUseCase(database.mgr, database.players, clock), AdminAuth: auth,
-		Tournaments: catalog, TournamentAdmin: admin, TournamentConfiguration: configuration,
+		PlayerAccounts: accounts,
+		Tournaments:    catalog, TournamentAdmin: admin, TournamentConfiguration: configuration,
 		TournamentSnapshots:   tournamentsnapshotrepo.NewTournamentSnapshotPostgres(tx),
 		TournamentParticipant: participantObserved, ParticipantArchive: tournamentFlowParticipantArchive{}, Golden: golden,
 		LoginLimiter: limiter, JoinLimiter: limiter,
@@ -691,9 +693,7 @@ func joinTournamentFlowPlayers(t *testing.T, fixture *restFixture, count int) []
 	t.Helper()
 	players := make([]tournamentFlowPlayer, 0, count)
 	for index := range count {
-		req, resp := fixture.doJSON(t, http.MethodPost, "/api/v1/players/join", fmt.Sprintf(
-			`{"username":%q}`, fmt.Sprintf("finalist_%d_%s", index+1, uuid.NewString()[:8]),
-		), "")
+		req, resp := fixture.loginPlayerViaHTTP(t, fmt.Sprintf("finalist_%d_%s", index+1, uuid.NewString()[:8]))
 		require.Equal(t, http.StatusOK, resp.Code, resp.Body.String())
 		fixture.validateResponse(t, req, resp)
 		joined := decodeJSON[api.JoinPlayerResponse](t, resp)

@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/textproto"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -29,13 +30,16 @@ import (
 	restv1 "github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/http/v1"
 	authadapter "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/auth"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
+	accountrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/account"
 	schemarepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/schema"
 	redisadapter "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/redis"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	"github.com/TakuyaYagam1/task-per-minute/internal/observability"
+	inbound "github.com/TakuyaYagam1/task-per-minute/internal/port/inbound"
 	authusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/auth"
 	leaderboardusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/leaderboard"
 	playerusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/player"
+	playeraccount "github.com/TakuyaYagam1/task-per-minute/internal/usecase/player/account"
 	taskusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/task"
 )
 
@@ -59,13 +63,15 @@ func newRESTFixture(t *testing.T) *restFixture {
 	}), authadapter.NewPasswordVerifier([]byte(restAdminPassword)))
 
 	leaderboardUC := leaderboardusecase.NewCache(leaderboardusecase.NewRanking(f.board), clock)
+	accounts, _ := newRESTAccountService(t, f)
 	server := restv1.New(restv1.Dependencies{
-		Players:      playerusecase.SessionNewUseCase(f.mgr, f.players, clock),
-		AdminAuth:    auth,
-		Tasks:        taskusecase.NewUseCase(f.tasks),
-		AdminPlayers: playerusecase.ManagementNewUseCase(f.mgr, f.players, leaderboardUC, clock),
-		Upload:       taskusecase.NewSourceFiles(taskusecase.NewUseCase(f.tasks), st, nil),
-		Leaderboard:  leaderboardUC,
+		Players:        playerusecase.SessionNewUseCase(f.mgr, f.players, clock),
+		PlayerAccounts: accounts,
+		AdminAuth:      auth,
+		Tasks:          taskusecase.NewUseCase(f.tasks),
+		AdminPlayers:   playerusecase.ManagementNewUseCase(f.mgr, f.players, leaderboardUC, clock),
+		Upload:         taskusecase.NewSourceFiles(taskusecase.NewUseCase(f.tasks), st, nil),
+		Leaderboard:    leaderboardUC,
 		LeaderboardLimiter: redisadapter.NewRateLimiter(
 			redis.client,
 			"integration-rest-leaderboard-"+uniq("limiter"),
@@ -180,11 +186,54 @@ func (f *restFixture) adminAccessToken(t *testing.T) string {
 
 func (f *restFixture) joinPlayerViaUsecase(t *testing.T, username string) *domain.Player {
 	t.Helper()
-	uc := playerusecase.SessionNewUseCase(f.mgr, f.players, realIntegrationClock())
-	player, err := uc.Join(context.Background(), username)
+	uc := f.createVerifiedAccount(t, username)
+	player, err := uc.Login(context.Background(), inbound.LoginPlayerCommand{
+		Login: username, Password: restPlayerPassword,
+	})
 	require.NoError(t, err)
 	require.NotNil(t, player.SessionToken)
 	return player
+}
+
+const restPlayerPassword = "synthetic-player-password-123"
+
+type restVerificationMailer struct{ link string }
+
+func (m *restVerificationMailer) SendVerification(_ context.Context, _ string, link string) error {
+	m.link = link
+	return nil
+}
+
+func newRESTAccountService(t *testing.T, f *databaseFixture) (*playeraccount.UseCase, *restVerificationMailer) {
+	t.Helper()
+	mailer := &restVerificationMailer{}
+	service, err := playeraccount.NewUseCase(playeraccount.Config{
+		VerificationPageURL: "https://app.example.test/verify-email",
+	}, f.mgr, accountrepo.NewAccountPostgres(f.mgr), authadapter.NewPasswordHasher(), mailer, realIntegrationClock())
+	require.NoError(t, err)
+	return service, mailer
+}
+
+func (f *restFixture) createVerifiedAccount(t *testing.T, username string) *playeraccount.UseCase {
+	t.Helper()
+	service, mailer := newRESTAccountService(t, f.databaseFixture)
+	require.NoError(t, service.Register(t.Context(), inbound.RegisterPlayerCommand{
+		Username: username, Email: username + "@example.test", Password: restPlayerPassword,
+	}))
+	link, err := url.Parse(mailer.link)
+	require.NoError(t, err)
+	token, ok := strings.CutPrefix(link.Fragment, "token=")
+	require.True(t, ok)
+	require.NoError(t, service.VerifyEmail(t.Context(), token))
+	return service
+}
+
+func (f *restFixture) loginPlayerViaHTTP(t *testing.T, username string) (*http.Request, *httptest.ResponseRecorder) {
+	t.Helper()
+	f.createVerifiedAccount(t, username)
+	body, err := json.Marshal(map[string]string{"login": username, "password": restPlayerPassword})
+	require.NoError(t, err)
+	return f.doJSON(t, http.MethodPost, "/api/v1/players/login", string(body), "")
 }
 
 func adminPlayerIDs(players []api.PlayerManagementView) []uuid.UUID {

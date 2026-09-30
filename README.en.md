@@ -80,9 +80,11 @@ go test ./...
 go run ./cmd/app
 ```
 
-Join creates a player session or reclaims a username only after its previous
-session expires. While that session is active, `POST /api/v1/players/join`
-returns `409`; knowing the public username does not allow session replacement.
+Players register a username, email and password at `/register`, verify their
+email through the supplied link, and sign in at `/login`. The username appears
+on the leaderboard. Nickname-only `POST /api/v1/players/join` returns `410`.
+See the [email guide](docs/en/email.md) for Resend, SMTP and migration from
+legacy player sessions.
 
 ## Server
 

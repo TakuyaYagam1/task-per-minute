@@ -137,10 +137,10 @@ func TestNewHandler_RateLimitsInvalidPublicBodiesBeforeOpenAPIValidation(t *test
 			},
 		},
 		{
-			name:  "player join",
-			path:  "/api/v1/players/join",
+			name:  "player registration",
+			path:  "/api/v1/players/register",
 			body:  `{}`,
-			event: "player.join",
+			event: "player.register",
 			deps: func(t *testing.T, log logkit.Logger) Dependencies {
 				return Dependencies{
 					JoinLimiter: newOneRequestRateLimiter(t, "3600"),

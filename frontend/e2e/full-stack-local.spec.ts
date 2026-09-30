@@ -10,6 +10,7 @@ import {
   type Page,
   type Response as BrowserResponse,
 } from '@playwright/test';
+import { seedVerifiedAccount } from './support/account-fixture';
 
 const frontendURL = (process.env.E2E_FRONTEND_URL || 'http://127.0.0.1:3000').replace(/\/+$/, '');
 const backendURL = (process.env.E2E_BACKEND_URL || 'http://127.0.0.1:8080').replace(/\/+$/, '');
@@ -1231,22 +1232,23 @@ const uploadSourceViaApi = async (
 };
 
 const joinAsPlayer = async (page: Page, username: string): Promise<void> => {
-  await page.goto('/');
-  await page.getByPlaceholder('Введите никнейм...').fill(username);
-  const joinResponsePromise = page.waitForResponse(
+  const password = seedVerifiedAccount(username);
+  await page.goto('/login');
+  await page.getByLabel('Логин или email').fill(username);
+  await page.getByLabel('Пароль', { exact: true }).fill(password);
+  const loginResponsePromise = page.waitForResponse(
     (response) =>
-      new URL(response.url()).pathname === '/api/v1/players/join' &&
+      new URL(response.url()).pathname === '/api/v1/players/login' &&
       response.request().method() === 'POST',
     { timeout: 15_000 },
   );
-  await page.getByRole('button', { name: /ПОДКЛЮЧИТЬСЯ/ }).click();
-  const joinResponse = await joinResponsePromise;
-  const retryAfter = await joinResponse.headerValue('retry-after');
-  const retryAfterSeconds = /^\d+$/.test(retryAfter ?? '') ? retryAfter : 'absent or non-numeric';
+  await page.getByRole('button', { name: 'Войти', exact: true }).click();
+  const loginResponse = await loginResponsePromise;
   expect(
-    joinResponse.status(),
-    `player join failed with ${joinResponse.status()}; Retry-After seconds: ${retryAfterSeconds}`,
+    loginResponse.status(),
+    `synthetic player login failed with ${loginResponse.status()}`,
   ).toBe(200);
+  await expect(page).toHaveURL(`${frontendURL}/`);
   await expect(page.getByText('Игрок готов')).toBeVisible({ timeout: 15_000 });
 };
 
@@ -1305,8 +1307,8 @@ test.describe('local compose full stack e2e', () => {
     await expectNoSensitiveAuthStorage(page);
 
     const cookieHeader = await cookieHeaderForPage(page);
-    expect(cookieHeader, 'player join must issue a player session cookie').toContain('tpm_player_session=');
-    expect(cookieHeader, 'player join must issue a player csrf cookie').toContain('tpm_player_csrf=');
+    expect(cookieHeader, 'player login must issue a player session cookie').toContain('tpm_player_session=');
+    expect(cookieHeader, 'player login must issue a player csrf cookie').toContain('tpm_player_csrf=');
 
     const meResponse = await request.get(`${backendURL}/api/v1/players/me`, {
       headers: {
@@ -1318,8 +1320,9 @@ test.describe('local compose full stack e2e', () => {
     const me = (await meResponse.json()) as { player: { username: string } };
     expect(me.player.username).toBe(username);
 
-    await page.getByRole('button', { name: /Сменить игрока/ }).click();
-    await expect(page.getByPlaceholder('Введите никнейм...')).toBeVisible({ timeout: 15_000 });
+    await page.getByRole('button', { name: 'Выйти', exact: true }).click();
+    await expect(page.getByRole('link', { name: 'Войти', exact: true })).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByRole('link', { name: 'Создать аккаунт', exact: true })).toBeVisible();
     await expectNoSensitiveAuthStorage(page);
 
     const staleMeResponse = await request.get(`${backendURL}/api/v1/players/me`, {
@@ -6527,19 +6530,18 @@ test.describe('local compose full stack e2e', () => {
       ownedFixture.contexts.push(context);
       const playerPage = await context.newPage();
       const username = uniqueName(`catalog-player-${index + 1}`);
+      await joinAsPlayer(playerPage, username);
       if (index === 0) {
         await playerPage.goto(`/arena/tournaments/${primaryTournament.public_id}`);
-        await playerPage.getByRole('button', { name: 'Участвовать', exact: true }).click();
-        await playerPage.getByLabel('Никнейм', { exact: true }).fill(username);
+        const participateButton = playerPage.getByRole('button', { name: 'Участвовать', exact: true });
+        await expect(participateButton).toBeVisible({ timeout: 20_000 });
         const queuePost = playerPage.waitForResponse((response) =>
           new URL(response.url()).pathname === `/api/v1/tournaments/${primaryTournament.id}/participant/queue`
           && response.request().method() === 'POST',
         );
-        await playerPage.getByRole('button', { name: 'Зарегистрироваться', exact: true }).click();
+        await participateButton.click({ timeout: 20_000 });
         expect((await queuePost).status()).toBe(200);
         await expect(playerPage.getByTestId('tournament-admission-status')).toContainText('Зарегистрирован');
-      } else {
-        await joinAsPlayer(playerPage, username);
       }
       const meResponse = await context.request.get(`${backendURL}/api/v1/players/me`, {
         headers: { Origin: frontendURL },
@@ -6574,6 +6576,25 @@ test.describe('local compose full stack e2e', () => {
     for (const fixture of playerFixtures.slice(1)) {
       await joinPlayerToTournament(fixture.page, primaryTournament);
     }
+    const checkInPlayerAtTournament = async (playerPage: Page): Promise<void> => {
+      await playerPage.goto(`/arena/tournaments/${primaryTournament.public_id}?view=overview`);
+      const admissionStatus = playerPage.getByTestId('tournament-admission-status');
+      await expect(admissionStatus).toContainText('Зарегистрирован');
+      const checkInButton = playerPage.getByRole('button', {
+        name: 'Подтвердить участие',
+        exact: true,
+      });
+      await expect(checkInButton).toBeVisible();
+      const checkInResponse = playerPage.waitForResponse((response) =>
+        new URL(response.url()).pathname ===
+          `/api/v1/tournaments/${primaryTournament.id}/participant/queue/check-in` &&
+        response.request().method() === 'POST',
+      );
+      await checkInButton.click();
+      expect((await checkInResponse).status()).toBe(200);
+      await expect(admissionStatus).toContainText('Готов');
+    };
+
     const primaryFixture = playerFixtures[0];
     expect(primaryFixture).toBeDefined();
     if (!primaryFixture) {
@@ -6615,6 +6636,10 @@ test.describe('local compose full stack e2e', () => {
     expect(secondaryAdmission.player_id).toBe(primaryFixture.player.id);
     expect(secondaryAdmission.status).toBe('not_registered');
     expect(secondaryAdmission.participant_id).toBeNull();
+
+    for (const fixture of playerFixtures) {
+      await checkInPlayerAtTournament(fixture.page);
+    }
 
     const roster = await getRosterViaApi(adminRequest, primaryTournament.id);
     expect(roster.participants).toHaveLength(playerFixtures.length);

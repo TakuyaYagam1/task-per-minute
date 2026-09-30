@@ -25,6 +25,21 @@
       "owner": "lib/pages/arena/exports.ts"
     },
     {
+      "route": "/login",
+      "entry": "app/login/page.tsx",
+      "owner": "lib/pages/arena/exports.ts"
+    },
+    {
+      "route": "/register",
+      "entry": "app/register/page.tsx",
+      "owner": "lib/pages/arena/exports.ts"
+    },
+    {
+      "route": "/verify-email",
+      "entry": "app/verify-email/page.tsx",
+      "owner": "lib/pages/arena/exports.ts"
+    },
+    {
       "route": "/arena/tournaments/[publicId]",
       "entry": "app/arena/tournaments/[publicId]/page.tsx",
       "owner": "lib/pages/arena/exports.ts"

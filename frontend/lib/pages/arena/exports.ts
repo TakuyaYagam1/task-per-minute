@@ -4,3 +4,6 @@ export { ArenaPublicTournamentPage } from "./ArenaPublicTournamentPage";
 export { ArenaRolePage } from "./ArenaRolePage";
 export { default as HomePage } from "./HomePage";
 export { default as LeaderboardPage } from "./LeaderboardPage";
+export { PlayerEmailVerificationPage } from "./PlayerEmailVerificationPage";
+export { PlayerLoginPage } from "./PlayerLoginPage";
+export { PlayerRegistrationPage } from "./PlayerRegistrationPage";

@@ -77,8 +77,8 @@ test('release proxy serves the production frontend runtime and public health', a
   expect(configEvidence.adapted_sha256).not.toBe(configEvidence.original_sha256);
   const response = await page.goto(origins.public);
   expect(response?.status()).toBe(200);
-  await expect(page.getByPlaceholder('Введите никнейм...')).toBeVisible();
-  await expect(page.getByRole('button', { name: 'ПОДКЛЮЧИТЬСЯ' })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Войти', exact: true })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Создать аккаунт', exact: true })).toBeVisible();
   const health = await request.get(`${origins.public}/health`);
   expect(health.status()).toBe(200);
   expect(health.headers()['x-content-type-options']).toBe('nosniff');

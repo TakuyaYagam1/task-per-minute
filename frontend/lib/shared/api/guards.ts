@@ -7,6 +7,7 @@ type AdminPlayerAuditState = components["schemas"]["PlayerAuditState"];
 type AdminTask = components["schemas"]["TaskDetails"];
 type AdminSessionResponse = components["schemas"]["AdminSessionResponse"];
 type JoinPlayerResponse = components["schemas"]["JoinPlayerResponse"];
+type PlayerAccountAcceptedResponse = components["schemas"]["PlayerAccountAcceptedResponse"];
 type LeaderboardEntry = components["schemas"]["LeaderboardEntry"];
 type LeaderboardResponse = components["schemas"]["LeaderboardResponse"];
 type PublicTournamentResponse = components["schemas"]["PublicTournamentResponse"];
@@ -137,6 +138,11 @@ export const assertApiResponse = <T>(
 
 export const isJoinPlayerResponse = (value: unknown): value is JoinPlayerResponse =>
   isRecord(value) && isUUID(value.player_id);
+
+export const isPlayerAccountAcceptedResponse = (
+  value: unknown,
+): value is PlayerAccountAcceptedResponse =>
+  isRecord(value) && hasExactKeys(value, ["accepted"]) && value.accepted === true;
 
 const isPlayerResponse = (value: unknown): value is PlayerResponse =>
   isRecord(value) &&

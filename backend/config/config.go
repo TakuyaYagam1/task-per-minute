@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"net"
+	"net/mail"
 	"net/url"
 	"strings"
 	"time"
@@ -25,17 +26,21 @@ var placeholderFragments = []string{
 }
 
 type Config struct {
-	HTTP        HTTP        `env-prefix:"HTTP_"`
-	DB          DB          `env-prefix:"DB_"`
-	Redis       Redis       `env-prefix:"REDIS_"`
-	SeaweedFS   SeaweedFS   `env-prefix:"SEAWEEDFS_"`
-	JWT         JWT         `env-prefix:"JWT_"`
-	Incident    Incident    `env-prefix:"INCIDENT_EXPORT_"`
-	Admin       Admin       `env-prefix:"ADMIN_"`
-	Player      Player      `env-prefix:"PLAYER_"`
-	Leaderboard Leaderboard `env-prefix:"LEADERBOARD_"`
-	Tournament  Tournament  `env-prefix:"TOURNAMENT_"`
-	WS          WebSocket   `env-prefix:"WS_"`
+	HTTP         HTTP        `env-prefix:"HTTP_"`
+	DB           DB          `env-prefix:"DB_"`
+	Redis        Redis       `env-prefix:"REDIS_"`
+	SeaweedFS    SeaweedFS   `env-prefix:"SEAWEEDFS_"`
+	JWT          JWT         `env-prefix:"JWT_"`
+	Incident     Incident    `env-prefix:"INCIDENT_EXPORT_"`
+	Admin        Admin       `env-prefix:"ADMIN_"`
+	Email        Email       `env-prefix:"EMAIL_"`
+	Resend       Resend      `env-prefix:"RESEND_"`
+	SMTP         SMTP        `env-prefix:"SMTP_"`
+	AppPublicURL string      `env:"APP_PUBLIC_URL"`
+	Player       Player      `env-prefix:"PLAYER_"`
+	Leaderboard  Leaderboard `env-prefix:"LEADERBOARD_"`
+	Tournament   Tournament  `env-prefix:"TOURNAMENT_"`
+	WS           WebSocket   `env-prefix:"WS_"`
 }
 
 type MigrationConfig struct {
@@ -94,6 +99,26 @@ type Admin struct {
 	LoginRateWindow     time.Duration `env:"LOGIN_RATE_WINDOW"     env-default:"15m"`
 	RefreshRateAttempts int           `env:"REFRESH_RATE_ATTEMPTS"`
 	RefreshRateWindow   time.Duration `env:"REFRESH_RATE_WINDOW"`
+}
+
+type Email struct {
+	Provider string        `env:"PROVIDER"`
+	From     string        `env:"FROM"`
+	Timeout  time.Duration `env:"TIMEOUT"  env-default:"10s"`
+}
+
+// Resend retains the original environment names for existing deployments.
+type Resend struct {
+	Enabled bool   `env:"ENABLED"`
+	APIKey  string `env:"API_KEY"`
+}
+
+type SMTP struct {
+	Host     string `env:"HOST"`
+	Port     int    `env:"PORT"     env-default:"587"`
+	Username string `env:"USERNAME"`
+	Password string `env:"PASSWORD"`
+	TLSMode  string `env:"TLS_MODE" env-default:"starttls"`
 }
 
 type Player struct {
@@ -177,6 +202,9 @@ func (c *Config) Validate() error {
 		return err
 	}
 	if err := validateAdmin(&c.Admin); err != nil {
+		return err
+	}
+	if err := validateEmail(c); err != nil {
 		return err
 	}
 	if err := validatePlayer(c.Player); err != nil {
@@ -372,6 +400,138 @@ func validateAdmin(cfg *Admin) error {
 	}
 	if err := rateLimitDuration("ADMIN_REFRESH_RATE_WINDOW", cfg.RefreshRateWindow); err != nil {
 		return err
+	}
+	return nil
+}
+
+func validateEmail(cfg *Config) error {
+	if cfg == nil {
+		return fmt.Errorf("email config must not be nil")
+	}
+	normalizeEmailConfig(cfg)
+	if err := validateEmailProvider(cfg); err != nil {
+		return err
+	}
+	if cfg.Email.Provider == "disabled" {
+		return nil
+	}
+	return validateEnabledEmail(cfg)
+}
+
+func normalizeEmailConfig(cfg *Config) {
+	cfg.Email.Provider = strings.ToLower(strings.TrimSpace(cfg.Email.Provider))
+	cfg.Email.From = strings.TrimSpace(cfg.Email.From)
+	cfg.Resend.APIKey = strings.TrimSpace(cfg.Resend.APIKey)
+	cfg.AppPublicURL = strings.TrimSpace(cfg.AppPublicURL)
+	cfg.SMTP.Host = strings.TrimSpace(cfg.SMTP.Host)
+	cfg.SMTP.Username = strings.TrimSpace(cfg.SMTP.Username)
+	cfg.SMTP.TLSMode = strings.ToLower(strings.TrimSpace(cfg.SMTP.TLSMode))
+}
+
+func validateEmailProvider(cfg *Config) error {
+	if cfg.Email.Provider == "" {
+		if cfg.Resend.Enabled {
+			cfg.Email.Provider = "resend"
+		} else {
+			cfg.Email.Provider = "disabled"
+		}
+	}
+	switch cfg.Email.Provider {
+	case "disabled":
+		return nil
+	case "resend":
+		return validateResendProvider(cfg.Resend)
+	case "smtp":
+		return validateSMTPProvider(cfg.SMTP)
+	default:
+		return fmt.Errorf("EMAIL_PROVIDER must be disabled, resend, or smtp")
+	}
+}
+
+func validateResendProvider(cfg Resend) error {
+	if invalidSecret(cfg.APIKey) {
+		return fmt.Errorf("RESEND_API_KEY must not be empty or placeholder when EMAIL_PROVIDER=resend")
+	}
+	return nil
+}
+
+func validateSMTPProvider(cfg SMTP) error {
+	if cfg.Host == "" {
+		return fmt.Errorf("SMTP_HOST must not be empty when EMAIL_PROVIDER=smtp")
+	}
+	if err := validateSMTPHost(cfg.Host); err != nil {
+		return err
+	}
+	if cfg.Port < 1 || cfg.Port > 65535 {
+		return fmt.Errorf("SMTP_PORT must be between 1 and 65535")
+	}
+	if (cfg.Username == "") != (cfg.Password == "") {
+		return fmt.Errorf("SMTP_USERNAME and SMTP_PASSWORD must be set together")
+	}
+	if cfg.Password != "" && (strings.TrimSpace(cfg.Password) == "" || hasPlaceholder(cfg.Password)) {
+		return fmt.Errorf("SMTP_PASSWORD must not be a placeholder")
+	}
+	if cfg.TLSMode != "starttls" && cfg.TLSMode != "tls" {
+		return fmt.Errorf("SMTP_TLS_MODE must be starttls or tls")
+	}
+	return nil
+}
+
+func validateEnabledEmail(cfg *Config) error {
+	if cfg.Email.Timeout <= 0 || cfg.Email.Timeout > 2*time.Minute {
+		return fmt.Errorf("EMAIL_TIMEOUT must be positive and at most 2m")
+	}
+	if err := validateEmailAddress("EMAIL_FROM", cfg.Email.From); err != nil {
+		return err
+	}
+	if err := validateAppPublicURL(cfg.AppPublicURL); err != nil {
+		return err
+	}
+	return nil
+}
+
+func validateEmailAddress(name, value string) error {
+	parsed, err := mail.ParseAddress(value)
+	if err != nil || parsed == nil || parsed.Address != value || parsed.Name != "" {
+		return fmt.Errorf("%s must be a single bare email address", name)
+	}
+	return nil
+}
+
+func validateAppPublicURL(value string) error {
+	publicURL := strings.TrimSpace(value)
+	parsed, err := url.Parse(publicURL)
+	if err != nil || !validAppPublicURLShape(parsed) {
+		return fmt.Errorf("APP_PUBLIC_URL must be an origin URL without a subpath, user info, query, or fragment")
+	}
+	if parsed.Scheme == "https" {
+		return nil
+	}
+	host := strings.ToLower(parsed.Hostname())
+	ip := net.ParseIP(host)
+	if parsed.Scheme == "http" && (host == "localhost" || (ip != nil && ip.IsLoopback())) {
+		return nil
+	}
+	return fmt.Errorf("APP_PUBLIC_URL must use HTTPS except for loopback development URLs")
+}
+
+func validAppPublicURLShape(parsed *url.URL) bool {
+	return parsed != nil && parsed.IsAbs() && parsed.Host != "" && parsed.User == nil &&
+		parsed.RawQuery == "" && !parsed.ForceQuery && parsed.Fragment == "" && parsed.Opaque == "" &&
+		(parsed.Path == "" || parsed.Path == "/")
+}
+
+func validateSMTPHost(host string) error {
+	if strings.ContainsAny(host, "/?#@ \t\r\n") || strings.Contains(host, "://") {
+		return fmt.Errorf("SMTP_HOST must be a hostname or IP address without a scheme or port")
+	}
+	if net.ParseIP(host) != nil {
+		return nil
+	}
+	parsed, err := url.Parse("//" + host)
+	if err != nil || parsed.Host != host || parsed.Hostname() != host || parsed.User != nil ||
+		parsed.Path != "" || parsed.RawQuery != "" || parsed.Fragment != "" {
+		return fmt.Errorf("SMTP_HOST must be a hostname or IP address without a scheme or port")
 	}
 	return nil
 }

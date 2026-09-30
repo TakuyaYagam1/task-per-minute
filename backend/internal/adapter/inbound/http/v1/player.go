@@ -4,8 +4,6 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/google/uuid"
-
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/http/api"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/http/errmap"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/http/middleware"
@@ -15,45 +13,11 @@ import (
 
 // (POST /api/v1/players/join).
 func (s *Server) JoinPlayer(w http.ResponseWriter, r *http.Request) {
-	if s.players == nil {
-		errmap.HandleError(w, r, domain.ErrInternal)
-		return
-	}
-
 	if !s.enterPublicRequest(w, r, s.playerJoinPolicy()) {
 		return
 	}
-
-	var body api.JoinPlayerRequest
-	if !decodeJSONBody(w, r, &body, domain.ErrValidation) {
-		s.logSecurityEvent(r, "player.join", securityOutcomeFailure, logkitFields("error_code", domain.ErrorCodeValidation))
-		return
-	}
-
-	player, err := s.players.Join(r.Context(), body.Username)
-	if err != nil {
-		s.logSecurityEvent(r, "player.join", securityOutcomeFailure, logkitFields("error_code", securityErrorCode(err)))
-		errmap.HandleError(w, r, err)
-		return
-	}
-	if player.SessionToken == nil || *player.SessionToken == uuid.Nil {
-		s.logSecurityEvent(r, "player.join", securityOutcomeFailure, logkitFields("error_code", domain.ErrorCodeInternal))
-		errmap.HandleError(w, r, domain.ErrInternal)
-		return
-	}
-	csrfToken, err := middleware.NewPlayerCSRFToken(*player.SessionToken)
-	if err != nil {
-		s.logSecurityEvent(r, "player.join", securityOutcomeFailure, logkitFields("error_code", domain.ErrorCodeInternal))
-		errmap.HandleError(w, r, domain.ErrInternal)
-		return
-	}
-
-	middleware.SetPlayerSessionCookie(w, r, *player.SessionToken)
-	middleware.SetPlayerCSRFCookie(w, r, csrfToken)
-	s.logSecurityEvent(r, "player.join", securityOutcomeSuccess, logkitFields("player_id", player.ID.String()))
-	response.WriteJSON(w, http.StatusOK, api.JoinPlayerResponse{
-		PlayerId: player.ID,
-	})
+	s.logSecurityEvent(r, "player.join", securityOutcomeFailure, logkitFields("error_code", domain.ErrorCodePlayerJoinRetired))
+	errmap.HandleError(w, r, domain.ErrPlayerJoinRetired)
 }
 
 // (GET /api/v1/players/me).

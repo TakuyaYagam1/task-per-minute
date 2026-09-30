@@ -1,31 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { type FormEvent, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 
 import { playerModel } from "../../entities/player";
-import {
-  getSafeArenaReturnPath,
-  isValidUsername,
-  log,
-  useTimedNotification,
-} from "../../shared/lib";
+import { getSafeArenaReturnPath, useTimedNotification } from "../../shared/lib";
 import type { Player } from "../../shared/types";
 import { ViewportPortal } from "../../shared/ui";
 
 import styles from "./HomePage.module.css";
-
-const buildRateLimitMessage = (retryAfter?: string | null): string => {
-  const value = retryAfter?.trim();
-  if (!value) {
-    return "Слишком много попыток. Повторите чуть позже.";
-  }
-  const seconds = Number(value);
-  if (Number.isFinite(seconds) && seconds > 0) {
-    return `Слишком много попыток. Повторите через ${Math.ceil(seconds)} секунд.`;
-  }
-  return "Слишком много попыток. Повторите позже.";
-};
 
 const participantReturnPath = (): string | null =>
   getSafeArenaReturnPath(
@@ -34,52 +17,45 @@ const participantReturnPath = (): string | null =>
   );
 
 export default function HomePage() {
-  const [nickname, setNickname] = useState("");
   const [currentPlayer, setCurrentPlayer] = useState<Player | null>(null);
-  const [isJoining, setIsJoining] = useState(false);
+  const [isRestoring, setIsRestoring] = useState(true);
   const [isLeaving, setIsLeaving] = useState(false);
+  const [loginHref, setLoginHref] = useState("/login");
+  const [registerHref, setRegisterHref] = useState("/register");
   const { notification, showNotification } = useTimedNotification<string>();
 
   useEffect(() => {
-    const player = playerModel.getCurrentPlayer();
-    if (!player) {
-      return;
+    const returnPath = participantReturnPath();
+    if (returnPath) {
+      const next = encodeURIComponent(returnPath);
+      setLoginHref(`/login?next=${next}`);
+      setRegisterHref(`/register?next=${next}`);
     }
+  }, []);
 
-    setCurrentPlayer(player);
-    setNickname(player.username);
-
+  useEffect(() => {
     const controller = new AbortController();
     let cancelled = false;
     void (async () => {
-      const result = await playerModel.refreshCurrentPlayer(
-        player,
-        controller.signal,
-      );
+      const result = await playerModel.restoreCurrentPlayer(controller.signal);
       if (cancelled || result.kind === "aborted") {
         return;
       }
+      setIsRestoring(false);
       if (result.kind === "ok") {
         setCurrentPlayer(result.state.player);
-        setNickname(result.state.player.username);
         const returnPath = participantReturnPath();
         if (returnPath) {
           window.location.replace(returnPath);
         }
         return;
       }
-      if (result.kind === "expired") {
-        setCurrentPlayer(null);
-        setNickname("");
-        showNotification("Сессия истекла. Введите никнейм заново.");
-        return;
-      }
+      setCurrentPlayer(null);
       if (result.kind === "contract") {
-        log.warn("players/me returned malformed payload");
-        showNotification("Не удалось проверить сессию. Попробуйте еще раз.");
-        return;
+        showNotification("Не удалось проверить сессию. Попробуйте позже.");
+      } else if (result.kind === "error") {
+        showNotification("Не удалось подключиться. Попробуйте позже.");
       }
-      log.warn("players/me failed while restoring the player session");
     })();
 
     return () => {
@@ -88,40 +64,6 @@ export default function HomePage() {
     };
   }, [showNotification]);
 
-  const handleJoin = async (event: FormEvent) => {
-    event.preventDefault();
-    const username = nickname.trim();
-    if (!isValidUsername(username)) {
-      showNotification("Никнейм: 2-50 символов, латиница, цифры, _ или -");
-      return;
-    }
-
-    setIsJoining(true);
-    const result = await playerModel.initializePlayer(username);
-    setIsJoining(false);
-
-    if (result.kind === "ok") {
-      setCurrentPlayer(result.player);
-      setNickname(result.player.username);
-      const returnPath = participantReturnPath();
-      if (returnPath) {
-        window.location.replace(returnPath);
-      }
-      return;
-    }
-    if (result.kind === "rate_limited") {
-      showNotification(buildRateLimitMessage(result.retryAfter));
-      return;
-    }
-    if (result.kind === "username_taken") {
-      showNotification("Никнейм занят активной сессией. Завершите ее или выберите другой никнейм.");
-      return;
-    }
-    if (result.kind !== "aborted") {
-      showNotification("Ошибка соединения");
-    }
-  };
-
   const handleChangePlayer = async () => {
     if (!currentPlayer || isLeaving) {
       return;
@@ -129,9 +71,8 @@ export default function HomePage() {
     setIsLeaving(true);
     await playerModel.clearCurrentPlayer();
     setCurrentPlayer(null);
-    setNickname("");
     setIsLeaving(false);
-    showNotification("Сессия отменена.");
+    showNotification("Сессия завершена.");
   };
 
   return (
@@ -157,31 +98,9 @@ export default function HomePage() {
             <section className={styles.joinPanel} aria-labelledby="join-title">
               <h2 className={styles.sectionTitle} id="join-title">Вход участника</h2>
 
-              {!currentPlayer ? (
-                <form onSubmit={handleJoin} className={styles.form}>
-                  <label className={styles.srOnly} htmlFor="nickname">
-                    Никнейм
-                  </label>
-                  <input
-                    id="nickname"
-                    type="text"
-                    value={nickname}
-                    onChange={(event) => setNickname(event.target.value)}
-                    placeholder="Введите никнейм..."
-                    maxLength={50}
-                    autoComplete="nickname"
-                    className={styles.input}
-                    disabled={isJoining}
-                  />
-                  <button
-                    type="submit"
-                    disabled={isJoining || !nickname.trim()}
-                    className={`${styles.primaryButton} btn btn-primary`}
-                  >
-                    {isJoining ? "ПОДКЛЮЧЕНИЕ..." : "ПОДКЛЮЧИТЬСЯ"}
-                  </button>
-                </form>
-              ) : (
+              {isRestoring ? (
+                <p className={styles.restoreMessage} role="status">Проверяем сессию...</p>
+              ) : currentPlayer ? (
                 <div className={styles.currentPlayer}>
                   <div className={styles.playerSummary}>
                     <span className={styles.playerLabel}>Текущий игрок</span>
@@ -193,15 +112,24 @@ export default function HomePage() {
                     disabled={isLeaving}
                     className={`${styles.secondaryButton} btn btn-secondary`}
                   >
-                    {isLeaving ? "Смена игрока..." : "Сменить игрока"}
+                    {isLeaving ? "Завершение сессии..." : "Выйти"}
                   </button>
+                  <div className={styles.sessionState} aria-live="polite">
+                    <span className={`${styles.stateDot} ${styles.stateDotReady}`} aria-hidden="true" />
+                    Игрок готов
+                  </div>
                 </div>
-              )}
-
-              {currentPlayer && (
-                <div className={styles.sessionState} aria-live="polite">
-                  <span className={`${styles.stateDot} ${styles.stateDotReady}`} aria-hidden="true" />
-                  Игрок готов
+              ) : (
+                <div className={styles.authLinks}>
+                  <p className={styles.authCopy}>
+                    Войдите или создайте аккаунт, чтобы участвовать в соревнованиях.
+                  </p>
+                  <Link href={loginHref} className={`${styles.primaryButton} btn btn-primary`}>
+                    Войти
+                  </Link>
+                  <Link href={registerHref} className={`${styles.secondaryButton} btn btn-secondary`}>
+                    Создать аккаунт
+                  </Link>
                 </div>
               )}
 

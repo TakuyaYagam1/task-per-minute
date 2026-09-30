@@ -95,6 +95,14 @@ func (s *Server) publicRequestPolicy(r *http.Request) (publicRequestPolicy, bool
 		return s.adminRefreshPolicy(), true
 	case "/api/v1/players/join":
 		return s.playerJoinPolicy(), true
+	case "/api/v1/players/register":
+		return s.playerRegisterPolicy(), true
+	case "/api/v1/players/login":
+		return s.playerLoginPolicy(), true
+	case "/api/v1/players/verify-email":
+		return s.playerVerifyPolicy(), true
+	case "/api/v1/players/resend-verification":
+		return s.playerResendPolicy(), true
 	default:
 		return publicRequestPolicy{}, false
 	}
@@ -119,7 +127,23 @@ func (s *Server) adminRefreshPolicy() publicRequestPolicy {
 func (s *Server) playerJoinPolicy() publicRequestPolicy {
 	return publicRequestPolicy{
 		event:          "player.join",
-		validationCode: domain.ErrorCodeValidation,
+		validationCode: domain.ErrorCodePlayerJoinRetired,
 		limiter:        s.joinLimiter,
 	}
+}
+
+func (s *Server) playerRegisterPolicy() publicRequestPolicy {
+	return publicRequestPolicy{event: "player.register", validationCode: domain.ErrorCodeValidation, limiter: s.joinLimiter}
+}
+
+func (s *Server) playerLoginPolicy() publicRequestPolicy {
+	return publicRequestPolicy{event: "player.login", validationCode: domain.ErrorCodeInvalidCredentials, limiter: s.joinLimiter}
+}
+
+func (s *Server) playerVerifyPolicy() publicRequestPolicy {
+	return publicRequestPolicy{event: "player.verify_email", validationCode: domain.ErrorCodeVerificationTokenInvalid, limiter: s.joinLimiter}
+}
+
+func (s *Server) playerResendPolicy() publicRequestPolicy {
+	return publicRequestPolicy{event: "player.resend_verification", validationCode: domain.ErrorCodeValidation, limiter: s.joinLimiter}
 }

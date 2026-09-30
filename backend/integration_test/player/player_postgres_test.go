@@ -4,9 +4,8 @@ package player_test
 
 import (
 	"context"
-	"errors"
 	"math"
-	"sync"
+	"strings"
 	"testing"
 	"time"
 
@@ -142,18 +141,31 @@ func TestPlayerRepo_UpdateUsername_SuccessNotFoundAndDuplicate(t *testing.T) {
 	require.Equal(t, bob.Username, retained.Username)
 }
 
+func TestPlayerRepo_UpdateUsername_AccountBackedAllowsNoopAndRejectsRename(t *testing.T) {
+	t.Parallel()
+	pool := newParallelTestDB(t)
+	repo, mgr := newPlayerRepo(pool)
+	ctx := context.Background()
+	player, _ := createVerifiedAccountSession(ctx, t, pool, mgr, repo, uniq("account_player"), time.Now().UTC().Add(time.Hour))
+
+	require.NoError(t, repo.UpdateUsername(ctx, player.ID, player.Username))
+	err := repo.UpdateUsername(ctx, player.ID, uniq("renamed_account_player"))
+	require.ErrorIs(t, err, domain.ErrConflict)
+	retained, err := repo.GetByID(ctx, player.ID)
+	require.NoError(t, err)
+	require.Equal(t, player.Username, retained.Username)
+}
+
 func TestPlayerRepo_UpdateSessionToken_SetThenClear(t *testing.T) {
 	t.Parallel()
 	pool := newParallelTestDB(t)
-	repo, _ := newPlayerRepo(pool)
+	repo, mgr := newPlayerRepo(pool)
 	ctx := context.Background()
 
-	p, err := repo.Create(ctx, uniq("alice"))
-	require.NoError(t, err)
-
-	token := uuid.New()
 	expiresAt := time.Now().Add(time.Hour).UTC()
-	updated, err := repo.UpdateSessionToken(ctx, p.ID, &token, &expiresAt)
+	p, currentToken := createVerifiedAccountSession(ctx, t, pool, mgr, repo, uniq("alice"), expiresAt)
+	token := uuid.New()
+	updated, err := repo.UpdateSessionToken(ctx, p.ID, currentToken, &token, &expiresAt)
 	require.NoError(t, err)
 	require.NotNil(t, updated.SessionToken)
 	require.Equal(t, token, *updated.SessionToken)
@@ -164,7 +176,7 @@ func TestPlayerRepo_UpdateSessionToken_SetThenClear(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, p.ID, bySession.ID)
 
-	cleared, err := repo.UpdateSessionToken(ctx, p.ID, nil, nil)
+	cleared, err := repo.UpdateSessionToken(ctx, p.ID, token, nil, nil)
 	require.NoError(t, err)
 	require.Nil(t, cleared.SessionToken)
 	require.Nil(t, cleared.SessionExpiresAt)
@@ -174,21 +186,55 @@ func TestPlayerRepo_UpdateSessionToken_SetThenClear(t *testing.T) {
 		"after clearing the token nobody should match it")
 }
 
-func TestPlayerRepo_GetBySessionToken_ExpiredSessionClearsToken(t *testing.T) {
+func TestPlayerRepo_StaleSessionClearCannotRevokeReplacement(t *testing.T) {
+	t.Parallel()
+	pool := newParallelTestDB(t)
+	repo, mgr := newPlayerRepo(pool)
+	ctx := context.Background()
+	expiresAt := time.Now().UTC().Add(time.Hour)
+	player, oldToken := createVerifiedAccountSession(ctx, t, pool, mgr, repo, uniq("alice"), expiresAt)
+	replacementToken := uuid.New()
+	replacementExpiry := expiresAt.Add(time.Hour)
+	_, err := repo.UpdateSessionToken(ctx, player.ID, oldToken, &replacementToken, &replacementExpiry)
+	require.NoError(t, err)
+
+	_, err = repo.UpdateSessionToken(ctx, player.ID, oldToken, nil, nil)
+	require.ErrorIs(t, err, domain.ErrPlayerNotFound)
+	current, err := repo.GetBySessionToken(ctx, replacementToken)
+	require.NoError(t, err)
+	require.Equal(t, player.ID, current.ID)
+}
+
+func TestPlayerRepo_RejectsLegacySessionsAndCaseInsensitiveNameReuse(t *testing.T) {
 	t.Parallel()
 	pool := newParallelTestDB(t)
 	repo, _ := newPlayerRepo(pool)
 	ctx := context.Background()
-
-	p, err := repo.Create(ctx, uniq("alice"))
+	username := uniq("legacyNick")
+	legacy, err := repo.Create(ctx, username)
 	require.NoError(t, err)
-
 	token := uuid.New()
-	expiresAt := time.Now().Add(-time.Minute).UTC()
-	_, err = repo.UpdateSessionToken(ctx, p.ID, &token, &expiresAt)
+	_, err = pool.Exec(ctx, `
+		UPDATE players SET session_token = $2, session_expires_at = $3 WHERE id = $1`,
+		legacy.ID, token, time.Now().UTC().Add(time.Hour))
 	require.NoError(t, err)
-
 	_, err = repo.GetBySessionToken(ctx, token)
+	require.ErrorIs(t, err, domain.ErrPlayerNotFound)
+
+	_, err = repo.Create(ctx, strings.ToUpper(username))
+	require.ErrorIs(t, err, domain.ErrUsernameTaken)
+}
+
+func TestPlayerRepo_GetBySessionToken_ExpiredSessionClearsToken(t *testing.T) {
+	t.Parallel()
+	pool := newParallelTestDB(t)
+	repo, mgr := newPlayerRepo(pool)
+	ctx := context.Background()
+
+	expiresAt := time.Now().Add(-time.Minute).UTC()
+	p, token := createVerifiedAccountSession(ctx, t, pool, mgr, repo, uniq("alice"), expiresAt)
+
+	_, err := repo.GetBySessionToken(ctx, token)
 	require.ErrorIs(t, err, domain.ErrPlayerNotFound)
 
 	cleared, err := repo.GetByID(ctx, p.ID)
@@ -200,14 +246,12 @@ func TestPlayerRepo_GetBySessionToken_ExpiredSessionClearsToken(t *testing.T) {
 func TestPlayerRepo_GetBySessionToken_NullExpiryIsExpired(t *testing.T) {
 	t.Parallel()
 	pool := newParallelTestDB(t)
-	repo, _ := newPlayerRepo(pool)
+	repo, mgr := newPlayerRepo(pool)
 	ctx := context.Background()
 
-	p, err := repo.Create(ctx, uniq("alice"))
-	require.NoError(t, err)
-
-	token := uuid.New()
-	_, err = repo.UpdateSessionToken(ctx, p.ID, &token, nil)
+	expiresAt := time.Now().UTC().Add(time.Hour)
+	p, token := createVerifiedAccountSession(ctx, t, pool, mgr, repo, uniq("alice"), expiresAt)
+	_, err := pool.Exec(ctx, `UPDATE players SET session_expires_at = NULL WHERE id = $1`, p.ID)
 	require.NoError(t, err)
 
 	_, err = repo.GetBySessionToken(ctx, token)
@@ -220,7 +264,7 @@ func TestPlayerRepo_UpdateSessionToken_NotFound(t *testing.T) {
 	repo, _ := newPlayerRepo(pool)
 	token := uuid.New()
 	expiresAt := time.Now().Add(time.Hour).UTC()
-	_, err := repo.UpdateSessionToken(context.Background(), uuid.New(), &token, &expiresAt)
+	_, err := repo.UpdateSessionToken(context.Background(), uuid.New(), uuid.New(), &token, &expiresAt)
 	require.ErrorIs(t, err, domain.ErrPlayerNotFound)
 }
 
@@ -256,108 +300,7 @@ func TestPlayerRepo_UpsertStats_SuccessInvalidWinsAndForeignKey(t *testing.T) {
 	require.ErrorIs(t, err, domain.ErrPlayerNotFound)
 }
 
-func TestPlayerRepo_JoinByUsername_RejectsActiveSession(t *testing.T) {
-	t.Parallel()
-
-	pool := newParallelTestDB(t)
-	repo, _ := newPlayerRepo(pool)
-	ctx := context.Background()
-	username := uniq("active_session")
-	firstToken := uuid.New()
-	secondToken := uuid.New()
-	expiresAt := time.Now().UTC().Add(time.Hour)
-
-	first, err := repo.JoinByUsername(ctx, username, firstToken, expiresAt)
-	require.NoError(t, err)
-
-	second, err := repo.JoinByUsername(ctx, username, secondToken, expiresAt)
-	require.ErrorIs(t, err, domain.ErrUsernameTaken)
-	require.Nil(t, second)
-
-	retained, err := repo.GetByID(ctx, first.ID)
-	require.NoError(t, err)
-	require.NotNil(t, retained.SessionToken)
-	require.Equal(t, firstToken, *retained.SessionToken)
-}
-
-func TestPlayerRepo_JoinByUsername_ReclaimsExpiredSession(t *testing.T) {
-	t.Parallel()
-
-	pool := newParallelTestDB(t)
-	repo, _ := newPlayerRepo(pool)
-	ctx := context.Background()
-	username := uniq("expired_session")
-	expiredToken := uuid.New()
-	newToken := uuid.New()
-	expiredAt := time.Now().UTC().Add(-time.Minute)
-
-	created, err := repo.Create(ctx, username)
-	require.NoError(t, err)
-	_, err = repo.UpdateSessionToken(ctx, created.ID, &expiredToken, &expiredAt)
-	require.NoError(t, err)
-
-	reclaimed, err := repo.JoinByUsername(ctx, username, newToken, time.Now().UTC().Add(time.Hour))
-	require.NoError(t, err)
-	require.Equal(t, created.ID, reclaimed.ID)
-	require.NotNil(t, reclaimed.SessionToken)
-	require.Equal(t, newToken, *reclaimed.SessionToken)
-}
-
-func TestPlayerRepo_JoinByUsername_AllowsOnlyOneConcurrentClaim(t *testing.T) {
-	t.Parallel()
-
-	pool := newParallelTestDB(t)
-	repo, _ := newPlayerRepo(pool)
-	ctx := context.Background()
-	username := uniq("concurrent_session")
-	_, err := repo.Create(ctx, username)
-	require.NoError(t, err)
-
-	type claimResult struct {
-		player *domain.Player
-		token  uuid.UUID
-		err    error
-	}
-
-	tokens := []uuid.UUID{uuid.New(), uuid.New()}
-	start := make(chan struct{})
-	results := make(chan claimResult, len(tokens))
-	var claims sync.WaitGroup
-	for _, token := range tokens {
-		claims.Add(1)
-		go func(token uuid.UUID) {
-			defer claims.Done()
-			<-start
-			claimed, claimErr := repo.JoinByUsername(ctx, username, token, time.Now().UTC().Add(time.Hour))
-			results <- claimResult{player: claimed, token: token, err: claimErr}
-		}(token)
-	}
-	close(start)
-	claims.Wait()
-	close(results)
-
-	var succeeded []claimResult
-	var rejected []claimResult
-	for result := range results {
-		switch {
-		case result.err == nil:
-			succeeded = append(succeeded, result)
-		case errors.Is(result.err, domain.ErrUsernameTaken):
-			rejected = append(rejected, result)
-		default:
-			require.NoError(t, result.err)
-		}
-	}
-
-	require.Len(t, succeeded, 1)
-	require.Len(t, rejected, 1)
-	require.NotNil(t, succeeded[0].player)
-	require.NotNil(t, succeeded[0].player.SessionToken)
-	require.Equal(t, succeeded[0].token, *succeeded[0].player.SessionToken)
-	require.Nil(t, rejected[0].player)
-}
-
-func TestPlayerRepo_TournamentReservationAllowsInitialSessionClaimAndBlocksAdminDelete(t *testing.T) {
+func TestPlayerRepo_TournamentReservationBlocksAdminDelete(t *testing.T) {
 	ctx := context.Background()
 	resetMigrationTables(ctx, t)
 	t.Cleanup(func() { resetMigrationTables(ctx, t) })
@@ -370,13 +313,6 @@ func TestPlayerRepo_TournamentReservationAllowsInitialSessionClaimAndBlocksAdmin
 		INSERT INTO participant_reservations (player_id, tournament_id)
 		VALUES ($1, $2)`, player.ID, tournamentID)
 	require.NoError(t, err)
-
-	token := uuid.New()
-	expiresAt := time.Now().UTC().Add(time.Hour)
-	claimed, err := repo.JoinByUsername(ctx, player.Username, token, expiresAt)
-	require.NoError(t, err)
-	require.NotNil(t, claimed.SessionToken)
-	require.Equal(t, token, *claimed.SessionToken)
 
 	err = repo.SoftDeletePlayer(
 		ctx,
@@ -399,6 +335,7 @@ func TestPlayerRepo_SoftDelete_SuccessNotFoundAndDuplicate(t *testing.T) {
 
 	deleted, err := repo.Create(ctx, uniq("soft_delete"))
 	require.NoError(t, err)
+	formerUsername := deleted.Username
 	deletedUsername := uniq("deleted")
 	deletedAt := time.Now().UTC()
 	require.NoError(t, repo.SoftDeletePlayer(ctx, deleted.ID, deletedUsername, deletedAt))
@@ -409,6 +346,8 @@ func TestPlayerRepo_SoftDelete_SuccessNotFoundAndDuplicate(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, deletedUsername, deletedRecord.Username)
 	require.NotNil(t, deletedRecord.DeletedAt)
+	_, err = repo.Create(ctx, strings.ToUpper(formerUsername))
+	require.ErrorIs(t, err, domain.ErrUsernameTaken)
 
 	err = repo.SoftDeletePlayer(ctx, uuid.New(), uniq("deleted_missing"), time.Now().UTC())
 	require.ErrorIs(t, err, domain.ErrPlayerNotFound)

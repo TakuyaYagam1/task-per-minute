@@ -54,6 +54,8 @@ func classify(err error) (int, *domain.Error) {
 		return http.StatusNotFound, appError(err, domain.ErrInternal)
 	case isAny(err, domain.ErrInvalidCredentials, domain.ErrTokenExpired, domain.ErrTokenRevoked, domain.ErrInvalidSession):
 		return http.StatusUnauthorized, appError(err, domain.ErrInternal)
+	case errors.Is(err, domain.ErrPlayerJoinRetired):
+		return http.StatusGone, appError(err, domain.ErrInternal)
 	case isAny(err, domain.ErrForbidden, domain.ErrAssignmentParticipant):
 		return http.StatusForbidden, appError(err, domain.ErrForbidden)
 	case isAny(err, domain.ErrUsernameTaken, domain.ErrTaskInUse, domain.ErrConflict):
@@ -62,6 +64,10 @@ func classify(err error) (int, *domain.Error) {
 		return http.StatusUnprocessableEntity, errInvalidContentConfigurationProblem
 	case isAny(err, domain.ErrValidation, domain.ErrUsernameInvalid, domain.ErrTaskValidation):
 		return http.StatusBadRequest, appError(err, domain.ErrInternal)
+	case errors.Is(err, domain.ErrVerificationTokenInvalid):
+		return http.StatusBadRequest, appError(err, domain.ErrInternal)
+	case errors.Is(err, domain.ErrVerificationUnavailable):
+		return http.StatusServiceUnavailable, appError(err, domain.ErrInternal)
 	case errors.Is(err, domain.ErrRateLimited):
 		return http.StatusTooManyRequests, appError(err, domain.ErrInternal)
 	case errors.Is(err, domain.ErrInternal):

@@ -9,7 +9,6 @@ import (
 )
 
 type PlayerService interface {
-	Join(ctx context.Context, username string) (*domain.Player, error)
 	GetCurrentPlayer(ctx context.Context, sessionToken uuid.UUID) (*domain.Player, error)
 	Logout(ctx context.Context, sessionToken uuid.UUID) error
 }

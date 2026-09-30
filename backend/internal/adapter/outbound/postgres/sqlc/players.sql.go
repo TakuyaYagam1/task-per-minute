@@ -12,48 +12,6 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-const claimPlayerSessionByUsername = `-- name: ClaimPlayerSessionByUsername :one
-INSERT INTO players AS target (username, session_token, session_expires_at)
-VALUES ($1, $2, $3) ON CONFLICT (username) DO
-UPDATE
-SET session_token = EXCLUDED.session_token,
-    session_expires_at = EXCLUDED.session_expires_at
-WHERE target.deleted_at IS NULL
-    AND (
-        (
-            target.session_token IS NULL
-            AND target.session_expires_at IS NULL
-        )
-        OR target.session_expires_at <= CURRENT_TIMESTAMP
-    )
-RETURNING id,
-    username,
-    session_token,
-    created_at,
-    deleted_at,
-    session_expires_at
-`
-
-type ClaimPlayerSessionByUsernameParams struct {
-	Username         string
-	SessionToken     uuid.NullUUID
-	SessionExpiresAt pgtype.Timestamptz
-}
-
-func (q *Queries) ClaimPlayerSessionByUsername(ctx context.Context, arg ClaimPlayerSessionByUsernameParams) (Player, error) {
-	row := q.db.QueryRow(ctx, claimPlayerSessionByUsername, arg.Username, arg.SessionToken, arg.SessionExpiresAt)
-	var i Player
-	err := row.Scan(
-		&i.ID,
-		&i.Username,
-		&i.SessionToken,
-		&i.CreatedAt,
-		&i.DeletedAt,
-		&i.SessionExpiresAt,
-	)
-	return i, err
-}
-
 const createPlayer = `-- name: CreatePlayer :one
 INSERT INTO players (username)
 VALUES ($1)
@@ -275,6 +233,11 @@ SELECT id,
 FROM players
 WHERE session_token = $1
     AND deleted_at IS NULL
+    AND EXISTS (
+        SELECT 1 FROM player_accounts AS account
+        WHERE account.player_id = players.id
+            AND account.email_verified_at IS NOT NULL
+    )
 `
 
 func (q *Queries) GetPlayerBySessionToken(ctx context.Context, sessionToken uuid.NullUUID) (Player, error) {
@@ -305,6 +268,32 @@ WHERE username = $1
 
 func (q *Queries) GetPlayerByUsername(ctx context.Context, username string) (Player, error) {
 	row := q.db.QueryRow(ctx, getPlayerByUsername, username)
+	var i Player
+	err := row.Scan(
+		&i.ID,
+		&i.Username,
+		&i.SessionToken,
+		&i.CreatedAt,
+		&i.DeletedAt,
+		&i.SessionExpiresAt,
+	)
+	return i, err
+}
+
+const getPlayerForIdentityChange = `-- name: GetPlayerForIdentityChange :one
+SELECT id,
+    username,
+    session_token,
+    created_at,
+    deleted_at,
+    session_expires_at
+FROM players
+WHERE id = $1
+FOR UPDATE
+`
+
+func (q *Queries) GetPlayerForIdentityChange(ctx context.Context, id uuid.UUID) (Player, error) {
+	row := q.db.QueryRow(ctx, getPlayerForIdentityChange, id)
 	var i Player
 	err := row.Scan(
 		&i.ID,
@@ -455,10 +444,16 @@ func (q *Queries) SoftDeletePlayer(ctx context.Context, arg SoftDeletePlayerPara
 
 const updatePlayerSessionToken = `-- name: UpdatePlayerSessionToken :one
 UPDATE players
-SET session_token = $2,
-    session_expires_at = $3
-WHERE id = $1
+SET session_token = $1,
+    session_expires_at = $2
+WHERE players.id = $3
     AND deleted_at IS NULL
+    AND session_token = $4
+    AND EXISTS (
+        SELECT 1 FROM player_accounts AS account
+        WHERE account.player_id = players.id
+            AND account.email_verified_at IS NOT NULL
+    )
 RETURNING id,
     username,
     session_token,
@@ -468,13 +463,19 @@ RETURNING id,
 `
 
 type UpdatePlayerSessionTokenParams struct {
-	ID               uuid.UUID
-	SessionToken     uuid.NullUUID
-	SessionExpiresAt pgtype.Timestamptz
+	SessionToken         uuid.NullUUID
+	SessionExpiresAt     pgtype.Timestamptz
+	PlayerID             uuid.UUID
+	ExpectedSessionToken uuid.NullUUID
 }
 
 func (q *Queries) UpdatePlayerSessionToken(ctx context.Context, arg UpdatePlayerSessionTokenParams) (Player, error) {
-	row := q.db.QueryRow(ctx, updatePlayerSessionToken, arg.ID, arg.SessionToken, arg.SessionExpiresAt)
+	row := q.db.QueryRow(ctx, updatePlayerSessionToken,
+		arg.SessionToken,
+		arg.SessionExpiresAt,
+		arg.PlayerID,
+		arg.ExpectedSessionToken,
+	)
 	var i Player
 	err := row.Scan(
 		&i.ID,
@@ -490,8 +491,12 @@ func (q *Queries) UpdatePlayerSessionToken(ctx context.Context, arg UpdatePlayer
 const updatePlayerUsername = `-- name: UpdatePlayerUsername :one
 UPDATE players
 SET username = $2
-WHERE id = $1
+WHERE players.id = $1
     AND deleted_at IS NULL
+    AND NOT EXISTS (
+        SELECT 1 FROM player_accounts AS account
+        WHERE account.player_id = players.id
+    )
 RETURNING id,
     username,
     session_token,

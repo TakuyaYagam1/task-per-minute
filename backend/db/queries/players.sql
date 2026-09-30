@@ -7,26 +7,6 @@ RETURNING id,
     created_at,
     deleted_at,
     session_expires_at;
--- name: ClaimPlayerSessionByUsername :one
-INSERT INTO players AS target (username, session_token, session_expires_at)
-VALUES ($1, $2, $3) ON CONFLICT (username) DO
-UPDATE
-SET session_token = EXCLUDED.session_token,
-    session_expires_at = EXCLUDED.session_expires_at
-WHERE target.deleted_at IS NULL
-    AND (
-        (
-            target.session_token IS NULL
-            AND target.session_expires_at IS NULL
-        )
-        OR target.session_expires_at <= CURRENT_TIMESTAMP
-    )
-RETURNING id,
-    username,
-    session_token,
-    created_at,
-    deleted_at,
-    session_expires_at;
 -- name: GetPlayerByID :one
 SELECT id,
     username,
@@ -55,13 +35,24 @@ SELECT id,
     session_expires_at
 FROM players
 WHERE session_token = $1
-    AND deleted_at IS NULL;
+    AND deleted_at IS NULL
+    AND EXISTS (
+        SELECT 1 FROM player_accounts AS account
+        WHERE account.player_id = players.id
+            AND account.email_verified_at IS NOT NULL
+    );
 -- name: UpdatePlayerSessionToken :one
 UPDATE players
-SET session_token = $2,
-    session_expires_at = $3
-WHERE id = $1
+SET session_token = sqlc.arg(session_token),
+    session_expires_at = sqlc.arg(session_expires_at)
+WHERE players.id = sqlc.arg(player_id)
     AND deleted_at IS NULL
+    AND session_token = sqlc.arg(expected_session_token)
+    AND EXISTS (
+        SELECT 1 FROM player_accounts AS account
+        WHERE account.player_id = players.id
+            AND account.email_verified_at IS NOT NULL
+    )
 RETURNING id,
     username,
     session_token,
@@ -71,14 +62,29 @@ RETURNING id,
 -- name: UpdatePlayerUsername :one
 UPDATE players
 SET username = $2
-WHERE id = $1
+WHERE players.id = $1
     AND deleted_at IS NULL
+    AND NOT EXISTS (
+        SELECT 1 FROM player_accounts AS account
+        WHERE account.player_id = players.id
+    )
 RETURNING id,
     username,
     session_token,
     created_at,
     deleted_at,
     session_expires_at;
+
+-- name: GetPlayerForIdentityChange :one
+SELECT id,
+    username,
+    session_token,
+    created_at,
+    deleted_at,
+    session_expires_at
+FROM players
+WHERE id = $1
+FOR UPDATE;
 
 -- name: SoftDeletePlayer :one
 UPDATE players

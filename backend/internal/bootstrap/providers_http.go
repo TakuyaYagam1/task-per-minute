@@ -31,6 +31,7 @@ const (
 
 func provideRESTServerWithClock(
 	players restv1.PlayerService,
+	playerAccounts inbound.PlayerAccountService,
 	playerNotifications notificationusecase.PlayerNotifications,
 	auth restv1.AdminAuthService,
 	tasks restv1.AdminTaskService,
@@ -67,6 +68,7 @@ func provideRESTServerWithClock(
 	}
 	return restv1.New(restv1.Dependencies{
 		Players:                              players,
+		PlayerAccounts:                       playerAccounts,
 		PlayerNotifications:                  playerNotifications,
 		AdminAuth:                            auth,
 		Tasks:                                tasks,

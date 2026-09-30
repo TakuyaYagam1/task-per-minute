@@ -165,8 +165,10 @@ Participant and operator tournament realtime handshakes use the corresponding
 session cookie. Query credentials, `X-Session-Token`, and bearer subprotocols
 are rejected.
 
-Player join does not replace an active session by username. It returns `409`
-until the existing session expires, after which the username can be reclaimed.
+Players sign in with a username or email and password after email verification.
+`POST /api/v1/players/join` is retired and returns `410`. Existing names and
+results remain, but legacy sessions without a verified account no longer grant
+access. Configure [email delivery](email.md) before updating the application.
 
 `WS_MAX_CONNECTIONS` limits all accepted tournament realtime connections and
 defaults to `512`. `WS_MAX_CONNECTIONS_PER_PRINCIPAL` limits concurrent

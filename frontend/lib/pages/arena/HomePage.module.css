@@ -83,7 +83,6 @@
   line-height: 1.2;
 }
 
-.form,
 .currentPlayer {
   display: grid;
   width: 100%;
@@ -121,7 +120,11 @@
 
 .primaryButton,
 .secondaryButton {
+  display: flex;
   width: 100%;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
 }
 
 .primaryButton {
@@ -146,6 +149,25 @@
 .playerSummary strong {
   color: var(--text);
   overflow-wrap: anywhere;
+}
+
+.authLinks {
+  display: grid;
+  width: 100%;
+  max-width: 24rem;
+  gap: 0.75rem;
+  margin: 1.25rem auto 0;
+}
+
+.authCopy,
+.restoreMessage {
+  margin: 0;
+  color: var(--secondary);
+  line-height: 1.5;
+}
+
+.restoreMessage {
+  margin-top: 1.25rem;
 }
 
 .sessionState {

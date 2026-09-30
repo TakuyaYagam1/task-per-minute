@@ -960,6 +960,21 @@ func (e PauseState) Valid() bool {
 	}
 }
 
+// Defines values for PlayerAccountAcceptedResponseAccepted.
+const (
+	PlayerAccountAcceptedResponseAcceptedTrue PlayerAccountAcceptedResponseAccepted = true
+)
+
+// Valid indicates whether the value is a known member of the PlayerAccountAcceptedResponseAccepted enum.
+func (e PlayerAccountAcceptedResponseAccepted) Valid() bool {
+	switch e {
+	case PlayerAccountAcceptedResponseAcceptedTrue:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for PlayerAuditAction.
 const (
 	PlayerAuditActionDelete PlayerAuditAction = "delete"
@@ -2531,12 +2546,6 @@ type IncidentBundleCanonicalContentEncoding string
 // IncidentBundleCanonicalContentType defines model for IncidentBundle.CanonicalContentType.
 type IncidentBundleCanonicalContentType string
 
-// JoinPlayerRequest defines model for JoinPlayerRequest.
-type JoinPlayerRequest struct {
-	// Username Example: takuya
-	Username string `json:"username"`
-}
-
 // JoinPlayerResponse defines model for JoinPlayerResponse.
 type JoinPlayerResponse struct {
 	PlayerId openapi_types.UUID `json:"player_id"`
@@ -3106,6 +3115,14 @@ type PauseSeries struct {
 // PauseState defines model for PauseState.
 type PauseState string
 
+// PlayerAccountAcceptedResponse defines model for PlayerAccountAcceptedResponse.
+type PlayerAccountAcceptedResponse struct {
+	Accepted PlayerAccountAcceptedResponseAccepted `json:"accepted"`
+}
+
+// PlayerAccountAcceptedResponseAccepted defines model for PlayerAccountAcceptedResponse.Accepted.
+type PlayerAccountAcceptedResponseAccepted bool
+
 // PlayerAuditAction defines model for PlayerAuditAction.
 type PlayerAuditAction string
 
@@ -3128,6 +3145,13 @@ type PlayerAuditState struct {
 	StatsOverridden    bool   `json:"stats_overridden"`
 	Username           string `json:"username"`
 	Wins               int32  `json:"wins"`
+}
+
+// PlayerLoginRequest defines model for PlayerLoginRequest.
+type PlayerLoginRequest struct {
+	// Login Case-insensitive player username or email address.
+	Login    string  `json:"login"`
+	Password *string `json:"password,omitempty"`
 }
 
 // PlayerManagementView defines model for PlayerManagementView.
@@ -3159,11 +3183,30 @@ type PlayerNotificationsResponse struct {
 	Notifications []PlayerNotification `json:"notifications"`
 }
 
+// PlayerRegistrationRequest defines model for PlayerRegistrationRequest.
+type PlayerRegistrationRequest struct {
+	Email    openapi_types.Email `json:"email"`
+	Password *string             `json:"password,omitempty"`
+
+	// Username Example: takuya
+	Username string `json:"username"`
+}
+
+// PlayerResendVerificationRequest defines model for PlayerResendVerificationRequest.
+type PlayerResendVerificationRequest struct {
+	Email openapi_types.Email `json:"email"`
+}
+
 // PlayerResponse defines model for PlayerResponse.
 type PlayerResponse struct {
 	CreatedAt time.Time          `json:"created_at"`
 	Id        openapi_types.UUID `json:"id"`
 	Username  string             `json:"username"`
+}
+
+// PlayerVerificationRequest defines model for PlayerVerificationRequest.
+type PlayerVerificationRequest struct {
+	Token string `json:"token"`
 }
 
 // PreflightCheck defines model for PreflightCheck.
@@ -4689,8 +4732,17 @@ type ControlTournamentWaveJSONRequestBody = WaveControlRequest
 // ResolveTournamentNoShowJSONRequestBody defines body for ResolveTournamentNoShow for application/json ContentType.
 type ResolveTournamentNoShowJSONRequestBody = OperatorNoShowRequest
 
-// JoinPlayerJSONRequestBody defines body for JoinPlayer for application/json ContentType.
-type JoinPlayerJSONRequestBody = JoinPlayerRequest
+// LoginPlayerJSONRequestBody defines body for LoginPlayer for application/json ContentType.
+type LoginPlayerJSONRequestBody = PlayerLoginRequest
+
+// RegisterPlayerJSONRequestBody defines body for RegisterPlayer for application/json ContentType.
+type RegisterPlayerJSONRequestBody = PlayerRegistrationRequest
+
+// ResendPlayerVerificationJSONRequestBody defines body for ResendPlayerVerification for application/json ContentType.
+type ResendPlayerVerificationJSONRequestBody = PlayerResendVerificationRequest
+
+// VerifyPlayerEmailJSONRequestBody defines body for VerifyPlayerEmail for application/json ContentType.
+type VerifyPlayerEmailJSONRequestBody = PlayerVerificationRequest
 
 // SetGoldenParticipantReadyJSONRequestBody defines body for SetGoldenParticipantReady for application/json ContentType.
 type SetGoldenParticipantReadyJSONRequestBody = GoldenReadyRequest

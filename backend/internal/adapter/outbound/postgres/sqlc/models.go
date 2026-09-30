@@ -1720,6 +1720,21 @@ type Player struct {
 	SessionExpiresAt pgtype.Timestamptz
 }
 
+type PlayerAccount struct {
+	ID                    uuid.UUID
+	PlayerID              uuid.NullUUID
+	Username              string
+	UsernameNormalized    string
+	Email                 string
+	EmailNormalized       string
+	PasswordHash          string
+	VerificationTokenHash []byte
+	VerificationExpiresAt pgtype.Timestamptz
+	VerificationSentAt    pgtype.Timestamptz
+	EmailVerifiedAt       pgtype.Timestamptz
+	CreatedAt             pgtype.Timestamptz
+}
+
 type PlayerLeaderboardOverride struct {
 	PlayerID           uuid.UUID
 	Wins               int32
@@ -1735,6 +1750,13 @@ type PlayerNotification struct {
 	TournamentName   string
 	CreatedAt        pgtype.Timestamptz
 	ExpiresAt        pgtype.Timestamptz
+}
+
+type PlayerUsernameReservation struct {
+	NormalizedUsername string
+	LegacyCount        int64
+	AccountID          uuid.NullUUID
+	CreatedAt          pgtype.Timestamptz
 }
 
 type PresenceState struct {

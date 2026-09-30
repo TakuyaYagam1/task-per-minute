@@ -57,7 +57,6 @@ type Querier interface {
 	CancelTournamentReconnectIntervalCAS(ctx context.Context, arg CancelTournamentReconnectIntervalCASParams) (ReconnectInterval, error)
 	CancelTournamentTechnicalPause(ctx context.Context, arg CancelTournamentTechnicalPauseParams) (uuid.UUID, error)
 	CheckInRegisteredParticipant(ctx context.Context, arg CheckInRegisteredParticipantParams) (Participant, error)
-	ClaimPlayerSessionByUsername(ctx context.Context, arg ClaimPlayerSessionByUsernameParams) (Player, error)
 	ClaimRealtimeDelivery(ctx context.Context, arg ClaimRealtimeDeliveryParams) (uuid.UUID, error)
 	ClaimRealtimeOutboxEvents(ctx context.Context, arg ClaimRealtimeOutboxEventsParams) ([]ClaimRealtimeOutboxEventsRow, error)
 	ClearGoldenMembershipReady(ctx context.Context, arg ClearGoldenMembershipReadyParams) (uuid.UUID, error)
@@ -89,6 +88,7 @@ type Querier interface {
 	CommitExactDraftAssignmentPlan(ctx context.Context, arg CommitExactDraftAssignmentPlanParams) (int64, error)
 	CommitExactDraftChildReservations(ctx context.Context, arg CommitExactDraftChildReservationsParams) ([]uuid.UUID, error)
 	CommitExactNormalAssignmentPlanCAS(ctx context.Context, arg CommitExactNormalAssignmentPlanCASParams) (CommitExactNormalAssignmentPlanCASRow, error)
+	CompletePlayerAccountVerification(ctx context.Context, arg CompletePlayerAccountVerificationParams) (int64, error)
 	CompleteTournamentAdminWaveCAS(ctx context.Context, arg CompleteTournamentAdminWaveCASParams) (CompleteTournamentAdminWaveCASRow, error)
 	CompleteTournamentFromFinalProjectionCAS(ctx context.Context, arg CompleteTournamentFromFinalProjectionCASParams) (CompleteTournamentFromFinalProjectionCASRow, error)
 	ConsumeReadyWindowCAS(ctx context.Context, arg ConsumeReadyWindowCASParams) (ReadyWindow, error)
@@ -210,6 +210,7 @@ type Querier interface {
 	// prevents an orphan head or a mutable zero-score compatibility path.
 	CreateInitialSeriesScoreHead(ctx context.Context, arg CreateInitialSeriesScoreHeadParams) (uuid.UUID, error)
 	CreateInitialSeriesScoreRevision(ctx context.Context, arg CreateInitialSeriesScoreRevisionParams) error
+	CreateLegacyPlayerUsernameReservation(ctx context.Context, normalizedUsername string) (int64, error)
 	CreateManualSwissRound(ctx context.Context, arg CreateManualSwissRoundParams) (SwissRound, error)
 	CreateOfficialResultHead(ctx context.Context, arg CreateOfficialResultHeadParams) (OfficialResultHead, error)
 	CreateOfficialResultRevision(ctx context.Context, arg CreateOfficialResultRevisionParams) (OfficialResultRevision, error)
@@ -223,6 +224,7 @@ type Querier interface {
 	CreateOperatorResultCommand(ctx context.Context, arg CreateOperatorResultCommandParams) (OperatorResultCommand, error)
 	CreateParticipantPostSeriesAction(ctx context.Context, arg CreateParticipantPostSeriesActionParams) (ParticipantPostSeriesAction, error)
 	CreateParticipantReadinessEvent(ctx context.Context, arg CreateParticipantReadinessEventParams) (ReadinessEvent, error)
+	CreatePendingPlayerAccount(ctx context.Context, arg CreatePendingPlayerAccountParams) (uuid.UUID, error)
 	CreatePlayer(ctx context.Context, username string) (Player, error)
 	CreatePlayerRemovedNotification(ctx context.Context, arg CreatePlayerRemovedNotificationParams) (int64, error)
 	// Semifinal category authority is persisted separately from the Swiss
@@ -367,6 +369,7 @@ type Querier interface {
 	CreateTournamentStageTieGroupMember(ctx context.Context, arg CreateTournamentStageTieGroupMemberParams) (uuid.UUID, error)
 	CreateTournamentTechnicalPause(ctx context.Context, arg CreateTournamentTechnicalPauseParams) (uuid.UUID, error)
 	CreateTournamentTechnicalPauseRevision(ctx context.Context, arg CreateTournamentTechnicalPauseRevisionParams) (uuid.UUID, error)
+	CreateVerifiedPlayer(ctx context.Context, username string) (Player, error)
 	CreateWave(ctx context.Context, arg CreateWaveParams) (Wave, error)
 	CreateWaveControlCommand(ctx context.Context, arg CreateWaveControlCommandParams) (uuid.UUID, error)
 	// A pause or resume receipt publishes one nonterminal generic event after the
@@ -377,6 +380,7 @@ type Querier interface {
 	CreateWaveMember(ctx context.Context, arg CreateWaveMemberParams) error
 	CreateWaveReadinessHead(ctx context.Context, arg CreateWaveReadinessHeadParams) (WaveReadiness, error)
 	CreateWaveSeries(ctx context.Context, arg CreateWaveSeriesParams) error
+	DecrementLegacyPlayerUsernameReservation(ctx context.Context, normalizedUsername string) error
 	DeleteExpiredPlayerNotifications(ctx context.Context, batchSize int32) (int64, error)
 	DeleteExpiredRealtimeDeliveryReceipts(ctx context.Context, arg DeleteExpiredRealtimeDeliveryReceiptsParams) ([]DeleteExpiredRealtimeDeliveryReceiptsRow, error)
 	DeleteExpiredRealtimeSubscribers(ctx context.Context, arg DeleteExpiredRealtimeSubscribersParams) ([]uuid.UUID, error)
@@ -416,6 +420,7 @@ type Querier interface {
 	// returned intent_digest with the shared submission intent contract before it
 	// permits stale projection replay handling.
 	FindParticipantSubmissionReplay(ctx context.Context, arg FindParticipantSubmissionReplayParams) (FindParticipantSubmissionReplayRow, error)
+	FindPlayerLoginCredentials(ctx context.Context, usernameNormalized string) (FindPlayerLoginCredentialsRow, error)
 	FindReplayReplacementCommand(ctx context.Context, commandID uuid.UUID) (ReplayReplacement, error)
 	FindSwissPairingCommand(ctx context.Context, arg FindSwissPairingCommandParams) (SwissPairingCommand, error)
 	FindTournamentCancellation(ctx context.Context, arg FindTournamentCancellationParams) (FindTournamentCancellationRow, error)
@@ -495,10 +500,15 @@ type Querier interface {
 	GetParticipantSubmissionBinding(ctx context.Context, arg GetParticipantSubmissionBindingParams) (GetParticipantSubmissionBindingRow, error)
 	GetParticipantSubmissionCommitMetadata(ctx context.Context, arg GetParticipantSubmissionCommitMetadataParams) (GetParticipantSubmissionCommitMetadataRow, error)
 	GetParticipantSurrenderCommitMetadata(ctx context.Context, arg GetParticipantSurrenderCommitMetadataParams) (GetParticipantSurrenderCommitMetadataRow, error)
+	GetPendingPlayerAccountByToken(ctx context.Context, arg GetPendingPlayerAccountByTokenParams) (GetPendingPlayerAccountByTokenRow, error)
 	GetPendingRecoveryDeadline(ctx context.Context, arg GetPendingRecoveryDeadlineParams) (GetPendingRecoveryDeadlineRow, error)
+	GetPlayerAccountByEmail(ctx context.Context, emailNormalized string) (uuid.UUID, error)
+	GetPlayerAccountByUsername(ctx context.Context, usernameNormalized string) (uuid.UUID, error)
 	GetPlayerByID(ctx context.Context, id uuid.UUID) (Player, error)
 	GetPlayerBySessionToken(ctx context.Context, sessionToken uuid.NullUUID) (Player, error)
 	GetPlayerByUsername(ctx context.Context, username string) (Player, error)
+	GetPlayerForIdentityChange(ctx context.Context, id uuid.UUID) (Player, error)
+	GetPlayerUsernameReservation(ctx context.Context, normalizedUsername string) (GetPlayerUsernameReservationRow, error)
 	// The private task delivery backlog is a durable availability invariant, not
 	// a public realtime queue. Every active Wave, Series, Game, and assignment
 	// graph must retain one
@@ -894,6 +904,7 @@ type Querier interface {
 	// active-assignment checks and before projection revision comparison.
 	LockParticipantSubmissionReplayScope(ctx context.Context, arg LockParticipantSubmissionReplayScopeParams) (LockParticipantSubmissionReplayScopeRow, error)
 	LockParticipantSurrenderAuthority(ctx context.Context, arg LockParticipantSurrenderAuthorityParams) (LockParticipantSurrenderAuthorityRow, error)
+	LockPlayerUsername(ctx context.Context, hashtextextended string) error
 	// A published bracket creates locked, empty BO1 Series. The materializer
 	// locks each row again before reading it so category, assignment, and graph
 	// writes all use one current database authority.
@@ -1187,6 +1198,8 @@ type Querier interface {
 	PauseTournamentAdminNormalWaveCAS(ctx context.Context, arg PauseTournamentAdminNormalWaveCASParams) (uuid.UUID, error)
 	PauseTournamentAdminWaveGames(ctx context.Context, arg PauseTournamentAdminWaveGamesParams) ([]uuid.UUID, error)
 	PauseTournamentAdminWaveSeries(ctx context.Context, arg PauseTournamentAdminWaveSeriesParams) ([]uuid.UUID, error)
+	PlayerHasAccount(ctx context.Context, playerID uuid.NullUUID) (bool, error)
+	PlayerUsernameExists(ctx context.Context, username string) (bool, error)
 	PublishProjectionRevisionCAS(ctx context.Context, arg PublishProjectionRevisionCASParams) (ProjectionRevision, error)
 	PublishTournamentConfigurationEditDraftCAS(ctx context.Context, arg PublishTournamentConfigurationEditDraftCASParams) (PublishTournamentConfigurationEditDraftCASRow, error)
 	PublishTournamentContentConfiguration(ctx context.Context, arg PublishTournamentContentConfigurationParams) (uuid.UUID, error)
@@ -1235,8 +1248,10 @@ type Querier interface {
 	// match this mutation and therefore cannot be made available again.
 	ReleaseTournamentConfigurationEditReservations(ctx context.Context, arg ReleaseTournamentConfigurationEditReservationsParams) ([]ReleaseTournamentConfigurationEditReservationsRow, error)
 	ReleaseTournamentReservations(ctx context.Context, tournamentID uuid.UUID) (int64, error)
+	ReplacePendingPlayerVerification(ctx context.Context, arg ReplacePendingPlayerVerificationParams) (string, error)
 	ReplaceWithdrawnTournamentParticipant(ctx context.Context, arg ReplaceWithdrawnTournamentParticipantParams) (Participant, error)
 	ReserveCheckedInTournamentParticipants(ctx context.Context, arg ReserveCheckedInTournamentParticipantsParams) ([]uuid.UUID, error)
+	ReservePlayerAccountUsername(ctx context.Context, arg ReservePlayerAccountUsernameParams) (int64, error)
 	ResetGoldenRuntimeReadyWindow(ctx context.Context, arg ResetGoldenRuntimeReadyWindowParams) (uuid.UUID, error)
 	// An unchanged correction publishes a new projection without rewriting the
 	// immutable Golden group revisions. Follow correction predecessors until the
@@ -1290,6 +1305,7 @@ type Querier interface {
 	TransitionTournamentForRosterCAS(ctx context.Context, arg TransitionTournamentForRosterCASParams) (uuid.UUID, error)
 	TransitionWaveCAS(ctx context.Context, arg TransitionWaveCASParams) (Wave, error)
 	UnlockTournamentRosterCAS(ctx context.Context, arg UnlockTournamentRosterCASParams) (Roster, error)
+	UpdateAccountPlayerSession(ctx context.Context, arg UpdateAccountPlayerSessionParams) (Player, error)
 	UpdateAutomaticSwissRoundCAS(ctx context.Context, arg UpdateAutomaticSwissRoundCASParams) (SwissRound, error)
 	UpdateGameAttemptCAS(ctx context.Context, arg UpdateGameAttemptCASParams) (UpdateGameAttemptCASRow, error)
 	UpdateGoldenAttemptCAS(ctx context.Context, arg UpdateGoldenAttemptCASParams) (GoldenAttempt, error)

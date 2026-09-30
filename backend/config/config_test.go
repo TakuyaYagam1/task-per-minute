@@ -19,6 +19,8 @@ var configEnvVars = []string{
 	"INCIDENT_EXPORT_HMAC_KEY_ID", "INCIDENT_EXPORT_HMAC_SECRET",
 	"ADMIN_PASSWORD", "ADMIN_LOGIN_RATE_ATTEMPTS", "ADMIN_LOGIN_RATE_WINDOW",
 	"ADMIN_REFRESH_RATE_ATTEMPTS", "ADMIN_REFRESH_RATE_WINDOW",
+	"EMAIL_PROVIDER", "EMAIL_FROM", "EMAIL_TIMEOUT", "RESEND_ENABLED", "RESEND_API_KEY",
+	"SMTP_HOST", "SMTP_PORT", "SMTP_USERNAME", "SMTP_PASSWORD", "SMTP_TLS_MODE", "APP_PUBLIC_URL",
 	"PLAYER_JOIN_RATE_ATTEMPTS", "PLAYER_JOIN_RATE_WINDOW", "PLAYER_SESSION_TTL",
 	"LEADERBOARD_RATE_ATTEMPTS", "LEADERBOARD_RATE_WINDOW",
 	"TOURNAMENT_PUBLIC_READ_RATE_ATTEMPTS", "TOURNAMENT_PUBLIC_READ_RATE_WINDOW",
@@ -102,6 +104,12 @@ func TestLoad_AppliesDefaults(t *testing.T) {
 	}
 	if cfg.Incident.HMACKeyID != "incident-2026-09" {
 		t.Errorf("Incident.HMACKeyID = %q, want incident-2026-09", cfg.Incident.HMACKeyID)
+	}
+	if cfg.Email.Provider != "disabled" {
+		t.Errorf("Email.Provider = %q, want disabled", cfg.Email.Provider)
+	}
+	if cfg.Email.Timeout != 10*time.Second {
+		t.Errorf("Email.Timeout = %s, want 10s", cfg.Email.Timeout)
 	}
 	if cfg.Admin.LoginRateAttempts != 5 {
 		t.Errorf("Admin.LoginRateAttempts = %d, want 5", cfg.Admin.LoginRateAttempts)
@@ -400,6 +408,155 @@ func TestLoad_RejectsInvalidIncidentExportHMACMaterial(t *testing.T) {
 			_, err := Load()
 			if err == nil {
 				t.Fatal("Load() error = nil, want fail-closed incident HMAC validation")
+			}
+		})
+	}
+}
+
+func TestLoad_ResendLegacyConfigurationSelectsProvider(t *testing.T) {
+	clearConfigEnv(t)
+	setRequiredEnv(t)
+	t.Setenv("RESEND_ENABLED", "true")
+	t.Setenv("RESEND_API_KEY", "re_synthetic_test_key")
+	t.Setenv("EMAIL_FROM", "noreply@example.invalid")
+	t.Setenv("APP_PUBLIC_URL", "https://example.invalid")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Email.Provider != "resend" {
+		t.Fatalf("Email.Provider = %q, want resend", cfg.Email.Provider)
+	}
+	if cfg.Resend.APIKey != "re_synthetic_test_key" {
+		t.Fatal("Resend.APIKey was not loaded")
+	}
+}
+
+func TestLoad_SMTPConfigurationUsesExplicitProviderAndRequiredSTARTTLS(t *testing.T) {
+	clearConfigEnv(t)
+	setRequiredEnv(t)
+	t.Setenv("EMAIL_PROVIDER", "smtp")
+	t.Setenv("EMAIL_FROM", "noreply@example.invalid")
+	t.Setenv("APP_PUBLIC_URL", "https://example.invalid")
+	t.Setenv("RESEND_ENABLED", "true")
+	t.Setenv("SMTP_HOST", "smtp.example.invalid")
+	t.Setenv("SMTP_USERNAME", "synthetic-user")
+	t.Setenv("SMTP_PASSWORD", "synthetic-password")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Email.Provider != "smtp" || cfg.SMTP.Port != 587 || cfg.SMTP.TLSMode != "starttls" {
+		t.Fatalf("SMTP configuration = provider %q, port %d, TLS mode %q; want smtp, 587, and starttls", cfg.Email.Provider, cfg.SMTP.Port, cfg.SMTP.TLSMode)
+	}
+}
+
+func TestLoad_PreservesSMTPPasswordWhitespace(t *testing.T) {
+	clearConfigEnv(t)
+	setRequiredEnv(t)
+	t.Setenv("EMAIL_PROVIDER", "smtp")
+	t.Setenv("EMAIL_FROM", "noreply@example.invalid")
+	t.Setenv("APP_PUBLIC_URL", "https://example.invalid")
+	t.Setenv("SMTP_HOST", "smtp.example.invalid")
+	t.Setenv("SMTP_USERNAME", "synthetic-user")
+	t.Setenv("SMTP_PASSWORD", " synthetic password ")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.SMTP.Password != " synthetic password " {
+		t.Fatal("SMTP.Password did not preserve its configured value")
+	}
+}
+
+func TestLoad_RejectsInvalidEmailConfiguration(t *testing.T) {
+	cases := []struct {
+		name      string
+		set       map[string]string
+		unset     []string
+		wantError string
+	}{
+		{
+			name:      "unknown provider",
+			set:       map[string]string{"EMAIL_PROVIDER": "other"},
+			wantError: "EMAIL_PROVIDER",
+		},
+		{
+			name:      "resend missing key",
+			set:       map[string]string{"EMAIL_PROVIDER": "resend", "EMAIL_FROM": "noreply@example.invalid", "APP_PUBLIC_URL": "https://example.invalid"},
+			wantError: "RESEND_API_KEY",
+		},
+		{
+			name: "unsafe sender address",
+			set: map[string]string{
+				"EMAIL_PROVIDER": "resend", "EMAIL_FROM": "Sender <noreply@example.invalid>",
+				"APP_PUBLIC_URL": "https://example.invalid", "RESEND_API_KEY": "re_synthetic_test_key",
+			},
+			wantError: "EMAIL_FROM",
+		},
+		{
+			name: "public non-loopback HTTP URL",
+			set: map[string]string{
+				"EMAIL_PROVIDER": "resend", "EMAIL_FROM": "noreply@example.invalid",
+				"APP_PUBLIC_URL": "http://example.invalid", "RESEND_API_KEY": "re_synthetic_test_key",
+			},
+			wantError: "APP_PUBLIC_URL",
+		},
+		{
+			name: "public URL with subpath",
+			set: map[string]string{
+				"EMAIL_PROVIDER": "resend", "EMAIL_FROM": "noreply@example.invalid",
+				"APP_PUBLIC_URL": "https://example.invalid/account", "RESEND_API_KEY": "re_synthetic_test_key",
+			},
+			wantError: "APP_PUBLIC_URL",
+		},
+		{
+			name: "SMTP without username",
+			set: map[string]string{
+				"EMAIL_PROVIDER": "smtp", "EMAIL_FROM": "noreply@example.invalid",
+				"APP_PUBLIC_URL": "https://example.invalid", "SMTP_HOST": "smtp.example.invalid",
+				"SMTP_PASSWORD": "synthetic-password",
+			},
+			wantError: "SMTP_USERNAME",
+		},
+		{
+			name: "SMTP port outside range",
+			set: map[string]string{
+				"EMAIL_PROVIDER": "smtp", "EMAIL_FROM": "noreply@example.invalid",
+				"APP_PUBLIC_URL": "https://example.invalid", "SMTP_HOST": "smtp.example.invalid",
+				"SMTP_USERNAME": "synthetic-user", "SMTP_PASSWORD": "synthetic-password", "SMTP_PORT": "65536",
+			},
+			wantError: "SMTP_PORT",
+		},
+		{
+			name: "SMTP plaintext mode rejected",
+			set: map[string]string{
+				"EMAIL_PROVIDER": "smtp", "EMAIL_FROM": "noreply@example.invalid",
+				"APP_PUBLIC_URL": "https://example.invalid", "SMTP_HOST": "smtp.example.invalid",
+				"SMTP_USERNAME": "synthetic-user", "SMTP_PASSWORD": "synthetic-password", "SMTP_TLS_MODE": "none",
+			},
+			wantError: "SMTP_TLS_MODE",
+		},
+	}
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			clearConfigEnv(t)
+			setRequiredEnv(t)
+			for _, name := range tt.unset {
+				_ = os.Unsetenv(name)
+			}
+			for name, value := range tt.set {
+				t.Setenv(name, value)
+			}
+			_, err := Load()
+			if err == nil {
+				t.Fatal("Load() error = nil, want an email configuration error")
+			}
+			if !strings.Contains(err.Error(), tt.wantError) {
+				t.Fatalf("Load() error = %q, want it to mention %s", err, tt.wantError)
 			}
 		})
 	}

@@ -244,13 +244,24 @@ const readAdminRefreshCSRFToken = (): string | null =>
 export const canResumeAdminSession = (): boolean =>
   readAdminRefreshCSRFToken() !== null;
 
+const PLAYER_PUBLIC_AUTH_PATHS = new Set([
+  "/api/v1/players/join",
+  "/api/v1/players/register",
+  "/api/v1/players/login",
+  "/api/v1/players/verify-email",
+  "/api/v1/players/resend-verification",
+]);
+
 const isPlayerScopedPath = (pathname: string): boolean =>
-  pathname.startsWith("/api/v1/players/")
+  (pathname.startsWith("/api/v1/players/") && !PLAYER_PUBLIC_AUTH_PATHS.has(pathname))
   || /^\/api\/v1\/tournaments\/[^/]+\/participant(?:\/|$)/.test(pathname);
 
 const sessionRoleForPath = (pathname: string): SessionRole | null => {
   if (pathname.startsWith("/api/v1/admin/")) {
     return "admin";
+  }
+  if (pathname === "/api/v1/players/login") {
+    return "player";
   }
   if (isPlayerScopedPath(pathname)) {
     return "player";

@@ -132,7 +132,7 @@ func TestRESTHandlers_AdminPlayersListUpdateDelete(t *testing.T) {
 	adminClaims, err := f.auth.VerifyAccess(ctx, adminToken)
 	require.NoError(t, err)
 
-	alice := f.joinPlayerViaUsecase(t, uniq("alice"))
+	alice := f.makePlayer(t, uniq("alice"))
 	bob := f.makePlayer(t, uniq("bob"))
 
 	unauthorizedReq, unauthorizedResp := f.doJSON(t, http.MethodGet, "/api/v1/admin/players", "", "")
@@ -254,7 +254,24 @@ func TestRESTHandlers_AdminPlayersListUpdateDelete(t *testing.T) {
 	require.NoError(t, err)
 	require.NotContains(t, leaderboardUsernames(boardAfterDelete), "renamed_admin_player")
 
-	meReq, meResp := f.doJSON(t, http.MethodGet, "/api/v1/players/me", "", session(*alice.SessionToken))
+	accountPlayer := f.joinPlayerViaUsecase(t, uniq("verified"))
+	accountPath := "/api/v1/admin/players/" + accountPlayer.ID.String()
+	renameReq, renameResp := f.doJSON(t, http.MethodPut, accountPath,
+		`{"username":"renamed_account","wins":0,"average_solve_time_ms":0}`, adminSession(adminToken))
+	require.Equal(t, http.StatusConflict, renameResp.Code)
+	f.validateResponse(t, renameReq, renameResp)
+	statsReq, statsResp := f.doJSON(t, http.MethodPut, accountPath,
+		fmt.Sprintf(`{"username":%q,"wins":2,"average_solve_time_ms":80000}`, accountPlayer.Username), adminSession(adminToken))
+	require.Equal(t, http.StatusOK, statsResp.Code)
+	f.validateResponse(t, statsReq, statsResp)
+	stats := decodeJSON[api.PlayerManagementView](t, statsResp)
+	require.Equal(t, accountPlayer.Username, stats.Username)
+	require.Equal(t, int32(2), stats.Wins)
+	accountDeleteReq, accountDeleteResp := f.doJSON(t, http.MethodDelete, accountPath, "", adminSession(adminToken))
+	require.Equal(t, http.StatusNoContent, accountDeleteResp.Code)
+	f.validateResponse(t, accountDeleteReq, accountDeleteResp)
+
+	meReq, meResp := f.doJSON(t, http.MethodGet, "/api/v1/players/me", "", session(*accountPlayer.SessionToken))
 	require.Equal(t, http.StatusUnauthorized, meResp.Code)
 	f.validateResponse(t, meReq, meResp)
 }

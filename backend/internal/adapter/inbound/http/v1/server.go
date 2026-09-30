@@ -28,6 +28,7 @@ type HealthChecks struct {
 // The bootstrap package constructs it from concrete use case implementations.
 type Dependencies struct {
 	Players                              PlayerService
+	PlayerAccounts                       usecase.PlayerAccountService
 	PlayerNotifications                  notification.PlayerNotifications
 	AdminAuth                            AdminAuthService
 	Tasks                                AdminTaskService
@@ -63,6 +64,7 @@ type Server struct {
 	*tournamentController
 
 	players                              PlayerService
+	playerAccounts                       usecase.PlayerAccountService
 	playerNotifications                  notification.PlayerNotifications
 	adminAuth                            AdminAuthService
 	tasks                                AdminTaskService
@@ -102,6 +104,7 @@ func New(deps Dependencies) *Server {
 		publicTournamentCatalog:              deps.PublicTournamentCatalog,
 		tournamentAdmission:                  deps.TournamentAdmission,
 		players:                              deps.Players,
+		playerAccounts:                       deps.PlayerAccounts,
 		playerNotifications:                  deps.PlayerNotifications,
 		adminAuth:                            deps.AdminAuth,
 		tasks:                                deps.Tasks,

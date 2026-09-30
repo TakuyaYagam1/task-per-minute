@@ -25,6 +25,76 @@ JoinPlayerRequest:
       pattern: '^[a-zA-Z0-9_-]+$'
       example: "takuya"
 
+PlayerRegistrationRequest:
+  type: object
+  additionalProperties: false
+  required: [username, email, password]
+  properties:
+    username:
+      type: string
+      minLength: 2
+      maxLength: 50
+      pattern: '^[a-zA-Z0-9_-]+$'
+      example: "takuya"
+    email:
+      type: string
+      format: email
+      minLength: 3
+      maxLength: 254
+    password:
+      type: string
+      format: password
+      writeOnly: true
+      minLength: 15
+      maxLength: 128
+
+PlayerLoginRequest:
+  type: object
+  additionalProperties: false
+  required: [login, password]
+  properties:
+    login:
+      type: string
+      minLength: 1
+      maxLength: 254
+      description: Case-insensitive player username or email address.
+    password:
+      type: string
+      format: password
+      writeOnly: true
+      minLength: 1
+      maxLength: 128
+
+PlayerVerificationRequest:
+  type: object
+  additionalProperties: false
+  required: [token]
+  properties:
+    token:
+      type: string
+      minLength: 43
+      maxLength: 43
+      pattern: '^[A-Za-z0-9_-]{43}$'
+
+PlayerResendVerificationRequest:
+  type: object
+  additionalProperties: false
+  required: [email]
+  properties:
+    email:
+      type: string
+      format: email
+      minLength: 3
+      maxLength: 254
+
+PlayerAccountAcceptedResponse:
+  type: object
+  required: [accepted]
+  properties:
+    accepted:
+      type: boolean
+      enum: [true]
+
 CreatePlayerRequest:
   type: object
   additionalProperties: false

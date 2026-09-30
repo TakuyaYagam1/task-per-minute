@@ -20,6 +20,7 @@ func initializeApp(runtime *RuntimeContext, cfg *config.Config, log logkit.Logge
 		ReposSet,
 		UseCasesSet,
 		PlayerNotificationsSet,
+		PlayerAccountsSet,
 		MiddlewareSet,
 		WebSocketSet,
 		HTTPSet,

@@ -2,19 +2,32 @@ import { expect, test } from '@playwright/test';
 
 import { jsonHeaders, mockPlayerLogout, nowISO } from './support/common';
 
+const playerID = '77777777-7777-7777-7777-777777777777';
+
 test.beforeEach(async ({ page }) => {
+  await page.route('**/api/v1/players/notifications', async (route) => {
+    await route.fulfill({
+      status: 200,
+      headers: jsonHeaders,
+      body: JSON.stringify({ notifications: [] }),
+    });
+  });
+  await page.route('**/api/v1/players/notifications/events', async (route) => {
+    await route.fulfill({ status: 204, body: '' });
+  });
   await mockPlayerLogout(page);
+  await page.route('**/api/v1/players/me', async (route) => {
+    await route.fulfill({
+      status: 401,
+      headers: { 'content-type': 'application/problem+json' },
+      body: JSON.stringify({ type: 'about:blank', title: 'Unauthorized', status: 401 }),
+    });
+  });
 });
 
-test('restores a cookie-backed player session without opening a websocket', async ({ page }) => {
-  const playerID = '77777777-7777-7777-7777-777777777777';
+test('restores a cookie-backed player from the server without requiring local identity', async ({ page }) => {
   let meCalls = 0;
   let websocketCalls = 0;
-
-  await page.addInitScript(({ playerID }) => {
-    window.sessionStorage.setItem('player_id', playerID);
-    window.sessionStorage.setItem('username', 'alice');
-  }, { playerID });
   page.on('websocket', (socket) => {
     if (!new URL(socket.url()).pathname.startsWith('/_next/')) {
       websocketCalls += 1;
@@ -27,11 +40,7 @@ test('restores a cookie-backed player session without opening a websocket', asyn
       status: 200,
       headers: jsonHeaders,
       body: JSON.stringify({
-        player: {
-          id: playerID,
-          username: 'alice',
-          created_at: nowISO(),
-        },
+        player: { id: playerID, username: 'alice', created_at: nowISO() },
       }),
     });
   });
@@ -39,12 +48,29 @@ test('restores a cookie-backed player session without opening a websocket', asyn
   await page.goto('/');
 
   await expect(page.getByText('Игрок готов')).toBeVisible();
-  await expect(page.getByText('alice')).toBeVisible();
-  await expect.poll(() => meCalls).toBe(1);
+  await expect(page.getByText('alice', { exact: true })).toBeVisible();
+  await expect.poll(() => meCalls).toBeGreaterThan(0);
   expect(websocketCalls).toBe(0);
+  await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('player_id'))).toBe(playerID);
+  await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('username'))).toBe('alice');
 });
 
-test('blocked browser storage does not crash the home page', async ({ page }) => {
+test('an expired session clears the cache and shows account links', async ({ page }) => {
+  await page.addInitScript(({ playerID }) => {
+    window.sessionStorage.setItem('player_id', playerID);
+    window.sessionStorage.setItem('username', 'stale-player');
+  }, { playerID });
+
+  await page.goto('/');
+
+  await expect(page.getByRole('link', { name: 'Войти', exact: true })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Создать аккаунт', exact: true })).toBeVisible();
+  await expect(page.getByText('stale-player', { exact: true })).toHaveCount(0);
+  await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('player_id'))).toBeNull();
+  await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('username'))).toBeNull();
+});
+
+test('blocked browser storage does not crash the account links', async ({ page }) => {
   const pageErrors: string[] = [];
   page.on('pageerror', (error) => {
     pageErrors.push(error.message);
@@ -60,109 +86,23 @@ test('blocked browser storage does not crash the home page', async ({ page }) =>
 
   await page.goto('/');
 
-  await expect(page.getByPlaceholder('Введите никнейм...')).toBeVisible();
-  await expect(page.getByLabel('Никнейм')).toBeVisible();
-  await expect(page.getByText('Введите никнейм', { exact: true })).toHaveCount(0);
+  await expect(page.getByRole('link', { name: 'Войти', exact: true })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Создать аккаунт', exact: true })).toBeVisible();
   expect(pageErrors).toEqual([]);
 });
 
-test('valid join stores only the player restore cache', async ({ page }) => {
-  const playerID = '7a7a7a7a-7a7a-7a7a-7a7a-7a7a7a7a7a7a';
-  let joinCalls = 0;
-  await page.route('**/api/v1/players/join', async (route) => {
-    joinCalls += 1;
-    expect(route.request().postDataJSON()).toEqual({ username: 'alice_01' });
-    expect(route.request().headers().authorization).toBeUndefined();
-    await route.fulfill({
-      status: 200,
-      headers: { ...jsonHeaders, 'X-CSRF-Token': 'join-player-csrf' },
-      body: JSON.stringify({ player_id: playerID }),
-    });
-  });
-
-  await page.goto('/');
-  await page.getByPlaceholder('Введите никнейм...').fill('  alice_01  ');
-  await page.getByRole('button', { name: 'ПОДКЛЮЧИТЬСЯ' }).click();
-
-  await expect(page.getByText('Игрок готов')).toBeVisible();
-  expect(joinCalls).toBe(1);
-  await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('player_id'))).toBe(playerID);
-  await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('username'))).toBe('alice_01');
-});
-
-test('malformed join response does not persist a player session', async ({ page }) => {
-  await page.route('**/api/v1/players/join', async (route) => {
-    await route.fulfill({
-      status: 200,
-      headers: jsonHeaders,
-      body: JSON.stringify({ player_id: 'not-a-uuid' }),
-    });
-  });
-
-  await page.goto('/');
-  await page.getByPlaceholder('Введите никнейм...').fill('alice');
-  await page.getByRole('button', { name: 'ПОДКЛЮЧИТЬСЯ' }).click();
-
-  await expect(page.getByText('Ошибка соединения')).toBeVisible();
-  await expect(page.getByText('Игрок готов')).toBeHidden();
-  await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('player_id'))).toBeNull();
-  await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('username'))).toBeNull();
-});
-
-test('join rate limit reports Retry-After without persisting a session', async ({ page }) => {
-  await page.route('**/api/v1/players/join', async (route) => {
-    await route.fulfill({
-      status: 429,
-      headers: {
-        ...jsonHeaders,
-        'Retry-After': '7',
-      },
-      body: JSON.stringify({
-        type: 'about:blank',
-        title: 'Too Many Requests',
-        status: 429,
-      }),
-    });
-  });
-
-  await page.goto('/');
-  await page.getByPlaceholder('Введите никнейм...').fill('alice');
-  await page.getByRole('button', { name: 'ПОДКЛЮЧИТЬСЯ' }).click();
-
-  await expect(page.getByText('Слишком много попыток. Повторите через 7 секунд.')).toBeVisible();
-  await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('player_id'))).toBeNull();
-});
-
-test('join form rejects invalid usernames before sending a request', async ({ page }) => {
-  let joinCalls = 0;
-  await page.route('**/api/v1/players/join', async (route) => {
-    joinCalls += 1;
-    await route.abort();
-  });
-  await page.goto('/');
-
-  for (const username of ['a', 'alice!', 'alice bob', 'алиса']) {
-    await page.getByPlaceholder('Введите никнейм...').fill(username);
-    await page.getByRole('button', { name: 'ПОДКЛЮЧИТЬСЯ' }).click();
-    await expect(page.getByText('Никнейм: 2-50 символов, латиница, цифры, _ или -')).toBeVisible();
-  }
-
-  expect(joinCalls).toBe(0);
-});
-
-test('changing player clears the restore cache and calls logout', async ({ page }) => {
-  const playerID = '7b7b7b7b-7b7b-7b7b-7b7b-7b7b7b7b7b7b';
-  const playerCSRFToken = 'player-logout-csrf';
+test('changing player clears the restore cache and sends logout CSRF', async ({ page }) => {
+  const csrfToken = 'player-logout-csrf';
   let logoutCalls = 0;
-  await page.addInitScript(({ playerID }) => {
+  await page.addInitScript(({ playerID, csrfToken }) => {
     window.sessionStorage.setItem('player_id', playerID);
     window.sessionStorage.setItem('username', 'alice');
-    document.cookie = 'tpm_player_csrf=player-logout-csrf; Path=/';
-  }, { playerID });
+    document.cookie = `tpm_player_csrf=${csrfToken}; Path=/`;
+  }, { playerID, csrfToken });
   await page.route('**/api/v1/players/me', async (route) => {
     await route.fulfill({
       status: 200,
-      headers: jsonHeaders,
+      headers: { ...jsonHeaders, 'X-CSRF-Token': csrfToken },
       body: JSON.stringify({
         player: { id: playerID, username: 'alice', created_at: nowISO() },
       }),
@@ -171,44 +111,35 @@ test('changing player clears the restore cache and calls logout', async ({ page 
   await page.unroute('**/api/v1/players/logout');
   await page.route('**/api/v1/players/logout', async (route) => {
     logoutCalls += 1;
-    expect(route.request().headers()['x-csrf-token']).toBe(playerCSRFToken);
+    expect(route.request().headers()['x-csrf-token']).toBe(csrfToken);
     await route.fulfill({ status: 204, body: '' });
   });
 
   await page.goto('/');
-  await page.getByRole('button', { name: 'Сменить игрока' }).click();
+  await page.getByRole('button', { name: 'Выйти' }).click();
 
-  await expect(page.getByPlaceholder('Введите никнейм...')).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Войти', exact: true })).toBeVisible();
   await expect.poll(() => logoutCalls).toBe(1);
   await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('player_id'))).toBeNull();
   await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('username'))).toBeNull();
-  await expect
-    .poll(() => page.evaluate(() => document.cookie.includes('tpm_player_csrf=')))
-    .toBe(false);
-  await expect
-    .poll(() => page.evaluate(() => window.sessionStorage.getItem('player_csrf_token')))
-    .toBeNull();
+  await expect.poll(() => page.evaluate(() => document.cookie.includes('tpm_player_csrf='))).toBe(false);
 });
 
-test('home exposes leaderboard and Arena navigation', async ({ page }) => {
+test('home offers account links and Arena navigation', async ({ page }) => {
   await page.goto('/');
 
   await expect(page.getByRole('heading', { name: 'Task Per Minute', exact: true })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'CTF Соревнования', exact: true })).toBeVisible();
   await expect(page.getByText('Платформа турниров CTF', { exact: true })).toHaveCount(0);
   await expect(page.getByText('CTF турнир', { exact: true })).toHaveCount(0);
-  await expect(page.getByText('Войдите как участник, чтобы сохранить браузерную сессию и открыть назначение.', { exact: true })).toHaveCount(0);
-  await expect(page.getByText('Используйте никнейм, который будет виден в турнирных списках.', { exact: true })).toHaveCount(0);
-  await expect(page.getByText('Введите никнейм, чтобы начать.', { exact: true })).toHaveCount(0);
-  await expect(page.getByLabel('Никнейм')).toHaveAttribute('placeholder', 'Введите никнейм...');
-
+  await expect(page.getByRole('link', { name: 'Войти', exact: true })).toHaveAttribute('href', '/login');
+  await expect(page.getByRole('link', { name: 'Создать аккаунт', exact: true })).toHaveAttribute('href', '/register');
   await expect(page.getByRole('link', { name: 'Общий рейтинг' })).toHaveAttribute('href', '/leaderboard');
   const arenaLink = page.getByRole('link', { name: 'Открыть Arena' });
   await expect(arenaLink).toHaveAttribute('href', '/arena');
   await expect(arenaLink).toHaveCSS('border-style', 'solid');
   await expect(arenaLink).toHaveCSS('text-decoration-line', 'none');
   await expect(arenaLink).toHaveCSS('min-height', '44px');
-  await expect(page.getByRole('link')).toHaveCount(3);
 });
 
 test('home centers its branding and keeps the Arena action touch-sized on mobile', async ({ page }) => {

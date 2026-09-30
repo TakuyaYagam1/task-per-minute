@@ -10,30 +10,62 @@ import {
   assertApiResponse,
   isCurrentPlayerResponse,
   isJoinPlayerResponse,
+  isPlayerAccountAcceptedResponse,
 } from "./guards";
 import type { components } from "./schema";
 
 export type JoinPlayerResponse = components["schemas"]["JoinPlayerResponse"];
 export type CurrentPlayerResponse = components["schemas"]["CurrentPlayerResponse"];
+export type PlayerAccountAcceptedResponse = components["schemas"]["PlayerAccountAcceptedResponse"];
 
 export const playerApi = {
-  async join(username: string, signal?: AbortSignal): Promise<JoinPlayerResponse> {
-    const sessionEpoch = advancePlayerSessionEpoch();
-    clearPlayerCSRFTokens();
-    try {
-      const data = await unwrapApi(
-        await publicClient.POST("/api/v1/players/join", {
-          body: { username },
-          signal,
-        }),
-      );
-      return assertApiResponse(data, isJoinPlayerResponse, "players/join");
-    } catch (error) {
-      if (isCurrentPlayerSessionEpoch(sessionEpoch)) {
-        clearPlayerCSRFTokens();
-      }
-      throw error;
-    }
+  async register(
+    username: string,
+    email: string,
+    password: string,
+    signal?: AbortSignal,
+  ): Promise<PlayerAccountAcceptedResponse> {
+    const data = await unwrapApi(
+      await publicClient.POST("/api/v1/players/register", {
+        body: { username, email, password },
+        signal,
+      }),
+      "players/register",
+    );
+    return assertApiResponse(data, isPlayerAccountAcceptedResponse, "players/register");
+  },
+
+  async login(login: string, password: string, signal?: AbortSignal): Promise<JoinPlayerResponse> {
+    advancePlayerSessionEpoch();
+    const data = await unwrapApi(
+      await publicClient.POST("/api/v1/players/login", {
+        body: { login, password },
+        signal,
+      }),
+      "players/login",
+    );
+    return assertApiResponse(data, isJoinPlayerResponse, "players/login");
+  },
+
+  async verifyEmail(token: string, signal?: AbortSignal): Promise<void> {
+    await unwrapApiVoid(
+      await publicClient.POST("/api/v1/players/verify-email", {
+        body: { token },
+        signal,
+      }),
+      "players/verify-email",
+    );
+  },
+
+  async resendVerification(email: string, signal?: AbortSignal): Promise<PlayerAccountAcceptedResponse> {
+    const data = await unwrapApi(
+      await publicClient.POST("/api/v1/players/resend-verification", {
+        body: { email },
+        signal,
+      }),
+      "players/resend-verification",
+    );
+    return assertApiResponse(data, isPlayerAccountAcceptedResponse, "players/resend-verification");
   },
 
   async me(signal?: AbortSignal): Promise<CurrentPlayerResponse> {

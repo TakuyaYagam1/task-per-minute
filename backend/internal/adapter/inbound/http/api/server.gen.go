@@ -161,9 +161,14 @@ type ServerInterface interface {
 	// GetLeaderboard Top-50 leaderboard
 	// (GET /api/v1/leaderboard)
 	GetLeaderboard(w http.ResponseWriter, r *http.Request)
-	// JoinPlayer Create an available player session
+	// JoinPlayer Retired nickname-only player join
 	// (POST /api/v1/players/join)
+	//
+	// Deprecated: this operation has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 	JoinPlayer(w http.ResponseWriter, r *http.Request)
+	// LoginPlayer Log in to a verified player account
+	// (POST /api/v1/players/login)
+	LoginPlayer(w http.ResponseWriter, r *http.Request)
 	// LogoutPlayer Clear the current player session cookie
 	// (POST /api/v1/players/logout)
 	LogoutPlayer(w http.ResponseWriter, r *http.Request, params LogoutPlayerParams)
@@ -176,6 +181,15 @@ type ServerInterface interface {
 	// StreamPlayerNotifications Stream player notification invalidations
 	// (GET /api/v1/players/notifications/events)
 	StreamPlayerNotifications(w http.ResponseWriter, r *http.Request)
+	// RegisterPlayer Register a player account
+	// (POST /api/v1/players/register)
+	RegisterPlayer(w http.ResponseWriter, r *http.Request)
+	// ResendPlayerVerification Resend a player email verification link
+	// (POST /api/v1/players/resend-verification)
+	ResendPlayerVerification(w http.ResponseWriter, r *http.Request)
+	// VerifyPlayerEmail Verify a player email address
+	// (POST /api/v1/players/verify-email)
+	VerifyPlayerEmail(w http.ResponseWriter, r *http.Request)
 	// ListPublicTournaments List publicly visible tournaments
 	// (GET /api/v1/public/tournaments)
 	ListPublicTournaments(w http.ResponseWriter, r *http.Request, params ListPublicTournamentsParams)
@@ -536,9 +550,17 @@ func (_ Unimplemented) GetLeaderboard(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
-// JoinPlayer Create an available player session
+// JoinPlayer Retired nickname-only player join
 // (POST /api/v1/players/join)
+//
+// Deprecated: this operation has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 func (_ Unimplemented) JoinPlayer(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// LoginPlayer Log in to a verified player account
+// (POST /api/v1/players/login)
+func (_ Unimplemented) LoginPlayer(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -563,6 +585,24 @@ func (_ Unimplemented) ListPlayerNotifications(w http.ResponseWriter, r *http.Re
 // StreamPlayerNotifications Stream player notification invalidations
 // (GET /api/v1/players/notifications/events)
 func (_ Unimplemented) StreamPlayerNotifications(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// RegisterPlayer Register a player account
+// (POST /api/v1/players/register)
+func (_ Unimplemented) RegisterPlayer(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// ResendPlayerVerification Resend a player email verification link
+// (POST /api/v1/players/resend-verification)
+func (_ Unimplemented) ResendPlayerVerification(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// VerifyPlayerEmail Verify a player email address
+// (POST /api/v1/players/verify-email)
+func (_ Unimplemented) VerifyPlayerEmail(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -3697,6 +3737,20 @@ func (siw *ServerInterfaceWrapper) JoinPlayer(w http.ResponseWriter, r *http.Req
 	handler.ServeHTTP(w, r)
 }
 
+// LoginPlayer operation middleware
+func (siw *ServerInterfaceWrapper) LoginPlayer(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.LoginPlayer(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // LogoutPlayer operation middleware
 func (siw *ServerInterfaceWrapper) LogoutPlayer(w http.ResponseWriter, r *http.Request) {
 
@@ -3789,6 +3843,48 @@ func (siw *ServerInterfaceWrapper) StreamPlayerNotifications(w http.ResponseWrit
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.StreamPlayerNotifications(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RegisterPlayer operation middleware
+func (siw *ServerInterfaceWrapper) RegisterPlayer(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RegisterPlayer(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ResendPlayerVerification operation middleware
+func (siw *ServerInterfaceWrapper) ResendPlayerVerification(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ResendPlayerVerification(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// VerifyPlayerEmail operation middleware
+func (siw *ServerInterfaceWrapper) VerifyPlayerEmail(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.VerifyPlayerEmail(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -5294,6 +5390,18 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/api/v1/players/join", wrapper.JoinPlayer)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v1/players/register", wrapper.RegisterPlayer)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v1/players/login", wrapper.LoginPlayer)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v1/players/verify-email", wrapper.VerifyPlayerEmail)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v1/players/resend-verification", wrapper.ResendPlayerVerification)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/players/me", wrapper.GetCurrentPlayer)
@@ -11223,49 +11331,10 @@ func (response GetLeaderboarddefaultApplicationProblemPlusJSONResponse) VisitGet
 }
 
 type JoinPlayerRequestObject struct {
-	Body *JoinPlayerJSONRequestBody
 }
 
 type JoinPlayerResponseObject interface {
 	VisitJoinPlayerResponse(w http.ResponseWriter) error
-}
-
-type JoinPlayer200ResponseHeaders struct {
-	XCSRFToken *string
-}
-
-type JoinPlayer200JSONResponse struct {
-	Body    JoinPlayerResponse
-	Headers JoinPlayer200ResponseHeaders
-}
-
-func (response JoinPlayer200JSONResponse) VisitJoinPlayerResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	if response.Headers.XCSRFToken != nil {
-		w.Header().Set("X-CSRF-Token", fmt.Sprint(*response.Headers.XCSRFToken))
-	}
-	w.WriteHeader(200)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type JoinPlayer400ApplicationProblemPlusJSONResponse ProblemDetails
-
-func (response JoinPlayer400ApplicationProblemPlusJSONResponse) VisitJoinPlayerResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/problem+json")
-	w.WriteHeader(400)
-	_, err := buf.WriteTo(w)
-	return err
 }
 
 type JoinPlayer403ApplicationProblemPlusJSONResponse ProblemDetails
@@ -11292,6 +11361,20 @@ func (response JoinPlayer409ApplicationProblemPlusJSONResponse) VisitJoinPlayerR
 	}
 	w.Header().Set("Content-Type", "application/problem+json")
 	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type JoinPlayer410ApplicationProblemPlusJSONResponse ProblemDetails
+
+func (response JoinPlayer410ApplicationProblemPlusJSONResponse) VisitJoinPlayerResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(410)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -11354,6 +11437,149 @@ type JoinPlayerdefaultApplicationProblemPlusJSONResponse struct {
 }
 
 func (response JoinPlayerdefaultApplicationProblemPlusJSONResponse) VisitJoinPlayerResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type LoginPlayerRequestObject struct {
+	Body *LoginPlayerJSONRequestBody
+}
+
+type LoginPlayerResponseObject interface {
+	VisitLoginPlayerResponse(w http.ResponseWriter) error
+}
+
+type LoginPlayer200ResponseHeaders struct {
+	XCSRFToken *string
+}
+
+type LoginPlayer200JSONResponse struct {
+	Body    JoinPlayerResponse
+	Headers LoginPlayer200ResponseHeaders
+}
+
+func (response LoginPlayer200JSONResponse) VisitLoginPlayerResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if response.Headers.XCSRFToken != nil {
+		w.Header().Set("X-CSRF-Token", fmt.Sprint(*response.Headers.XCSRFToken))
+	}
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type LoginPlayer400ApplicationProblemPlusJSONResponse ProblemDetails
+
+func (response LoginPlayer400ApplicationProblemPlusJSONResponse) VisitLoginPlayerResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type LoginPlayer401ApplicationProblemPlusJSONResponse ProblemDetails
+
+func (response LoginPlayer401ApplicationProblemPlusJSONResponse) VisitLoginPlayerResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type LoginPlayer403ApplicationProblemPlusJSONResponse ProblemDetails
+
+func (response LoginPlayer403ApplicationProblemPlusJSONResponse) VisitLoginPlayerResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type LoginPlayer413ApplicationProblemPlusJSONResponse ProblemDetails
+
+func (response LoginPlayer413ApplicationProblemPlusJSONResponse) VisitLoginPlayerResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(413)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type LoginPlayer415ApplicationProblemPlusJSONResponse ProblemDetails
+
+func (response LoginPlayer415ApplicationProblemPlusJSONResponse) VisitLoginPlayerResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(415)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type LoginPlayer429ResponseHeaders struct {
+	RetryAfter *string
+}
+
+type LoginPlayer429ApplicationProblemPlusJSONResponse struct {
+	Body    ProblemDetails
+	Headers LoginPlayer429ResponseHeaders
+}
+
+func (response LoginPlayer429ApplicationProblemPlusJSONResponse) VisitLoginPlayerResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	if response.Headers.RetryAfter != nil {
+		w.Header().Set("Retry-After", fmt.Sprint(*response.Headers.RetryAfter))
+	}
+	w.WriteHeader(429)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type LoginPlayerdefaultApplicationProblemPlusJSONResponse struct {
+	Body       ProblemDetails
+	StatusCode int
+}
+
+func (response LoginPlayerdefaultApplicationProblemPlusJSONResponse) VisitLoginPlayerResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -11596,6 +11822,399 @@ type StreamPlayerNotificationsdefaultApplicationProblemPlusJSONResponse struct {
 }
 
 func (response StreamPlayerNotificationsdefaultApplicationProblemPlusJSONResponse) VisitStreamPlayerNotificationsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RegisterPlayerRequestObject struct {
+	Body *RegisterPlayerJSONRequestBody
+}
+
+type RegisterPlayerResponseObject interface {
+	VisitRegisterPlayerResponse(w http.ResponseWriter) error
+}
+
+type RegisterPlayer202JSONResponse PlayerAccountAcceptedResponse
+
+func (response RegisterPlayer202JSONResponse) VisitRegisterPlayerResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(202)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RegisterPlayer400ApplicationProblemPlusJSONResponse ProblemDetails
+
+func (response RegisterPlayer400ApplicationProblemPlusJSONResponse) VisitRegisterPlayerResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RegisterPlayer403ApplicationProblemPlusJSONResponse ProblemDetails
+
+func (response RegisterPlayer403ApplicationProblemPlusJSONResponse) VisitRegisterPlayerResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RegisterPlayer409ApplicationProblemPlusJSONResponse ProblemDetails
+
+func (response RegisterPlayer409ApplicationProblemPlusJSONResponse) VisitRegisterPlayerResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RegisterPlayer413ApplicationProblemPlusJSONResponse ProblemDetails
+
+func (response RegisterPlayer413ApplicationProblemPlusJSONResponse) VisitRegisterPlayerResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(413)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RegisterPlayer415ApplicationProblemPlusJSONResponse ProblemDetails
+
+func (response RegisterPlayer415ApplicationProblemPlusJSONResponse) VisitRegisterPlayerResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(415)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RegisterPlayer429ResponseHeaders struct {
+	RetryAfter *string
+}
+
+type RegisterPlayer429ApplicationProblemPlusJSONResponse struct {
+	Body    ProblemDetails
+	Headers RegisterPlayer429ResponseHeaders
+}
+
+func (response RegisterPlayer429ApplicationProblemPlusJSONResponse) VisitRegisterPlayerResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	if response.Headers.RetryAfter != nil {
+		w.Header().Set("Retry-After", fmt.Sprint(*response.Headers.RetryAfter))
+	}
+	w.WriteHeader(429)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RegisterPlayer503ApplicationProblemPlusJSONResponse ProblemDetails
+
+func (response RegisterPlayer503ApplicationProblemPlusJSONResponse) VisitRegisterPlayerResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RegisterPlayerdefaultApplicationProblemPlusJSONResponse struct {
+	Body       ProblemDetails
+	StatusCode int
+}
+
+func (response RegisterPlayerdefaultApplicationProblemPlusJSONResponse) VisitRegisterPlayerResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ResendPlayerVerificationRequestObject struct {
+	Body *ResendPlayerVerificationJSONRequestBody
+}
+
+type ResendPlayerVerificationResponseObject interface {
+	VisitResendPlayerVerificationResponse(w http.ResponseWriter) error
+}
+
+type ResendPlayerVerification202JSONResponse PlayerAccountAcceptedResponse
+
+func (response ResendPlayerVerification202JSONResponse) VisitResendPlayerVerificationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(202)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ResendPlayerVerification400ApplicationProblemPlusJSONResponse ProblemDetails
+
+func (response ResendPlayerVerification400ApplicationProblemPlusJSONResponse) VisitResendPlayerVerificationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ResendPlayerVerification403ApplicationProblemPlusJSONResponse ProblemDetails
+
+func (response ResendPlayerVerification403ApplicationProblemPlusJSONResponse) VisitResendPlayerVerificationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ResendPlayerVerification413ApplicationProblemPlusJSONResponse ProblemDetails
+
+func (response ResendPlayerVerification413ApplicationProblemPlusJSONResponse) VisitResendPlayerVerificationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(413)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ResendPlayerVerification415ApplicationProblemPlusJSONResponse ProblemDetails
+
+func (response ResendPlayerVerification415ApplicationProblemPlusJSONResponse) VisitResendPlayerVerificationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(415)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ResendPlayerVerification429ResponseHeaders struct {
+	RetryAfter *string
+}
+
+type ResendPlayerVerification429ApplicationProblemPlusJSONResponse struct {
+	Body    ProblemDetails
+	Headers ResendPlayerVerification429ResponseHeaders
+}
+
+func (response ResendPlayerVerification429ApplicationProblemPlusJSONResponse) VisitResendPlayerVerificationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	if response.Headers.RetryAfter != nil {
+		w.Header().Set("Retry-After", fmt.Sprint(*response.Headers.RetryAfter))
+	}
+	w.WriteHeader(429)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ResendPlayerVerification503ApplicationProblemPlusJSONResponse ProblemDetails
+
+func (response ResendPlayerVerification503ApplicationProblemPlusJSONResponse) VisitResendPlayerVerificationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ResendPlayerVerificationdefaultApplicationProblemPlusJSONResponse struct {
+	Body       ProblemDetails
+	StatusCode int
+}
+
+func (response ResendPlayerVerificationdefaultApplicationProblemPlusJSONResponse) VisitResendPlayerVerificationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type VerifyPlayerEmailRequestObject struct {
+	Body *VerifyPlayerEmailJSONRequestBody
+}
+
+type VerifyPlayerEmailResponseObject interface {
+	VisitVerifyPlayerEmailResponse(w http.ResponseWriter) error
+}
+
+type VerifyPlayerEmail204Response struct {
+}
+
+func (response VerifyPlayerEmail204Response) VisitVerifyPlayerEmailResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type VerifyPlayerEmail400ApplicationProblemPlusJSONResponse ProblemDetails
+
+func (response VerifyPlayerEmail400ApplicationProblemPlusJSONResponse) VisitVerifyPlayerEmailResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type VerifyPlayerEmail403ApplicationProblemPlusJSONResponse ProblemDetails
+
+func (response VerifyPlayerEmail403ApplicationProblemPlusJSONResponse) VisitVerifyPlayerEmailResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type VerifyPlayerEmail413ApplicationProblemPlusJSONResponse ProblemDetails
+
+func (response VerifyPlayerEmail413ApplicationProblemPlusJSONResponse) VisitVerifyPlayerEmailResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(413)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type VerifyPlayerEmail415ApplicationProblemPlusJSONResponse ProblemDetails
+
+func (response VerifyPlayerEmail415ApplicationProblemPlusJSONResponse) VisitVerifyPlayerEmailResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(415)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type VerifyPlayerEmail429ResponseHeaders struct {
+	RetryAfter *string
+}
+
+type VerifyPlayerEmail429ApplicationProblemPlusJSONResponse struct {
+	Body    ProblemDetails
+	Headers VerifyPlayerEmail429ResponseHeaders
+}
+
+func (response VerifyPlayerEmail429ApplicationProblemPlusJSONResponse) VisitVerifyPlayerEmailResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	if response.Headers.RetryAfter != nil {
+		w.Header().Set("Retry-After", fmt.Sprint(*response.Headers.RetryAfter))
+	}
+	w.WriteHeader(429)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type VerifyPlayerEmaildefaultApplicationProblemPlusJSONResponse struct {
+	Body       ProblemDetails
+	StatusCode int
+}
+
+func (response VerifyPlayerEmaildefaultApplicationProblemPlusJSONResponse) VisitVerifyPlayerEmailResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -14436,9 +15055,14 @@ type StrictServerInterface interface {
 	// GetLeaderboard Top-50 leaderboard
 	// (GET /api/v1/leaderboard)
 	GetLeaderboard(ctx context.Context, request GetLeaderboardRequestObject) (GetLeaderboardResponseObject, error)
-	// JoinPlayer Create an available player session
+	// JoinPlayer Retired nickname-only player join
 	// (POST /api/v1/players/join)
+	//
+	// Deprecated: this operation has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 	JoinPlayer(ctx context.Context, request JoinPlayerRequestObject) (JoinPlayerResponseObject, error)
+	// LoginPlayer Log in to a verified player account
+	// (POST /api/v1/players/login)
+	LoginPlayer(ctx context.Context, request LoginPlayerRequestObject) (LoginPlayerResponseObject, error)
 	// LogoutPlayer Clear the current player session cookie
 	// (POST /api/v1/players/logout)
 	LogoutPlayer(ctx context.Context, request LogoutPlayerRequestObject) (LogoutPlayerResponseObject, error)
@@ -14451,6 +15075,15 @@ type StrictServerInterface interface {
 	// StreamPlayerNotifications Stream player notification invalidations
 	// (GET /api/v1/players/notifications/events)
 	StreamPlayerNotifications(ctx context.Context, request StreamPlayerNotificationsRequestObject) (StreamPlayerNotificationsResponseObject, error)
+	// RegisterPlayer Register a player account
+	// (POST /api/v1/players/register)
+	RegisterPlayer(ctx context.Context, request RegisterPlayerRequestObject) (RegisterPlayerResponseObject, error)
+	// ResendPlayerVerification Resend a player email verification link
+	// (POST /api/v1/players/resend-verification)
+	ResendPlayerVerification(ctx context.Context, request ResendPlayerVerificationRequestObject) (ResendPlayerVerificationResponseObject, error)
+	// VerifyPlayerEmail Verify a player email address
+	// (POST /api/v1/players/verify-email)
+	VerifyPlayerEmail(ctx context.Context, request VerifyPlayerEmailRequestObject) (VerifyPlayerEmailResponseObject, error)
 	// ListPublicTournaments List publicly visible tournaments
 	// (GET /api/v1/public/tournaments)
 	ListPublicTournaments(ctx context.Context, request ListPublicTournamentsRequestObject) (ListPublicTournamentsResponseObject, error)
@@ -15998,13 +16631,6 @@ func (sh *strictHandler) GetLeaderboard(w http.ResponseWriter, r *http.Request) 
 func (sh *strictHandler) JoinPlayer(w http.ResponseWriter, r *http.Request) {
 	var request JoinPlayerRequestObject
 
-	var body JoinPlayerJSONRequestBody
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
-		return
-	}
-	request.Body = &body
-
 	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
 		return sh.ssi.JoinPlayer(ctx, request.(JoinPlayerRequestObject))
 	}
@@ -16018,6 +16644,37 @@ func (sh *strictHandler) JoinPlayer(w http.ResponseWriter, r *http.Request) {
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(JoinPlayerResponseObject); ok {
 		if err := validResponse.VisitJoinPlayerResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// LoginPlayer operation middleware
+func (sh *strictHandler) LoginPlayer(w http.ResponseWriter, r *http.Request) {
+	var request LoginPlayerRequestObject
+
+	var body LoginPlayerJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.LoginPlayer(ctx, request.(LoginPlayerRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "LoginPlayer")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(LoginPlayerResponseObject); ok {
+		if err := validResponse.VisitLoginPlayerResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
@@ -16116,6 +16773,99 @@ func (sh *strictHandler) StreamPlayerNotifications(w http.ResponseWriter, r *htt
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(StreamPlayerNotificationsResponseObject); ok {
 		if err := validResponse.VisitStreamPlayerNotificationsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// RegisterPlayer operation middleware
+func (sh *strictHandler) RegisterPlayer(w http.ResponseWriter, r *http.Request) {
+	var request RegisterPlayerRequestObject
+
+	var body RegisterPlayerJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.RegisterPlayer(ctx, request.(RegisterPlayerRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "RegisterPlayer")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(RegisterPlayerResponseObject); ok {
+		if err := validResponse.VisitRegisterPlayerResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ResendPlayerVerification operation middleware
+func (sh *strictHandler) ResendPlayerVerification(w http.ResponseWriter, r *http.Request) {
+	var request ResendPlayerVerificationRequestObject
+
+	var body ResendPlayerVerificationJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ResendPlayerVerification(ctx, request.(ResendPlayerVerificationRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ResendPlayerVerification")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ResendPlayerVerificationResponseObject); ok {
+		if err := validResponse.VisitResendPlayerVerificationResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// VerifyPlayerEmail operation middleware
+func (sh *strictHandler) VerifyPlayerEmail(w http.ResponseWriter, r *http.Request) {
+	var request VerifyPlayerEmailRequestObject
+
+	var body VerifyPlayerEmailJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.VerifyPlayerEmail(ctx, request.(VerifyPlayerEmailRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "VerifyPlayerEmail")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(VerifyPlayerEmailResponseObject); ok {
+		if err := validResponse.VisitVerifyPlayerEmailResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

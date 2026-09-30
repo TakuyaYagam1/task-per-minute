@@ -65,6 +65,7 @@ import (
 	notificationusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/notification"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/participantarchive"
 	playerusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/player"
+	playeraccount "github.com/TakuyaYagam1/task-per-minute/internal/usecase/player/account"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/playoff"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/readiness"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/recovery"
@@ -119,6 +120,7 @@ var SeaweedFSSet = wire.NewSet(
 
 var ReposSet = wire.NewSet(
 	postgres.NewTxManager,
+	wire.Bind(new(playeraccount.TransactionManager), new(*postgres.TxManager)),
 	wire.Bind(new(playerusecase.ManagementTransactionManager), new(*postgres.TxManager)),
 	wire.Bind(new(playerusecase.SessionTransactionManager), new(*postgres.TxManager)),
 	wire.Bind(new(tournamentadminlifecycle.LifecycleTransactionManager), new(*postgres.TxManager)),
@@ -247,6 +249,7 @@ var UseCasesSet = wire.NewSet(
 	wire.Bind(new(leaderboardusecase.Clock), new(clockFunc)),
 	wire.Bind(new(playerusecase.ManagementClock), new(clockFunc)),
 	wire.Bind(new(playerusecase.SessionClock), new(clockFunc)),
+	wire.Bind(new(playeraccount.Clock), new(clockFunc)),
 	wire.Bind(new(participantarchive.Clock), new(clockFunc)),
 	wire.Bind(new(catalogusecase.Clock), new(clockFunc)),
 	wire.Bind(new(catalogusecase.CatalogClock), new(clockFunc)),

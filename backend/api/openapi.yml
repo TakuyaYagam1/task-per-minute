@@ -19,7 +19,7 @@ info:
     are immutable and are not pruned.
 
     Authentication:
-      - Players use the HttpOnly `tpm_player_session` cookie issued by POST /api/v1/players/join.
+      - Players register with a username, email address, and password, verify the email link, then log in to receive the HttpOnly `tpm_player_session` cookie and session-bound CSRF token.
       - Admins use the HttpOnly `tpm_admin_access` and `tpm_admin_refresh` cookies issued by
         POST /api/v1/admin/login and POST /api/v1/admin/refresh. Unsafe admin requests must send `X-CSRF-Token`.
         Refresh/logout requests send the refresh CSRF token in `X-CSRF-Token`.
@@ -49,6 +49,14 @@ tags:
 paths:
   /api/v1/players/join:
     $ref: 'routes/player.yml#/~1api~1v1~1players~1join'
+  /api/v1/players/register:
+    $ref: 'routes/player.yml#/~1api~1v1~1players~1register'
+  /api/v1/players/login:
+    $ref: 'routes/player.yml#/~1api~1v1~1players~1login'
+  /api/v1/players/verify-email:
+    $ref: 'routes/player.yml#/~1api~1v1~1players~1verify-email'
+  /api/v1/players/resend-verification:
+    $ref: 'routes/player.yml#/~1api~1v1~1players~1resend-verification'
   /api/v1/players/me:
     $ref: 'routes/player.yml#/~1api~1v1~1players~1me'
   /api/v1/players/logout:

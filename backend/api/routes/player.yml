@@ -2,34 +2,16 @@
   post:
     operationId: joinPlayer
     tags: [player]
-    summary: Create an available player session
+    deprecated: true
+    summary: Retired nickname-only player join
     description: >
-      Creates a player or reclaims a username only after its previous session
-      expires, then issues an HttpOnly player session cookie. A readable
-      session-bound tpm_player_csrf cookie and X-CSRF-Token response header are
-      issued alongside it for unsafe player REST requests. An active session is
-      never replaced by knowledge of its public username.
+      Retired for account-backed player identities. The endpoint rejects all
+      nickname-only requests with 410 Gone. Use registration, email
+      verification, and password login instead.
     security: []
-    requestBody:
-      required: true
-      content:
-        application/json:
-          schema:
-            $ref: '../components/schemas.yml#/JoinPlayerRequest'
     responses:
-      '200':
-        description: Player session created or refreshed.
-        headers:
-          X-CSRF-Token:
-            description: CSRF token bound to the issued HttpOnly player session cookie.
-            schema:
-              type: string
-        content:
-          application/json:
-            schema:
-              $ref: '../components/schemas.yml#/JoinPlayerResponse'
-      '400':
-        description: Validation error.
+      '410':
+        description: Nickname-only session creation is retired.
         content:
           application/problem+json:
             schema:
@@ -65,6 +47,266 @@
             description: Seconds until the join rate window resets.
             schema:
               type: string
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      default:
+        $ref: '../components/responses.yml#/UnexpectedServerProblem'
+
+/api/v1/players/register:
+  post:
+    operationId: registerPlayer
+    tags: [player]
+    summary: Register a player account
+    description: |
+      Creates a pending account and sends an email verification link. The
+      accepted response is the same for an already registered email address.
+      A username already reserved by a player returns 409.
+    security: []
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '../components/schemas.yml#/PlayerRegistrationRequest'
+    responses:
+      '202':
+        description: Registration was accepted for processing.
+        content:
+          application/json:
+            schema:
+              $ref: '../components/schemas.yml#/PlayerAccountAcceptedResponse'
+      '400':
+        description: Invalid username, email, or password.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '403':
+        description: Request origin or referer is not allowed.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '409':
+        description: Username is already reserved.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '413':
+        description: Request body exceeds the JSON size limit.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '415':
+        description: Request content type must be application/json.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '429':
+        description: Too many account requests from the same client IP.
+        headers:
+          Retry-After:
+            schema:
+              type: string
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '503':
+        description: Email verification is temporarily unavailable.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      default:
+        $ref: '../components/responses.yml#/UnexpectedServerProblem'
+
+/api/v1/players/login:
+  post:
+    operationId: loginPlayer
+    tags: [player]
+    summary: Log in to a verified player account
+    description: |
+      Accepts a case-insensitive username or email address. Invalid credentials
+      and unverified accounts return the same response. Success issues the
+      existing HttpOnly player session cookie and a session-bound CSRF token.
+    security: []
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '../components/schemas.yml#/PlayerLoginRequest'
+    responses:
+      '200':
+        description: Player session created.
+        headers:
+          X-CSRF-Token:
+            description: CSRF token bound to the issued HttpOnly player session cookie.
+            schema:
+              type: string
+        content:
+          application/json:
+            schema:
+              $ref: '../components/schemas.yml#/JoinPlayerResponse'
+      '400':
+        description: Invalid request body.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '401':
+        description: Invalid credentials.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '403':
+        description: Request origin or referer is not allowed.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '413':
+        description: Request body exceeds the JSON size limit.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '415':
+        description: Request content type must be application/json.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '429':
+        description: Too many login requests from the same client IP.
+        headers:
+          Retry-After:
+            schema:
+              type: string
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      default:
+        $ref: '../components/responses.yml#/UnexpectedServerProblem'
+
+/api/v1/players/verify-email:
+  post:
+    operationId: verifyPlayerEmail
+    tags: [player]
+    summary: Verify a player email address
+    security: []
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '../components/schemas.yml#/PlayerVerificationRequest'
+    responses:
+      '204':
+        description: Email verified and player identity created.
+      '400':
+        description: Verification token is invalid, expired, or already used.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '403':
+        description: Request origin or referer is not allowed.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '413':
+        description: Request body exceeds the JSON size limit.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '415':
+        description: Request content type must be application/json.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '429':
+        description: Too many verification requests from the same client IP.
+        headers:
+          Retry-After:
+            schema:
+              type: string
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      default:
+        $ref: '../components/responses.yml#/UnexpectedServerProblem'
+
+/api/v1/players/resend-verification:
+  post:
+    operationId: resendPlayerVerification
+    tags: [player]
+    summary: Resend a player email verification link
+    description: |
+      The accepted response does not reveal whether an account exists or
+      whether a resend cooldown prevented delivery.
+    security: []
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '../components/schemas.yml#/PlayerResendVerificationRequest'
+    responses:
+      '202':
+        description: Resend request was accepted for processing.
+        content:
+          application/json:
+            schema:
+              $ref: '../components/schemas.yml#/PlayerAccountAcceptedResponse'
+      '400':
+        description: Invalid email address.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '403':
+        description: Request origin or referer is not allowed.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '413':
+        description: Request body exceeds the JSON size limit.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '415':
+        description: Request content type must be application/json.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '429':
+        description: Too many verification requests from the same client IP.
+        headers:
+          Retry-After:
+            schema:
+              type: string
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '503':
+        description: Email verification is temporarily unavailable.
         content:
           application/problem+json:
             schema:

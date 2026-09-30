@@ -1,5 +1,6 @@
 export {};
 export * from './error-page';
+export * from './player-auth';
 export {
   ArenaLanding,
   ArenaShell,

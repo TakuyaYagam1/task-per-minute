@@ -328,6 +328,16 @@ export E2E_FULL_STACK_ISOLATED=1
 export E2E_SKIP_WEB_SERVER=1
 export E2E_FRONTEND_URL="http://127.0.0.1:${FRONTEND_PORT}"
 export E2E_BACKEND_URL="http://127.0.0.1:${BACKEND_PORT}"
+export EMAIL_PROVIDER=disabled
+export EMAIL_FROM=
+export APP_PUBLIC_URL=
+export RESEND_ENABLED=false
+export RESEND_API_KEY=
+export SMTP_HOST=
+export SMTP_PORT=587
+export SMTP_USERNAME=
+export SMTP_PASSWORD=
+export SMTP_TLS_MODE=starttls
 full_stack_grep="${E2E_FULL_STACK_GREP:-}"
 playwright_suite=(
   "$ROOT_DIR/frontend/node_modules/.bin/playwright"
@@ -350,6 +360,18 @@ fi
 for kind in containers volumes networks; do
   owned_resources[$kind]="$(resource_ids "$kind")"
 done
+
+postgres_container="$("${compose[@]}" ps -q postgres)"
+[[ "$postgres_container" =~ ^[a-f0-9]{12,64}$ ]] || die "isolated PostgreSQL container could not be identified"
+postgres_container_info="$(docker inspect --format '{{.Id}}|{{.State.Running}}|{{index .Config.Labels "com.docker.compose.project"}}|{{index .Config.Labels "com.docker.compose.service"}}' "$postgres_container")" \
+  || die "isolated PostgreSQL container ownership could not be verified"
+IFS='|' read -r postgres_container_id postgres_running postgres_project postgres_service <<< "$postgres_container_info"
+[[ "$postgres_container_id" =~ ^[a-f0-9]{64}$ ]] || die "isolated PostgreSQL container ID is invalid"
+[[ "$postgres_running" == "true" ]] || die "isolated PostgreSQL container is not running"
+[[ "$postgres_project" == "$COMPOSE_PROJECT_NAME" ]] || die "isolated PostgreSQL container project label does not match"
+[[ "$postgres_service" == "postgres" ]] || die "isolated PostgreSQL container service label does not match"
+export E2E_ACCOUNT_FIXTURE_POSTGRES_CONTAINER_ID="$postgres_container_id"
+export E2E_ACCOUNT_FIXTURE_COMPOSE_PROJECT="$COMPOSE_PROJECT_NAME"
 
 wait_for_url() {
   local name="$1"
