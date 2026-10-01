@@ -1,6 +1,7 @@
 import { expect, test, type Page, type Route, type TestInfo } from "@playwright/test";
 
 import { createTournamentFixtureSet, tournamentFixtureIds } from "./tournament/fixtures";
+import { selectTheme } from "./support/common";
 
 test.use({ trace: "off" });
 
@@ -86,6 +87,10 @@ const installRoleFixtures = async (page: Page, role: Role): Promise<void> => {
 
 const installLeaderboardFixture = async (page: Page): Promise<void> => {
   await page.route("**/api/v1/leaderboard*", (route) => fulfillJSON(route, {
+    page: 1,
+    per_page: 100,
+    total: 2,
+    total_pages: 1,
     entries: [
       {
         rank: 1,
@@ -111,8 +116,7 @@ const installCatalogFixture = async (page: Page): Promise<void> => {
 };
 
 const setTheme = async (page: Page, theme: Theme): Promise<void> => {
-  await page.getByRole("button", { name: theme === "light" ? "Светлая тема" : "Темная тема" }).click();
-  await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
+  await selectTheme(page, theme);
 };
 
 const waitForRoleSurface = async (page: Page, role: Role): Promise<void> => {
@@ -199,14 +203,20 @@ const assertClassicVisualContract = async (page: Page): Promise<void> => {
     expect(color?.[1]).toBe(color?.[2]);
   }
 
-  const themeToggle = await page.getByRole("group", { name: "Тема интерфейса" }).boundingBox();
-  if (themeToggle === null) {
-    throw new Error("Theme switcher geometry is unavailable");
+  const themeSwitch = page.getByRole("switch", { name: "Светлая тема", exact: true });
+  const accountMenuButton = page.getByRole("button", { name: "Меню аккаунта", exact: true });
+  const themeSwitchCount = await themeSwitch.count();
+  const accountMenuButtonCount = await accountMenuButton.count();
+  expect(themeSwitchCount + accountMenuButtonCount).toBe(1);
+  const headerControl = themeSwitchCount === 1 ? themeSwitch : accountMenuButton;
+  const headerControlBox = await headerControl.boundingBox();
+  if (headerControlBox === null) {
+    throw new Error("Header control geometry is unavailable");
   }
   const headerGeometry = await page.evaluate(() => {
     const selectors = [
       ["home-card", "main .card"],
-      ["leaderboard-back", 'main > a[href="/"]'],
+      ["leaderboard-title", "main h1"],
     ] as const;
     return selectors.flatMap(([name, selector]) => {
       const element = document.querySelector<HTMLElement>(selector);
@@ -224,11 +234,11 @@ const assertClassicVisualContract = async (page: Page): Promise<void> => {
     });
   });
   for (const element of headerGeometry) {
-    const overlaps = element.left < themeToggle.x + themeToggle.width
-      && element.right > themeToggle.x
-      && element.top < themeToggle.y + themeToggle.height
-      && element.bottom > themeToggle.y;
-    expect(overlaps, `${element.name} overlaps the theme switcher`).toBe(false);
+    const overlaps = element.left < headerControlBox.x + headerControlBox.width
+      && element.right > headerControlBox.x
+      && element.top < headerControlBox.y + headerControlBox.height
+      && element.bottom > headerControlBox.y;
+    expect(overlaps, `${element.name} overlaps the header control`).toBe(false);
   }
 
   await page.locator("body").click({ position: { x: 4, y: 4 } });
@@ -246,7 +256,7 @@ const screenshot = async (page: Page, testInfo: TestInfo, name: string): Promise
 };
 
 const surfaces = [
-  { name: "home", path: "/" },
+  { name: "login", path: "/login" },
   { name: "leaderboard", path: "/leaderboard" },
   { name: "arena", path: "/arena" },
   { name: "participant", path: `/arena/participant/${tournamentId}`, role: "participant" as const },
@@ -282,10 +292,7 @@ for (const surface of surfaces) {
           await waitForRoleSurface(page, surface.role);
         } else {
           await expect(page.locator("main")).toBeVisible();
-          await expect(page.getByRole("heading", { name: "Task Per Minute", exact: true })).toBeVisible();
-          await expect(page.getByRole("heading", { name: "CTF Соревнования", exact: true })).toBeVisible();
-          await expect(page.getByText("Платформа турниров CTF", { exact: true })).toHaveCount(0);
-          await expect(page.getByText("CTF турнир", { exact: true })).toHaveCount(0);
+          await expect(page.getByRole("heading", { name: "Вход участника", exact: true })).toBeVisible();
         }
 
         await setTheme(page, theme);
@@ -297,12 +304,11 @@ for (const surface of surfaces) {
 }
 
 test("leaderboard empty and error states remain readable", async ({ page }) => {
-  let response: { entries: unknown[] } = { entries: [] };
+  const response = { entries: [], page: 1, per_page: 100, total: 0, total_pages: 0 };
   await page.route("**/api/v1/leaderboard*", (route) => fulfillJSON(route, response));
   await page.goto("/leaderboard");
   await expect(page.getByText("Пока нет данных о игроках")).toBeVisible();
 
-  response = { entries: [] };
   await page.unroute("**/api/v1/leaderboard*");
   await page.route(
     "**/api/v1/leaderboard*",

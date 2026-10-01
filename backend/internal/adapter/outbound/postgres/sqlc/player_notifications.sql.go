@@ -38,7 +38,7 @@ SELECT active_player.player_id,
     target_tournament.tournament_id,
     target_tournament.name,
     notification_time.created_at,
-    notification_time.created_at + interval '30 minutes'
+    notification_time.created_at + interval '24 hours'
 FROM active_player, target_tournament, notification_time
 `
 

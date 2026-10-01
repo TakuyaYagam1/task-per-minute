@@ -41,6 +41,31 @@ WHERE session_token = $1
         WHERE account.player_id = players.id
             AND account.email_verified_at IS NOT NULL
     );
+
+-- name: IsDeletedPlayerSessionToken :one
+SELECT EXISTS (
+    SELECT 1
+    FROM player_session_tombstones
+    WHERE session_token_hash = sqlc.arg(session_token_hash)
+        AND expires_at > sqlc.arg(now)
+)::boolean AS deleted;
+
+-- name: CreateDeletedPlayerSessionToken :exec
+INSERT INTO player_session_tombstones (session_token_hash, expires_at)
+VALUES (sqlc.arg(session_token_hash), sqlc.arg(expires_at))
+ON CONFLICT (session_token_hash) DO NOTHING;
+
+-- Expired hashes are ignored during lookup even if no deletion has yet triggered cleanup.
+-- Each cleanup invocation removes at most 500 rows.
+-- name: CleanupExpiredPlayerSessionTombstones :exec
+DELETE FROM player_session_tombstones AS tombstone
+WHERE tombstone.session_token_hash IN (
+    SELECT expired.session_token_hash
+    FROM player_session_tombstones AS expired
+    WHERE expired.expires_at <= sqlc.arg(now)
+    ORDER BY expired.expires_at
+    LIMIT 500
+);
 -- name: UpdatePlayerSessionToken :one
 UPDATE players
 SET session_token = sqlc.arg(session_token),
@@ -122,6 +147,10 @@ RETURNING player_id,
     wins,
     average_solve_time_ms,
     updated_at;
+
+-- name: DeletePlayerLeaderboardOverride :exec
+DELETE FROM player_leaderboard_overrides
+WHERE player_id = $1;
 
 -- name: GetAdminPlayer :one
 WITH base_stats AS (

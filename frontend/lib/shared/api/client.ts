@@ -1,6 +1,7 @@
 import createClient from "openapi-fetch";
 
 import { CONFIG } from "../config";
+import { playerStorage } from "../lib/storage";
 import { ApiContractError, isAdminSessionResponse } from "./guards";
 import type { components, paths } from "./schema";
 
@@ -88,6 +89,22 @@ let adminRefreshCSRFToken: string | null = null;
 
 let playerSessionEpoch = 0;
 let playerSessionController = new AbortController();
+let playerSessionRotationEpoch: number | null = null;
+
+export const PLAYER_ACCOUNT_DELETED_EVENT = "task-per-minute:player-account-deleted";
+export const PLAYER_SESSION_CHANNEL = "task-per-minute-player-session";
+
+export type PlayerAccountDeletedNotice = Readonly<{
+  playerId: string | null;
+  epoch: number;
+}>;
+
+let pendingPlayerAccountDeletedNotice: PlayerAccountDeletedNotice | null = null;
+
+type PlayerSessionBroadcast = Readonly<{
+  type: "player.account_deleted";
+  playerId: string;
+}>;
 
 type AdminRefreshFlight = {
   epoch: number;
@@ -100,11 +117,15 @@ let adminSessionEpoch = 0;
 let adminSessionController = new AbortController();
 
 const problemFromUnknown = (value: unknown): ProblemDetails | undefined => {
-  if (!value || typeof value !== "object") {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
     return undefined;
   }
   const candidate = value as Partial<ProblemDetails>;
-  if (typeof candidate.status === "number" && typeof candidate.title === "string") {
+  if (
+    typeof candidate.status === "number" &&
+    typeof candidate.title === "string" &&
+    (candidate.code === undefined || typeof candidate.code === "string")
+  ) {
     return candidate as ProblemDetails;
   }
   return undefined;
@@ -218,11 +239,28 @@ export const advanceAdminSessionEpoch = (): number => {
 };
 
 export const advancePlayerSessionEpoch = (): number => {
+  pendingPlayerAccountDeletedNotice = null;
+  playerSessionRotationEpoch = null;
   playerSessionEpoch += 1;
   playerSessionController.abort();
   playerSessionController = new AbortController();
   return playerSessionEpoch;
 };
+
+export const beginPlayerSessionRotation = (): number => {
+  const epoch = advancePlayerSessionEpoch();
+  playerSessionRotationEpoch = epoch;
+  return epoch;
+};
+
+export const finishPlayerSessionRotation = (epoch: number): void => {
+  if (playerSessionRotationEpoch === epoch && isCurrentPlayerSessionEpoch(epoch)) {
+    playerSessionRotationEpoch = null;
+  }
+};
+
+export const isPlayerSessionRotationInProgress = (): boolean =>
+  playerSessionRotationEpoch !== null && isCurrentPlayerSessionEpoch(playerSessionRotationEpoch);
 
 export const getPlayerSessionEpoch = (): number => playerSessionEpoch;
 
@@ -231,6 +269,59 @@ export const isCurrentAdminSessionEpoch = (epoch: number): boolean =>
 
 export const isCurrentPlayerSessionEpoch = (epoch: number): boolean =>
   epoch === playerSessionEpoch;
+
+export const takePlayerAccountDeletedNotice = (): PlayerAccountDeletedNotice | null => {
+  const notice = pendingPlayerAccountDeletedNotice;
+  pendingPlayerAccountDeletedNotice = null;
+  return notice;
+};
+
+const clearDeletedPlayerSession = (
+  playerId: string | null,
+  expectedEpoch: number,
+  broadcast: boolean,
+): boolean => {
+  if (typeof window === "undefined" || !isCurrentPlayerSessionEpoch(expectedEpoch)) {
+    return false;
+  }
+
+  const cachedPlayerId = playerStorage.getPlayerId();
+  if (playerId !== null && cachedPlayerId !== playerId) {
+    return false;
+  }
+
+  const noticePlayerId = playerId ?? cachedPlayerId;
+  playerStorage.clearSession();
+  clearPlayerCSRFTokens();
+  const epoch = advancePlayerSessionEpoch();
+  const notice = { playerId: noticePlayerId, epoch } satisfies PlayerAccountDeletedNotice;
+  pendingPlayerAccountDeletedNotice = notice;
+  window.dispatchEvent(
+    new CustomEvent<PlayerAccountDeletedNotice>(PLAYER_ACCOUNT_DELETED_EVENT, {
+      detail: notice,
+    }),
+  );
+
+  if (broadcast && noticePlayerId && typeof BroadcastChannel !== "undefined") {
+    try {
+      const channel = new BroadcastChannel(PLAYER_SESSION_CHANNEL);
+      channel.postMessage({
+        type: "player.account_deleted",
+        playerId: noticePlayerId,
+      } satisfies PlayerSessionBroadcast);
+      channel.close();
+    } catch {
+      // The local tab still receives the deletion signal if cross-tab messaging is unavailable.
+    }
+  }
+
+  return true;
+};
+
+export const acceptPlayerAccountDeletedHint = (
+  playerId: string,
+  expectedEpoch: number,
+): boolean => clearDeletedPlayerSession(playerId, expectedEpoch, false);
 
 const readPlayerCSRFToken = (): string | null =>
   tokenFromCookieOrMemory(playerCSRFToken, CSRF_COOKIE_NAME);
@@ -248,6 +339,7 @@ const PLAYER_PUBLIC_AUTH_PATHS = new Set([
   "/api/v1/players/join",
   "/api/v1/players/register",
   "/api/v1/players/login",
+  "/api/v1/players/login/resend-verification",
   "/api/v1/players/verify-email",
   "/api/v1/players/resend-verification",
 ]);
@@ -404,6 +496,23 @@ export const credentialedFetch: typeof fetch = async (input, init) => {
   try {
     const response = await fetch(credentialedRequest);
     syncCSRFTokenFromResponse(credentialedRequest, response, role, epoch);
+    if (
+      role === "player" &&
+      isPlayerScopedPath(pathname) &&
+      response.status === 401 &&
+      !credentialedRequest.signal.aborted &&
+      isCurrentPlayerSessionEpoch(epoch)
+    ) {
+      const body: unknown = await response.clone().json().catch(() => null);
+      const problem = problemFromUnknown(body);
+      if (
+        problem?.code === "player.account_deleted" &&
+        !credentialedRequest.signal.aborted &&
+        isCurrentPlayerSessionEpoch(epoch)
+      ) {
+        clearDeletedPlayerSession(playerStorage.getPlayerId(), epoch, true);
+      }
+    }
     return response;
   } catch (error) {
     throw normalizeTransportError(error);
@@ -497,6 +606,24 @@ export const adminCredentialedFetch: typeof fetch = async (input, init) => {
 export const publicClient = createClient<paths>({
   baseUrl: CONFIG.apiUrl || requestBaseURL(),
   fetch: credentialedFetch,
+});
+
+const anonymousFetch: typeof fetch = async (input, init) => {
+  const request = requestFromInput(input, {
+    ...init,
+    credentials: "omit",
+    cache: "no-store",
+  });
+  try {
+    return await fetch(request);
+  } catch (error) {
+    throw normalizeTransportError(error);
+  }
+};
+
+export const anonymousClient = createClient<paths>({
+  baseUrl: CONFIG.apiUrl || requestBaseURL(),
+  fetch: anonymousFetch,
 });
 
 export const adminClient = createClient<paths>({

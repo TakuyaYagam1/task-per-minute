@@ -1,4 +1,9 @@
 import type { components } from "./schema";
+import type {
+  LeaderboardAvatarMetadata,
+  LeaderboardEntry,
+  LeaderboardResponse,
+} from "./leaderboard";
 import { isUUID } from "../lib/validation";
 
 type AdminPlayer = components["schemas"]["PlayerManagementView"];
@@ -8,8 +13,6 @@ type AdminTask = components["schemas"]["TaskDetails"];
 type AdminSessionResponse = components["schemas"]["AdminSessionResponse"];
 type JoinPlayerResponse = components["schemas"]["JoinPlayerResponse"];
 type PlayerAccountAcceptedResponse = components["schemas"]["PlayerAccountAcceptedResponse"];
-type LeaderboardEntry = components["schemas"]["LeaderboardEntry"];
-type LeaderboardResponse = components["schemas"]["LeaderboardResponse"];
 type PublicTournamentResponse = components["schemas"]["PublicTournamentResponse"];
 type PublicTournamentCatalogItem = components["schemas"]["PublicTournamentCatalogItem"];
 type PublicTournamentCatalogResponse = components["schemas"]["PublicTournamentCatalogResponse"];
@@ -19,6 +22,8 @@ type PublicBracketMatch = components["schemas"]["PublicBracketMatch"];
 type PublicBracketResponse = components["schemas"]["PublicBracketResponse"];
 type CurrentPlayerResponse = components["schemas"]["CurrentPlayerResponse"];
 type PlayerResponse = components["schemas"]["PlayerResponse"];
+type PlayerAccountSettingsResponse = components["schemas"]["PlayerAccountSettingsResponse"];
+type PlayerAccountEmailChangeConfirmedResponse = components["schemas"]["PlayerAccountEmailChangeConfirmedResponse"];
 type UploadSourceResponse = components["schemas"]["TaskSourceUploadResponse"];
 type OperatorCorrectionRequest = components["schemas"]["OperatorCorrectionRequest"];
 type CorrectionEvidence = components["schemas"]["CorrectionEvidence"];
@@ -144,7 +149,7 @@ export const isPlayerAccountAcceptedResponse = (
 ): value is PlayerAccountAcceptedResponse =>
   isRecord(value) && hasExactKeys(value, ["accepted"]) && value.accepted === true;
 
-const isPlayerResponse = (value: unknown): value is PlayerResponse =>
+export const isPlayerResponse = (value: unknown): value is PlayerResponse =>
   isRecord(value) &&
   isUUID(value.id) &&
   isString(value.username) &&
@@ -154,15 +159,66 @@ export const isCurrentPlayerResponse = (value: unknown): value is CurrentPlayerR
   isRecord(value) &&
   isPlayerResponse(value.player);
 
+export const isPlayerAccountSettingsResponse = (
+  value: unknown,
+): value is PlayerAccountSettingsResponse =>
+  isRecord(value) &&
+  hasExactKeys(value, [
+    "username",
+    "email",
+    "pending_email",
+    "pending_email_expires_at",
+    "email_resend_available_at",
+  ]) &&
+  isString(value.username) &&
+  isString(value.email) &&
+  isOptionalStringOrNull(value.pending_email) &&
+  isOptionalDateStringOrNull(value.pending_email_expires_at) &&
+  isOptionalDateStringOrNull(value.email_resend_available_at);
+
+export const isPlayerAccountEmailChangeConfirmedResponse = (
+  value: unknown,
+): value is PlayerAccountEmailChangeConfirmedResponse =>
+  isRecord(value) &&
+  hasExactKeys(value, ["email", "previous_email_notified"]) &&
+  isString(value.email) &&
+  typeof value.previous_email_notified === "boolean";
+
+const LEADERBOARD_AVATAR_CONTENT_TYPES = new Set<LeaderboardAvatarMetadata["content_type"]>([
+  "image/jpeg",
+  "image/png",
+  "image/gif",
+  "video/mp4",
+]);
+
+const isLeaderboardAvatarMetadata = (value: unknown): value is LeaderboardAvatarMetadata =>
+  isRecord(value) &&
+  hasExactKeys(value, ["player_id", "version", "content_type"]) &&
+  isUUID(value.player_id) &&
+  isSHA256Hex(value.version) &&
+  LEADERBOARD_AVATAR_CONTENT_TYPES.has(value.content_type as LeaderboardAvatarMetadata["content_type"]);
+
 const isLeaderboardEntry = (value: unknown): value is LeaderboardEntry =>
   isRecord(value) &&
   isPositiveInteger(value.rank) &&
   isString(value.username) &&
   isNonNegativeInteger(value.wins) &&
-  isNonNegativeInteger(value.average_solve_time_ms);
+  isNonNegativeInteger(value.average_solve_time_ms) &&
+  (value.avatar === undefined || value.avatar === null || isLeaderboardAvatarMetadata(value.avatar));
 
 export const isLeaderboardResponse = (value: unknown): value is LeaderboardResponse =>
-  isRecord(value) && Array.isArray(value.entries) && value.entries.every(isLeaderboardEntry);
+  isRecord(value) &&
+  Array.isArray(value.entries) &&
+  value.entries.length <= 100 &&
+  value.entries.every(isLeaderboardEntry) &&
+  isPositiveInteger(value.page) &&
+  isPositiveInteger(value.per_page) &&
+  value.per_page <= 100 &&
+  value.entries.length <= value.per_page &&
+  isSafeInteger(value.total) &&
+  value.total >= 0 &&
+  isSafeInteger(value.total_pages) &&
+  value.total_pages >= 0;
 
 const PUBLIC_TOURNAMENT_STATES = new Set<string>([
   "draft",

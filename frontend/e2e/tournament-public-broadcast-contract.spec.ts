@@ -1,5 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
+import { selectTheme } from "./support/common";
+
 const tournamentId = "00000000-0000-4000-8000-000000000401";
 const firstSeriesId = "00000000-0000-4000-8000-000000000410";
 const secondSeriesId = "00000000-0000-4000-8000-000000000411";
@@ -536,11 +538,9 @@ test("FE-041 keeps official result server-only and covers fullscreen, themes, an
   await expect(fullscreenToggle).toHaveAttribute("aria-pressed", "false");
 
   for (const theme of ["Темная тема", "Светлая тема"] as const) {
-    await page.getByRole("button", { name: theme }).click();
-    await expect(page.locator("html")).toHaveAttribute(
-      "data-theme",
-      theme === "Темная тема" ? "dark" : "light",
-    );
+    const expectedTheme = theme === "Темная тема" ? "dark" : "light";
+    await selectTheme(page, expectedTheme);
+    await expect(page.locator("html")).toHaveAttribute("data-theme", expectedTheme);
   }
 
   mode = "result";
@@ -685,7 +685,7 @@ test("FE-047 falls back to fresh public REST snapshots after terminal realtime c
 
   const requestsBeforeUnmount = snapshotRequests;
   await page.getByRole("link", { name: "Arena", exact: true }).click();
-  await expect(page).toHaveURL(/\/(?:\?.*)?$/);
+  await expect(page).toHaveURL(/\/arena(?:\?.*)?$/);
   await page.clock.runFor(20_000);
   expect(snapshotRequests).toBe(requestsBeforeUnmount);
 });
@@ -880,7 +880,7 @@ test("FE-042 keeps spectator tabs, names, focus, motion, and responsive actions 
   });
 
   for (const theme of ["dark", "light"] as const) {
-    await page.getByRole("button", { name: theme === "dark" ? "Темная тема" : "Светлая тема" }).click();
+    await selectTheme(page, theme);
     await expect(html).toHaveAttribute("data-theme", theme);
     await firstMatch.focus();
     await page.keyboard.press("Shift+Tab");

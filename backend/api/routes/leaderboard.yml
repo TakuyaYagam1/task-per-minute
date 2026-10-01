@@ -2,18 +2,51 @@
   get:
     operationId: getLeaderboard
     tags: [leaderboard]
-    summary: Top-50 leaderboard
-    description: >
-      Aggregated from committed tournament results and ordered by wins DESC,
-      average_solve_time_ms ASC, then username ASC.
+    summary: Search and page the public leaderboard
+    description: >-
+      Returns a stable public ranking ordered by wins, average solve time,
+      username, then player ID. Search matches a literal username substring.
+      Rank is calculated before search and wins filters are applied.
     security: []
+    parameters:
+      - in: query
+        name: search
+        required: false
+        schema:
+          type: string
+          maxLength: 50
+          default: ''
+      - in: query
+        name: wins
+        required: false
+        schema:
+          $ref: '../components/schemas.yml#/LeaderboardWinsFilter'
+      - in: query
+        name: page
+        required: false
+        schema:
+          type: integer
+          format: int32
+          minimum: 1
+          default: 1
+      - in: query
+        name: per_page
+        required: false
+        schema:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 100
+          default: 100
     responses:
       '200':
-        description: Top 50 players by tournament wins.
+        description: One page of matching players and pagination metadata.
         content:
           application/json:
             schema:
               $ref: '../components/schemas.yml#/LeaderboardResponse'
+      '400':
+        $ref: '../components/responses.yml#/InvalidRequestProblem'
       '429':
         description: Too many leaderboard requests from the same client IP.
         headers:

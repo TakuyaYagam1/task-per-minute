@@ -11,7 +11,7 @@ import { checkRuntime, parseArguments } from '../check-frontend-runtime.mjs';
 
 const run = promisify(execFile);
 const checker = fileURLToPath(new URL('../check-frontend-runtime.mjs', import.meta.url));
-const CSP = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data: https://fonts.gstatic.com; connect-src 'self'; worker-src 'self' blob:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'; report-uri /csp-report; upgrade-insecure-requests";
+const CSP = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; font-src 'self' data: https://fonts.gstatic.com; connect-src 'self'; worker-src 'self' blob:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'; report-uri /csp-report; upgrade-insecure-requests";
 const HEADERS = {
   'content-security-policy': CSP,
   'strict-transport-security': 'max-age=63072000; includeSubDomains; preload',
@@ -122,6 +122,7 @@ const invalidPolicies = [
   ['script element override', (csp) => `${csp}; script-src-elem https://unexpected.example`],
   ['broad style HTTPS source', (csp) => csp.replace("style-src 'self'", "style-src 'self' https:")],
   ['broad image HTTPS source', (csp) => csp.replace("img-src 'self'", "img-src 'self' https:")],
+  ['broad media HTTPS source', (csp) => csp.replace("media-src 'self'", "media-src 'self' https:")],
   ['unexpected font origin', (csp) => csp.replace('https://fonts.gstatic.com', 'https://unexpected.example')],
   ['broad worker HTTPS source', (csp) => csp.replace("worker-src 'self'", "worker-src 'self' https:")],
   ['missing style directive', (csp) => csp.replace("style-src 'self' 'unsafe-inline'; ", '')],

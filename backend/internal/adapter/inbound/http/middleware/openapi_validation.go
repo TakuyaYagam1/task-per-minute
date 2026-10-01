@@ -165,6 +165,9 @@ func shouldSkipOpenAPIValidation(r *http.Request) bool {
 	if isTournamentRealtimePath(r.URL.Path) {
 		return true
 	}
+	if r.Method == http.MethodPut && r.URL.Path == "/api/v1/players/account/avatar" {
+		return true
+	}
 	if r.Method != http.MethodPost {
 		return false
 	}

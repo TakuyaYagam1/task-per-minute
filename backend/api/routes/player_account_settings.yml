@@ -1,0 +1,603 @@
+/api/v1/players/account:
+  get:
+    operationId: getPlayerAccountSettings
+    tags: [player]
+    summary: Read settings for the current player account
+    description: >
+      Returns private account settings for the authenticated player only. The
+      response is not cacheable and is never available through public player
+      views.
+    security:
+      - PlayerSessionAuth: []
+    responses:
+      '200':
+        description: Current account settings.
+        headers:
+          Cache-Control:
+            schema:
+              type: string
+            example: private, no-store
+        content:
+          application/json:
+            schema:
+              $ref: '../components/schemas.yml#/PlayerAccountSettingsResponse'
+      '401':
+        description: Missing or invalid player session.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      default:
+        $ref: '../components/responses.yml#/UnexpectedServerProblem'
+
+/api/v1/players/account/username:
+  post:
+    operationId: changePlayerUsername
+    tags: [player]
+    summary: Change the current player's username
+    security:
+      - PlayerSessionAuth: []
+    parameters:
+      - $ref: '../components/parameters.yml#/RequiredPlayerCSRFToken'
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '../components/schemas.yml#/PlayerAccountUsernameRequest'
+    responses:
+      '200':
+        description: Updated player identity.
+        content:
+          application/json:
+            schema:
+              $ref: '../components/schemas.yml#/PlayerResponse'
+      '400':
+        description: Invalid username or request body.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '401':
+        description: Missing or invalid player session.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '403':
+        description: Player CSRF token or request origin is invalid.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '409':
+        description: Username is already taken.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '413':
+        description: Request body exceeds the JSON size limit.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '415':
+        description: Request content type must be application/json.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '422':
+        description: Current password is invalid.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '429':
+        description: Too many sensitive account changes were attempted.
+        headers:
+          Retry-After:
+            schema:
+              type: string
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      default:
+        $ref: '../components/responses.yml#/UnexpectedServerProblem'
+
+/api/v1/players/account/password:
+  post:
+    operationId: changePlayerPassword
+    tags: [player]
+    summary: Change the current player's password
+    description: >
+      A successful change rotates the current player session and its CSRF
+      token. The replacement cookies are set on the response.
+    security:
+      - PlayerSessionAuth: []
+    parameters:
+      - $ref: '../components/parameters.yml#/RequiredPlayerCSRFToken'
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '../components/schemas.yml#/PlayerAccountPasswordRequest'
+    responses:
+      '204':
+        description: Password changed and the current session was rotated.
+        headers:
+          X-CSRF-Token:
+            description: CSRF token bound to the replacement player session.
+            schema:
+              type: string
+      '400':
+        description: Invalid password or request body.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '401':
+        description: Missing or invalid player session.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '403':
+        description: Player CSRF token or request origin is invalid.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '413':
+        description: Request body exceeds the JSON size limit.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '415':
+        description: Request content type must be application/json.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '422':
+        description: Current password is invalid.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '429':
+        description: Too many sensitive account changes were attempted.
+        headers:
+          Retry-After:
+            schema:
+              type: string
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      default:
+        $ref: '../components/responses.yml#/UnexpectedServerProblem'
+
+/api/v1/players/account/email:
+  post:
+    operationId: beginPlayerEmailChange
+    tags: [player]
+    summary: Start changing the current player's email address
+    description: >
+      Sends a confirmation code to the new address. The current email remains
+      active until the code is confirmed.
+    security:
+      - PlayerSessionAuth: []
+    parameters:
+      - $ref: '../components/parameters.yml#/RequiredPlayerCSRFToken'
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '../components/schemas.yml#/PlayerAccountEmailChangeRequest'
+    responses:
+      '202':
+        description: Email change was accepted and a confirmation code was sent.
+        content:
+          application/json:
+            schema:
+              $ref: '../components/schemas.yml#/PlayerAccountSettingsResponse'
+      '400':
+        description: Invalid email address or request body.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '401':
+        description: Missing or invalid player session.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '403':
+        description: Player CSRF token or request origin is invalid.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '409':
+        description: Email address is already in use or a change cannot be started in the current state.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '413':
+        description: Request body exceeds the JSON size limit.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '415':
+        description: Request content type must be application/json.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '422':
+        description: Current password is invalid.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '429':
+        description: Email change limits or resend cooldown prevent another message.
+        headers:
+          Retry-After:
+            schema:
+              type: string
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '503':
+        description: Email delivery is temporarily unavailable.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      default:
+        $ref: '../components/responses.yml#/UnexpectedServerProblem'
+  delete:
+    operationId: cancelPlayerEmailChange
+    tags: [player]
+    summary: Cancel a pending email change
+    security:
+      - PlayerSessionAuth: []
+    parameters:
+      - $ref: '../components/parameters.yml#/RequiredPlayerCSRFToken'
+    responses:
+      '200':
+        description: Current account settings after cancellation.
+        content:
+          application/json:
+            schema:
+              $ref: '../components/schemas.yml#/PlayerAccountSettingsResponse'
+      '401':
+        description: Missing or invalid player session.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '403':
+        description: Player CSRF token or request origin is invalid.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      default:
+        $ref: '../components/responses.yml#/UnexpectedServerProblem'
+
+/api/v1/players/account/email/resend:
+  post:
+    operationId: resendPlayerEmailChange
+    tags: [player]
+    summary: Resend a pending email change confirmation code
+    security:
+      - PlayerSessionAuth: []
+    parameters:
+      - $ref: '../components/parameters.yml#/RequiredPlayerCSRFToken'
+    responses:
+      '202':
+        description: A new confirmation code was sent to the pending address.
+        content:
+          application/json:
+            schema:
+              $ref: '../components/schemas.yml#/PlayerAccountSettingsResponse'
+      '401':
+        description: Missing or invalid player session.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '403':
+        description: Player CSRF token or request origin is invalid.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '409':
+        description: There is no pending email change.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '429':
+        description: Email change resend cooldown or rate limit is active.
+        headers:
+          Retry-After:
+            schema:
+              type: string
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '503':
+        description: Email delivery is temporarily unavailable.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      default:
+        $ref: '../components/responses.yml#/UnexpectedServerProblem'
+
+/api/v1/players/account/email/confirm:
+  post:
+    operationId: confirmPlayerEmailChange
+    tags: [player]
+    summary: Confirm the current player's pending email change
+    description: >
+      A successful confirmation changes the active email address and rotates
+      the current player session and its CSRF token. The response reports
+      whether a notice could also be sent to the previous address.
+    security:
+      - PlayerSessionAuth: []
+    parameters:
+      - $ref: '../components/parameters.yml#/RequiredPlayerCSRFToken'
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '../components/schemas.yml#/PlayerAccountEmailChangeConfirmRequest'
+    responses:
+      '200':
+        description: Email address changed; the replacement session was issued.
+        headers:
+          X-CSRF-Token:
+            description: CSRF token bound to the replacement player session.
+            schema:
+              type: string
+        content:
+          application/json:
+            schema:
+              $ref: '../components/schemas.yml#/PlayerAccountEmailChangeConfirmedResponse'
+      '401':
+        description: Missing or invalid player session.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '403':
+        description: Player CSRF token or request origin is invalid.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '400':
+        description: Invalid request body or confirmation code format.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '413':
+        description: Request body exceeds the JSON size limit.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '415':
+        description: Request content type must be application/json.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '422':
+        description: Confirmation code is invalid, expired, or exhausted.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '409':
+        description: The pending email address was taken before confirmation.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '429':
+        description: The confirmation attempt limit is active.
+        headers:
+          Retry-After:
+            schema:
+              type: string
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      default:
+        $ref: '../components/responses.yml#/UnexpectedServerProblem'
+
+/api/v1/players/account/avatar:
+  get:
+    operationId: getPlayerAccountAvatar
+    tags: [player]
+    summary: Read the current player's private avatar
+    description: Avatar bytes are available only to the authenticated player and are never cached.
+    security:
+      - PlayerSessionAuth: []
+    responses:
+      '200':
+        description: Canonical avatar image bytes or a silent H.264 MP4 avatar.
+        headers:
+          Cache-Control:
+            schema:
+              type: string
+            example: private, no-store
+        content:
+          image/jpeg:
+            schema:
+              type: string
+              format: binary
+          image/png:
+            schema:
+              type: string
+              format: binary
+          image/gif:
+            schema:
+              type: string
+              format: binary
+          video/mp4:
+            schema:
+              type: string
+              format: binary
+      '401':
+        description: Missing or invalid player session.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '404':
+        description: The current player has no avatar.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      default:
+        $ref: '../components/responses.yml#/UnexpectedServerProblem'
+  put:
+    operationId: replacePlayerAccountAvatar
+    tags: [player]
+    summary: Replace the current player's avatar
+    description: >
+      Accepts one file part named `file`. The server validates the actual image
+      or video bytes, limits the upload to 5 MiB, and stores canonical content
+      privately. Images are normalized and stripped of metadata. MP4 input is
+      limited to 10 seconds, 60 frames per second, 600 frames, 1920 pixels per
+      side, and 2,073,600 total pixels. It is canonicalized to silent H.264
+      yuv420p video with a maximum side of 512 pixels and 30 frames per second.
+      The filename and declared content type are not trusted.
+    security:
+      - PlayerSessionAuth: []
+    parameters:
+      - $ref: '../components/parameters.yml#/RequiredPlayerCSRFToken'
+    requestBody:
+      required: true
+      content:
+        multipart/form-data:
+          schema:
+            type: object
+            additionalProperties: false
+            required: [file]
+            properties:
+              file:
+                type: string
+                format: binary
+                maxLength: 5242880
+          encoding:
+            file:
+              contentType: image/jpeg, image/png, image/gif, video/mp4
+    responses:
+      '204':
+        description: Avatar stored for the current player.
+      '400':
+        description: The uploaded bytes are invalid, exceed video limits, or do not match the declared media type.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '401':
+        description: Missing or invalid player session.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '403':
+        description: Player CSRF token or request origin is invalid.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '413':
+        description: The request body or avatar exceeds the 5 MiB upload limit.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '415':
+        description: Request content type or declared file media type is unsupported.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '429':
+        description: Upload rate or decode concurrency limit was reached.
+        headers:
+          Retry-After:
+            schema:
+              type: string
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '503':
+        description: MP4 video processing is unavailable.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      default:
+        $ref: '../components/responses.yml#/UnexpectedServerProblem'
+  delete:
+    operationId: deletePlayerAccountAvatar
+    tags: [player]
+    summary: Remove the current player's avatar
+    security:
+      - PlayerSessionAuth: []
+    parameters:
+      - $ref: '../components/parameters.yml#/RequiredPlayerCSRFToken'
+    responses:
+      '204':
+        description: Avatar removed from the current player's account.
+      '401':
+        description: Missing or invalid player session.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '403':
+        description: Player CSRF token or request origin is invalid.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '429':
+        description: Avatar mutation rate limit was reached.
+        headers:
+          Retry-After:
+            schema:
+              type: string
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      default:
+        $ref: '../components/responses.yml#/UnexpectedServerProblem'

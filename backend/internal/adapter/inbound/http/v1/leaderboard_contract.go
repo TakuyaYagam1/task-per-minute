@@ -8,4 +8,5 @@ import (
 
 type LeaderboardService interface {
 	Top50(ctx context.Context) ([]leaderboardusecase.Entry, error)
+	Page(ctx context.Context, query leaderboardusecase.PageQuery) (leaderboardusecase.PageResult, error)
 }

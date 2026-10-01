@@ -41,6 +41,14 @@
   line-height: 1.4;
 }
 
+.cooldown {
+  text-align: center;
+}
+
+.errorText {
+  color: var(--error);
+}
+
 .button {
   width: 100%;
   min-height: 2.9rem;

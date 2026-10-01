@@ -9,7 +9,7 @@ import (
 )
 
 const (
-	NotificationRetention = 30 * time.Minute
+	NotificationRetention = 24 * time.Hour
 	expiredCleanupBatch   = 100
 )
 

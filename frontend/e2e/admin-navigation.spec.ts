@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 
-import { jsonHeaders } from './support/common';
+import { jsonHeaders, openAccountMenu } from './support/common';
 import { adminSessionResponse } from './support/admin';
 
 const operatorTournamentID = '10000000-0000-4000-8000-000000000001';
@@ -107,7 +107,10 @@ const loginAdmin = async (page: Page, path = '/admin'): Promise<void> => {
   await expect(page.getByRole('heading', { name: 'Панель управления' })).toBeVisible();
   await expect(page.getByTestId('site-header')).toHaveCSS('position', 'sticky');
   await expect(page.getByRole('link', { name: 'Общий рейтинг', exact: true })).toHaveCount(0);
-  await expect(page.getByRole('button', { name: 'Выйти', exact: true })).toBeVisible();
+  const accountMenu = await openAccountMenu(page);
+  await expect(accountMenu.getByRole('button', { name: 'Выйти', exact: true })).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(accountMenu).toBeHidden();
 };
 
 test.beforeEach(async ({ page }) => {
@@ -272,7 +275,8 @@ test('admin player drafts are guarded when switching players, canceling, and log
     expect(dialog.type()).toBe('confirm');
     await dialog.dismiss();
   });
-  await page.getByRole('button', { name: 'Выйти' }).click();
+  const accountMenu = await openAccountMenu(page);
+  await accountMenu.getByRole('button', { name: 'Выйти' }).click();
   await expect(page.getByRole('heading', { name: 'Панель управления' })).toBeVisible();
   await expect(username).toHaveValue('navigation_logout_draft');
 });

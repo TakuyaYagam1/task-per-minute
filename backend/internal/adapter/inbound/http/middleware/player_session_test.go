@@ -1,6 +1,7 @@
 package middleware_test
 
 import (
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -11,6 +12,7 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
+	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/http/api"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/http/middleware"
 	middlewaremocks "github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/http/middleware/mocks"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
@@ -65,6 +67,45 @@ func TestPlayerSession_RepoErrorReturnsUnauthorized(t *testing.T) {
 	handler.ServeHTTP(rr, req)
 
 	requireUnauthorized(t, rr)
+}
+
+func TestPlayerSession_DeletedAccountReturnsTypedUnauthorizedAndClearsCookies(t *testing.T) {
+	t.Parallel()
+
+	token := uuid.New()
+	players := middlewaremocks.NewMockPlayerSessionReader(t)
+	players.EXPECT().GetBySessionToken(mock.Anything, token).Return(nil, domain.ErrAccountDeleted).Once()
+	handler := middleware.PlayerSession(players)(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		t.Fatal("next handler should not be called")
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "https://app.example.com/api/v1/players/me", nil)
+	req.AddCookie(&http.Cookie{Name: middleware.PlayerSessionCookieName, Value: token.String()})
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	require.Equal(t, http.StatusUnauthorized, rr.Code)
+	var problem api.ProblemDetails
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &problem))
+	require.NotNil(t, problem.Code)
+	require.Equal(t, string(domain.ErrorCodeAccountDeleted), *problem.Code)
+	require.NotNil(t, problem.Detail)
+	require.Equal(t, domain.ErrAccountDeleted.Message, *problem.Detail)
+
+	cookies := rr.Result().Cookies()
+	require.Len(t, cookies, 2)
+	for _, name := range []string{middleware.PlayerSessionCookieName, middleware.PlayerCSRFCookieName} {
+		var found *http.Cookie
+		for _, cookie := range cookies {
+			if cookie.Name == name {
+				found = cookie
+				break
+			}
+		}
+		require.NotNil(t, found, "missing clear cookie %s", name)
+		require.Equal(t, -1, found.MaxAge)
+		require.True(t, found.Expires.Before(time.Now()))
+	}
 }
 
 func TestPlayerSession_ValidCookieInjectsPlayer(t *testing.T) {

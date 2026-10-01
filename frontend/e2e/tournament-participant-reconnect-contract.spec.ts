@@ -11,7 +11,6 @@ import {
   tournamentFixtureIds,
 } from "./tournament/fixtures";
 import type { components } from "../lib/shared/api/schema";
-
 const tournamentId = tournamentFixtureIds.tournament;
 const publicPath = `/api/v1/tournaments/${tournamentId}`;
 const participantLobbyPath = `${publicPath}/participant/lobby`;
@@ -1078,9 +1077,11 @@ test("FE-023 refresh preserves server authority and keeps the participant route 
   expect(mutationRequests).toEqual([]);
 
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.getByRole("button", { name: "Светлая тема" }).focus();
-  await page.keyboard.press("Enter");
+  const themeSwitch = page.getByRole("switch", { name: "Светлая тема", exact: true });
+  await themeSwitch.focus();
+  await page.keyboard.press("Space");
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+  await expect(themeSwitch).toHaveAttribute("aria-checked", "true");
   await expect(page.getByTestId("participant-runtime-status")).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
   expect(mutationRequests).toEqual([]);

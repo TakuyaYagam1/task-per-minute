@@ -2,6 +2,7 @@ package player
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -109,9 +110,21 @@ func (r *PlayerPostgres) GetByUsername(ctx context.Context, username string) (*d
 }
 
 func (r *PlayerPostgres) GetBySessionToken(ctx context.Context, token uuid.UUID) (*domain.Player, error) {
-	row, err := r.tx.Querier(ctx).GetPlayerBySessionToken(ctx, uuid.NullUUID{UUID: token, Valid: true})
+	q := r.tx.Querier(ctx)
+	row, err := q.GetPlayerBySessionToken(ctx, uuid.NullUUID{UUID: token, Valid: true})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
+			now := time.Now().UTC()
+			deleted, tombstoneErr := q.IsDeletedPlayerSessionToken(ctx, sqlc.IsDeletedPlayerSessionTokenParams{
+				SessionTokenHash: hashPlayerSessionToken(token),
+				Now:              tstz(now),
+			})
+			if tombstoneErr != nil {
+				return nil, fmt.Errorf("PlayerPostgres - GetBySessionToken - IsDeletedPlayerSessionToken: %w", tombstoneErr)
+			}
+			if deleted {
+				return nil, domain.ErrAccountDeleted
+			}
 			return nil, domain.ErrPlayerNotFound
 		}
 		return nil, fmt.Errorf("PlayerPostgres - GetBySessionToken - Querier.GetPlayerBySessionToken: %w", err)
@@ -248,7 +261,7 @@ func (r *PlayerPostgres) renamePlayerUsername(
 	}
 	oldNormalized := strings.ToLower(currentUsername)
 	newNormalized := strings.ToLower(username)
-	if err := lockUsernames(ctx, q, oldNormalized, newNormalized); err != nil {
+	if err := lockIdentityKeys(ctx, q, oldNormalized, newNormalized); err != nil {
 		return fmt.Errorf("PlayerPostgres - UpdateUsername - lock username: %w", err)
 	}
 	if newNormalized != oldNormalized {
@@ -319,70 +332,204 @@ func (r *PlayerPostgres) SoftDeletePlayer(
 	deletedAt time.Time,
 ) error {
 	return r.tx.Do(ctx, func(txCtx context.Context) error {
-		q := r.tx.Querier(txCtx)
-		current, err := q.GetPlayerForIdentityChange(txCtx, id)
-		if err != nil {
-			if errors.Is(err, pgx.ErrNoRows) {
-				return domain.ErrPlayerNotFound
-			}
-			return fmt.Errorf("PlayerPostgres - SoftDeletePlayer - GetPlayerForIdentityChange: %w", err)
-		}
-		if current.DeletedAt.Valid {
-			return domain.ErrConflict
-		}
-		oldNormalized := strings.ToLower(current.Username)
-		newNormalized := strings.ToLower(deletedUsername)
-		if err := lockUsernames(txCtx, q, oldNormalized, newNormalized); err != nil {
-			return fmt.Errorf("PlayerPostgres - SoftDeletePlayer - lock username: %w", err)
-		}
-		if newNormalized != oldNormalized {
-			reserved, err := q.CreateLegacyPlayerUsernameReservation(txCtx, newNormalized)
-			if err != nil {
-				return fmt.Errorf("PlayerPostgres - SoftDeletePlayer - reserve deleted username: %w", err)
-			}
-			if reserved != 1 {
-				return domain.ErrUsernameTaken
-			}
-		}
-		if _, err := q.SoftDeletePlayer(txCtx, sqlc.SoftDeletePlayerParams{
-			ID:        id,
-			Username:  deletedUsername,
-			DeletedAt: tstz(deletedAt),
-		}); err != nil {
-			if errors.Is(err, pgx.ErrNoRows) {
-				return domain.ErrConflict
-			}
-			if isUniqueViolation(err, playersUsernameUniqueConstraint) {
-				return domain.WrapError(err, domain.ErrUsernameTaken)
-			}
-			return fmt.Errorf("PlayerPostgres - SoftDeletePlayer - Querier.SoftDeletePlayer: %w", err)
-		}
-		if newNormalized != oldNormalized {
-			if err := q.DecrementLegacyPlayerUsernameReservation(txCtx, oldNormalized); err != nil {
-				return fmt.Errorf("PlayerPostgres - SoftDeletePlayer - release old username count: %w", err)
-			}
-		}
-		return nil
+		return r.softDeletePlayerTx(txCtx, id, deletedUsername, deletedAt)
 	})
 }
 
-func lockUsernames(ctx context.Context, q *sqlc.Queries, usernames ...string) error {
-	unique := make(map[string]struct{}, len(usernames))
-	ordered := make([]string, 0, len(usernames))
-	for _, username := range usernames {
-		if _, exists := unique[username]; exists {
+func (r *PlayerPostgres) softDeletePlayerTx(
+	ctx context.Context,
+	id uuid.UUID,
+	deletedUsername string,
+	deletedAt time.Time,
+) error {
+	q := r.tx.Querier(ctx)
+	current, err := q.GetPlayerForIdentityChange(ctx, id)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return domain.ErrPlayerNotFound
+		}
+		return fmt.Errorf("PlayerPostgres - SoftDeletePlayer - GetPlayerForIdentityChange: %w", err)
+	}
+	if current.DeletedAt.Valid {
+		return domain.ErrConflict
+	}
+	oldNormalized := strings.ToLower(current.Username)
+	newNormalized := strings.ToLower(deletedUsername)
+	account, err := getPlayerAccountForDeletion(ctx, q, id)
+	if err != nil {
+		return err
+	}
+	identityKeys := []string{oldNormalized, newNormalized}
+	if account != nil {
+		identityKeys = append(identityKeys, account.UsernameNormalized, account.EmailNormalized)
+	}
+	if err := lockIdentityKeys(ctx, q, identityKeys...); err != nil {
+		return fmt.Errorf("PlayerPostgres - SoftDeletePlayer - lock identity: %w", err)
+	}
+	if err := createPlayerSessionTombstone(ctx, q, current, deletedAt); err != nil {
+		return err
+	}
+	if err := reserveDeletedPlayerUsername(ctx, q, oldNormalized, newNormalized); err != nil {
+		return err
+	}
+	if err := deletePlayerAccountForDeletion(ctx, q, id, account); err != nil {
+		return err
+	}
+	if err := q.DeletePlayerLeaderboardOverride(ctx, id); err != nil {
+		return fmt.Errorf("PlayerPostgres - SoftDeletePlayer - delete leaderboard override: %w", err)
+	}
+	if err := markPlayerSoftDeleted(ctx, q, id, deletedUsername, deletedAt); err != nil {
+		return err
+	}
+	if err := releasePlayerUsernameReservation(ctx, q, oldNormalized, newNormalized); err != nil {
+		return err
+	}
+	if err := q.CleanupExpiredPlayerSessionTombstones(ctx, tstz(time.Now().UTC())); err != nil {
+		return fmt.Errorf("PlayerPostgres - SoftDeletePlayer - cleanup expired session tombstones: %w", err)
+	}
+	return nil
+}
+
+func getPlayerAccountForDeletion(
+	ctx context.Context,
+	q *sqlc.Queries,
+	playerID uuid.UUID,
+) (*sqlc.GetPlayerAccountForDeletionRow, error) {
+	account, err := q.GetPlayerAccountForDeletion(ctx, uuid.NullUUID{UUID: playerID, Valid: true})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("PlayerPostgres - SoftDeletePlayer - GetPlayerAccountForDeletion: %w", err)
+	}
+	return &account, nil
+}
+
+func createPlayerSessionTombstone(
+	ctx context.Context,
+	q *sqlc.Queries,
+	current sqlc.Player,
+	deletedAt time.Time,
+) error {
+	if !current.SessionToken.Valid || !current.SessionExpiresAt.Valid || !current.SessionExpiresAt.Time.After(deletedAt) {
+		return nil
+	}
+	if err := q.CreateDeletedPlayerSessionToken(ctx, sqlc.CreateDeletedPlayerSessionTokenParams{
+		SessionTokenHash: hashPlayerSessionToken(current.SessionToken.UUID),
+		ExpiresAt:        tstz(current.SessionExpiresAt.Time),
+	}); err != nil {
+		return fmt.Errorf("PlayerPostgres - SoftDeletePlayer - create session tombstone: %w", err)
+	}
+	return nil
+}
+
+func reserveDeletedPlayerUsername(
+	ctx context.Context,
+	q *sqlc.Queries,
+	oldNormalized string,
+	newNormalized string,
+) error {
+	if newNormalized == oldNormalized {
+		return nil
+	}
+	reserved, err := q.CreateLegacyPlayerUsernameReservation(ctx, newNormalized)
+	if err != nil {
+		return fmt.Errorf("PlayerPostgres - SoftDeletePlayer - reserve deleted username: %w", err)
+	}
+	if reserved != 1 {
+		return domain.ErrUsernameTaken
+	}
+	return nil
+}
+
+func deletePlayerAccountForDeletion(
+	ctx context.Context,
+	q *sqlc.Queries,
+	playerID uuid.UUID,
+	account *sqlc.GetPlayerAccountForDeletionRow,
+) error {
+	if account == nil {
+		return nil
+	}
+	if err := q.DeletePlayerAccountUsernameReservation(ctx, uuid.NullUUID{UUID: account.ID, Valid: true}); err != nil {
+		return fmt.Errorf("PlayerPostgres - SoftDeletePlayer - delete account username reservation: %w", err)
+	}
+	deleted, err := q.DeletePlayerAccountForDeletion(ctx, sqlc.DeletePlayerAccountForDeletionParams{
+		ID:       account.ID,
+		PlayerID: uuid.NullUUID{UUID: playerID, Valid: true},
+	})
+	if err != nil {
+		return fmt.Errorf("PlayerPostgres - SoftDeletePlayer - delete player account: %w", err)
+	}
+	if deleted != 1 {
+		return domain.ErrConflict
+	}
+	return nil
+}
+
+func markPlayerSoftDeleted(
+	ctx context.Context,
+	q *sqlc.Queries,
+	playerID uuid.UUID,
+	deletedUsername string,
+	deletedAt time.Time,
+) error {
+	if _, err := q.SoftDeletePlayer(ctx, sqlc.SoftDeletePlayerParams{
+		ID:        playerID,
+		Username:  deletedUsername,
+		DeletedAt: tstz(deletedAt),
+	}); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return domain.ErrConflict
+		}
+		if isUniqueViolation(err, playersUsernameUniqueConstraint) {
+			return domain.WrapError(err, domain.ErrUsernameTaken)
+		}
+		return fmt.Errorf("PlayerPostgres - SoftDeletePlayer - Querier.SoftDeletePlayer: %w", err)
+	}
+	return nil
+}
+
+func releasePlayerUsernameReservation(
+	ctx context.Context,
+	q *sqlc.Queries,
+	oldNormalized string,
+	newNormalized string,
+) error {
+	if newNormalized == oldNormalized {
+		return nil
+	}
+	if err := q.DecrementLegacyPlayerUsernameReservation(ctx, oldNormalized); err != nil {
+		return fmt.Errorf("PlayerPostgres - SoftDeletePlayer - release old username count: %w", err)
+	}
+	if err := q.DeleteEmptyLegacyPlayerUsernameReservation(ctx, oldNormalized); err != nil {
+		return fmt.Errorf("PlayerPostgres - SoftDeletePlayer - delete empty username reservation: %w", err)
+	}
+	return nil
+}
+
+func lockIdentityKeys(ctx context.Context, q *sqlc.Queries, keys ...string) error {
+	unique := make(map[string]struct{}, len(keys))
+	ordered := make([]string, 0, len(keys))
+	for _, key := range keys {
+		if _, exists := unique[key]; exists {
 			continue
 		}
-		unique[username] = struct{}{}
-		ordered = append(ordered, username)
+		unique[key] = struct{}{}
+		ordered = append(ordered, key)
 	}
 	sort.Strings(ordered)
-	for _, username := range ordered {
-		if err := q.LockPlayerUsername(ctx, username); err != nil {
+	for _, key := range ordered {
+		if err := q.LockPlayerUsername(ctx, key); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func hashPlayerSessionToken(token uuid.UUID) []byte {
+	hash := sha256.Sum256(token[:])
+	return hash[:]
 }
 
 func (r *PlayerPostgres) CreatePlayerAudit(ctx context.Context, in playerusecase.AuditInput) error {

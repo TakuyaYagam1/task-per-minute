@@ -62,7 +62,11 @@ func newRESTFixture(t *testing.T) *restFixture {
 		Now:    clock.Now,
 	}), authadapter.NewPasswordVerifier([]byte(restAdminPassword)))
 
-	leaderboardUC := leaderboardusecase.NewCache(leaderboardusecase.NewRanking(f.board), clock)
+	leaderboardUC := leaderboardusecase.NewCache(
+		leaderboardusecase.NewRanking(f.board),
+		clock,
+		leaderboardusecase.NewPageUseCase(f.board),
+	)
 	accounts, _ := newRESTAccountService(t, f)
 	server := restv1.New(restv1.Dependencies{
 		Players:        playerusecase.SessionNewUseCase(f.mgr, f.players, clock),

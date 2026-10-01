@@ -7,6 +7,7 @@ import {
   publicTournament,
   tournamentFixtureIds,
 } from "./tournament/fixtures";
+import { openAccountMenu } from "./support/common";
 
 type Schema = components["schemas"];
 
@@ -272,8 +273,11 @@ test("FE-036 closes correction after cutoff and in terminal state on light mobil
   });
 
   await openCorrection(page);
-  await page.getByRole("button", { name: "Светлая тема" }).click();
+  const lightThemeMenu = await openAccountMenu(page);
+  await lightThemeMenu.getByRole("button", { name: "Светлая тема" }).click();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("region", { name: "Аккаунт" })).toBeHidden();
   await confirmCorrection(page);
   await page.getByRole("button", { name: "Подтвердить коррекцию" }).click();
   await expect(page.getByText("Коррекция закрыта", { exact: true })).toBeVisible();
@@ -287,6 +291,9 @@ test("FE-036 closes correction after cutoff and in terminal state on light mobil
   await expect(page.getByText("Действия соревнования отключены.")).toBeVisible();
   await expect(page.getByRole("button", { name: "Подтвердить коррекцию" })).toHaveCount(0);
 
-  await page.getByRole("button", { name: "Темная тема" }).click();
+  const darkThemeMenu = await openAccountMenu(page);
+  await darkThemeMenu.getByRole("button", { name: "Темная тема" }).click();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("region", { name: "Аккаунт" })).toBeHidden();
 });

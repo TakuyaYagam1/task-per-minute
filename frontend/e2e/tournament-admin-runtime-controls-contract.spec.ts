@@ -6,6 +6,7 @@ import {
   publicTournament,
   tournamentFixtureIds,
 } from "./tournament/fixtures";
+import { openAccountMenu } from "./support/common";
 
 const tournamentId = tournamentFixtureIds.tournament;
 const publicTournamentPath = `/api/v1/tournaments/${tournamentId}`;
@@ -670,8 +671,11 @@ test("runtime controls remain usable in both themes, widths, and text scaling", 
   await openOperatorArena(page);
 
   for (const [label, theme] of [["Темная тема", "dark"], ["Светлая тема", "light"]] as const) {
-    await page.getByRole("button", { name: label }).click();
+    const accountMenu = await openAccountMenu(page);
+    await accountMenu.getByRole("button", { name: label }).click();
     await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("region", { name: "Аккаунт" })).toBeHidden();
 
     for (const [width, height] of [[390, 844], [768, 1024], [1440, 900]] as const) {
       await page.setViewportSize({ width, height });

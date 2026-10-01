@@ -1,6 +1,7 @@
 import { expect, test, type Page, type Route } from "@playwright/test";
 
 import { adminSessionResponse } from "./support/admin";
+import { openAccountMenu, selectTheme } from "./support/common";
 import { createTournamentFixtureSet, tournamentFixtureIds } from "./tournament/fixtures";
 
 const tournamentId = tournamentFixtureIds.tournament;
@@ -380,7 +381,8 @@ test("participant login returns to the requested Arena route", async ({ page }) 
   });
 
   await page.goto(`/?next=${encodeURIComponent(returnURL)}`);
-  await page.getByRole("link", { name: "Войти", exact: true }).click();
+  await expect.poll(() => new URL(page.url()).pathname).toBe("/login");
+  await expect.poll(() => new URL(page.url()).searchParams.get("next")).toBe(returnURL);
   await page.getByLabel("Логин или email").fill("arena_player");
   await page.getByLabel("Пароль", { exact: true }).fill("correct horse battery");
   await page.getByRole("button", { name: "Войти", exact: true }).click();
@@ -439,8 +441,9 @@ test("participant logout calls the player logout API and clears local session st
   });
 
   await page.goto(roleURL("participant"));
-  await expect(page.getByRole("button", { name: "Выйти" })).toBeVisible();
-  await page.getByRole("button", { name: "Выйти" }).click();
+  const participantAccountMenu = await openAccountMenu(page);
+  await expect(participantAccountMenu.getByRole("button", { name: "Выйти" })).toBeVisible();
+  await participantAccountMenu.getByRole("button", { name: "Выйти" }).click();
 
   await expect(page.getByText("Требуется вход")).toBeVisible();
   await expect(page.getByRole("heading", { name: /Участник/ })).toHaveCount(0);
@@ -476,8 +479,9 @@ test("operator logout calls the admin logout API and clears the admin session", 
   });
 
   await page.goto(roleURL("operator"));
-  await expect(page.getByRole("button", { name: "Выйти" })).toBeVisible();
-  await page.getByRole("button", { name: "Выйти" }).click();
+  const operatorAccountMenu = await openAccountMenu(page);
+  await expect(operatorAccountMenu.getByRole("button", { name: "Выйти" })).toBeVisible();
+  await operatorAccountMenu.getByRole("button", { name: "Выйти" }).click();
 
   await expect(page.getByText("Требуется вход")).toBeVisible();
   await expect(page.getByRole("heading", { name: /Оператор/ })).toHaveCount(0);
@@ -548,7 +552,7 @@ test("Arena stays usable in dark and light themes at a narrow viewport", async (
   const html = page.locator("html");
   await expect(html).toHaveAttribute("data-theme", "dark");
 
-  await page.getByRole("button", { name: "Светлая тема" }).click();
+  await selectTheme(page, "light");
   await expect(html).toHaveAttribute("data-theme", "light");
 
   await page.setViewportSize({ width: 390, height: 844 });

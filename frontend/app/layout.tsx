@@ -1,6 +1,7 @@
 import "./globals.css";
-import { SiteHeaderAuthProvider } from "@/features/site-header";
+import { PlayerNotificationsProvider, SiteHeaderAuthProvider } from "@/features/site-header";
 import { BackToTop } from "@/widgets/back-to-top";
+import { PlayerSessionGuard } from "@/widgets/player-session-guard";
 import { SiteHeader } from "@/widgets/site-header";
 
 const themeStorageKey = "task-per-minute-theme";
@@ -38,9 +39,12 @@ export default function RootLayout({
       </head>
       <body>
         <SiteHeaderAuthProvider>
-          <SiteHeader />
-          <BackToTop />
-          {children}
+          <PlayerNotificationsProvider>
+            <SiteHeader />
+            <BackToTop />
+            <PlayerSessionGuard />
+            {children}
+          </PlayerNotificationsProvider>
         </SiteHeaderAuthProvider>
       </body>
     </html>

@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import { expect, test, type Page, type Route } from "@playwright/test";
 
 import { isCancellationAuditEvent } from "../lib/shared/api/guards";
-import { jsonHeaders } from "./support/common";
+import { jsonHeaders, openAccountMenu } from "./support/common";
 
 const tournamentId = "10000000-0000-4000-8000-000000000010";
 const rosterId = "10000000-0000-4000-8000-000000000011";
@@ -376,14 +376,20 @@ test("FE-037 remains usable in both themes at mobile width", async ({ page }) =>
   await loginAndOpenAudit(page);
 
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
-  await page.getByRole("button", { name: "Светлая тема" }).click();
+  const lightThemeMenu = await openAccountMenu(page);
+  await lightThemeMenu.getByRole("button", { name: "Светлая тема" }).click();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+  await page.keyboard.press("Escape");
+  await expect(lightThemeMenu).toBeHidden();
   await expect(page.locator("#tournament-journal-select")).toHaveValue(tournamentId);
   await expect(page.getByRole("button", { name: "Скачать отчет" })).toBeEnabled();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 
-  await page.getByRole("button", { name: "Темная тема" }).click();
+  const darkThemeMenu = await openAccountMenu(page);
+  await darkThemeMenu.getByRole("button", { name: "Темная тема" }).click();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+  await page.keyboard.press("Escape");
+  await expect(darkThemeMenu).toBeHidden();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });
 

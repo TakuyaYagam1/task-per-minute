@@ -346,8 +346,9 @@ func TestPlayerRepo_SoftDelete_SuccessNotFoundAndDuplicate(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, deletedUsername, deletedRecord.Username)
 	require.NotNil(t, deletedRecord.DeletedAt)
-	_, err = repo.Create(ctx, strings.ToUpper(formerUsername))
-	require.ErrorIs(t, err, domain.ErrUsernameTaken)
+	recreated, err := repo.Create(ctx, strings.ToUpper(formerUsername))
+	require.NoError(t, err)
+	require.NotEqual(t, deleted.ID, recreated.ID)
 
 	err = repo.SoftDeletePlayer(ctx, uuid.New(), uniq("deleted_missing"), time.Now().UTC())
 	require.ErrorIs(t, err, domain.ErrPlayerNotFound)

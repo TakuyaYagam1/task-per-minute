@@ -1,6 +1,18 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  createContext,
+  createElement,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type Dispatch,
+  type ReactNode,
+  type SetStateAction,
+} from "react";
 
 import {
   ApiError,
@@ -14,6 +26,7 @@ const SESSION_CHANGE_SETTLE_MS = 1_000;
 const SESSION_RETRY_WINDOW_MS = 30_000;
 const INVALIDATION_DEBOUNCE_MS = 150;
 const TOAST_DURATION_MS = 6_000;
+const noNotificationRefresh = (): void => undefined;
 
 type RefreshReason = "initial" | "changed" | "poll" | "manual" | "resume" | "expiry";
 
@@ -450,4 +463,41 @@ export function usePlayerNotifications(enabled = true) {
     toast,
     refresh,
   };
+}
+
+export type PlayerNotificationsState = ReturnType<typeof usePlayerNotifications>;
+
+type PlayerNotificationsContextValue = PlayerNotificationsState & Readonly<{
+  setEnabled: Dispatch<SetStateAction<boolean>>;
+}>;
+
+const PlayerNotificationsContext = createContext<PlayerNotificationsContextValue | null>(null);
+
+export function PlayerNotificationsProvider({ children }: Readonly<{ children: ReactNode }>) {
+  const [enabled, setEnabled] = useState(false);
+  const notifications = usePlayerNotifications(enabled);
+  const value = useMemo(
+    () => ({
+      ...notifications,
+      status: enabled ? notifications.status : "checking",
+      notifications: enabled ? notifications.notifications : [],
+      visible: enabled && notifications.visible,
+      toast: enabled ? notifications.toast : null,
+      refresh: enabled ? notifications.refresh : noNotificationRefresh,
+      setEnabled,
+    }),
+    [enabled, notifications, setEnabled],
+  );
+
+  return (
+    createElement(PlayerNotificationsContext.Provider, { value }, children)
+  );
+}
+
+export function usePlayerNotificationsCenter(): PlayerNotificationsContextValue {
+  const context = useContext(PlayerNotificationsContext);
+  if (!context) {
+    throw new Error("PlayerNotificationsProvider is missing");
+  }
+  return context;
 }

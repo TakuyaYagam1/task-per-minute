@@ -4,9 +4,10 @@
     tags: [player]
     summary: List active notifications for the current player
     description: >
-      Returns notifications created during the last 30 minutes. The player is
-      resolved from the authenticated HttpOnly session cookie. Expired
-      notifications are omitted automatically.
+      New notifications remain active for 24 hours. Existing notifications
+      retain their assigned expiry. The player is resolved from the
+      authenticated HttpOnly session cookie. Expired notifications are omitted
+      automatically.
     security:
       - PlayerSessionAuth: []
     responses:

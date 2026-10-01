@@ -244,6 +244,26 @@ func TestOpenAPIRequestValidator_DoesNotBufferTaskSourceUpload(t *testing.T) {
 	require.Zero(t, body.reads, "OpenAPI validation must not buffer the streaming upload")
 }
 
+func TestOpenAPIRequestValidator_DoesNotBufferPlayerAvatarUpload(t *testing.T) {
+	t.Parallel()
+
+	validator, err := middleware.OpenAPIRequestValidator(context.Background(), logkit.Noop())
+	require.NoError(t, err)
+
+	body := &countingErrorReader{}
+	handler := validator(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/players/account/avatar", body)
+	req.Header.Set("Content-Type", "multipart/form-data; boundary=test-boundary")
+	rr := httptest.NewRecorder()
+
+	handler.ServeHTTP(rr, req)
+
+	require.Equal(t, http.StatusNoContent, rr.Code)
+	require.Zero(t, body.reads, "the upload handler must enforce its larger body bound before parsing")
+}
+
 func TestOpenAPIRequestValidator_DoesNotBypassNearMatchTaskSourcePaths(t *testing.T) {
 	t.Parallel()
 

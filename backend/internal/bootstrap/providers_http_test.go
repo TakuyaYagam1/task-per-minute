@@ -25,6 +25,9 @@ func TestProvideRESTServerWithClockUsesSharedClock(t *testing.T) {
 		nil,
 		nil,
 		nil,
+		nil,
+		nil,
+		nil,
 		auth,
 		nil,
 		nil,
@@ -52,6 +55,9 @@ func TestProvideRESTServerWithClockUsesSharedClock(t *testing.T) {
 		operatorTournamentMutationRateLimiter{},
 		participantTournamentReadRateLimiter{},
 		participantTournamentMutationRateLimiter{},
+		accountSensitiveRateLimiter{},
+		avatarMutationRateLimiter{},
+		publicAvatarReadRateLimiter{},
 		logkit.Noop(),
 	)
 	request := httptest.NewRequest(

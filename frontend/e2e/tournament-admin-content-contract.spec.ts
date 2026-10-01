@@ -5,7 +5,7 @@ import {
   type MockAdminTask,
   taskResponse,
 } from "./support/admin";
-import { jsonHeaders } from "./support/common";
+import { jsonHeaders, openAccountMenu } from "./support/common";
 
 const accessCSRF = "fe028-admin-access-csrf";
 const refreshCSRF = "fe028-admin-refresh-csrf";
@@ -527,11 +527,17 @@ test("FE-028 empty catalog and unavailable content keep Russian responsive UI in
   await expect(page.getByRole("button", { name: "Создать задачу" })).toBeEnabled();
   const contentRoot = page.locator('article[aria-labelledby="admin-task-list-title"]');
 
-  await page.getByRole("button", { name: "Темная тема" }).click();
+  const darkThemeMenu = await openAccountMenu(page);
+  await darkThemeMenu.getByRole("button", { name: "Темная тема" }).click();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+  await page.keyboard.press("Escape");
+  await expect(darkThemeMenu).toBeHidden();
   const darkBackground = await contentRoot.evaluate((element) => getComputedStyle(element).backgroundColor);
-  await page.getByRole("button", { name: "Светлая тема" }).click();
+  const lightThemeMenu = await openAccountMenu(page);
+  await lightThemeMenu.getByRole("button", { name: "Светлая тема" }).click();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+  await page.keyboard.press("Escape");
+  await expect(lightThemeMenu).toBeHidden();
   const lightBackground = await contentRoot.evaluate((element) => getComputedStyle(element).backgroundColor);
   expect(darkBackground).not.toBe(lightBackground);
 

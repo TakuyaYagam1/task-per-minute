@@ -47,6 +47,24 @@ func TestCSRFGuard_AllowsJoinWithSessionCookieForBootstrapCompatibility(t *testi
 	require.Equal(t, http.StatusNoContent, rr.Code)
 }
 
+func TestCSRFGuard_AllowsLoginResendWithSessionCookieWithoutCSRFToken(t *testing.T) {
+	t.Parallel()
+
+	called := false
+	handler := middleware.CSRFGuard()(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		called = true
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/players/login/resend-verification", nil)
+	req.AddCookie(&http.Cookie{Name: middleware.PlayerSessionCookieName, Value: uuid.NewString()})
+	rr := httptest.NewRecorder()
+
+	handler.ServeHTTP(rr, req)
+
+	require.True(t, called)
+	require.Equal(t, http.StatusNoContent, rr.Code)
+}
+
 func TestCSRFGuard_BlocksMissingCSRFForSessionCookie(t *testing.T) {
 	t.Parallel()
 

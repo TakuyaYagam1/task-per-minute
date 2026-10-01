@@ -1,5 +1,5 @@
-import { HomePage } from "../lib/pages/arena/exports";
+import { PlayerEntryPage } from "../lib/pages/arena/exports";
 
 export default function Home() {
-  return <HomePage />;
+  return <PlayerEntryPage />;
 }

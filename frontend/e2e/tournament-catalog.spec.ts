@@ -1,5 +1,6 @@
 import { expect, test, type Page, type Route } from "@playwright/test";
 
+import { selectTheme } from "./support/common";
 import { createTournamentFixtureSet, tournamentFixtureIds } from "./tournament/fixtures";
 
 const tournamentId = tournamentFixtureIds.tournament;
@@ -140,6 +141,13 @@ const installDetailAndSnapshotRoutes = async (page: Page): Promise<void> => {
     await fulfillJSON(route, fixtureSet.public.recovery, 200, { date: serverDateHeader });
   });
 };
+
+test.beforeEach(async ({ page }) => {
+  await page.route("**/api/v1/players/me", async (route) => {
+    expect(route.request().method()).toBe("GET");
+    await fulfillProblem(route, 401, "Требуется вход");
+  });
+});
 
 test("catalog renders 20 items, sends server filters, and preserves a multiword search", async ({ page }) => {
   const requests: URL[] = [];
@@ -373,6 +381,7 @@ test("public detail is anonymous, keeps the catalog return path, and exposes all
     detailPath,
     snapshotPath,
     "/api/v1/players/me",
+    "/api/v1/arena/events",
   ]));
   expect(authorizationHeaders).toEqual([]);
 });
@@ -502,8 +511,7 @@ test("public return paths allow one local detail hop and reject external targets
 });
 
 const setTheme = async (page: Page, theme: "dark" | "light"): Promise<void> => {
-  await page.getByRole("button", { name: theme === "light" ? "Светлая тема" : "Темная тема" }).click();
-  await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
+  await selectTheme(page, theme);
 };
 
 const expectNoHorizontalOverflow = async (page: Page): Promise<void> => {

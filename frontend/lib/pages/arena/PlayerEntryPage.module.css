@@ -1,0 +1,23 @@
+.page {
+  display: grid;
+  min-height: calc(100vh - var(--site-header-height, 0px));
+  place-items: center;
+  padding: 2rem 1rem;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.content {
+  width: min(100%, 34rem);
+}
+
+.errorContent {
+  display: grid;
+  justify-items: start;
+  gap: 1rem;
+}
+
+.errorContent p {
+  margin: 0;
+  color: var(--secondary);
+}

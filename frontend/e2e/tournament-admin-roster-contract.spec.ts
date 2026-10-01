@@ -1,7 +1,7 @@
 import { expect, test, type Page, type Route } from "@playwright/test";
 
 import { adminSessionResponse } from "./support/admin";
-import { jsonHeaders } from "./support/common";
+import { jsonHeaders, openAccountMenu } from "./support/common";
 
 const adminAccessCSRF = "fe027-admin-access-csrf";
 const adminRefreshCSRF = "fe027-admin-refresh-csrf";
@@ -879,11 +879,14 @@ test("сохраняет читаемый roster editor в обеих темах
   const region = rosterRegion(page);
   const surfaces: string[] = [];
   for (const theme of ["Темная тема", "Светлая тема"]) {
-    await page.getByRole("button", { name: theme }).click();
+    const accountMenu = await openAccountMenu(page);
+    await accountMenu.getByRole("button", { name: theme }).click();
     await expect(page.locator("html")).toHaveAttribute(
       "data-theme",
       theme === "Темная тема" ? "dark" : "light",
     );
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("region", { name: "Аккаунт" })).toBeHidden();
     surfaces.push(await region.evaluate((element) => getComputedStyle(element).backgroundColor));
     await expect(region.getByRole("button", { name: "Сохранить состав" })).toBeVisible();
   }

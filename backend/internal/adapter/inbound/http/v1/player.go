@@ -35,6 +35,10 @@ func (s *Server) GetCurrentPlayer(w http.ResponseWriter, r *http.Request) {
 
 	me, err := s.players.GetCurrentPlayer(r.Context(), *player.SessionToken)
 	if err != nil {
+		if errors.Is(err, domain.ErrAccountDeleted) {
+			middleware.ClearPlayerSessionCookie(w, r)
+			middleware.ClearPlayerCSRFCookie(w, r)
+		}
 		if errors.Is(err, domain.ErrPlayerNotFound) {
 			err = domain.ErrInvalidSession
 		}

@@ -8,6 +8,7 @@ import {
   publicRecoveryWithRoster,
   tournamentFixtureIds,
 } from "./fixtures";
+import { selectTheme } from "../support/common";
 
 type FixtureSet = ReturnType<typeof createTournamentFixtureSet>;
 type PublicSnapshot = ReturnType<typeof publicRecoveryWithRoster>;
@@ -302,8 +303,9 @@ test("player demo renders BO3, Golden, and a confirmed reconnect on the real Are
   for (const [width, height] of [[390, 844], [768, 1024], [1440, 900]] as const) {
     await page.setViewportSize({ width, height });
     for (const theme of ["Светлая тема", "Темная тема"] as const) {
-      await page.getByRole("button", { name: theme }).click();
-      await expect(page.locator("html")).toHaveAttribute("data-theme", theme === "Светлая тема" ? "light" : "dark");
+      const expectedTheme = theme === "Светлая тема" ? "light" : "dark";
+      await selectTheme(page, expectedTheme);
+      await expect(page.locator("html")).toHaveAttribute("data-theme", expectedTheme);
       await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
       await expect(player).toBeVisible();
       await expect(golden).toBeVisible();
@@ -357,7 +359,7 @@ test("spectator demo shows the tie-to-Golden result and the completed BO3 bracke
   await expect(playoff.getByTestId("playoff-final")).toContainText("BO3");
   await expect(playoff.getByTestId("playoff-final")).toContainText("2:1");
   await expect(playoff.getByTestId("playoff-final")).toContainText("Чемпион: Алиса");
-  await page.getByRole("button", { name: "Светлая тема" }).click();
+  await selectTheme(page, "light");
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
   await page.setViewportSize({ width: 390, height: 844 });
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);

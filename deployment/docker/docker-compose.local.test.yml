@@ -1,0 +1,97 @@
+name: task-per-minute-local
+
+include:
+  - path: ./docker-compose.local.yml
+  - path: ../../test-data/web/docker-compose.yml
+
+services:
+  task-cookie:
+    ports:
+      - target: 3001
+        published: "3001"
+        host_ip: 127.0.0.1
+        protocol: tcp
+
+  task-archive:
+    ports:
+      - target: 3002
+        published: "3002"
+        host_ip: 127.0.0.1
+        protocol: tcp
+
+  task-samovar:
+    ports:
+      - target: 3003
+        published: "3003"
+        host_ip: 127.0.0.1
+        protocol: tcp
+
+  task-vkontakte:
+    ports:
+      - target: 3004
+        published: "3004"
+        host_ip: 127.0.0.1
+        protocol: tcp
+    tmpfs: !override
+      - /tmp:rw,noexec,nosuid,nodev,size=16m
+      - /data:rw,noexec,nosuid,nodev,size=16m,mode=1777
+
+  task-dedys:
+    ports:
+      - target: 3005
+        published: "3005"
+        host_ip: 127.0.0.1
+        protocol: tcp
+
+  test-data-seed:
+    extends:
+      file: ./docker-compose.test.yml
+      service: test-data-seed
+
+  test-data-importer:
+    profiles: ["task-import"]
+    extends:
+      file: ./docker-compose.test.yml
+      service: test-data-importer
+    environment: !override
+      BASE_URL: "http://backend:${BACKEND_PORT:-8080}"
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?ADMIN_PASSWORD is required in the local environment}
+      TEST_DATA_ROOT: /test-data
+      TEST_TASK_SEED_FILE: /seed/key
+      TASK_WEB_SCHEME: http
+      TASK_COOKIE_URL: http://localhost:3001
+      TASK_ARCHIVE_URL: http://localhost:3002
+      TASK_SAMOVAR_URL: http://localhost:3003
+      TASK_VKONTAKTE_URL: http://localhost:3004
+      TASK_DEDYS_URL: http://localhost:3005
+      TEST_TASK_DIFFICULTY: ${TEST_TASK_DIFFICULTY:-medium}
+      TEST_TASK_TIME_LIMIT: ${TEST_TASK_TIME_LIMIT:-180}
+      PYTHONDONTWRITEBYTECODE: "1"
+    networks: !override
+      - default
+    depends_on: !override
+      test-data-seed:
+        condition: service_completed_successfully
+      backend:
+        condition: service_healthy
+      task-cookie:
+        condition: service_healthy
+      task-archive:
+        condition: service_healthy
+      task-samovar:
+        condition: service_healthy
+      task-vkontakte:
+        condition: service_healthy
+      task-dedys:
+        condition: service_healthy
+    restart: "no"
+
+networks:
+  tasks:
+    name: task-per-minute-local_tasks
+    driver: bridge
+    internal: true
+    external: false
+
+volumes:
+  test-task-seed:

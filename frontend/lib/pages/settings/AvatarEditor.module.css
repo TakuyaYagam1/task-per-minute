@@ -1,0 +1,176 @@
+.editor {
+  display: grid;
+  gap: 1rem;
+  border-bottom: 1px solid var(--border);
+  padding: 1.15rem 0.15rem 1.35rem;
+}
+
+.copy {
+  min-width: 0;
+}
+
+.title {
+  margin: 0;
+  font-size: 0.98rem;
+  font-weight: 750;
+}
+
+.content {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 1rem;
+}
+
+.preview {
+  position: relative;
+  display: grid;
+  width: 7rem;
+  height: 7rem;
+  flex: 0 0 7rem;
+  place-items: center;
+  overflow: hidden;
+  border: 1px solid var(--border-strong);
+  border-radius: 50%;
+  background: var(--surface-strong);
+  color: var(--secondary);
+}
+
+.previewImage {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.previewVideo {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.initials {
+  font-size: 1.65rem;
+  font-weight: 800;
+  letter-spacing: -0.04em;
+}
+
+.controls {
+  display: grid;
+  min-width: 0;
+  justify-items: start;
+  gap: 0.45rem;
+}
+
+.fileButton,
+.deleteButton {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-small);
+  padding: 0.55rem 0.85rem;
+  background: var(--surface-muted);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-align: center;
+  text-decoration: none;
+}
+
+.fileButton {
+  position: relative;
+  cursor: pointer;
+}
+
+.actions {
+  display: flex;
+  max-width: 100%;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.fileButton:hover,
+.deleteButton:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.fileButton:focus-within,
+.deleteButton:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.fileInput {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.deleteButton {
+  cursor: pointer;
+}
+
+.retryButton {
+  min-height: 36px;
+  border: 0;
+  padding: 0.35rem 0;
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  font-size: 0.78rem;
+  text-align: left;
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+  cursor: pointer;
+}
+
+.retryButton:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+.retryButton:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.hint,
+.error {
+  margin: 0;
+  font-size: 0.78rem;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.hint {
+  color: var(--secondary);
+}
+
+.error {
+  color: var(--error);
+}
+
+@media (max-width: 420px) {
+  .content {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .preview {
+    width: 5.5rem;
+    height: 5.5rem;
+    flex-basis: 5.5rem;
+  }
+
+  .controls {
+    flex: 1 1 10rem;
+  }
+}

@@ -7,11 +7,11 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
-	"net/mail"
 	"net/url"
 	"regexp"
 	"strings"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
@@ -23,6 +23,7 @@ const (
 	defaultVerificationTTL = 24 * time.Hour
 	defaultResendCooldown  = time.Minute
 	defaultSessionTTL      = 24 * time.Hour
+	minimumPasswordRunes   = 10
 	maxPasswordBytes       = 512
 	activationTokenBytes   = 32
 	dummyPasswordBytes     = 32
@@ -150,7 +151,40 @@ func (u *UseCase) Login(ctx context.Context, command inbound.LoginPlayerCommand)
 	if err := u.verifyLoginCredentials(command.Password, credentials); err != nil {
 		return nil, err
 	}
-	return u.rotateLoginSession(ctx, *credentials.PlayerID)
+	return u.rotateLoginSession(ctx, *credentials.PlayerID, login, credentials.PasswordHash)
+}
+
+func (u *UseCase) ResendVerificationForLogin(ctx context.Context, command inbound.LoginPlayerCommand) error {
+	login, err := normalizeLogin(command)
+	if err != nil {
+		return err
+	}
+	credentials, err := u.findLoginCredentials(ctx, login, command.Password)
+	if err != nil {
+		return err
+	}
+	if err := u.verifyLoginCredentials(command.Password, credentials); err != nil {
+		if !errors.Is(err, domain.ErrEmailUnverified) {
+			return err
+		}
+	} else {
+		return domain.ErrEmailAlreadyVerified
+	}
+	if !u.canSendVerification() {
+		return domain.ErrVerificationUnavailable
+	}
+	_, normalizedEmail, err := normalizeEmail(credentials.Email)
+	if err != nil {
+		return domain.WrapError(err, domain.ErrInternal)
+	}
+	pending, token, err := u.claimPendingVerification(ctx, normalizedEmail)
+	if err != nil {
+		return err
+	}
+	if pending == nil {
+		return domain.ErrRateLimited
+	}
+	return u.sendVerification(ctx, pending.Email, token)
 }
 
 func normalizeLogin(command inbound.LoginPlayerCommand) (string, error) {
@@ -185,13 +219,24 @@ func (u *UseCase) verifyLoginCredentials(password string, credentials *LoginCred
 	if err != nil {
 		return fmt.Errorf("verify player password: %w", err)
 	}
-	if !validPassword || credentials.PlayerID == nil || credentials.EmailVerifiedAt == nil {
+	if !validPassword {
+		return domain.ErrInvalidCredentials
+	}
+	if credentials.EmailVerifiedAt == nil {
+		return domain.ErrEmailUnverified
+	}
+	if credentials.PlayerID == nil {
 		return domain.ErrInvalidCredentials
 	}
 	return nil
 }
 
-func (u *UseCase) rotateLoginSession(ctx context.Context, playerID uuid.UUID) (*domain.Player, error) {
+func (u *UseCase) rotateLoginSession(
+	ctx context.Context,
+	playerID uuid.UUID,
+	normalizedLogin string,
+	expectedPasswordHash string,
+) (*domain.Player, error) {
 	token, err := uuid.NewRandom()
 	if err != nil {
 		return nil, fmt.Errorf("create player session token: %w", err)
@@ -202,6 +247,8 @@ func (u *UseCase) rotateLoginSession(ctx context.Context, playerID uuid.UUID) (*
 		updated, err := u.accounts.UpdateAccountPlayerSession(
 			txCtx,
 			playerID,
+			normalizedLogin,
+			expectedPasswordHash,
 			token,
 			now.Add(u.cfg.SessionTTL),
 		)
@@ -244,9 +291,20 @@ func (u *UseCase) ResendVerification(ctx context.Context, rawEmail string) error
 	if err != nil {
 		return err
 	}
+	pending, token, err := u.claimPendingVerification(ctx, normalizedEmail)
+	if err != nil {
+		return err
+	}
+	if pending == nil {
+		return nil
+	}
+	return u.sendVerification(ctx, pending.Email, token)
+}
+
+func (u *UseCase) claimPendingVerification(ctx context.Context, normalizedEmail string) (*PendingVerification, string, error) {
 	token, tokenHash, err := newVerificationToken()
 	if err != nil {
-		return fmt.Errorf("create player verification token: %w", err)
+		return nil, "", fmt.Errorf("create player verification token: %w", err)
 	}
 	now := u.clock.Now().UTC()
 	var pending *PendingVerification
@@ -262,12 +320,9 @@ func (u *UseCase) ResendVerification(ctx context.Context, rawEmail string) error
 		)
 		return err
 	}); err != nil {
-		return err
+		return nil, "", err
 	}
-	if pending == nil {
-		return nil
-	}
-	return u.sendVerification(ctx, pending.Email, token)
+	return pending, token, nil
 }
 
 func (u *UseCase) canSendVerification() bool {
@@ -306,20 +361,114 @@ func normalizeEmail(raw string) (string, string, error) {
 	if email == "" || len(email) > 254 {
 		return "", "", domain.ErrValidation
 	}
-	parsed, err := mail.ParseAddress(email)
-	if err != nil || parsed.Address != email {
+	at := strings.IndexByte(email, '@')
+	if at <= 0 || at != strings.LastIndexByte(email, '@') {
+		return "", "", domain.ErrValidation
+	}
+	local, host := email[:at], email[at+1:]
+	if !validEmailLocalPart(local) || !validEmailDomain(host) {
 		return "", "", domain.ErrValidation
 	}
 	return email, strings.ToLower(email), nil
 }
 
+func validEmailLocalPart(local string) bool {
+	if len(local) == 0 || len(local) > 64 || local[0] == '.' || local[len(local)-1] == '.' {
+		return false
+	}
+	previousDot := false
+	for index := 0; index < len(local); index++ {
+		value := local[index]
+		if value == '.' {
+			if previousDot {
+				return false
+			}
+			previousDot = true
+			continue
+		}
+		previousDot = false
+		if !isASCIIAlphaNumeric(value) && !strings.ContainsRune("!#$%&'*+-/=?^_`{|}~", rune(value)) {
+			return false
+		}
+	}
+	return true
+}
+
+func validEmailDomain(host string) bool {
+	if len(host) == 0 || len(host) > 253 {
+		return false
+	}
+	labels := strings.Split(host, ".")
+	if len(labels) < 2 {
+		return false
+	}
+	for _, label := range labels {
+		if !validDNSLabel(label) {
+			return false
+		}
+	}
+	return validTopLevelDomain(labels[len(labels)-1])
+}
+
+func validDNSLabel(label string) bool {
+	if len(label) == 0 || len(label) > 63 || !isASCIIAlphaNumeric(label[0]) || !isASCIIAlphaNumeric(label[len(label)-1]) {
+		return false
+	}
+	for index := 0; index < len(label); index++ {
+		value := label[index]
+		if !isASCIIAlphaNumeric(value) && value != '-' {
+			return false
+		}
+	}
+	return true
+}
+
+func validTopLevelDomain(label string) bool {
+	if len(label) >= 2 {
+		allLetters := true
+		for index := 0; index < len(label); index++ {
+			if !isASCIILetter(label[index]) {
+				allLetters = false
+				break
+			}
+		}
+		if allLetters {
+			return true
+		}
+	}
+
+	return strings.HasPrefix(strings.ToLower(label), "xn--") && len(label) > len("xn--")
+}
+
+func isASCIIAlphaNumeric(value byte) bool {
+	return isASCIILetter(value) || value >= '0' && value <= '9'
+}
+
+func isASCIILetter(value byte) bool {
+	return value >= 'a' && value <= 'z' || value >= 'A' && value <= 'Z'
+}
+
 func validatePassword(password string) error {
-	if !utf8.ValidString(password) || utf8.RuneCountInString(password) < 15 ||
+	if !utf8.ValidString(password) || utf8.RuneCountInString(password) < minimumPasswordRunes ||
 		utf8.RuneCountInString(password) > 128 || len(password) > maxPasswordBytes ||
 		strings.IndexByte(password, 0) >= 0 {
 		return domain.ErrValidation
 	}
+	if !passwordHasRequiredCharacters(password) {
+		return domain.ErrValidation
+	}
 	return nil
+}
+
+func passwordHasRequiredCharacters(password string) bool {
+	var hasLower, hasUpper, hasDigit, hasPunctuationOrSymbol bool
+	for _, character := range password {
+		hasLower = hasLower || unicode.IsLower(character)
+		hasUpper = hasUpper || unicode.IsUpper(character)
+		hasDigit = hasDigit || unicode.IsDigit(character)
+		hasPunctuationOrSymbol = hasPunctuationOrSymbol || unicode.IsPunct(character) || unicode.IsSymbol(character)
+	}
+	return hasLower && hasUpper && hasDigit && hasPunctuationOrSymbol
 }
 
 func newVerificationToken() (string, []byte, error) {

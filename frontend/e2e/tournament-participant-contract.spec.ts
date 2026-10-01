@@ -4,6 +4,7 @@ import {
   createTournamentFixtureSet,
   tournamentFixtureIds,
 } from "./tournament/fixtures";
+import { selectTheme } from "./support/common";
 import { getSafeTaskHref } from "../lib/shared/lib/navigation";
 
 const tournamentId = tournamentFixtureIds.tournament;
@@ -494,8 +495,8 @@ test("participant lobby keeps keyboard access and long Cyrillic copy across resp
   await expect(page.getByRole("region", { name: "Следующее действие", exact: true })).toBeVisible();
 
   const readyButton = page.getByRole("button", { name: "Подтвердить готовность", exact: true });
-  for (const [label, theme] of [["Темная тема", "dark"], ["Светлая тема", "light"]] as const) {
-    await page.getByRole("button", { name: label }).click();
+  for (const theme of ["dark", "light"] as const) {
+    await selectTheme(page, theme);
     await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
 
     for (const [width, height] of [[390, 844], [768, 1024], [1440, 900]] as const) {

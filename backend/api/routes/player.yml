@@ -133,8 +133,10 @@
     summary: Log in to a verified player account
     description: |
       Accepts a case-insensitive username or email address. Invalid credentials
-      and unverified accounts return the same response. Success issues the
-      existing HttpOnly player session cookie and a session-bound CSRF token.
+      return a generic response. A correct password for an unverified account
+      returns code `player.email_unverified` with an activation instruction.
+      Neither failure issues a session. Success issues the existing HttpOnly
+      player session cookie and a session-bound CSRF token.
     security: []
     requestBody:
       required: true
@@ -161,7 +163,7 @@
             schema:
               $ref: '../components/schemas.yml#/ProblemDetails'
       '401':
-        description: Invalid credentials.
+        description: Invalid credentials or an unverified account. A correct password for a pending account uses code player.email_unverified.
         content:
           application/problem+json:
             schema:
@@ -190,6 +192,88 @@
           Retry-After:
             schema:
               type: string
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      default:
+        $ref: '../components/responses.yml#/UnexpectedServerProblem'
+
+/api/v1/players/login/resend-verification:
+  post:
+    operationId: resendPlayerVerificationForLogin
+    tags: [player]
+    summary: Resend verification after confirming login credentials
+    description: |
+      Accepts the same username-or-email and password fields as player login.
+      A verification link is sent only to the email address stored for the
+      pending account. Successful delivery returns 202. Incorrect credentials
+      return a generic 401. A correct password for an already verified account
+      returns code `player.email_already_verified`. This operation never creates
+      or issues a player session.
+    security: []
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '../components/schemas.yml#/PlayerLoginRequest'
+    responses:
+      '202':
+        description: A new verification email was sent.
+        content:
+          application/json:
+            schema:
+              $ref: '../components/schemas.yml#/PlayerAccountAcceptedResponse'
+      '400':
+        description: Invalid request body.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '401':
+        description: Login credentials are invalid.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '403':
+        description: Request origin or referer is not allowed.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '409':
+        description: Email is already verified.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '413':
+        description: Request body exceeds the JSON size limit.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '415':
+        description: Request content type must be application/json.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '429':
+        description: Verification resend cooldown is active.
+        headers:
+          Retry-After:
+            description: Seconds until another verification email can be sent.
+            schema:
+              type: string
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '503':
+        description: Email verification is temporarily unavailable.
         content:
           application/problem+json:
             schema:
@@ -340,7 +424,7 @@
             schema:
               $ref: '../components/schemas.yml#/CurrentPlayerResponse'
       '401':
-        description: Missing or invalid session token.
+        description: Missing or invalid session token. A valid session revoked by account deletion returns `player.account_deleted` and clears the session and CSRF cookies.
         content:
           application/problem+json:
             schema:

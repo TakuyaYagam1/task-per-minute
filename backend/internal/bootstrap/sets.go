@@ -11,10 +11,12 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/incidentauth"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/objectstorage"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
+	accountrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/account"
 	assignmentrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/assignment"
 	draftrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/assignment/draft"
 	exactdraftrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/assignment/exactdraft"
 	auditrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/audit"
+	avatarrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/avatar"
 	authorityrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/execution/authority"
 	waverepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/execution/wave"
 	leaderboardrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/leaderboard"
@@ -66,6 +68,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/participantarchive"
 	playerusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/player"
 	playeraccount "github.com/TakuyaYagam1/task-per-minute/internal/usecase/player/account"
+	avatarusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/player/avatar"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/playoff"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/readiness"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/recovery"
@@ -116,10 +119,16 @@ var SeaweedFSSet = wire.NewSet(
 	provideSeaweedConfig,
 	provideSeaweedStorage,
 	wire.Bind(new(taskusecase.SourceFileStorage), new(*objectstorage.SeaweedStorage)),
+	wire.Bind(new(avatarusecase.ObjectStorage), new(*objectstorage.SeaweedStorage)),
 )
 
 var ReposSet = wire.NewSet(
 	postgres.NewTxManager,
+	accountrepo.NewAccountPostgres,
+	wire.Bind(new(playeraccount.Repository), new(*accountrepo.AccountPostgres)),
+	wire.Bind(new(playeraccount.SettingsRepository), new(*accountrepo.AccountPostgres)),
+	avatarrepo.NewRepository,
+	wire.Bind(new(avatarusecase.Repository), new(*avatarrepo.Repository)),
 	wire.Bind(new(playeraccount.TransactionManager), new(*postgres.TxManager)),
 	wire.Bind(new(playerusecase.ManagementTransactionManager), new(*postgres.TxManager)),
 	wire.Bind(new(playerusecase.SessionTransactionManager), new(*postgres.TxManager)),
@@ -230,6 +239,7 @@ var ReposSet = wire.NewSet(
 
 	leaderboardrepo.NewLeaderboardPostgres,
 	wire.Bind(new(leaderboardusecase.StatsRepository), new(*leaderboardrepo.LeaderboardPostgres)),
+	wire.Bind(new(leaderboardusecase.PageRepository), new(*leaderboardrepo.LeaderboardPostgres)),
 )
 
 var UseCasesSet = wire.NewSet(
@@ -250,6 +260,7 @@ var UseCasesSet = wire.NewSet(
 	wire.Bind(new(playerusecase.ManagementClock), new(clockFunc)),
 	wire.Bind(new(playerusecase.SessionClock), new(clockFunc)),
 	wire.Bind(new(playeraccount.Clock), new(clockFunc)),
+	wire.Bind(new(avatarusecase.Clock), new(clockFunc)),
 	wire.Bind(new(participantarchive.Clock), new(clockFunc)),
 	wire.Bind(new(catalogusecase.Clock), new(clockFunc)),
 	wire.Bind(new(catalogusecase.CatalogClock), new(clockFunc)),
@@ -289,6 +300,7 @@ var UseCasesSet = wire.NewSet(
 	wire.Bind(new(restv1.PlayerService), new(*playerusecase.SessionUseCase)),
 
 	provideLeaderboardRanking,
+	leaderboardusecase.NewPageUseCase,
 	provideLeaderboardCache,
 	wire.Bind(new(restv1.LeaderboardService), new(*leaderboardusecase.Cache)),
 	wire.Bind(new(playerusecase.LeaderboardInvalidator), new(*leaderboardusecase.Cache)),
@@ -433,6 +445,9 @@ var HTTPSet = wire.NewSet(
 	provideOperatorTournamentMutationRateLimiter,
 	provideParticipantTournamentReadRateLimiter,
 	provideParticipantTournamentMutationRateLimiter,
+	provideAccountSensitiveRateLimiter,
+	provideAvatarMutationRateLimiter,
+	providePublicAvatarReadRateLimiter,
 	provideRESTServerWithClock,
 	provideHTTPHandler,
 	provideHTTPServer,

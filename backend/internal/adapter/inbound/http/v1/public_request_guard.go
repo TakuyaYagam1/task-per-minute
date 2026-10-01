@@ -99,6 +99,8 @@ func (s *Server) publicRequestPolicy(r *http.Request) (publicRequestPolicy, bool
 		return s.playerRegisterPolicy(), true
 	case "/api/v1/players/login":
 		return s.playerLoginPolicy(), true
+	case "/api/v1/players/login/resend-verification":
+		return s.playerLoginResendPolicy(), true
 	case "/api/v1/players/verify-email":
 		return s.playerVerifyPolicy(), true
 	case "/api/v1/players/resend-verification":
@@ -138,6 +140,14 @@ func (s *Server) playerRegisterPolicy() publicRequestPolicy {
 
 func (s *Server) playerLoginPolicy() publicRequestPolicy {
 	return publicRequestPolicy{event: "player.login", validationCode: domain.ErrorCodeInvalidCredentials, limiter: s.joinLimiter}
+}
+
+func (s *Server) playerLoginResendPolicy() publicRequestPolicy {
+	return publicRequestPolicy{
+		event:          "player.login.resend_verification",
+		validationCode: domain.ErrorCodeValidation,
+		limiter:        s.joinLimiter,
+	}
 }
 
 func (s *Server) playerVerifyPolicy() publicRequestPolicy {

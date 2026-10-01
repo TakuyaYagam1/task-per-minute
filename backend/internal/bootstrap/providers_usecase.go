@@ -121,8 +121,9 @@ func provideLeaderboardRanking(repository leaderboardusecase.StatsRepository) *l
 func provideLeaderboardCache(
 	ranking *leaderboardusecase.Ranking,
 	clock leaderboardusecase.Clock,
+	pages *leaderboardusecase.PageUseCase,
 ) *leaderboardusecase.Cache {
-	return leaderboardusecase.NewCache(ranking, clock)
+	return leaderboardusecase.NewCache(ranking, clock, pages)
 }
 
 func providePlayerSessionUseCase(

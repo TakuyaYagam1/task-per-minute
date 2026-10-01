@@ -33,6 +33,7 @@ import {
   keepCurrentCountdownUnlessCandidateIsShorter,
   viewServerCountdown,
 } from "../lib/features/tournament-live";
+import { selectTheme } from "./support/common";
 import {
   createTournamentFixtureSet,
   operatorSnapshot,
@@ -54,6 +55,10 @@ const newerDeadline = "2026-09-13T10:01:00Z";
 let fixtureProcess: ChildProcessByStdio<null, Readable, Readable> | undefined;
 let fixtureURL = "";
 let fixtureOutput = "";
+
+const setTheme = async (page: Page, theme: "Темная тема" | "Светлая тема"): Promise<void> => {
+  await selectTheme(page, theme === "Темная тема" ? "dark" : "light");
+};
 
 const wait = (durationMs: number) => new Promise<void>((resolveWait) => {
   setTimeout(resolveWait, durationMs);
@@ -1693,9 +1698,9 @@ test("FE-013 spectator route mounts public recovery and keeps only the public cu
   const initialRequestCount = snapshotRequests.length;
   expect(snapshotRequests.every((requestURL) => requestURL.search === "")).toBe(true);
 
-  await page.getByRole("button", { name: "Темная тема" }).click();
+  await setTheme(page, "Темная тема");
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
-  await page.getByRole("button", { name: "Светлая тема" }).click();
+  await setTheme(page, "Светлая тема");
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
   await page.setViewportSize({ width: 390, height: 844 });
   const headingBox = await livePanel.boundingBox();
@@ -1846,7 +1851,7 @@ test("FE-038 public match center keeps the selected server match in a direct lin
   await expect(broadcast.getByTestId("server-countdown")).toHaveCount(0);
   await expect(broadcast.getByText(/серверного дедлайна/i)).toHaveCount(0);
 
-  await page.getByRole("button", { name: "Темная тема" }).click();
+  await setTheme(page, "Темная тема");
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
   if (process.env.IMPECCABLE_CAPTURE === "1") {
     const reviewDirectory = resolve(frontendRoot, "../.impeccable/review");
@@ -1857,7 +1862,7 @@ test("FE-038 public match center keeps the selected server match in a direct lin
       path: resolve(reviewDirectory, "desktop.png"),
     });
   }
-  await page.getByRole("button", { name: "Светлая тема" }).click();
+  await setTheme(page, "Светлая тема");
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
   await page.setViewportSize({ width: 390, height: 844 });
   if (process.env.IMPECCABLE_CAPTURE === "1") {
@@ -1903,7 +1908,7 @@ test("FE-039 public scoreboard renders the complete server-owned zero-state rost
   await expect(table.getByText("00:00", { exact: true })).toHaveCount(16);
 
   for (const theme of ["Темная тема", "Светлая тема"] as const) {
-    await page.getByRole("button", { name: theme }).click();
+    await setTheme(page, theme);
     await expect(page.locator("html")).toHaveAttribute(
       "data-theme",
       theme === "Темная тема" ? "dark" : "light",
@@ -2242,7 +2247,7 @@ test("FE-040 public Swiss history and Single Elimination follow server snapshots
   await expect.poll(() => new URL(page.url()).searchParams.get("match")).toBe("bracket:final:1");
 
   for (const theme of ["Темная тема", "Светлая тема"] as const) {
-    await page.getByRole("button", { name: theme }).click();
+    await setTheme(page, theme);
     await expect(page.locator("html")).toHaveAttribute(
       "data-theme",
       theme === "Темная тема" ? "dark" : "light",
@@ -2312,9 +2317,9 @@ test("FE-038 public match center distinguishes every server tournament state in 
     await expect(broadcast).toHaveAttribute("data-phase", phase);
     await expect(broadcast.getByTestId("broadcast-phase-title")).toHaveText(title);
 
-    await page.getByRole("button", { name: "Темная тема" }).click();
+    await setTheme(page, "Темная тема");
     await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
-    await page.getByRole("button", { name: "Светлая тема" }).click();
+    await setTheme(page, "Светлая тема");
     await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
   }
 });
@@ -2458,9 +2463,9 @@ test("FE-012 public route uses a snapshot-first stream and recovers sequence gap
   await expect.poll(() => snapshotRequests.length).toBe(requestCountBeforeGap + 1);
   await expect(state).toHaveAttribute("data-projection-revision", "10");
 
-  await page.getByRole("button", { name: "Темная тема" }).click();
+  await setTheme(page, "Темная тема");
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
-  await page.getByRole("button", { name: "Светлая тема" }).click();
+  await setTheme(page, "Светлая тема");
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
   await page.setViewportSize({ width: 390, height: 844 });
   const summaryBox = await state.boundingBox();
@@ -2762,9 +2767,9 @@ test("FE-013 operator route mounts operator recovery and keeps only the operator
   const initialRequestCount = snapshotRequests.length;
   expect(snapshotRequests.every((requestURL) => requestURL.search === "")).toBe(true);
 
-  await page.getByRole("button", { name: "Темная тема" }).click();
+  await setTheme(page, "Темная тема");
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
-  await page.getByRole("button", { name: "Светлая тема" }).click();
+  await setTheme(page, "Светлая тема");
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
   await page.setViewportSize({ width: 390, height: 844 });
   const headingBox = await livePanel.boundingBox();
@@ -2978,7 +2983,7 @@ test("FE-011 operator route uses snapshot-first admin realtime and fences old so
     control.emit(0, message);
   }, operatorRealtimeEnvelope(17, 12, revisionId, arenaTournamentId));
   await expect(state).toHaveAttribute("data-projection-revision", "11");
-  await page.getByRole("button", { name: "Светлая тема" }).click();
+  await setTheme(page, "Светлая тема");
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
   await page.setViewportSize({ width: 390, height: 844 });
   const summaryBox = await state.boundingBox();
@@ -3046,7 +3051,7 @@ test("FE-013 participant route never derives an official result from local time"
   await expect(page.getByLabel("Официальный итог")).toHaveCount(0);
   expect(mutationRequests).toEqual([]);
 
-  await page.getByRole("button", { name: "Светлая тема" }).click();
+  await setTheme(page, "Светлая тема");
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
   await page.setViewportSize({ width: 390, height: 844 });
   const panelBox = await playerPanel.boundingBox();

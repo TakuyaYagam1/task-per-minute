@@ -65,7 +65,7 @@ export const buildArenaRolePath = (role: ArenaRole, tournamentId: string): strin
   rolePath(role, tournamentId);
 
 export const buildArenaLoginHref = (role: Exclude<ArenaRole, "spectator">, tournamentId: string): string => {
-  const loginPath = role === "participant" ? "/" : "/admin";
+  const loginPath = role === "participant" ? "/login" : "/admin";
   const next = rolePath(role, tournamentId);
   const query = new URLSearchParams({ next });
   return `${loginPath}?${query.toString()}`;

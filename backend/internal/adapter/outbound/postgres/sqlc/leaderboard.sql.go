@@ -11,6 +11,172 @@ import (
 	"github.com/google/uuid"
 )
 
+const getLeaderboardPage = `-- name: GetLeaderboardPage :many
+WITH base_stats AS (
+  SELECT participant.player_id,
+    COUNT(*)::INT AS wins,
+    FLOOR(
+      AVG(
+        EXTRACT(
+          EPOCH
+          FROM submission.received_at - attempt.started_at
+        ) * 1000
+      )
+    )::BIGINT AS average_solve_time_ms
+  FROM official_result_heads AS head
+    JOIN official_result_revisions AS revision
+      ON revision.id = head.current_revision_id
+      AND revision.entity_kind = 'game_attempt'
+    JOIN result_events AS result
+      ON result.id = revision.result_event_id
+      AND result.result_state = 'completed'
+      AND result.result_reason = 'solved'
+    JOIN submission_events AS submission
+      ON submission.id = result.submission_event_id
+      AND submission.participant_id = revision.winner_id
+      AND submission.status = 'accepted'
+    JOIN game_attempts AS attempt
+      ON attempt.id = revision.game_attempt_id
+      AND attempt.started_at IS NOT NULL
+    JOIN participants AS participant
+      ON participant.roster_id = revision.roster_id
+      AND participant.id = revision.winner_id
+  WHERE head.entity_kind = 'game_attempt'
+    AND revision.result_state = 'completed'
+    AND revision.result_reason = 'solved'
+    AND submission.received_at >= attempt.started_at
+  GROUP BY participant.player_id
+),
+effective_stats AS (
+  SELECT p.id AS player_id,
+    p.username,
+    COALESCE(o.wins, b.wins, 0)::INT AS wins,
+    COALESCE(o.average_solve_time_ms, b.average_solve_time_ms, 0)::BIGINT AS average_solve_time_ms,
+    avatar.player_id AS avatar_player_id,
+    avatar.sha256 AS avatar_sha256,
+    avatar.content_type AS avatar_content_type
+  FROM players p
+    LEFT JOIN base_stats b ON b.player_id = p.id
+    LEFT JOIN player_leaderboard_overrides o ON o.player_id = p.id
+    LEFT JOIN player_avatar_objects AS avatar_object
+      ON avatar_object.player_id = p.id
+      AND avatar_object.lifecycle_state = 'active'
+    LEFT JOIN player_avatars AS avatar
+      ON avatar.player_id = p.id
+      AND avatar.object_key = avatar_object.object_key
+  WHERE p.deleted_at IS NULL
+),
+ranked_stats AS (
+  SELECT player_id,
+    username,
+    wins,
+    average_solve_time_ms,
+    avatar_player_id,
+    avatar_sha256,
+    avatar_content_type,
+    ROW_NUMBER() OVER (
+      ORDER BY wins DESC,
+        average_solve_time_ms ASC,
+        username ASC,
+        player_id ASC
+    )::BIGINT AS global_rank
+  FROM effective_stats
+),
+filtered_stats AS (
+  SELECT player_id, username, wins, average_solve_time_ms, avatar_player_id, avatar_sha256, avatar_content_type, global_rank
+  FROM ranked_stats
+  WHERE (
+      $1::TEXT = ''
+      OR username ILIKE '%' || $1::TEXT || '%' ESCAPE E'\\'
+    )
+    AND (
+      $2::TEXT = 'all'
+      OR ($2::TEXT = 'withwins' AND wins > 0)
+      OR ($2::TEXT = 'withoutwins' AND wins = 0)
+    )
+),
+total_stats AS (
+  SELECT COUNT(*)::BIGINT AS total
+  FROM filtered_stats
+),
+page_rows AS (
+  SELECT username,
+    wins,
+    average_solve_time_ms,
+    avatar_player_id,
+    avatar_sha256,
+    avatar_content_type,
+    global_rank
+  FROM filtered_stats
+  ORDER BY global_rank
+  LIMIT $3::INT
+  OFFSET ($4::INT::BIGINT - 1) * $3::INT::BIGINT
+)
+SELECT page_rows.username,
+  page_rows.wins,
+  page_rows.average_solve_time_ms,
+  page_rows.avatar_player_id,
+  page_rows.avatar_sha256,
+  page_rows.avatar_content_type,
+  COALESCE(page_rows.global_rank, 0)::BIGINT AS global_rank,
+  total_stats.total
+FROM total_stats
+  LEFT JOIN page_rows ON TRUE
+ORDER BY page_rows.global_rank NULLS LAST
+`
+
+type GetLeaderboardPageParams struct {
+	Column1 string
+	Column2 string
+	Column3 int32
+	Column4 int32
+}
+
+type GetLeaderboardPageRow struct {
+	Username           *string
+	Wins               *int32
+	AverageSolveTimeMs *int64
+	AvatarPlayerID     uuid.NullUUID
+	AvatarSha256       []byte
+	AvatarContentType  *string
+	GlobalRank         int64
+	Total              int64
+}
+
+func (q *Queries) GetLeaderboardPage(ctx context.Context, arg GetLeaderboardPageParams) ([]GetLeaderboardPageRow, error) {
+	rows, err := q.db.Query(ctx, getLeaderboardPage,
+		arg.Column1,
+		arg.Column2,
+		arg.Column3,
+		arg.Column4,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []GetLeaderboardPageRow{}
+	for rows.Next() {
+		var i GetLeaderboardPageRow
+		if err := rows.Scan(
+			&i.Username,
+			&i.Wins,
+			&i.AverageSolveTimeMs,
+			&i.AvatarPlayerID,
+			&i.AvatarSha256,
+			&i.AvatarContentType,
+			&i.GlobalRank,
+			&i.Total,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const topLeaderboardStats = `-- name: TopLeaderboardStats :many
 WITH base_stats AS (
   SELECT participant.player_id,
@@ -65,7 +231,8 @@ FROM effective_stats
 WHERE wins > 0
 ORDER BY wins DESC,
   average_solve_time_ms ASC,
-  username ASC
+  username ASC,
+  player_id ASC
 LIMIT $1
 `
 

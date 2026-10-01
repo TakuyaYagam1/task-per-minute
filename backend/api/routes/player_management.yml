@@ -258,8 +258,13 @@
     tags: [player]
     summary: Soft-delete a player
     description: |
-      Soft-deletes the player, clears their session token, and hides them from admin/player leaderboard lists.
-      Returns 409 while tournament records still reference the player.
+      Soft-deletes the player, clears their session token and leaderboard override,
+      and hides them from active admin/player lists while preserving tournament
+      history. Linked account credentials and username reservations are removed
+      so the email address and username can be registered again. An unexpired
+      session is revoked and reported as `player.account_deleted` until its
+      original expiration. Returns 409 while tournament records still reserve
+      the player for active participation.
     security:
       - AdminSessionAuth: []
     parameters:

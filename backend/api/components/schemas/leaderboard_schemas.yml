@@ -16,13 +16,58 @@ LeaderboardEntry:
       type: integer
       format: int64
       minimum: 0
+    avatar:
+      type: object
+      nullable: true
+      allOf:
+        - $ref: '#/LeaderboardAvatar'
+
+LeaderboardAvatar:
+  type: object
+  additionalProperties: false
+  required: [player_id, version, content_type]
+  properties:
+    player_id:
+      type: string
+      format: uuid
+    version:
+      type: string
+      minLength: 64
+      maxLength: 64
+      pattern: '^[0-9a-f]{64}$'
+      description: Lowercase SHA-256 digest of the canonical avatar bytes.
+    content_type:
+      type: string
+      enum: [image/jpeg, image/png, image/gif, video/mp4]
+
+LeaderboardWinsFilter:
+  type: string
+  enum: [all, withwins, withoutwins]
+  default: all
 
 LeaderboardResponse:
   type: object
-  required: [entries]
+  required: [entries, page, per_page, total, total_pages]
   properties:
     entries:
       type: array
-      maxItems: 50
+      maxItems: 100
       items:
         $ref: '#/LeaderboardEntry'
+    page:
+      type: integer
+      format: int32
+      minimum: 1
+    per_page:
+      type: integer
+      format: int32
+      minimum: 1
+      maximum: 100
+    total:
+      type: integer
+      format: int64
+      minimum: 0
+    total_pages:
+      type: integer
+      format: int64
+      minimum: 0

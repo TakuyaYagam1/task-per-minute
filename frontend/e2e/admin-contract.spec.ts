@@ -1,5 +1,5 @@
 import { expect, test, type Locator, type Page, type Route } from '@playwright/test';
-import { jsonHeaders, nowISO } from './support/common';
+import { jsonHeaders, nowISO, openAccountMenu } from './support/common';
 import {
   adminSessionResponse,
   fillAdminTaskForm as fillAdminTaskFormFields,
@@ -86,6 +86,16 @@ test.beforeEach(async ({ page }) => {
       headers: jsonHeaders,
       body: JSON.stringify({ items: [], next_cursor: null }),
     });
+  });
+
+  await page.route('**/api/v1/admin/players**', async (route) => {
+    const request = route.request();
+    const path = new URL(request.url()).pathname;
+    if (request.method() === 'GET' && path === '/api/v1/admin/players') {
+      await route.fulfill({ status: 200, headers: jsonHeaders, body: '[]' });
+      return;
+    }
+    await route.fallback();
   });
 });
 
@@ -626,7 +636,7 @@ test('admin players section updates and deletes player stats', async ({ page }) 
   await expect(page.getByText('Игрок удалён')).toBeVisible();
   await expect(page.getByText('clean_name')).toBeHidden();
 
-  await page.getByLabel('Показывать удаленных').check();
+  await page.getByLabel('Состояние').selectOption('all');
   await expect(page.getByText('deleted_777')).toBeVisible();
   await expect(page.getByText(/удален:/)).toBeVisible();
   await expect(page.getByRole('button', { name: /Редактировать игрока deleted_777/ })).toBeDisabled();
@@ -1903,11 +1913,12 @@ test('admin logout ignores delayed refresh and prevents stale retry', async ({ p
   });
 
   await page.goto('/admin');
-  await expect(page.getByRole('button', { name: 'Выйти' })).toBeVisible();
   await openTournamentTaskCatalog(page);
   await expect.poll(() => refreshCalls).toBe(2);
 
-  await page.getByRole('button', { name: 'Выйти' }).click();
+  const accountMenu = await openAccountMenu(page);
+  await expect(accountMenu.getByRole('button', { name: 'Выйти', exact: true })).toBeVisible();
+  await accountMenu.getByRole('button', { name: 'Выйти', exact: true }).click();
   await expect(
     page.getByRole('heading', { name: 'Вход администратора' }),
   ).toBeVisible();
@@ -1958,9 +1969,10 @@ test('admin logout sends stored refresh csrf before clearing local admin session
   });
 
   await page.goto('/admin');
-  await expect(page.getByRole('button', { name: 'Выйти' })).toBeVisible();
+  const accountMenu = await openAccountMenu(page);
+  await expect(accountMenu.getByRole('button', { name: 'Выйти', exact: true })).toBeVisible();
 
-  await page.getByRole('button', { name: 'Выйти' }).click();
+  await accountMenu.getByRole('button', { name: 'Выйти', exact: true }).click();
   await expect(
     page.getByRole('heading', { name: 'Вход администратора' }),
   ).toBeVisible();
@@ -2018,9 +2030,10 @@ test('admin waits for delayed logout before accepting a new login', async ({ pag
   });
 
   await page.goto('/admin');
-  await expect(page.getByRole('button', { name: 'Выйти' })).toBeVisible();
+  const accountMenu = await openAccountMenu(page);
+  await expect(accountMenu.getByRole('button', { name: 'Выйти', exact: true })).toBeVisible();
 
-  await page.getByRole('button', { name: 'Выйти' }).click();
+  await accountMenu.getByRole('button', { name: 'Выйти', exact: true }).click();
   await expect(
     page.getByRole('heading', { name: 'Вход администратора' }),
   ).toBeVisible();
@@ -2121,11 +2134,12 @@ test('admin new login ignores delayed refresh from previous session', async ({ p
   });
 
   await page.goto('/admin');
-  await expect(page.getByRole('button', { name: 'Выйти' })).toBeVisible();
   await openTournamentTaskCatalog(page);
   await expect.poll(() => refreshCalls).toBe(2);
 
-  await page.getByRole('button', { name: 'Выйти' }).click();
+  const accountMenu = await openAccountMenu(page);
+  await expect(accountMenu.getByRole('button', { name: 'Выйти', exact: true })).toBeVisible();
+  await accountMenu.getByRole('button', { name: 'Выйти', exact: true }).click();
   await expect(
     page.getByRole('heading', { name: 'Вход администратора' }),
   ).toBeVisible();
@@ -2194,11 +2208,12 @@ test('admin logout ignores delayed task list response', async ({ page }) => {
   });
 
   await page.goto('/admin');
-  await expect(page.getByRole('button', { name: 'Выйти' })).toBeVisible();
   await openTournamentTaskCatalog(page);
   await expect.poll(() => listCalls).toBeGreaterThanOrEqual(1);
 
-  await page.getByRole('button', { name: 'Выйти' }).click();
+  const accountMenu = await openAccountMenu(page);
+  await expect(accountMenu.getByRole('button', { name: 'Выйти', exact: true })).toBeVisible();
+  await accountMenu.getByRole('button', { name: 'Выйти', exact: true }).click();
   await expect(
     page.getByRole('heading', { name: 'Вход администратора' }),
   ).toBeVisible();
@@ -2276,11 +2291,12 @@ test('admin new login is not overwritten by old delayed task list', async ({ pag
   });
 
   await page.goto('/admin');
-  await expect(page.getByRole('button', { name: 'Выйти' })).toBeVisible();
   await openTournamentTaskCatalog(page);
   await expect.poll(() => oldListCalls).toBeGreaterThanOrEqual(1);
 
-  await page.getByRole('button', { name: 'Выйти' }).click();
+  const accountMenu = await openAccountMenu(page);
+  await expect(accountMenu.getByRole('button', { name: 'Выйти', exact: true })).toBeVisible();
+  await accountMenu.getByRole('button', { name: 'Выйти', exact: true }).click();
   await expect(
     page.getByRole('heading', { name: 'Вход администратора' }),
   ).toBeVisible();

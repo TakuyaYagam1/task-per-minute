@@ -2,6 +2,7 @@ import { expect, test, type Page, type Request, type Route } from "@playwright/t
 
 import { operatorSnapshot, tournamentFixtureIds } from "./tournament/fixtures";
 import type { components } from "../lib/shared/api/schema";
+import { openAccountMenu } from "./support/common";
 
 const tournamentId = tournamentFixtureIds.tournament;
 const rosterId = tournamentFixtureIds.roster;
@@ -624,10 +625,16 @@ test("Golden and playoff panel keeps dark/light themes and no horizontal overflo
   await installRoutes(page, { initialPhase: "golden-prepared" });
   await loginAndSelectTournament(page);
 
-  await page.getByRole("button", { name: "Светлая тема" }).click();
+  const lightThemeMenu = await openAccountMenu(page);
+  await lightThemeMenu.getByRole("button", { name: "Светлая тема" }).click();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
-  await page.getByRole("button", { name: "Темная тема" }).click();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("region", { name: "Аккаунт" })).toBeHidden();
+  const darkThemeMenu = await openAccountMenu(page);
+  await darkThemeMenu.getByRole("button", { name: "Темная тема" }).click();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("region", { name: "Аккаунт" })).toBeHidden();
 
   const widths = await page.evaluate(() => ({
     body: document.body.scrollWidth,

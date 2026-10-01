@@ -60,7 +60,7 @@ func (u *SessionUseCase) Logout(ctx context.Context, sessionToken uuid.UUID) err
 	return u.tx.Do(ctx, func(txCtx context.Context) error {
 		player, err := u.players.GetBySessionToken(txCtx, sessionToken)
 		if err != nil {
-			if errors.Is(err, domain.ErrPlayerNotFound) {
+			if errors.Is(err, domain.ErrPlayerNotFound) || errors.Is(err, domain.ErrAccountDeleted) {
 				return nil
 			}
 			return fmt.Errorf("UseCase - Logout - Repository.GetBySessionToken: %w", err)

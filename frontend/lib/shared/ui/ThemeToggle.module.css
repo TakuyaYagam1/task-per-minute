@@ -20,6 +20,19 @@
   box-shadow: none;
 }
 
+.menu {
+  position: static;
+  z-index: auto;
+  display: grid;
+  width: 100%;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.35rem;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
 .button {
   display: inline-grid;
   width: 32px;
@@ -40,9 +53,110 @@
     box-shadow var(--motion);
 }
 
+.menuButton {
+  display: inline-flex;
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-small);
+  padding: 0.35rem 0.5rem;
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
+
+.menuButton[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: var(--surface-strong);
+  color: var(--text);
+  box-shadow: var(--shadow-small);
+}
+
 .icon {
   width: 18px;
   height: 18px;
+}
+
+.switchButton {
+  display: inline-flex;
+  min-width: 60px;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 999px;
+  padding: 0 2px;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.switchTrack {
+  position: relative;
+  display: block;
+  width: 56px;
+  height: 32px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-strong);
+  transition:
+    border-color var(--motion),
+    background-color var(--motion);
+}
+
+.switchButton:hover .switchTrack {
+  border-color: var(--accent);
+}
+
+.switchGlyph {
+  position: absolute;
+  top: 50%;
+  display: grid;
+  width: 18px;
+  height: 18px;
+  place-items: center;
+  color: var(--secondary);
+  transform: translateY(-50%);
+}
+
+.switchMoon {
+  left: 5px;
+}
+
+.switchSun {
+  right: 5px;
+}
+
+.switchKnob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  display: grid;
+  width: 26px;
+  height: 26px;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--bg);
+  color: var(--text);
+  box-shadow: var(--shadow-small);
+  transition: transform var(--motion);
+}
+
+.switchKnob .icon {
+  width: 16px;
+  height: 16px;
+}
+
+.switchLight .switchKnob {
+  transform: translateX(24px);
+}
+
+.switchButton:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .button:hover:not(:disabled) {
@@ -67,6 +181,11 @@
   .button {
     transition: none;
   }
+
+  .switchTrack,
+  .switchKnob {
+    transition: none;
+  }
 }
 
 @media (max-width: 479px) {
@@ -82,6 +201,11 @@
 
   .inline .button {
     width: 44px;
+    min-height: 44px;
+  }
+
+  .menu .button {
+    width: 100%;
     min-height: 44px;
   }
 }

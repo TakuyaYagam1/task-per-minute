@@ -3,7 +3,7 @@ import { expect, test, type Locator, type Page, type Route } from '@playwright/t
 import type { components } from '../lib/shared/api/schema';
 import { createTournamentFixtureSet, tournamentFixtureIds } from './tournament/fixtures';
 import { adminSessionResponse, taskResponse } from './support/admin';
-import { jsonHeaders } from './support/common';
+import { jsonHeaders, openAccountMenu } from './support/common';
 
 type Schema = components['schemas'];
 
@@ -256,10 +256,13 @@ const setupAdminVisualApi = async (page: Page): Promise<void> => {
 
 const setTheme = async (page: Page, theme: 'dark' | 'light'): Promise<void> => {
   const label = theme === 'dark' ? 'Темная тема' : 'Светлая тема';
-  const button = page.getByRole('button', { name: label });
+  const accountMenu = await openAccountMenu(page);
+  const button = accountMenu.getByRole('button', { name: label, exact: true });
   await button.click();
   await expect(button).toHaveAttribute('aria-pressed', 'true');
   await expect.poll(() => page.evaluate(() => document.documentElement.dataset.theme)).toBe(theme);
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('region', { name: 'Аккаунт', exact: true })).toBeHidden();
 };
 
 const assertOpaqueSurface = async (locator: Locator, label: string): Promise<void> => {
@@ -328,24 +331,24 @@ const checkVisualState = async (
   await page.evaluate(() => window.scrollTo(0, 0));
   await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0);
   const geometry = await page.evaluate((isAuthenticated) => {
-    const theme = document.querySelector<HTMLElement>('[aria-label="Тема интерфейса"]');
+    const accountMenu = document.querySelector<HTMLElement>('button[aria-label="Меню аккаунта"]');
     const target = isAuthenticated
       ? document.querySelector<HTMLElement>('main > header')
       : document.querySelector<HTMLElement>('#admin-login-title')?.closest('section');
-    if (!theme || !target) {
+    if (!accountMenu || !target) {
       return null;
     }
-    const themeRect = theme.getBoundingClientRect();
+    const accountMenuRect = accountMenu.getBoundingClientRect();
     const targetRect = target.getBoundingClientRect();
     const intersects =
-      themeRect.left < targetRect.right &&
-      themeRect.right > targetRect.left &&
-      themeRect.top < targetRect.bottom &&
-      themeRect.bottom > targetRect.top;
+      accountMenuRect.left < targetRect.right &&
+      accountMenuRect.right > targetRect.left &&
+      accountMenuRect.top < targetRect.bottom &&
+      accountMenuRect.bottom > targetRect.top;
     return {
       intersects,
       headerTop: targetRect.top,
-      themeBottom: themeRect.bottom,
+      accountMenuBottom: accountMenuRect.bottom,
       viewportWidth: window.innerWidth,
       scrollWidth: document.documentElement.scrollWidth,
       scrollY: window.scrollY,
@@ -544,7 +547,8 @@ test('admin visual matrix covers loaded sections, themes, focus, and mobile over
         true,
       );
 
-      await page.getByRole('button', { name: 'Выйти', exact: true }).click();
+      const accountMenu = await openAccountMenu(page);
+      await accountMenu.getByRole('button', { name: 'Выйти', exact: true }).click();
       await expect(page.getByRole('heading', { name: 'Вход администратора' })).toBeVisible();
     }
   }

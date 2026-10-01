@@ -1,5 +1,7 @@
 import { expect, test, type Page, type Route, type WebSocketRoute } from "@playwright/test";
 
+import { openAccountMenu } from "./support/common";
+
 const tournamentId = "20000000-0000-4000-8000-000000000001";
 const rosterId = "20000000-0000-4000-8000-000000000002";
 const baseDate = "2026-09-13T10:00:00.000Z";
@@ -579,11 +581,14 @@ test("сохраняет все матчи в dark, light и на мобильн
 
   await openAdminTournament(page);
   for (const theme of ["Темная тема", "Светлая тема"] as const) {
-    await page.getByRole("button", { name: theme }).click();
+    const accountMenu = await openAccountMenu(page);
+    await accountMenu.getByRole("button", { name: theme }).click();
     await expect(page.locator("html")).toHaveAttribute(
       "data-theme",
       theme === "Темная тема" ? "dark" : "light",
     );
+    await page.keyboard.press("Escape");
+    await expect(accountMenu).toBeHidden();
     await expect(page.getByTestId("operator-match")).toHaveCount(8);
   }
 

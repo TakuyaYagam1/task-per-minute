@@ -1,6 +1,6 @@
 import { expect, test, type Page, type Route } from "@playwright/test";
 
-import { jsonHeaders } from "./support/common";
+import { jsonHeaders, openAccountMenu } from "./support/common";
 
 const accessCSRF = "tournament-admin-access-csrf";
 const refreshCSRF = "tournament-admin-refresh-csrf";
@@ -547,11 +547,14 @@ test("список не создает горизонтальный overflow в 
   await loginAndOpenTournamentList(page);
 
   for (const theme of ["Темная тема", "Светлая тема"]) {
-    await page.getByRole("button", { name: theme }).click();
+    const accountMenu = await openAccountMenu(page);
+    await accountMenu.getByRole("button", { name: theme }).click();
     await expect(page.locator("html")).toHaveAttribute(
       "data-theme",
       theme === "Темная тема" ? "dark" : "light",
     );
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("region", { name: "Аккаунт" })).toBeHidden();
     const dimensions = await page.evaluate(() => ({
       bodyWidth: document.body.scrollWidth,
       documentWidth: document.documentElement.scrollWidth,

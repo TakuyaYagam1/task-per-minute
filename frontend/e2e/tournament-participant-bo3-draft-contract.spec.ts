@@ -7,6 +7,7 @@ import {
   tournamentFixtureIds,
 } from "./tournament/fixtures";
 import type { components } from "../lib/shared/api/schema";
+import { selectTheme } from "./support/common";
 
 const tournamentId = tournamentFixtureIds.tournament;
 const publicPath = `/api/v1/tournaments/${tournamentId}`;
@@ -421,9 +422,9 @@ test("FE-022 sends one idempotent pick on slow double click, honors 429, and sta
   await openDraft(page, fixtureSet, () => current);
   await page.setViewportSize({ width: 390, height: 844 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
-  await page.getByRole("button", { name: "Светлая тема" }).click();
+  await selectTheme(page, "light");
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
-  await page.getByRole("button", { name: "Темная тема" }).click();
+  await selectTheme(page, "dark");
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
 
   await page.route(`**${participantDraftPath}`, async (route) => {

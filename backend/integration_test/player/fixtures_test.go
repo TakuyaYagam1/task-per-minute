@@ -4,6 +4,7 @@ package player_test
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -75,7 +76,14 @@ func createVerifiedAccountSession(
 	require.NoError(tb, err)
 	require.EqualValues(tb, 1, result.RowsAffected())
 	token := uuid.New()
-	updated, err := accountrepo.NewAccountPostgres(mgr).UpdateAccountPlayerSession(ctx, legacyPlayer.ID, token, expiresAt)
+	updated, err := accountrepo.NewAccountPostgres(mgr).UpdateAccountPlayerSession(
+		ctx,
+		legacyPlayer.ID,
+		strings.ToLower(legacyPlayer.Username),
+		"integration-test-hash",
+		token,
+		expiresAt,
+	)
 	require.NoError(tb, err)
 	return updated, token
 }

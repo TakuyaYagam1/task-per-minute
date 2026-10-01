@@ -1,7 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 
+import { playerModel } from "../../entities/player";
 import {
   DEFAULT_CATALOG_QUERY,
   catalogQueryKey,
@@ -11,13 +13,42 @@ import {
   type CatalogQuery,
 } from "../../features/tournament-catalog";
 import { buildArenaPublicTournamentPath } from "../../shared/lib";
+import type { Player } from "../../shared/types";
 import { ArenaLanding, ArenaShell } from "../../widgets/arena";
 import { TournamentCatalog } from "../../widgets/tournament-catalog";
 
 export const ArenaLandingPage = () => {
+  const router = useRouter();
   const [query, setQuery] = useState<CatalogQuery>(DEFAULT_CATALOG_QUERY);
+  const [currentPlayer, setCurrentPlayer] = useState<Player | null>(null);
+  const [logoutPending, setLogoutPending] = useState(false);
   const queryRef = useRef(query);
   const catalog = useTournamentCatalog(query);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    let active = true;
+    void playerModel.restoreCurrentPlayer(controller.signal).then((result) => {
+      if (!active || result.kind === "aborted") return;
+      setCurrentPlayer(result.kind === "ok" ? result.state.player : null);
+    });
+    return () => {
+      active = false;
+      controller.abort();
+    };
+  }, []);
+
+  const handleLogout = useCallback(async (): Promise<void> => {
+    if (!currentPlayer || logoutPending) return;
+    setLogoutPending(true);
+    try {
+      await playerModel.clearCurrentPlayer();
+    } finally {
+      setCurrentPlayer(null);
+      setLogoutPending(false);
+      router.replace("/login");
+    }
+  }, [currentPlayer, logoutPending, router]);
 
   useEffect(() => {
     const currentQuery = catalogQueryFromSearch(window.location.search);
@@ -57,7 +88,11 @@ export const ArenaLandingPage = () => {
   }, []);
 
   return (
-    <ArenaShell accessStatus="ready">
+    <ArenaShell
+      accessStatus="ready"
+      logoutPending={logoutPending}
+      onLogout={currentPlayer ? handleLogout : undefined}
+    >
       <ArenaLanding>
         <TournamentCatalog
           buildTournamentHref={(item) => buildTournamentHref(item.publicId)}

@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"html"
 	"io"
 	"net"
 	"net/http"
@@ -120,7 +119,57 @@ func (s *Sender) SendVerification(ctx context.Context, recipient, verificationUR
 	if err != nil {
 		return fmt.Errorf("mail verification URL is invalid")
 	}
-	message := verificationMessage(s.from, to, link)
+	message, err := verificationMessage(s.from, to, link)
+	if err != nil {
+		return err
+	}
+	return s.send(ctx, message)
+}
+
+func (s *Sender) SendEmailChangeCode(ctx context.Context, recipient, code string) error {
+	if s == nil || s.provider == ProviderDisabled {
+		return ErrUnavailable
+	}
+	if ctx == nil {
+		return fmt.Errorf("mail context must not be nil")
+	}
+	to, err := normalizeAddress(recipient)
+	if err != nil {
+		return fmt.Errorf("mail recipient address is invalid")
+	}
+	if !validEmailChangeCode(code) {
+		return fmt.Errorf("email change code is invalid")
+	}
+	message, err := emailChangeCodeMessage(s.from, to, code)
+	if err != nil {
+		return err
+	}
+	return s.send(ctx, message)
+}
+
+func (s *Sender) SendEmailChangedNotice(ctx context.Context, previousEmail, newEmail string) error {
+	if s == nil || s.provider == ProviderDisabled {
+		return ErrUnavailable
+	}
+	if ctx == nil {
+		return fmt.Errorf("mail context must not be nil")
+	}
+	previous, err := normalizeAddress(previousEmail)
+	if err != nil {
+		return fmt.Errorf("previous email address is invalid")
+	}
+	next, err := normalizeAddress(newEmail)
+	if err != nil {
+		return fmt.Errorf("new email address is invalid")
+	}
+	message, err := emailChangedNoticeMessage(s.from, previous, next)
+	if err != nil {
+		return err
+	}
+	return s.send(ctx, message)
+}
+
+func (s *Sender) send(ctx context.Context, message verificationEmail) error {
 	sendCtx, cancel := context.WithTimeout(ctx, s.timeout)
 	defer cancel()
 	switch s.provider {
@@ -170,17 +219,58 @@ type verificationEmail struct {
 	html    string
 }
 
-func verificationMessage(from, to, link string) verificationEmail {
+func verificationMessage(from, to, link string) (verificationEmail, error) {
+	textBody, htmlBody, err := renderMailTemplates("verification", mailTemplateData{VerificationURL: link})
+	if err != nil {
+		return verificationEmail{}, err
+	}
 	return verificationEmail{
 		from:    from,
 		to:      to,
 		subject: "Подтвердите регистрацию в Task Per Minute",
-		text: "Чтобы завершить регистрацию в Task Per Minute, откройте ссылку:\n" + link +
-			"\n\nСсылка действует 24 часа. Если вы не регистрировались, просто проигнорируйте это письмо.",
-		html: `<p>Чтобы завершить регистрацию в Task Per Minute, откройте ссылку:</p><p><a href="` +
-			html.EscapeString(link) + `">Подтвердить адрес</a></p><p>Ссылка действует 24 часа. ` +
-			`Если вы не регистрировались, просто проигнорируйте это письмо.</p>`,
+		text:    textBody,
+		html:    htmlBody,
+	}, nil
+}
+
+func emailChangeCodeMessage(from, to, code string) (verificationEmail, error) {
+	textBody, htmlBody, err := renderMailTemplates("email_change_code", mailTemplateData{Code: code})
+	if err != nil {
+		return verificationEmail{}, err
 	}
+	return verificationEmail{
+		from:    from,
+		to:      to,
+		subject: "Код подтверждения нового адреса Task Per Minute",
+		text:    textBody,
+		html:    htmlBody,
+	}, nil
+}
+
+func emailChangedNoticeMessage(from, previousEmail, newEmail string) (verificationEmail, error) {
+	textBody, htmlBody, err := renderMailTemplates("email_changed_notice", mailTemplateData{NewEmail: newEmail})
+	if err != nil {
+		return verificationEmail{}, err
+	}
+	return verificationEmail{
+		from:    from,
+		to:      previousEmail,
+		subject: "Адрес электронной почты Task Per Minute изменен",
+		text:    textBody,
+		html:    htmlBody,
+	}, nil
+}
+
+func validEmailChangeCode(value string) bool {
+	if len(value) != 6 {
+		return false
+	}
+	for index := range len(value) {
+		if value[index] < '0' || value[index] > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 func normalizeAddress(value string) (string, error) {

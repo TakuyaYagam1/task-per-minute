@@ -5,6 +5,7 @@ import {
   tournamentFixtureIds,
 } from "./tournament/fixtures";
 import type { components } from "../lib/shared/api/schema";
+import { selectTheme } from "./support/common";
 
 const tournamentId = tournamentFixtureIds.tournament;
 const publicPath = `/api/v1/tournaments/${tournamentId}`;
@@ -468,8 +469,8 @@ test("participant submission controls preserve keyboard access, themes, scaling,
   await expect(page.getByRole("heading", { name: "Состояние соревнования" })).toHaveCount(0);
 
   const keyActions = [answerInput(page), submitButton(page)];
-  for (const [label, theme] of [["Темная тема", "dark"], ["Светлая тема", "light"]] as const) {
-    await page.getByRole("button", { name: label }).click();
+  for (const theme of ["dark", "light"] as const) {
+    await selectTheme(page, theme);
     await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
 
     for (const [width, height] of [[390, 844], [768, 1024], [1440, 900]] as const) {

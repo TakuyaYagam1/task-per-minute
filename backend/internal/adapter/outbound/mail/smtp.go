@@ -209,12 +209,22 @@ func buildMIMEMessage(message verificationEmail) ([]byte, error) {
 		return nil, fmt.Errorf("mail: format MIME content type")
 	}
 	var messageBytes bytes.Buffer
-	messageBytes.WriteString("From: <" + from.Address + ">\r\n")
-	messageBytes.WriteString("To: <" + to.Address + ">\r\n")
-	messageBytes.WriteString("Date: " + time.Now().UTC().Format(time.RFC1123Z) + "\r\n")
-	messageBytes.WriteString("Subject: " + mime.QEncoding.Encode("UTF-8", message.subject) + "\r\n")
+	messageBytes.WriteString("From: <")
+	messageBytes.WriteString(from.Address)
+	messageBytes.WriteString(">\r\n")
+	messageBytes.WriteString("To: <")
+	messageBytes.WriteString(to.Address)
+	messageBytes.WriteString(">\r\n")
+	messageBytes.WriteString("Date: ")
+	messageBytes.WriteString(time.Now().UTC().Format(time.RFC1123Z))
+	messageBytes.WriteString("\r\n")
+	messageBytes.WriteString("Subject: ")
+	messageBytes.WriteString(mime.QEncoding.Encode("UTF-8", message.subject))
+	messageBytes.WriteString("\r\n")
 	messageBytes.WriteString("MIME-Version: 1.0\r\n")
-	messageBytes.WriteString("Content-Type: " + contentType + "\r\n\r\n")
+	messageBytes.WriteString("Content-Type: ")
+	messageBytes.WriteString(contentType)
+	messageBytes.WriteString("\r\n\r\n")
 	_, _ = messageBytes.Write(body.Bytes())
 	return messageBytes.Bytes(), nil
 }

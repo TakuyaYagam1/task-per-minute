@@ -169,6 +169,30 @@ jobs:
         working-directory: ${{ env.GO_WORKDIR }}
         run: make test-int
 
+  media-test:
+    name: media test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ inputs.target_sha }}
+
+      - name: check docker
+        run: docker version
+
+      - name: build media check image
+        working-directory: ${{ env.GO_WORKDIR }}
+        run: docker build --load --file Dockerfile --target media-check --tag task-per-minute-media-check .
+
+      - name: test media binaries
+        working-directory: ${{ env.GO_WORKDIR }}
+        run: >-
+          docker run --network none --rm
+          --volume "$GITHUB_WORKSPACE/$GO_WORKDIR/internal/adapter/outbound/media/ffmpeg:/src/internal/adapter/outbound/media/ffmpeg:ro"
+          task-per-minute-media-check
+
   build:
     name: build
     runs-on: ubuntu-latest

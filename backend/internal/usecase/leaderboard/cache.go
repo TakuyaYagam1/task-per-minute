@@ -2,6 +2,7 @@ package leaderboard
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -25,6 +26,7 @@ type Clock interface {
 type Cache struct {
 	next  Reader
 	clock Clock
+	pages PageReader
 
 	mu       sync.Mutex
 	snapshot *snapshot
@@ -36,8 +38,12 @@ type snapshot struct {
 	expiresAt time.Time
 }
 
-func NewCache(next Reader, clock Clock) *Cache {
-	return &Cache{next: next, clock: clock}
+func NewCache(next Reader, clock Clock, pages ...PageReader) *Cache {
+	cache := &Cache{next: next, clock: clock}
+	if len(pages) > 0 {
+		cache.pages = pages[0]
+	}
+	return cache
 }
 
 func (c *Cache) Top50(ctx context.Context) ([]Entry, error) {
@@ -73,6 +79,13 @@ func (c *Cache) Top50(ctx context.Context) ([]Entry, error) {
 		return nil, fmt.Errorf("leaderboard cache: unexpected refresh result %T", value)
 	}
 	return cloneEntries(entries), nil
+}
+
+func (c *Cache) Page(ctx context.Context, query PageQuery) (PageResult, error) {
+	if c.pages == nil {
+		return PageResult{}, errors.New("leaderboard cache: page reader is not configured")
+	}
+	return c.pages.Page(ctx, query)
 }
 
 func (c *Cache) Invalidate() {

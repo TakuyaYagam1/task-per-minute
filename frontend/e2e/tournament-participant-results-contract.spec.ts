@@ -1,6 +1,7 @@
 import { expect, test, type Page, type Route } from "@playwright/test";
 
 import { createTournamentFixtureSet, tournamentFixtureIds } from "./tournament/fixtures";
+import { selectTheme } from "./support/common";
 
 type FixtureSet = ReturnType<typeof createTournamentFixtureSet>;
 type ParticipantSnapshot = FixtureSet["participant"]["recovery"];
@@ -157,7 +158,7 @@ test("participant sees authoritative BO1 and BO3 2:0 results without a phantom t
 
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
-  await page.getByRole("button", { name: "Светлая тема" }).click();
+  await selectTheme(page, "light");
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
   const noOverflow = await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth);
   expect(noOverflow).toBe(true);

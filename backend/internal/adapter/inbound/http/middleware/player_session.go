@@ -1,12 +1,14 @@
 package middleware
 
 import (
+	"errors"
 	"net/http"
 	"time"
 
 	"github.com/google/uuid"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/requestmeta"
+	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 )
 
 const (
@@ -23,6 +25,19 @@ func PlayerSession(players PlayerSessionReader) func(http.Handler) http.Handler 
 			}
 
 			player, err := players.GetBySessionToken(r.Context(), token)
+			if errors.Is(err, domain.ErrAccountDeleted) {
+				ClearPlayerSessionCookie(w, r)
+				ClearPlayerCSRFCookie(w, r)
+				writeProblemWithCode(
+					w,
+					r,
+					http.StatusUnauthorized,
+					http.StatusText(http.StatusUnauthorized),
+					domain.ErrAccountDeleted.Message,
+					string(domain.ErrAccountDeleted.Code),
+				)
+				return
+			}
 			if err != nil || player == nil {
 				writeUnauthorized(w, r, "invalid session token")
 				return

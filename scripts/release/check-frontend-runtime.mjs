@@ -76,7 +76,8 @@ function validatePolicy(headers, expectedSources) {
   const expectedDirectives = new Map([
     ['default-src', ["'self'"]], ['frame-ancestors', ["'none'"]], ['object-src', ["'none'"]],
     ['script-src', ["'self'", "'unsafe-inline'"]], ['style-src', ["'self'", "'unsafe-inline'"]],
-    ['img-src', ["'self'", 'data:', 'blob:']], ['font-src', ["'self'", 'data:', 'https://fonts.gstatic.com']],
+    ['img-src', ["'self'", 'data:', 'blob:']], ['media-src', ["'self'", 'blob:']],
+    ['font-src', ["'self'", 'data:', 'https://fonts.gstatic.com']],
     ['worker-src', ["'self'", 'blob:']],
     ['base-uri', ["'self'"]], ['form-action', ["'self'"]], ['report-uri', ['/csp-report']],
     ['upgrade-insecure-requests', []],

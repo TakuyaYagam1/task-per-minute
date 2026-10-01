@@ -22,7 +22,7 @@ PlayerSessionAuth:
   in: cookie
   name: tpm_player_session
   description: >
-    HttpOnly opaque UUID session cookie issued by POST /api/v1/players/join.
+    HttpOnly opaque UUID session cookie issued by POST /api/v1/players/login.
     Unsafe authenticated player REST requests must also send X-CSRF-Token
     matching the readable tpm_player_csrf cookie. The CSRF token is signed and
     bound to the HttpOnly player session cookie. The same token is exposed in

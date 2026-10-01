@@ -702,6 +702,51 @@ func (e IncidentBundleCanonicalContentType) Valid() bool {
 	}
 }
 
+// Defines values for LeaderboardAvatarContentType.
+const (
+	Imagegif  LeaderboardAvatarContentType = "image/gif"
+	Imagejpeg LeaderboardAvatarContentType = "image/jpeg"
+	Imagepng  LeaderboardAvatarContentType = "image/png"
+	Videomp4  LeaderboardAvatarContentType = "video/mp4"
+)
+
+// Valid indicates whether the value is a known member of the LeaderboardAvatarContentType enum.
+func (e LeaderboardAvatarContentType) Valid() bool {
+	switch e {
+	case Imagegif:
+		return true
+	case Imagejpeg:
+		return true
+	case Imagepng:
+		return true
+	case Videomp4:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for LeaderboardWinsFilter.
+const (
+	All         LeaderboardWinsFilter = "all"
+	Withoutwins LeaderboardWinsFilter = "withoutwins"
+	Withwins    LeaderboardWinsFilter = "withwins"
+)
+
+// Valid indicates whether the value is a known member of the LeaderboardWinsFilter enum.
+func (e LeaderboardWinsFilter) Valid() bool {
+	switch e {
+	case All:
+		return true
+	case Withoutwins:
+		return true
+	case Withwins:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for OfficialResultSubjectKind.
 const (
 	OfficialResultSubjectKindGame   OfficialResultSubjectKind = "game"
@@ -2404,6 +2449,10 @@ type GoldenReadyRequestReady bool
 
 // GoldenRuntimeConflictProblem The Golden runtime command is stale or reuses an idempotency key with a different command identity.
 type GoldenRuntimeConflictProblem struct {
+	// Code Stable application error code for clients that need to handle a specific failure.
+	//
+	// Example: player.email_unverified
+	Code                   *string             `json:"code,omitempty"`
 	CurrentAttemptId       *openapi_types.UUID `json:"current_attempt_id,omitempty"`
 	CurrentReadyWindowId   *openapi_types.UUID `json:"current_ready_window_id,omitempty"`
 	CurrentRuntimeRevision *int64              `json:"current_runtime_revision,omitempty"`
@@ -2551,18 +2600,38 @@ type JoinPlayerResponse struct {
 	PlayerId openapi_types.UUID `json:"player_id"`
 }
 
+// LeaderboardAvatar defines model for LeaderboardAvatar.
+type LeaderboardAvatar struct {
+	ContentType LeaderboardAvatarContentType `json:"content_type"`
+	PlayerId    openapi_types.UUID           `json:"player_id"`
+
+	// Version Lowercase SHA-256 digest of the canonical avatar bytes.
+	Version string `json:"version"`
+}
+
+// LeaderboardAvatarContentType defines model for LeaderboardAvatar.ContentType.
+type LeaderboardAvatarContentType string
+
 // LeaderboardEntry defines model for LeaderboardEntry.
 type LeaderboardEntry struct {
-	AverageSolveTimeMs int64  `json:"average_solve_time_ms"`
-	Rank               int32  `json:"rank"`
-	Username           string `json:"username"`
-	Wins               int32  `json:"wins"`
+	Avatar             *LeaderboardAvatar `json:"avatar,omitempty"`
+	AverageSolveTimeMs int64              `json:"average_solve_time_ms"`
+	Rank               int32              `json:"rank"`
+	Username           string             `json:"username"`
+	Wins               int32              `json:"wins"`
 }
 
 // LeaderboardResponse defines model for LeaderboardResponse.
 type LeaderboardResponse struct {
-	Entries []LeaderboardEntry `json:"entries"`
+	Entries    []LeaderboardEntry `json:"entries"`
+	Page       int32              `json:"page"`
+	PerPage    int32              `json:"per_page"`
+	Total      int64              `json:"total"`
+	TotalPages int64              `json:"total_pages"`
 }
+
+// LeaderboardWinsFilter defines model for LeaderboardWinsFilter.
+type LeaderboardWinsFilter string
 
 // LockRosterRequest defines model for LockRosterRequest.
 type LockRosterRequest struct {
@@ -3123,6 +3192,48 @@ type PlayerAccountAcceptedResponse struct {
 // PlayerAccountAcceptedResponseAccepted defines model for PlayerAccountAcceptedResponse.Accepted.
 type PlayerAccountAcceptedResponseAccepted bool
 
+// PlayerAccountEmailChangeConfirmRequest defines model for PlayerAccountEmailChangeConfirmRequest.
+type PlayerAccountEmailChangeConfirmRequest struct {
+	Code string `json:"code"`
+}
+
+// PlayerAccountEmailChangeConfirmedResponse defines model for PlayerAccountEmailChangeConfirmedResponse.
+type PlayerAccountEmailChangeConfirmedResponse struct {
+	Email                 openapi_types.Email `json:"email"`
+	PreviousEmailNotified bool                `json:"previous_email_notified"`
+}
+
+// PlayerAccountEmailChangeRequest defines model for PlayerAccountEmailChangeRequest.
+type PlayerAccountEmailChangeRequest struct {
+	CurrentPassword *string `json:"current_password,omitempty"`
+
+	// NewEmail A bare ASCII dot-atom mailbox with a 1-64 character local part and at least two ASCII DNS labels. Each label is 1-63 characters with alphanumeric edges and optional internal hyphens. The final label must be at least two ASCII letters or begin with xn--.
+	NewEmail openapi_types.Email `json:"new_email"`
+}
+
+// PlayerAccountPasswordRequest defines model for PlayerAccountPasswordRequest.
+type PlayerAccountPasswordRequest struct {
+	CurrentPassword *string `json:"current_password,omitempty"`
+
+	// NewPassword Must contain at least one Unicode lowercase letter, uppercase letter, decimal digit, and punctuation or symbol. Whitespace alone does not satisfy the punctuation or symbol requirement.
+	NewPassword *string `json:"new_password,omitempty"`
+}
+
+// PlayerAccountSettingsResponse defines model for PlayerAccountSettingsResponse.
+type PlayerAccountSettingsResponse struct {
+	Email                  openapi_types.Email  `json:"email"`
+	EmailResendAvailableAt *time.Time           `json:"email_resend_available_at"`
+	PendingEmail           *openapi_types.Email `json:"pending_email"`
+	PendingEmailExpiresAt  *time.Time           `json:"pending_email_expires_at"`
+	Username               string               `json:"username"`
+}
+
+// PlayerAccountUsernameRequest defines model for PlayerAccountUsernameRequest.
+type PlayerAccountUsernameRequest struct {
+	CurrentPassword *string `json:"current_password,omitempty"`
+	Username        string  `json:"username"`
+}
+
 // PlayerAuditAction defines model for PlayerAuditAction.
 type PlayerAuditAction string
 
@@ -3185,8 +3296,11 @@ type PlayerNotificationsResponse struct {
 
 // PlayerRegistrationRequest defines model for PlayerRegistrationRequest.
 type PlayerRegistrationRequest struct {
-	Email    openapi_types.Email `json:"email"`
-	Password *string             `json:"password,omitempty"`
+	// Email A bare ASCII dot-atom mailbox with a 1-64 character local part and at least two ASCII DNS labels. Each label is 1-63 characters with alphanumeric edges and optional internal hyphens. The final label must be at least two ASCII letters or begin with xn--.
+	Email openapi_types.Email `json:"email"`
+
+	// Password Must contain at least one Unicode lowercase letter, uppercase letter, decimal digit, and punctuation or symbol. Whitespace alone does not satisfy the punctuation or symbol requirement.
+	Password *string `json:"password,omitempty"`
 
 	// Username Example: takuya
 	Username string `json:"username"`
@@ -3194,6 +3308,7 @@ type PlayerRegistrationRequest struct {
 
 // PlayerResendVerificationRequest defines model for PlayerResendVerificationRequest.
 type PlayerResendVerificationRequest struct {
+	// Email A bare ASCII dot-atom mailbox with a 1-64 character local part and at least two ASCII DNS labels. Each label is 1-63 characters with alphanumeric edges and optional internal hyphens. The final label must be at least two ASCII letters or begin with xn--.
 	Email openapi_types.Email `json:"email"`
 }
 
@@ -3267,6 +3382,11 @@ type PresenceState string
 
 // ProblemDetails RFC 7807 error envelope used by REST validation and operation errors.
 type ProblemDetails struct {
+	// Code Stable application error code for clients that need to handle a specific failure.
+	//
+	// Example: player.email_unverified
+	Code *string `json:"code,omitempty"`
+
 	// Detail Example: username must be 2..50 characters
 	Detail *string `json:"detail,omitempty"`
 
@@ -3288,6 +3408,10 @@ type ProblemDetails struct {
 
 // ProjectionRevisionProblem Stable optimistic-concurrency details that can accompany a 409 response.
 type ProjectionRevisionProblem struct {
+	// Code Stable application error code for clients that need to handle a specific failure.
+	//
+	// Example: player.email_unverified
+	Code            *string          `json:"code,omitempty"`
 	CurrentRevision int64            `json:"current_revision"`
 	CurrentState    *TournamentState `json:"current_state,omitempty"`
 
@@ -3435,6 +3559,11 @@ type PublicRecoveryCursor struct {
 
 // PublicRecoveryCursorConflictProblem The requested public recovery cursor is ahead of the durable snapshot watermark.
 type PublicRecoveryCursorConflictProblem struct {
+	// Code Stable application error code for clients that need to handle a specific failure.
+	//
+	// Example: player.email_unverified
+	Code *string `json:"code,omitempty"`
+
 	// CurrentCursor Optional public recovery watermark. A missing, older, or equal watermark returns one fresh full snapshot. A projection revision or durable event sequence ahead of the server watermark is rejected with HTTP 409.
 	CurrentCursor PublicRecoveryCursor `json:"current_cursor"`
 
@@ -3854,6 +3983,11 @@ type TournamentActionRequestAction string
 
 // TournamentAdmissionConflictProblem Safe conflict response for a tournament admission command.
 type TournamentAdmissionConflictProblem struct {
+	// Code Stable application error code for clients that need to handle a specific failure.
+	//
+	// Example: player.email_unverified
+	Code *string `json:"code,omitempty"`
+
 	// Detail Example: username must be 2..50 characters
 	Detail *string `json:"detail,omitempty"`
 
@@ -4061,6 +4195,10 @@ type TournamentPreset string
 
 // TournamentRevisionProblem RFC 7807 optimistic-concurrency error with the current tournament revision.
 type TournamentRevisionProblem struct {
+	// Code Stable application error code for clients that need to handle a specific failure.
+	//
+	// Example: player.email_unverified
+	Code            *string          `json:"code,omitempty"`
 	CurrentRevision int64            `json:"current_revision"`
 	CurrentState    *TournamentState `json:"current_state,omitempty"`
 
@@ -4548,10 +4686,76 @@ type ResolveTournamentNoShowParams struct {
 	XCSRFToken AdminCSRFToken `json:"X-CSRF-Token"`
 }
 
+// GetLeaderboardParams defines parameters for GetLeaderboard.
+type GetLeaderboardParams struct {
+	Search  *string                `form:"search,omitempty" json:"search,omitempty"`
+	Wins    *LeaderboardWinsFilter `form:"wins,omitempty" json:"wins,omitempty"`
+	Page    *int32                 `form:"page,omitempty" json:"page,omitempty"`
+	PerPage *int32                 `form:"per_page,omitempty" json:"per_page,omitempty"`
+}
+
+// DeletePlayerAccountAvatarParams defines parameters for DeletePlayerAccountAvatar.
+type DeletePlayerAccountAvatarParams struct {
+	// XCSRFToken Session-bound CSRF token required for this player mutation.
+	XCSRFToken RequiredPlayerCSRFToken `json:"X-CSRF-Token"`
+}
+
+// ReplacePlayerAccountAvatarMultipartBody defines parameters for ReplacePlayerAccountAvatar.
+type ReplacePlayerAccountAvatarMultipartBody struct {
+	File openapi_types.File `json:"file"`
+}
+
+// ReplacePlayerAccountAvatarParams defines parameters for ReplacePlayerAccountAvatar.
+type ReplacePlayerAccountAvatarParams struct {
+	// XCSRFToken Session-bound CSRF token required for this player mutation.
+	XCSRFToken RequiredPlayerCSRFToken `json:"X-CSRF-Token"`
+}
+
+// CancelPlayerEmailChangeParams defines parameters for CancelPlayerEmailChange.
+type CancelPlayerEmailChangeParams struct {
+	// XCSRFToken Session-bound CSRF token required for this player mutation.
+	XCSRFToken RequiredPlayerCSRFToken `json:"X-CSRF-Token"`
+}
+
+// BeginPlayerEmailChangeParams defines parameters for BeginPlayerEmailChange.
+type BeginPlayerEmailChangeParams struct {
+	// XCSRFToken Session-bound CSRF token required for this player mutation.
+	XCSRFToken RequiredPlayerCSRFToken `json:"X-CSRF-Token"`
+}
+
+// ConfirmPlayerEmailChangeParams defines parameters for ConfirmPlayerEmailChange.
+type ConfirmPlayerEmailChangeParams struct {
+	// XCSRFToken Session-bound CSRF token required for this player mutation.
+	XCSRFToken RequiredPlayerCSRFToken `json:"X-CSRF-Token"`
+}
+
+// ResendPlayerEmailChangeParams defines parameters for ResendPlayerEmailChange.
+type ResendPlayerEmailChangeParams struct {
+	// XCSRFToken Session-bound CSRF token required for this player mutation.
+	XCSRFToken RequiredPlayerCSRFToken `json:"X-CSRF-Token"`
+}
+
+// ChangePlayerPasswordParams defines parameters for ChangePlayerPassword.
+type ChangePlayerPasswordParams struct {
+	// XCSRFToken Session-bound CSRF token required for this player mutation.
+	XCSRFToken RequiredPlayerCSRFToken `json:"X-CSRF-Token"`
+}
+
+// ChangePlayerUsernameParams defines parameters for ChangePlayerUsername.
+type ChangePlayerUsernameParams struct {
+	// XCSRFToken Session-bound CSRF token required for this player mutation.
+	XCSRFToken RequiredPlayerCSRFToken `json:"X-CSRF-Token"`
+}
+
 // LogoutPlayerParams defines parameters for LogoutPlayer.
 type LogoutPlayerParams struct {
 	// XCSRFToken Required when the request carries an existing player session cookie.
 	XCSRFToken *PlayerCSRFToken `json:"X-CSRF-Token,omitempty"`
+}
+
+// GetPublicPlayerAvatarParams defines parameters for GetPublicPlayerAvatar.
+type GetPublicPlayerAvatarParams struct {
+	V string `form:"v" json:"v"`
 }
 
 // ListPublicTournamentsParams defines parameters for ListPublicTournaments.
@@ -4732,8 +4936,26 @@ type ControlTournamentWaveJSONRequestBody = WaveControlRequest
 // ResolveTournamentNoShowJSONRequestBody defines body for ResolveTournamentNoShow for application/json ContentType.
 type ResolveTournamentNoShowJSONRequestBody = OperatorNoShowRequest
 
+// ReplacePlayerAccountAvatarMultipartRequestBody defines body for ReplacePlayerAccountAvatar for multipart/form-data ContentType.
+type ReplacePlayerAccountAvatarMultipartRequestBody ReplacePlayerAccountAvatarMultipartBody
+
+// BeginPlayerEmailChangeJSONRequestBody defines body for BeginPlayerEmailChange for application/json ContentType.
+type BeginPlayerEmailChangeJSONRequestBody = PlayerAccountEmailChangeRequest
+
+// ConfirmPlayerEmailChangeJSONRequestBody defines body for ConfirmPlayerEmailChange for application/json ContentType.
+type ConfirmPlayerEmailChangeJSONRequestBody = PlayerAccountEmailChangeConfirmRequest
+
+// ChangePlayerPasswordJSONRequestBody defines body for ChangePlayerPassword for application/json ContentType.
+type ChangePlayerPasswordJSONRequestBody = PlayerAccountPasswordRequest
+
+// ChangePlayerUsernameJSONRequestBody defines body for ChangePlayerUsername for application/json ContentType.
+type ChangePlayerUsernameJSONRequestBody = PlayerAccountUsernameRequest
+
 // LoginPlayerJSONRequestBody defines body for LoginPlayer for application/json ContentType.
 type LoginPlayerJSONRequestBody = PlayerLoginRequest
+
+// ResendPlayerVerificationForLoginJSONRequestBody defines body for ResendPlayerVerificationForLogin for application/json ContentType.
+type ResendPlayerVerificationForLoginJSONRequestBody = PlayerLoginRequest
 
 // RegisterPlayerJSONRequestBody defines body for RegisterPlayer for application/json ContentType.
 type RegisterPlayerJSONRequestBody = PlayerRegistrationRequest

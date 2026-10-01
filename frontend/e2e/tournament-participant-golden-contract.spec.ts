@@ -7,6 +7,7 @@ import {
 } from "@playwright/test";
 
 import { createTournamentFixtureSet, tournamentFixtureIds } from "./tournament/fixtures";
+import { selectTheme } from "./support/common";
 
 type FixtureSet = ReturnType<typeof createTournamentFixtureSet>;
 type GoldenParticipant = FixtureSet["golden"]["participant"];
@@ -205,9 +206,9 @@ test("participant completes server-owned Golden readiness, task and placement fl
     "Следующий этап появится после обновления результата.",
   );
 
-  await page.getByRole("button", { name: "Светлая тема" }).click();
+  await selectTheme(page, "light");
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
-  await page.getByRole("button", { name: "Темная тема" }).click();
+  await selectTheme(page, "dark");
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
   for (const [width, height] of [[390, 844], [768, 1024], [1440, 900]] as const) {
     await page.setViewportSize({ width, height });

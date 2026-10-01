@@ -1721,18 +1721,54 @@ type Player struct {
 }
 
 type PlayerAccount struct {
-	ID                    uuid.UUID
-	PlayerID              uuid.NullUUID
-	Username              string
-	UsernameNormalized    string
-	Email                 string
-	EmailNormalized       string
-	PasswordHash          string
-	VerificationTokenHash []byte
-	VerificationExpiresAt pgtype.Timestamptz
-	VerificationSentAt    pgtype.Timestamptz
-	EmailVerifiedAt       pgtype.Timestamptz
-	CreatedAt             pgtype.Timestamptz
+	ID                                uuid.UUID
+	PlayerID                          uuid.NullUUID
+	Username                          string
+	UsernameNormalized                string
+	Email                             string
+	EmailNormalized                   string
+	PasswordHash                      string
+	VerificationTokenHash             []byte
+	VerificationExpiresAt             pgtype.Timestamptz
+	VerificationSentAt                pgtype.Timestamptz
+	EmailVerifiedAt                   pgtype.Timestamptz
+	CreatedAt                         pgtype.Timestamptz
+	PendingEmail                      *string
+	PendingEmailNormalized            *string
+	EmailChangeCodeHash               *string
+	EmailChangeExpiresAt              pgtype.Timestamptz
+	EmailChangeLastSentAt             pgtype.Timestamptz
+	EmailChangeSendWindowStartedAt    pgtype.Timestamptz
+	EmailChangeSendCount              int32
+	EmailChangeAttemptWindowStartedAt pgtype.Timestamptz
+	EmailChangeAttemptCount           int32
+}
+
+type PlayerAvatar struct {
+	PlayerID    uuid.UUID
+	ObjectKey   string
+	ContentType string
+	SizeBytes   int64
+	Sha256      []byte
+	UpdatedAt   pgtype.Timestamptz
+}
+
+type PlayerAvatarObject struct {
+	ObjectKey       string
+	PlayerID        uuid.UUID
+	Generation      int64
+	LifecycleState  string
+	CleanupAfter    pgtype.Timestamptz
+	ClaimToken      uuid.NullUUID
+	ClaimUntil      pgtype.Timestamptz
+	CleanupAttempts int32
+	CreatedAt       pgtype.Timestamptz
+}
+
+type PlayerAvatarState struct {
+	PlayerID   uuid.UUID
+	Generation int64
+	UpdatedAt  pgtype.Timestamptz
 }
 
 type PlayerLeaderboardOverride struct {
@@ -1749,6 +1785,11 @@ type PlayerNotification struct {
 	TournamentID     uuid.UUID
 	TournamentName   string
 	CreatedAt        pgtype.Timestamptz
+	ExpiresAt        pgtype.Timestamptz
+}
+
+type PlayerSessionTombstone struct {
+	SessionTokenHash []byte
 	ExpiresAt        pgtype.Timestamptz
 }
 

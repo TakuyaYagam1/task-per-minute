@@ -783,7 +783,14 @@ export default function AdminPage() {
     ) {
       return;
     }
-    if (!confirm(`Удалить игрока ${player.username}?`)) return;
+    if (
+      !window.confirm(
+        `Удалить игрока ${player.username}? Будут удалены аккаунт, email и логин. История действий сохранится.`,
+      )
+    ) {
+      return;
+    }
+
     const sessionVersion = authSessionVersionRef.current;
     try {
       await runAdminRequest(() => adminApi.deletePlayer(player.id));

@@ -7,12 +7,10 @@ export function PlayerLoginPage() {
   return (
     <PlayerAuthPanel
       title="Вход участника"
-      description="Войдите по логину или email и паролю."
+      variant="centered"
       footer={
         <>
           Нет аккаунта? <Link href="/register">Создать аккаунт</Link>
-          <br />
-          Не пришло письмо? <Link href="/verify-email">Запросить подтверждение</Link>
         </>
       }
     >

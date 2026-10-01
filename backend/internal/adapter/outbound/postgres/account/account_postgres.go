@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/google/uuid"
@@ -34,8 +35,8 @@ func NewAccountPostgres(tx *db.TxManager) *AccountPostgres {
 
 func (r *AccountPostgres) CreatePendingAccount(ctx context.Context, pending accountusecase.PendingAccount) error {
 	q := r.tx.Querier(ctx)
-	if err := q.LockPlayerUsername(ctx, pending.UsernameNormalized); err != nil {
-		return fmt.Errorf("lock player username: %w", err)
+	if err := lockPlayerAccountIdentityKeys(ctx, q, pending.UsernameNormalized, pending.EmailNormalized); err != nil {
+		return fmt.Errorf("lock player identity: %w", err)
 	}
 	if _, err := q.GetPlayerAccountByEmail(ctx, pending.EmailNormalized); err == nil {
 		return domain.ErrEmailTaken
@@ -89,6 +90,16 @@ func (r *AccountPostgres) CreatePendingAccount(ctx context.Context, pending acco
 	return nil
 }
 
+func lockPlayerAccountIdentityKeys(ctx context.Context, q *sqlc.Queries, keys ...string) error {
+	sort.Strings(keys)
+	for _, key := range keys {
+		if err := q.LockPlayerUsername(ctx, key); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (r *AccountPostgres) FindLoginCredentials(ctx context.Context, login string) (*accountusecase.LoginCredentials, error) {
 	row, err := r.tx.Querier(ctx).FindPlayerLoginCredentials(ctx, login)
 	if err != nil {
@@ -108,10 +119,13 @@ func (r *AccountPostgres) FindLoginCredentials(ctx context.Context, login string
 		verifiedAt = &verified
 	}
 	return &accountusecase.LoginCredentials{
-		Username:        row.Username,
-		PasswordHash:    row.PasswordHash,
-		PlayerID:        playerID,
-		EmailVerifiedAt: verifiedAt,
+		Username:           row.Username,
+		UsernameNormalized: row.UsernameNormalized,
+		Email:              row.Email,
+		EmailNormalized:    row.EmailNormalized,
+		PasswordHash:       row.PasswordHash,
+		PlayerID:           playerID,
+		EmailVerifiedAt:    verifiedAt,
 	}, nil
 }
 
@@ -193,10 +207,30 @@ func (r *AccountPostgres) VerifyPendingAccount(ctx context.Context, tokenHash []
 func (r *AccountPostgres) UpdateAccountPlayerSession(
 	ctx context.Context,
 	playerID uuid.UUID,
+	normalizedLogin string,
+	expectedPasswordHash string,
 	token uuid.UUID,
 	expiresAt time.Time,
 ) (*domain.Player, error) {
-	row, err := r.tx.Querier(ctx).UpdateAccountPlayerSession(ctx, sqlc.UpdateAccountPlayerSessionParams{
+	q := r.tx.Querier(ctx)
+	if _, err := q.LockPlayerForLogin(ctx, playerID); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, domain.ErrInvalidCredentials
+		}
+		return nil, fmt.Errorf("lock player for login session: %w", err)
+	}
+	credentials, err := q.LockPlayerAccountCredentialsForLogin(ctx, uuid.NullUUID{UUID: playerID, Valid: true})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, domain.ErrInvalidCredentials
+		}
+		return nil, fmt.Errorf("lock player credentials for login session: %w", err)
+	}
+	if credentials.PasswordHash != expectedPasswordHash ||
+		(credentials.UsernameNormalized != normalizedLogin && credentials.EmailNormalized != normalizedLogin) {
+		return nil, domain.ErrInvalidCredentials
+	}
+	row, err := q.UpdateAccountPlayerSession(ctx, sqlc.UpdateAccountPlayerSessionParams{
 		ID:               playerID,
 		SessionToken:     uuid.NullUUID{UUID: token, Valid: true},
 		SessionExpiresAt: tstz(expiresAt),

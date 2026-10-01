@@ -90,6 +90,17 @@ func TestUseCaseLogoutIgnoresMissingSession(t *testing.T) {
 	require.NoError(t, newPlayerUseCase(t, tx, players).Logout(t.Context(), token))
 }
 
+func TestUseCaseLogoutIgnoresDeletedSession(t *testing.T) {
+	t.Parallel()
+
+	tx, players := newFixture(t)
+	runTxInline(tx)
+	token := uuid.New()
+	players.EXPECT().GetBySessionToken(mock.Anything, token).Return(nil, domain.ErrAccountDeleted)
+
+	require.NoError(t, newPlayerUseCase(t, tx, players).Logout(t.Context(), token))
+}
+
 func newFixture(t *testing.T) (*playermocks.MockSessionTransactionManager, *playermocks.MockRepository) {
 	t.Helper()
 	return playermocks.NewMockSessionTransactionManager(t), playermocks.NewMockRepository(t)

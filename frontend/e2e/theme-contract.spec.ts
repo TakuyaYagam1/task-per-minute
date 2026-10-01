@@ -25,17 +25,6 @@ type ThemeProbe = {
   domContentLoadedTheme: string | null;
 };
 
-type ThemeControl =
-  | {
-      kind: 'choices';
-      dark: Locator;
-      light: Locator;
-    }
-  | {
-      kind: 'toggle';
-      toggle: Locator;
-    };
-
 type RGB = [number, number, number];
 
 const themeStorageKey = 'task-per-minute-theme';
@@ -159,63 +148,45 @@ const readThemeAtFirstFrame = async (page: Page): Promise<string | null> => page
   }),
 );
 
-const findThemeControl = async (page: Page): Promise<ThemeControl> => {
-  const dark = page.getByRole('button', { name: /^Темная тема$/i });
-  const light = page.getByRole('button', { name: /^Светлая тема$/i });
-
-  if ((await dark.count()) === 1 && (await light.count()) === 1) {
-    return { kind: 'choices', dark, light };
-  }
-
-  const darkWithoutSuffix = page.getByRole('button', { name: /^Темная$/i });
-  const lightWithoutSuffix = page.getByRole('button', { name: /^Светлая$/i });
-  if ((await darkWithoutSuffix.count()) === 1 && (await lightWithoutSuffix.count()) === 1) {
-    return { kind: 'choices', dark: darkWithoutSuffix, light: lightWithoutSuffix };
-  }
-
-  const namedButtonToggle = page.getByRole('button', { name: /тема|переключить/i });
-  if ((await namedButtonToggle.count()) === 1) {
-    return { kind: 'toggle', toggle: namedButtonToggle };
-  }
-
-  const namedSwitchToggle = page.getByRole('switch', { name: /тема|переключить/i });
-  if ((await namedSwitchToggle.count()) === 1) {
-    return { kind: 'toggle', toggle: namedSwitchToggle };
-  }
-
-  throw new Error('Russian theme control was not found');
+const findThemeControl = async (page: Page): Promise<Locator> => {
+  const toggle = page.getByRole('switch', { name: 'Светлая тема', exact: true });
+  await expect(toggle).toHaveCount(1);
+  await expect(toggle).toBeVisible();
+  return toggle;
 };
 
 const activateTheme = async (
   page: Page,
-  control: ThemeControl,
+  control: Locator,
   theme: Theme,
 ): Promise<Locator> => {
-  const target = control.kind === 'choices' ? control[theme] : control.toggle;
-
-  await target.focus();
-  await expect(target).toBeFocused();
-  await target.press('Enter');
-
-  if (await page.locator('html').getAttribute('data-theme') !== theme) {
-    await target.press('Space');
-  }
+  await control.focus();
+  await expect(control).toBeFocused();
+  await control.press('Space');
 
   await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
-  return target;
+  await expect(control).toHaveAttribute('aria-checked', theme === 'light' ? 'true' : 'false');
+  return control;
+};
+
+const openArena = async (page: Page): Promise<void> => {
+  await page.goto('/');
+  await expect(page).toHaveURL(/\/arena(?:\?.*)?$/);
+  await expect(page.getByRole('heading', { name: 'Соревнования', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Меню аккаунта', exact: true })).toHaveCount(0);
 };
 
 const readThemeState = async (page: Page) => page.evaluate(() => {
   const rootStyles = getComputedStyle(document.documentElement);
   const bodyStyles = getComputedStyle(document.body);
-  const surface = document.querySelector('main section');
-  const accentText = document.querySelector('main h2');
+  const surface = document.querySelector('main input');
+  const primaryText = document.querySelector('main h1');
   const secondaryText = document.querySelector('nav a');
-  if (!surface || !accentText || !secondaryText) {
-    throw new Error('Theme probe could not find home surface text elements');
+  if (!surface || !primaryText || !secondaryText) {
+    throw new Error('Theme probe could not find arena surface text elements');
   }
   const surfaceStyles = getComputedStyle(surface);
-  const accentTextStyles = getComputedStyle(accentText);
+  const primaryTextStyles = getComputedStyle(primaryText);
   const secondaryTextStyles = getComputedStyle(secondaryText);
 
   return {
@@ -238,7 +209,7 @@ const readThemeState = async (page: Page) => page.evaluate(() => {
     bodyBackground: bodyStyles.backgroundColor,
     bodyColor: bodyStyles.color,
     surfaceBackground: surfaceStyles.backgroundColor,
-    accentTextColor: accentTextStyles.color,
+    primaryTextColor: primaryTextStyles.color,
     secondaryTextColor: secondaryTextStyles.color,
     viewportWidth: window.innerWidth,
     documentScrollWidth: document.documentElement.scrollWidth,
@@ -312,14 +283,14 @@ const assertThemeVisualContract = async (page: Page, theme: Theme): Promise<void
       bodyBackground: parseColor(state.bodyBackground),
       bodyColor: parseColor(state.bodyColor),
       surfaceBackground: parseColor(state.surfaceBackground),
-      accentTextColor: parseColor(state.accentTextColor),
+      primaryTextColor: parseColor(state.primaryTextColor),
       secondaryTextColor: parseColor(state.secondaryTextColor),
     };
   }).toEqual({
     bodyBackground: expectedBackground,
     bodyColor: expectedText,
     surfaceBackground: parseColor(tokens.surface),
-    accentTextColor: parseColor(tokens.accent),
+    primaryTextColor: expectedText,
     secondaryTextColor: parseColor(tokens.secondary),
   });
 
@@ -345,7 +316,7 @@ const assertThemeVisualContract = async (page: Page, theme: Theme): Promise<void
   const bodyBackground = parseColor(state.bodyBackground);
   const bodyColor = parseColor(state.bodyColor);
   const surfaceBackground = parseColor(state.surfaceBackground);
-  const accentTextColor = parseColor(state.accentTextColor);
+  const primaryTextColor = parseColor(state.primaryTextColor);
   const secondaryTextColor = parseColor(state.secondaryTextColor);
   if (
     !expectedBackground
@@ -353,7 +324,7 @@ const assertThemeVisualContract = async (page: Page, theme: Theme): Promise<void
     || !bodyBackground
     || !bodyColor
     || !surfaceBackground
-    || !accentTextColor
+    || !primaryTextColor
     || !secondaryTextColor
   ) {
     throw new Error('Theme colors could not be parsed from the rendered page');
@@ -362,7 +333,7 @@ const assertThemeVisualContract = async (page: Page, theme: Theme): Promise<void
   expect(bodyBackground).toEqual(expectedBackground);
   expect(bodyColor).toEqual(expectedText);
   expect(contrastRatio(expectedText, expectedBackground)).toBeGreaterThanOrEqual(4.5);
-  expect(contrastRatio(accentTextColor, surfaceBackground)).toBeGreaterThanOrEqual(4.5);
+  expect(contrastRatio(primaryTextColor, surfaceBackground)).toBeGreaterThanOrEqual(4.5);
   expect(contrastRatio(secondaryTextColor, surfaceBackground)).toBeGreaterThanOrEqual(4.5);
   const focusColor = parseColor(tokens.accentStrong);
   const focusSurface = parseColor(tokens.accentSoft);
@@ -424,10 +395,8 @@ for (const width of viewportWidths) {
 
     test('defaults to dark, switches both themes by keyboard, and restores before DOMContentLoaded', async ({ page }) => {
       await installThemeProbe(page);
-      await page.goto('/');
-
-      await expect(page.getByRole('heading', { name: 'Task Per Minute', exact: true })).toBeVisible();
-      await expect(page.getByRole('heading', { name: 'CTF Соревнования', exact: true })).toBeVisible();
+      await openArena(page);
+      await findThemeControl(page);
       const initialProbe = await readThemeProbe(page);
       expect(initialProbe.initialTheme).toBe('dark');
       expect(initialProbe.initialStorageKeys).toEqual([]);
@@ -475,7 +444,7 @@ for (const width of viewportWidths) {
         Storage.prototype.removeItem = throwSecurityError;
       });
 
-      await page.goto('/');
+      await openArena(page);
       await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
 
       let control = await findThemeControl(page);

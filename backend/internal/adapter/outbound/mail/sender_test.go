@@ -25,6 +25,92 @@ func TestDisabledSenderReturnsUnavailable(t *testing.T) {
 	if err := sender.SendVerification(context.Background(), "player@example.invalid", "https://example.org/verify-email#token=synthetic_token"); !errors.Is(err, ErrUnavailable) {
 		t.Fatalf("SendVerification error = %v, want ErrUnavailable", err)
 	}
+	if err := sender.SendEmailChangeCode(context.Background(), "player@example.invalid", "123456"); !errors.Is(err, ErrUnavailable) {
+		t.Fatalf("SendEmailChangeCode error = %v, want ErrUnavailable", err)
+	}
+	if err := sender.SendEmailChangedNotice(context.Background(), "old@example.invalid", "new@example.invalid"); !errors.Is(err, ErrUnavailable) {
+		t.Fatalf("SendEmailChangedNotice error = %v, want ErrUnavailable", err)
+	}
+}
+
+func TestResendSenderBuildsEmailChangeMessages(t *testing.T) {
+	sender, err := New(Config{
+		Provider:     ProviderResend,
+		From:         "noreply@example.org",
+		ResendAPIKey: "re_synthetic_test_key",
+		Timeout:      time.Second,
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	sender.resendURL = "https://api.test/emails"
+	var requests []resendRequest
+	sender.httpClient.Transport = roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		var value resendRequest
+		if err := json.NewDecoder(request.Body).Decode(&value); err != nil {
+			t.Fatalf("decode Resend request: %v", err)
+		}
+		requests = append(requests, value)
+		return &http.Response{
+			StatusCode: http.StatusAccepted,
+			Header:     make(http.Header),
+			Body:       http.NoBody,
+			Request:    request,
+		}, nil
+	})
+
+	if err := sender.SendEmailChangeCode(context.Background(), "new@example.invalid", "007042"); err != nil {
+		t.Fatalf("SendEmailChangeCode: %v", err)
+	}
+	if err := sender.SendEmailChangedNotice(context.Background(), "old@example.invalid", "new&tag@example.invalid"); err != nil {
+		t.Fatalf("SendEmailChangedNotice: %v", err)
+	}
+	if len(requests) != 2 {
+		t.Fatalf("Resend requests = %d, want 2", len(requests))
+	}
+	codeMail := requests[0]
+	if len(codeMail.To) != 1 || codeMail.To[0] != "new@example.invalid" || !strings.Contains(codeMail.Text, "007042") ||
+		!strings.Contains(codeMail.HTML, "<strong>007042</strong>") {
+		t.Fatalf("email change code message is incorrect: %+v", codeMail)
+	}
+	notice := requests[1]
+	if len(notice.To) != 1 || notice.To[0] != "old@example.invalid" {
+		t.Fatalf("email change notice recipient = %v, want old address", notice.To)
+	}
+	const noticeBody = "Адрес электронной почты вашей учетной записи изменен"
+	if strings.TrimSpace(notice.Text) != noticeBody || strings.TrimSpace(notice.HTML) != "<p>"+noticeBody+"</p>" ||
+		strings.Contains(notice.Text+notice.HTML, "new&tag@example.invalid") ||
+		strings.Contains(notice.Text+notice.HTML, "поддержку") ||
+		strings.Contains(notice.Text+notice.HTML, "007042") {
+		t.Fatalf("email change notice content is incorrect: %+v", notice)
+	}
+}
+
+func TestSendEmailChangeCodeRejectsMalformedCodeAndRecipient(t *testing.T) {
+	sender, err := New(Config{
+		Provider:     ProviderResend,
+		From:         "noreply@example.org",
+		ResendAPIKey: "re_synthetic_test_key",
+		Timeout:      time.Second,
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	for _, test := range []struct {
+		name      string
+		recipient string
+		code      string
+	}{
+		{name: "short code", recipient: "player@example.invalid", code: "12345"},
+		{name: "nondecimal code", recipient: "player@example.invalid", code: "12x456"},
+		{name: "recipient injection", recipient: "player@example.invalid\r\nBcc: victim@example.invalid", code: "123456"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if err := sender.SendEmailChangeCode(context.Background(), test.recipient, test.code); err == nil {
+				t.Fatal("SendEmailChangeCode error = nil, want invalid input rejection")
+			}
+		})
+	}
 }
 
 func TestResendSenderBuildsVerificationMessage(t *testing.T) {

@@ -29,6 +29,9 @@ type HealthChecks struct {
 type Dependencies struct {
 	Players                              PlayerService
 	PlayerAccounts                       usecase.PlayerAccountService
+	AccountSettings                      usecase.AccountSettingsService
+	PlayerAvatars                        usecase.PlayerAvatarService
+	PublicPlayerAvatars                  usecase.PublicPlayerAvatarService
 	PlayerNotifications                  notification.PlayerNotifications
 	AdminAuth                            AdminAuthService
 	Tasks                                AdminTaskService
@@ -56,6 +59,9 @@ type Dependencies struct {
 	OperatorTournamentMutationLimiter    middleware.RateLimiter
 	ParticipantTournamentReadLimiter     middleware.RateLimiter
 	ParticipantTournamentMutationLimiter middleware.RateLimiter
+	AccountSensitiveLimiter              middleware.RateLimiter
+	AvatarMutationLimiter                middleware.RateLimiter
+	PublicAvatarReadLimiter              middleware.RateLimiter
 	Now                                  func() time.Time
 	Log                                  logkit.Logger
 }
@@ -65,6 +71,9 @@ type Server struct {
 
 	players                              PlayerService
 	playerAccounts                       usecase.PlayerAccountService
+	accountSettings                      usecase.AccountSettingsService
+	playerAvatars                        usecase.PlayerAvatarService
+	publicPlayerAvatars                  usecase.PublicPlayerAvatarService
 	playerNotifications                  notification.PlayerNotifications
 	adminAuth                            AdminAuthService
 	tasks                                AdminTaskService
@@ -90,6 +99,11 @@ type Server struct {
 	operatorTournamentMutationLimiter    middleware.RateLimiter
 	participantTournamentReadLimiter     middleware.RateLimiter
 	participantTournamentMutationLimiter middleware.RateLimiter
+	accountSensitiveLimiter              middleware.RateLimiter
+	avatarMutationLimiter                middleware.RateLimiter
+	publicAvatarReadLimiter              middleware.RateLimiter
+	publicAvatarReads                    chan struct{}
+	avatarProcessing                     chan struct{}
 	now                                  func() time.Time
 	log                                  logkit.Logger
 }
@@ -105,6 +119,9 @@ func New(deps Dependencies) *Server {
 		tournamentAdmission:                  deps.TournamentAdmission,
 		players:                              deps.Players,
 		playerAccounts:                       deps.PlayerAccounts,
+		accountSettings:                      deps.AccountSettings,
+		playerAvatars:                        deps.PlayerAvatars,
+		publicPlayerAvatars:                  deps.PublicPlayerAvatars,
 		playerNotifications:                  deps.PlayerNotifications,
 		adminAuth:                            deps.AdminAuth,
 		tasks:                                deps.Tasks,
@@ -127,6 +144,11 @@ func New(deps Dependencies) *Server {
 		operatorTournamentMutationLimiter:    deps.OperatorTournamentMutationLimiter,
 		participantTournamentReadLimiter:     deps.ParticipantTournamentReadLimiter,
 		participantTournamentMutationLimiter: deps.ParticipantTournamentMutationLimiter,
+		accountSensitiveLimiter:              deps.AccountSensitiveLimiter,
+		avatarMutationLimiter:                deps.AvatarMutationLimiter,
+		publicAvatarReadLimiter:              deps.PublicAvatarReadLimiter,
+		publicAvatarReads:                    make(chan struct{}, 16),
+		avatarProcessing:                     make(chan struct{}, 4),
 		now:                                  now,
 		log:                                  deps.Log,
 	}

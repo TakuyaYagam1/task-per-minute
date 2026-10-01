@@ -31,6 +31,7 @@ const buildCSP = (isProduction: boolean): string => {
     "script-src 'self' 'unsafe-inline'",
     "style-src 'self' 'unsafe-inline'",
     "img-src 'self' data: blob:",
+    "media-src 'self' blob:",
     "font-src 'self' data: https://fonts.gstatic.com",
     `connect-src ${connectSrc}`,
     "worker-src 'self' blob:",

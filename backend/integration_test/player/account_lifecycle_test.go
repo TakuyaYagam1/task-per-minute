@@ -23,7 +23,11 @@ import (
 	accountusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/player/account"
 )
 
-const verificationPageURL = "https://ctfleague.example.test/verify-email"
+const (
+	verificationPageURL        = "https://ctfleague.example.test/verify-email"
+	accountTestPassword        = "Lifecycle-test-password-284"
+	accountReplacementPassword = "Another-test-password-938"
+)
 
 type accountTestClock struct {
 	mu  sync.RWMutex
@@ -110,7 +114,7 @@ func registerTestAccount(t *testing.T, uc *accountusecase.UseCase, username, ema
 	err := uc.Register(context.Background(), inbound.RegisterPlayerCommand{
 		Username: username,
 		Email:    email,
-		Password: "a sufficiently long passphrase",
+		Password: accountTestPassword,
 	})
 	require.NoError(t, err)
 }
@@ -122,8 +126,8 @@ func TestAccountRegisterConcurrentCaseInsensitiveUsernameReservation(t *testing.
 	ctx := context.Background()
 	baseName := uniq("race_name")
 	commands := []inbound.RegisterPlayerCommand{
-		{Username: baseName, Email: uniq("first") + "@example.test", Password: "a sufficiently long passphrase"},
-		{Username: strings.ToUpper(baseName), Email: uniq("second") + "@example.test", Password: "a sufficiently long passphrase"},
+		{Username: baseName, Email: uniq("first") + "@example.test", Password: accountTestPassword},
+		{Username: strings.ToUpper(baseName), Email: uniq("second") + "@example.test", Password: accountTestPassword},
 	}
 	start := make(chan struct{})
 	type result struct{ err error }
@@ -170,8 +174,8 @@ func TestAccountRegisterConcurrentDuplicateEmailSendsOnlyStoredToken(t *testing.
 	ctx := context.Background()
 	email := uniq("same_email") + "@example.test"
 	commands := []inbound.RegisterPlayerCommand{
-		{Username: uniq("first_name"), Email: email, Password: "a sufficiently long passphrase"},
-		{Username: uniq("second_name"), Email: email, Password: "another sufficiently long passphrase"},
+		{Username: uniq("first_name"), Email: email, Password: accountTestPassword},
+		{Username: uniq("second_name"), Email: email, Password: accountReplacementPassword},
 	}
 	start := make(chan struct{})
 	results := make(chan error, len(commands))
@@ -218,7 +222,7 @@ func TestAccountRegisterDuplicateEmailDoesNotReplacePendingCredentialsOrToken(t 
 	err := uc.Register(ctx, inbound.RegisterPlayerCommand{
 		Username: uniq("replacement_name"),
 		Email:    strings.ToUpper(email),
-		Password: "another sufficiently long passphrase",
+		Password: accountReplacementPassword,
 	})
 	require.NoError(t, err, "duplicate email must return the generic registration acknowledgement")
 	require.Len(t, mailer.Entries(), 1, "duplicate email must not send a bogus replacement token")
@@ -272,6 +276,115 @@ func TestAccountResendCooldownRotatesVerificationToken(t *testing.T) {
 	require.NoError(t, uc.VerifyEmail(ctx, verificationTokenFromMail(t, entries[1])))
 }
 
+func TestAccountResendVerificationForLoginUsesStoredRecipient(t *testing.T) {
+	t.Parallel()
+	pool := newParallelTestDB(t)
+	uc, _, clock, mailer := newAccountLifecycleFixture(t, pool)
+	ctx := context.Background()
+
+	username := uniq("resend_name")
+	emailForUsername := uniq("resend_user") + "@example.test"
+	registerTestAccount(t, uc, username, emailForUsername)
+	first := mailer.Entries()
+	require.Len(t, first, 1)
+	require.Equal(t, emailForUsername, first[0].recipient)
+	clock.Advance(61 * time.Second)
+
+	err := uc.ResendVerificationForLogin(ctx, inbound.LoginPlayerCommand{
+		Login:    username,
+		Password: "Wrong-test-password-284",
+	})
+	require.ErrorIs(t, err, domain.ErrInvalidCredentials)
+	require.Len(t, mailer.Entries(), 1)
+
+	err = uc.ResendVerificationForLogin(ctx, inbound.LoginPlayerCommand{
+		Login:    username,
+		Password: accountTestPassword,
+	})
+	require.NoError(t, err)
+	entries := mailer.Entries()
+	require.Len(t, entries, 2)
+	require.Equal(t, emailForUsername, entries[1].recipient)
+	var accountHasPlayer bool
+	require.NoError(t, pool.QueryRow(ctx, `
+		SELECT player_id IS NOT NULL
+		FROM player_accounts
+		WHERE email_normalized = lower($1)`, emailForUsername).Scan(&accountHasPlayer))
+	require.False(t, accountHasPlayer)
+	require.ErrorIs(t, uc.VerifyEmail(ctx, verificationTokenFromMail(t, first[0])), domain.ErrVerificationTokenInvalid)
+	require.NoError(t, uc.VerifyEmail(ctx, verificationTokenFromMail(t, entries[1])))
+
+	usernameForEmail := uniq("resend_email")
+	emailForEmail := "MiXeD-" + uniq("recipient") + "@example.test"
+	registerTestAccount(t, uc, usernameForEmail, emailForEmail)
+	entries = mailer.Entries()
+	require.Len(t, entries, 3)
+	require.Equal(t, emailForEmail, entries[2].recipient)
+	clock.Advance(61 * time.Second)
+	err = uc.ResendVerificationForLogin(ctx, inbound.LoginPlayerCommand{
+		Login:    strings.ToUpper(emailForEmail),
+		Password: accountTestPassword,
+	})
+	require.NoError(t, err)
+	entries = mailer.Entries()
+	require.Len(t, entries, 4)
+	require.Equal(t, emailForEmail, entries[3].recipient)
+	require.ErrorIs(t, uc.VerifyEmail(ctx, verificationTokenFromMail(t, entries[2])), domain.ErrVerificationTokenInvalid)
+	require.NoError(t, uc.VerifyEmail(ctx, verificationTokenFromMail(t, entries[3])))
+}
+
+func TestAccountResendVerificationForLoginCooldownIsAtomic(t *testing.T) {
+	t.Parallel()
+	pool := newParallelTestDB(t)
+	uc, _, clock, mailer := newAccountLifecycleFixture(t, pool)
+	ctx := context.Background()
+	username := uniq("resend_race")
+	email := uniq("resend_race") + "@example.test"
+	registerTestAccount(t, uc, username, email)
+	initial := mailer.Entries()
+	require.Len(t, initial, 1)
+	clock.Advance(61 * time.Second)
+
+	commands := []inbound.LoginPlayerCommand{
+		{Login: username, Password: accountTestPassword},
+		{Login: email, Password: accountTestPassword},
+	}
+	start := make(chan struct{})
+	results := make(chan error, len(commands))
+	var workers sync.WaitGroup
+	for _, command := range commands {
+		workers.Add(1)
+		go func() {
+			defer workers.Done()
+			<-start
+			results <- uc.ResendVerificationForLogin(ctx, command)
+		}()
+	}
+	close(start)
+	workers.Wait()
+	close(results)
+
+	successes := 0
+	limited := 0
+	for err := range results {
+		switch {
+		case err == nil:
+			successes++
+		case errors.Is(err, domain.ErrRateLimited):
+			limited++
+		default:
+			require.NoError(t, err)
+		}
+	}
+	require.Equal(t, 1, successes)
+	require.Equal(t, 1, limited)
+	entries := mailer.Entries()
+	require.Len(t, entries, 2)
+	require.Equal(t, email, entries[1].recipient)
+	require.ErrorIs(t, uc.VerifyEmail(ctx, verificationTokenFromMail(t, initial[0])), domain.ErrVerificationTokenInvalid)
+	require.NoError(t, uc.VerifyEmail(ctx, verificationTokenFromMail(t, entries[1])))
+}
+
 func TestAccountRegistrationPreservesLegacyUsernameReservation(t *testing.T) {
 	t.Parallel()
 	pool := newParallelTestDB(t)
@@ -283,7 +396,7 @@ func TestAccountRegistrationPreservesLegacyUsernameReservation(t *testing.T) {
 	err = uc.Register(ctx, inbound.RegisterPlayerCommand{
 		Username: strings.ToUpper(legacy.Username),
 		Email:    uniq("legacy") + "@example.test",
-		Password: "a sufficiently long passphrase",
+		Password: accountTestPassword,
 	})
 	require.ErrorIs(t, err, domain.ErrUsernameTaken)
 	require.Empty(t, mailer.Entries())
@@ -291,6 +404,40 @@ func TestAccountRegistrationPreservesLegacyUsernameReservation(t *testing.T) {
 	var username string
 	require.NoError(t, pool.QueryRow(ctx, `SELECT username FROM players WHERE id = $1`, legacy.ID).Scan(&username))
 	require.Equal(t, legacy.Username, username)
+}
+
+func TestAccountLoginExposesVerificationOnlyForCorrectPassword(t *testing.T) {
+	t.Parallel()
+	pool := newParallelTestDB(t)
+	uc, _, _, _ := newAccountLifecycleFixture(t, pool)
+	ctx := context.Background()
+	email := uniq("pending_login") + "@example.test"
+	registerTestAccount(t, uc, uniq("pending_login_name"), email)
+
+	player, err := uc.Login(ctx, inbound.LoginPlayerCommand{
+		Login:    email,
+		Password: "Wrong-test-password-284",
+	})
+	require.Nil(t, player)
+	require.ErrorIs(t, err, domain.ErrInvalidCredentials)
+
+	player, err = uc.Login(ctx, inbound.LoginPlayerCommand{Login: email, Password: accountTestPassword})
+	require.Nil(t, player)
+	require.ErrorIs(t, err, domain.ErrEmailUnverified)
+
+	var accountHasPlayer, hasSession bool
+	require.NoError(t, pool.QueryRow(ctx, `
+		SELECT player_id IS NOT NULL,
+			EXISTS (
+				SELECT 1
+				FROM players
+				WHERE players.id = player_accounts.player_id
+					AND players.session_token IS NOT NULL
+			)
+		FROM player_accounts
+		WHERE email_normalized = lower($1)`, email).Scan(&accountHasPlayer, &hasSession))
+	require.False(t, accountHasPlayer)
+	require.False(t, hasSession)
 }
 
 func TestAccountLoginRejectsSoftDeletedPlayerAndSession(t *testing.T) {
@@ -302,14 +449,14 @@ func TestAccountLoginRejectsSoftDeletedPlayerAndSession(t *testing.T) {
 	registerTestAccount(t, uc, uniq("deleted_name"), email)
 	entry := mailer.Entries()[0]
 	require.NoError(t, uc.VerifyEmail(ctx, verificationTokenFromMail(t, entry)))
-	player, err := uc.Login(ctx, inbound.LoginPlayerCommand{Login: email, Password: "a sufficiently long passphrase"})
+	player, err := uc.Login(ctx, inbound.LoginPlayerCommand{Login: email, Password: accountTestPassword})
 	require.NoError(t, err)
 	require.NotNil(t, player.SessionToken)
 
 	err = players.SoftDeletePlayer(ctx, player.ID, uniq("deleted_player"), time.Now().UTC())
 	require.NoError(t, err)
-	_, err = uc.Login(ctx, inbound.LoginPlayerCommand{Login: email, Password: "a sufficiently long passphrase"})
+	_, err = uc.Login(ctx, inbound.LoginPlayerCommand{Login: email, Password: accountTestPassword})
 	require.ErrorIs(t, err, domain.ErrInvalidCredentials)
 	_, err = players.GetBySessionToken(ctx, *player.SessionToken)
-	require.ErrorIs(t, err, domain.ErrPlayerNotFound)
+	require.ErrorIs(t, err, domain.ErrAccountDeleted)
 }

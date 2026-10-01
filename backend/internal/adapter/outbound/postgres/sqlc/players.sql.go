@@ -12,6 +12,40 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const cleanupExpiredPlayerSessionTombstones = `-- name: CleanupExpiredPlayerSessionTombstones :exec
+DELETE FROM player_session_tombstones AS tombstone
+WHERE tombstone.session_token_hash IN (
+    SELECT expired.session_token_hash
+    FROM player_session_tombstones AS expired
+    WHERE expired.expires_at <= $1
+    ORDER BY expired.expires_at
+    LIMIT 500
+)
+`
+
+// Expired hashes are ignored during lookup even if no deletion has yet triggered cleanup.
+// Each cleanup invocation removes at most 500 rows.
+func (q *Queries) CleanupExpiredPlayerSessionTombstones(ctx context.Context, now pgtype.Timestamptz) error {
+	_, err := q.db.Exec(ctx, cleanupExpiredPlayerSessionTombstones, now)
+	return err
+}
+
+const createDeletedPlayerSessionToken = `-- name: CreateDeletedPlayerSessionToken :exec
+INSERT INTO player_session_tombstones (session_token_hash, expires_at)
+VALUES ($1, $2)
+ON CONFLICT (session_token_hash) DO NOTHING
+`
+
+type CreateDeletedPlayerSessionTokenParams struct {
+	SessionTokenHash []byte
+	ExpiresAt        pgtype.Timestamptz
+}
+
+func (q *Queries) CreateDeletedPlayerSessionToken(ctx context.Context, arg CreateDeletedPlayerSessionTokenParams) error {
+	_, err := q.db.Exec(ctx, createDeletedPlayerSessionToken, arg.SessionTokenHash, arg.ExpiresAt)
+	return err
+}
+
 const createPlayer = `-- name: CreatePlayer :one
 INSERT INTO players (username)
 VALUES ($1)
@@ -35,6 +69,16 @@ func (q *Queries) CreatePlayer(ctx context.Context, username string) (Player, er
 		&i.SessionExpiresAt,
 	)
 	return i, err
+}
+
+const deletePlayerLeaderboardOverride = `-- name: DeletePlayerLeaderboardOverride :exec
+DELETE FROM player_leaderboard_overrides
+WHERE player_id = $1
+`
+
+func (q *Queries) DeletePlayerLeaderboardOverride(ctx context.Context, playerID uuid.UUID) error {
+	_, err := q.db.Exec(ctx, deletePlayerLeaderboardOverride, playerID)
+	return err
 }
 
 const getAdminPlayer = `-- name: GetAdminPlayer :one
@@ -304,6 +348,27 @@ func (q *Queries) GetPlayerForIdentityChange(ctx context.Context, id uuid.UUID) 
 		&i.SessionExpiresAt,
 	)
 	return i, err
+}
+
+const isDeletedPlayerSessionToken = `-- name: IsDeletedPlayerSessionToken :one
+SELECT EXISTS (
+    SELECT 1
+    FROM player_session_tombstones
+    WHERE session_token_hash = $1
+        AND expires_at > $2
+)::boolean AS deleted
+`
+
+type IsDeletedPlayerSessionTokenParams struct {
+	SessionTokenHash []byte
+	Now              pgtype.Timestamptz
+}
+
+func (q *Queries) IsDeletedPlayerSessionToken(ctx context.Context, arg IsDeletedPlayerSessionTokenParams) (bool, error) {
+	row := q.db.QueryRow(ctx, isDeletedPlayerSessionToken, arg.SessionTokenHash, arg.Now)
+	var deleted bool
+	err := row.Scan(&deleted)
+	return deleted, err
 }
 
 const listAdminPlayers = `-- name: ListAdminPlayers :many

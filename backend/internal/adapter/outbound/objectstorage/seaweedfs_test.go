@@ -1,6 +1,7 @@
 package objectstorage
 
 import (
+	"bytes"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -8,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 )
 
@@ -124,6 +126,46 @@ func TestSeaweedStorage_HealthFailsClosedWithoutClient(t *testing.T) {
 
 	var store *SeaweedStorage
 	require.ErrorIs(t, store.Health(t.Context()), ErrNilClient)
+}
+
+func TestSeaweedStorage_AvatarMethodsRejectInvalidInputBeforeNetwork(t *testing.T) {
+	t.Parallel()
+
+	store, err := New(Config{
+		Endpoint: "127.0.0.1:1", AccessKey: "synthetic-access", SecretKey: "synthetic-secret",
+		Bucket: "avatar-test", Secure: false,
+	})
+	require.NoError(t, err)
+
+	playerID := uuid.New()
+	objectID := uuid.New()
+	key := "avatars/" + playerID.String() + "/" + objectID.String() + ".png"
+	ctx := t.Context()
+
+	require.ErrorIs(t, store.PutAvatar(ctx, "tasks/not-an-avatar", []byte("x"), "image/png"), ErrInvalidAvatarKey)
+	require.ErrorIs(t, store.PutAvatar(ctx, key, []byte("x"), "image/webp"), ErrInvalidAvatarType)
+	require.ErrorIs(t, store.DeleteAvatar(ctx, "avatars/../outside.png"), ErrInvalidAvatarKey)
+	_, err = store.GetAvatar(ctx, "avatars/../outside.png", maxAvatarObjectBytes)
+	require.ErrorIs(t, err, ErrInvalidAvatarKey)
+
+	oversized := bytes.Repeat([]byte{0}, maxAvatarObjectBytes+1)
+	require.ErrorIs(t, store.PutAvatar(ctx, key, oversized, "image/png"), ErrAvatarObjectTooLarge)
+	_, err = store.GetAvatar(ctx, key, maxAvatarObjectBytes+1)
+	require.ErrorIs(t, err, ErrAvatarObjectTooLarge)
+
+	var nilStore *SeaweedStorage
+	require.ErrorIs(t, nilStore.DeleteAvatar(ctx, key), ErrNilClient)
+}
+
+func TestSeaweedStorage_AvatarVideoTypeUsesMP4ObjectKey(t *testing.T) {
+	t.Parallel()
+
+	playerID, objectID := uuid.New(), uuid.New()
+	key := "avatars/" + playerID.String() + "/" + objectID.String() + ".mp4"
+	require.True(t, validAvatarKey(key))
+	require.True(t, validAvatarContentType("video/mp4"))
+	require.Equal(t, "mp4", avatarExtension("video/mp4"))
+	require.False(t, validAvatarKey("avatars/"+playerID.String()+"/"+objectID.String()+".mp4.exe"))
 }
 
 func newHealthTestStore(t *testing.T, endpoint string) *SeaweedStorage {

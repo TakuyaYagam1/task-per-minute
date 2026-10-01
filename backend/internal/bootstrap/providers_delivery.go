@@ -16,6 +16,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/eventdelivery"
 	gamerecovery "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/recovery"
 	notificationusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/notification"
+	avatarusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/player/avatar"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/recovery"
 	taskusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/task"
 	participantconnection "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/connection"
@@ -106,6 +107,7 @@ func provideRuntimeWorkers(
 	participantConnectionReaper *participantconnection.Reaper,
 	playerNotificationEvents *notificationrepo.EventsPostgres,
 	playerNotificationCleanup *notificationusecase.CleanupWorker,
+	playerAvatarCleanup *avatarusecase.CleanupWorker,
 	recoveryWorker *recovery.Worker,
 	clock clockFunc,
 	heartbeats *redisadapter.RuntimeWorkerHeartbeats,
@@ -152,6 +154,11 @@ func provideRuntimeWorkers(
 			name:   "player-notification-cleanup",
 			worker: playerNotificationCleanup,
 			ready:  playerNotificationCleanup.Ready,
+		},
+		{
+			name:   "player-avatar-cleanup",
+			worker: playerAvatarCleanup,
+			ready:  playerAvatarCleanup.Ready,
 		},
 		{
 			name:   "deadline-recovery",

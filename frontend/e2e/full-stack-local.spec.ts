@@ -11,6 +11,7 @@ import {
   type Response as BrowserResponse,
 } from '@playwright/test';
 import { seedVerifiedAccount } from './support/account-fixture';
+import { openAccountMenu } from './support/common';
 
 const frontendURL = (process.env.E2E_FRONTEND_URL || 'http://127.0.0.1:3000').replace(/\/+$/, '');
 const backendURL = (process.env.E2E_BACKEND_URL || 'http://127.0.0.1:8080').replace(/\/+$/, '');
@@ -1248,8 +1249,8 @@ const joinAsPlayer = async (page: Page, username: string): Promise<void> => {
     loginResponse.status(),
     `synthetic player login failed with ${loginResponse.status()}`,
   ).toBe(200);
-  await expect(page).toHaveURL(`${frontendURL}/`);
-  await expect(page.getByText('Игрок готов')).toBeVisible({ timeout: 15_000 });
+  await expect(page).toHaveURL(`${frontendURL}/arena`);
+  await expect(page.getByRole('heading', { name: 'Соревнования', exact: true })).toBeVisible({ timeout: 15_000 });
 };
 
 const cookieHeaderForPage = async (page: Page): Promise<string> => {
@@ -1320,7 +1321,8 @@ test.describe('local compose full stack e2e', () => {
     const me = (await meResponse.json()) as { player: { username: string } };
     expect(me.player.username).toBe(username);
 
-    await page.getByRole('button', { name: 'Выйти', exact: true }).click();
+    const accountMenu = await openAccountMenu(page);
+    await accountMenu.getByRole('button', { name: 'Выйти', exact: true }).click();
     await expect(page.getByRole('link', { name: 'Войти', exact: true })).toBeVisible({ timeout: 15_000 });
     await expect(page.getByRole('link', { name: 'Создать аккаунт', exact: true })).toBeVisible();
     await expectNoSensitiveAuthStorage(page);

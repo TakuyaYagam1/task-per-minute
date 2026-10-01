@@ -1,6 +1,7 @@
 package v1
 
 import (
+	"errors"
 	"net/http"
 
 	"github.com/google/uuid"
@@ -78,6 +79,37 @@ func (s *Server) LoginPlayer(w http.ResponseWriter, r *http.Request) {
 	middleware.SetPlayerCSRFCookie(w, r, csrfToken)
 	s.logSecurityEvent(r, "player.login", securityOutcomeSuccess, logkitFields("player_id", player.ID.String()))
 	response.WriteJSON(w, http.StatusOK, api.JoinPlayerResponse{PlayerId: player.ID})
+}
+
+func (s *Server) ResendPlayerVerificationForLogin(w http.ResponseWriter, r *http.Request) {
+	if !s.enterPublicRequest(w, r, s.playerLoginResendPolicy()) {
+		return
+	}
+	if s.playerAccounts == nil {
+		errmap.HandleError(w, r, domain.ErrInternal)
+		return
+	}
+	var body api.PlayerLoginRequest
+	if !decodeJSONBody(w, r, &body, domain.ErrValidation) {
+		s.logSecurityEvent(r, "player.login.resend_verification", securityOutcomeFailure, logkitFields("error_code", domain.ErrorCodeValidation))
+		return
+	}
+	err := s.playerAccounts.ResendVerificationForLogin(r.Context(), inbound.LoginPlayerCommand{
+		Login:    body.Login,
+		Password: accountRequestString(body.Password),
+	})
+	if err != nil {
+		s.logSecurityEvent(r, "player.login.resend_verification", securityOutcomeFailure, logkitFields("error_code", securityErrorCode(err)))
+		if errors.Is(err, domain.ErrRateLimited) {
+			w.Header().Set("Retry-After", "60")
+		}
+		errmap.HandleError(w, r, err)
+		return
+	}
+	s.logSecurityEvent(r, "player.login.resend_verification", securityOutcomeSuccess, nil)
+	response.WriteJSON(w, http.StatusAccepted, api.PlayerAccountAcceptedResponse{
+		Accepted: api.PlayerAccountAcceptedResponseAccepted(true),
+	})
 }
 
 func (s *Server) VerifyPlayerEmail(w http.ResponseWriter, r *http.Request) {

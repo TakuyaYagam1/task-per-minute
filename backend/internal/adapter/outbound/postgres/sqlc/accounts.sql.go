@@ -12,6 +12,25 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const cancelPlayerEmailChange = `-- name: CancelPlayerEmailChange :execrows
+UPDATE player_accounts
+SET pending_email = NULL,
+    pending_email_normalized = NULL,
+    email_change_code_hash = NULL,
+    email_change_expires_at = NULL
+WHERE id = $1
+    AND player_id IS NOT NULL
+    AND email_verified_at IS NOT NULL
+`
+
+func (q *Queries) CancelPlayerEmailChange(ctx context.Context, id uuid.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, cancelPlayerEmailChange, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const completePlayerAccountVerification = `-- name: CompletePlayerAccountVerification :execrows
 UPDATE player_accounts
 SET player_id = $2,
@@ -32,6 +51,41 @@ type CompletePlayerAccountVerificationParams struct {
 
 func (q *Queries) CompletePlayerAccountVerification(ctx context.Context, arg CompletePlayerAccountVerificationParams) (int64, error) {
 	result, err := q.db.Exec(ctx, completePlayerAccountVerification, arg.ID, arg.PlayerID, arg.EmailVerifiedAt)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const completePlayerEmailChange = `-- name: CompletePlayerEmailChange :execrows
+UPDATE player_accounts
+SET email = pending_email,
+    email_normalized = pending_email_normalized,
+    pending_email = NULL,
+    pending_email_normalized = NULL,
+    email_change_code_hash = NULL,
+    email_change_expires_at = NULL
+WHERE id = $1
+    AND player_id = $2
+    AND pending_email_normalized = $3
+    AND email_change_code_hash = $4
+    AND email_verified_at IS NOT NULL
+`
+
+type CompletePlayerEmailChangeParams struct {
+	ID                     uuid.UUID
+	PlayerID               uuid.NullUUID
+	PendingEmailNormalized *string
+	ExpectedCodeHash       *string
+}
+
+func (q *Queries) CompletePlayerEmailChange(ctx context.Context, arg CompletePlayerEmailChangeParams) (int64, error) {
+	result, err := q.db.Exec(ctx, completePlayerEmailChange,
+		arg.ID,
+		arg.PlayerID,
+		arg.PendingEmailNormalized,
+		arg.ExpectedCodeHash,
+	)
 	if err != nil {
 		return 0, err
 	}
@@ -133,8 +187,52 @@ func (q *Queries) DecrementLegacyPlayerUsernameReservation(ctx context.Context, 
 	return err
 }
 
+const deleteEmptyLegacyPlayerUsernameReservation = `-- name: DeleteEmptyLegacyPlayerUsernameReservation :exec
+DELETE FROM player_username_reservations
+WHERE normalized_username = $1
+    AND legacy_count = 0
+    AND account_id IS NULL
+`
+
+func (q *Queries) DeleteEmptyLegacyPlayerUsernameReservation(ctx context.Context, normalizedUsername string) error {
+	_, err := q.db.Exec(ctx, deleteEmptyLegacyPlayerUsernameReservation, normalizedUsername)
+	return err
+}
+
+const deletePlayerAccountForDeletion = `-- name: DeletePlayerAccountForDeletion :execrows
+DELETE FROM player_accounts
+WHERE id = $1
+    AND player_id = $2
+`
+
+type DeletePlayerAccountForDeletionParams struct {
+	ID       uuid.UUID
+	PlayerID uuid.NullUUID
+}
+
+func (q *Queries) DeletePlayerAccountForDeletion(ctx context.Context, arg DeletePlayerAccountForDeletionParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deletePlayerAccountForDeletion, arg.ID, arg.PlayerID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const deletePlayerAccountUsernameReservation = `-- name: DeletePlayerAccountUsernameReservation :exec
+DELETE FROM player_username_reservations
+WHERE account_id = $1
+`
+
+func (q *Queries) DeletePlayerAccountUsernameReservation(ctx context.Context, accountID uuid.NullUUID) error {
+	_, err := q.db.Exec(ctx, deletePlayerAccountUsernameReservation, accountID)
+	return err
+}
+
 const findPlayerLoginCredentials = `-- name: FindPlayerLoginCredentials :one
 SELECT account.username,
+    account.username_normalized,
+    account.email,
+    account.email_normalized,
     account.password_hash,
     player.id AS player_id,
     account.email_verified_at
@@ -147,10 +245,13 @@ WHERE account.username_normalized = $1
 `
 
 type FindPlayerLoginCredentialsRow struct {
-	Username        string
-	PasswordHash    string
-	PlayerID        uuid.NullUUID
-	EmailVerifiedAt pgtype.Timestamptz
+	Username           string
+	UsernameNormalized string
+	Email              string
+	EmailNormalized    string
+	PasswordHash       string
+	PlayerID           uuid.NullUUID
+	EmailVerifiedAt    pgtype.Timestamptz
 }
 
 func (q *Queries) FindPlayerLoginCredentials(ctx context.Context, usernameNormalized string) (FindPlayerLoginCredentialsRow, error) {
@@ -158,6 +259,9 @@ func (q *Queries) FindPlayerLoginCredentials(ctx context.Context, usernameNormal
 	var i FindPlayerLoginCredentialsRow
 	err := row.Scan(
 		&i.Username,
+		&i.UsernameNormalized,
+		&i.Email,
+		&i.EmailNormalized,
 		&i.PasswordHash,
 		&i.PlayerID,
 		&i.EmailVerifiedAt,
@@ -230,6 +334,88 @@ func (q *Queries) GetPlayerAccountByUsername(ctx context.Context, usernameNormal
 	return id, err
 }
 
+const getPlayerAccountForDeletion = `-- name: GetPlayerAccountForDeletion :one
+SELECT id,
+    username_normalized,
+    email_normalized
+FROM player_accounts
+WHERE player_id = $1
+FOR UPDATE
+`
+
+type GetPlayerAccountForDeletionRow struct {
+	ID                 uuid.UUID
+	UsernameNormalized string
+	EmailNormalized    string
+}
+
+func (q *Queries) GetPlayerAccountForDeletion(ctx context.Context, playerID uuid.NullUUID) (GetPlayerAccountForDeletionRow, error) {
+	row := q.db.QueryRow(ctx, getPlayerAccountForDeletion, playerID)
+	var i GetPlayerAccountForDeletionRow
+	err := row.Scan(&i.ID, &i.UsernameNormalized, &i.EmailNormalized)
+	return i, err
+}
+
+const getPlayerAccountSettingsForUpdate = `-- name: GetPlayerAccountSettingsForUpdate :one
+SELECT id,
+    username_normalized,
+    email,
+    email_normalized,
+    password_hash,
+    pending_email,
+    pending_email_normalized,
+    email_change_code_hash,
+    email_change_expires_at,
+    email_change_last_sent_at,
+    email_change_send_window_started_at,
+    email_change_send_count,
+    email_change_attempt_window_started_at,
+    email_change_attempt_count
+FROM player_accounts
+WHERE player_id = $1
+    AND email_verified_at IS NOT NULL
+FOR UPDATE
+`
+
+type GetPlayerAccountSettingsForUpdateRow struct {
+	ID                                uuid.UUID
+	UsernameNormalized                string
+	Email                             string
+	EmailNormalized                   string
+	PasswordHash                      string
+	PendingEmail                      *string
+	PendingEmailNormalized            *string
+	EmailChangeCodeHash               *string
+	EmailChangeExpiresAt              pgtype.Timestamptz
+	EmailChangeLastSentAt             pgtype.Timestamptz
+	EmailChangeSendWindowStartedAt    pgtype.Timestamptz
+	EmailChangeSendCount              int32
+	EmailChangeAttemptWindowStartedAt pgtype.Timestamptz
+	EmailChangeAttemptCount           int32
+}
+
+func (q *Queries) GetPlayerAccountSettingsForUpdate(ctx context.Context, playerID uuid.NullUUID) (GetPlayerAccountSettingsForUpdateRow, error) {
+	row := q.db.QueryRow(ctx, getPlayerAccountSettingsForUpdate, playerID)
+	var i GetPlayerAccountSettingsForUpdateRow
+	err := row.Scan(
+		&i.ID,
+		&i.UsernameNormalized,
+		&i.Email,
+		&i.EmailNormalized,
+		&i.PasswordHash,
+		&i.PendingEmail,
+		&i.PendingEmailNormalized,
+		&i.EmailChangeCodeHash,
+		&i.EmailChangeExpiresAt,
+		&i.EmailChangeLastSentAt,
+		&i.EmailChangeSendWindowStartedAt,
+		&i.EmailChangeSendCount,
+		&i.EmailChangeAttemptWindowStartedAt,
+		&i.EmailChangeAttemptCount,
+	)
+	return i, err
+}
+
 const getPlayerUsernameReservation = `-- name: GetPlayerUsernameReservation :one
 SELECT normalized_username,
     legacy_count,
@@ -251,6 +437,119 @@ func (q *Queries) GetPlayerUsernameReservation(ctx context.Context, normalizedUs
 	return i, err
 }
 
+const isDeletedPlayerAccountSession = `-- name: IsDeletedPlayerAccountSession :one
+SELECT EXISTS (
+    SELECT 1
+    FROM player_session_tombstones
+    WHERE session_token_hash = $1
+        AND expires_at > $2
+)::boolean AS is_deleted
+`
+
+type IsDeletedPlayerAccountSessionParams struct {
+	SessionTokenHash []byte
+	ExpiresAt        pgtype.Timestamptz
+}
+
+func (q *Queries) IsDeletedPlayerAccountSession(ctx context.Context, arg IsDeletedPlayerAccountSessionParams) (bool, error) {
+	row := q.db.QueryRow(ctx, isDeletedPlayerAccountSession, arg.SessionTokenHash, arg.ExpiresAt)
+	var is_deleted bool
+	err := row.Scan(&is_deleted)
+	return is_deleted, err
+}
+
+const lockPlayerAccountCredentialsForLogin = `-- name: LockPlayerAccountCredentialsForLogin :one
+SELECT password_hash,
+    username_normalized,
+    email_normalized,
+    email_verified_at
+FROM player_accounts
+WHERE player_id = $1
+    AND email_verified_at IS NOT NULL
+FOR UPDATE
+`
+
+type LockPlayerAccountCredentialsForLoginRow struct {
+	PasswordHash       string
+	UsernameNormalized string
+	EmailNormalized    string
+	EmailVerifiedAt    pgtype.Timestamptz
+}
+
+func (q *Queries) LockPlayerAccountCredentialsForLogin(ctx context.Context, playerID uuid.NullUUID) (LockPlayerAccountCredentialsForLoginRow, error) {
+	row := q.db.QueryRow(ctx, lockPlayerAccountCredentialsForLogin, playerID)
+	var i LockPlayerAccountCredentialsForLoginRow
+	err := row.Scan(
+		&i.PasswordHash,
+		&i.UsernameNormalized,
+		&i.EmailNormalized,
+		&i.EmailVerifiedAt,
+	)
+	return i, err
+}
+
+const lockPlayerAccountSettingsSession = `-- name: LockPlayerAccountSettingsSession :one
+SELECT id,
+    username,
+    session_token,
+    created_at,
+    deleted_at,
+    session_expires_at
+FROM players
+WHERE id = $1
+    AND session_token = $2
+    AND session_expires_at > $3
+    AND deleted_at IS NULL
+FOR UPDATE
+`
+
+type LockPlayerAccountSettingsSessionParams struct {
+	ID           uuid.UUID
+	SessionToken uuid.NullUUID
+	Now          pgtype.Timestamptz
+}
+
+func (q *Queries) LockPlayerAccountSettingsSession(ctx context.Context, arg LockPlayerAccountSettingsSessionParams) (Player, error) {
+	row := q.db.QueryRow(ctx, lockPlayerAccountSettingsSession, arg.ID, arg.SessionToken, arg.Now)
+	var i Player
+	err := row.Scan(
+		&i.ID,
+		&i.Username,
+		&i.SessionToken,
+		&i.CreatedAt,
+		&i.DeletedAt,
+		&i.SessionExpiresAt,
+	)
+	return i, err
+}
+
+const lockPlayerForLogin = `-- name: LockPlayerForLogin :one
+SELECT id,
+    username,
+    session_token,
+    created_at,
+    deleted_at,
+    session_expires_at
+FROM players
+WHERE id = $1
+    AND deleted_at IS NULL
+FOR UPDATE
+`
+
+func (q *Queries) LockPlayerForLogin(ctx context.Context, id uuid.UUID) (Player, error) {
+	row := q.db.QueryRow(ctx, lockPlayerForLogin, id)
+	var i Player
+	err := row.Scan(
+		&i.ID,
+		&i.Username,
+		&i.SessionToken,
+		&i.CreatedAt,
+		&i.DeletedAt,
+		&i.SessionExpiresAt,
+	)
+	return i, err
+}
+
 const lockPlayerUsername = `-- name: LockPlayerUsername :exec
 SELECT pg_advisory_xact_lock(hashtextextended($1, 81604431))
 `
@@ -258,6 +557,19 @@ SELECT pg_advisory_xact_lock(hashtextextended($1, 81604431))
 func (q *Queries) LockPlayerUsername(ctx context.Context, hashtextextended string) error {
 	_, err := q.db.Exec(ctx, lockPlayerUsername, hashtextextended)
 	return err
+}
+
+const playerAccountEmailExists = `-- name: PlayerAccountEmailExists :one
+SELECT id
+FROM player_accounts
+WHERE email_normalized = $1
+`
+
+func (q *Queries) PlayerAccountEmailExists(ctx context.Context, emailNormalized string) (uuid.UUID, error) {
+	row := q.db.QueryRow(ctx, playerAccountEmailExists, emailNormalized)
+	var id uuid.UUID
+	err := row.Scan(&id)
+	return id, err
 }
 
 const playerHasAccount = `-- name: PlayerHasAccount :one
@@ -284,6 +596,49 @@ func (q *Queries) PlayerUsernameExists(ctx context.Context, username string) (bo
 	var exists bool
 	err := row.Scan(&exists)
 	return exists, err
+}
+
+const playerUsernameExistsExcept = `-- name: PlayerUsernameExistsExcept :one
+SELECT EXISTS (
+    SELECT 1 FROM players
+    WHERE lower(username) = $1
+        AND id <> $2
+)::boolean AS exists
+`
+
+type PlayerUsernameExistsExceptParams struct {
+	Username string
+	ID       uuid.UUID
+}
+
+func (q *Queries) PlayerUsernameExistsExcept(ctx context.Context, arg PlayerUsernameExistsExceptParams) (bool, error) {
+	row := q.db.QueryRow(ctx, playerUsernameExistsExcept, arg.Username, arg.ID)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
+const recordPlayerEmailChangeAttempt = `-- name: RecordPlayerEmailChangeAttempt :execrows
+UPDATE player_accounts
+SET email_change_attempt_window_started_at = $2,
+    email_change_attempt_count = $3
+WHERE id = $1
+    AND player_id IS NOT NULL
+    AND email_verified_at IS NOT NULL
+`
+
+type RecordPlayerEmailChangeAttemptParams struct {
+	ID                                uuid.UUID
+	EmailChangeAttemptWindowStartedAt pgtype.Timestamptz
+	EmailChangeAttemptCount           int32
+}
+
+func (q *Queries) RecordPlayerEmailChangeAttempt(ctx context.Context, arg RecordPlayerEmailChangeAttemptParams) (int64, error) {
+	result, err := q.db.Exec(ctx, recordPlayerEmailChangeAttempt, arg.ID, arg.EmailChangeAttemptWindowStartedAt, arg.EmailChangeAttemptCount)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const replacePendingPlayerVerification = `-- name: ReplacePendingPlayerVerification :one
@@ -337,6 +692,86 @@ func (q *Queries) ReservePlayerAccountUsername(ctx context.Context, arg ReserveP
 	return result.RowsAffected(), nil
 }
 
+const startPlayerEmailChange = `-- name: StartPlayerEmailChange :execrows
+UPDATE player_accounts
+SET pending_email = $2,
+    pending_email_normalized = $3,
+    email_change_code_hash = $4,
+    email_change_expires_at = $5,
+    email_change_last_sent_at = $6,
+    email_change_send_window_started_at = $7,
+    email_change_send_count = $8,
+    email_change_attempt_window_started_at = $9,
+    email_change_attempt_count = $10
+WHERE id = $1
+    AND player_id IS NOT NULL
+    AND email_verified_at IS NOT NULL
+`
+
+type StartPlayerEmailChangeParams struct {
+	ID                                uuid.UUID
+	PendingEmail                      *string
+	PendingEmailNormalized            *string
+	EmailChangeCodeHash               *string
+	EmailChangeExpiresAt              pgtype.Timestamptz
+	EmailChangeLastSentAt             pgtype.Timestamptz
+	EmailChangeSendWindowStartedAt    pgtype.Timestamptz
+	EmailChangeSendCount              int32
+	EmailChangeAttemptWindowStartedAt pgtype.Timestamptz
+	EmailChangeAttemptCount           int32
+}
+
+func (q *Queries) StartPlayerEmailChange(ctx context.Context, arg StartPlayerEmailChangeParams) (int64, error) {
+	result, err := q.db.Exec(ctx, startPlayerEmailChange,
+		arg.ID,
+		arg.PendingEmail,
+		arg.PendingEmailNormalized,
+		arg.EmailChangeCodeHash,
+		arg.EmailChangeExpiresAt,
+		arg.EmailChangeLastSentAt,
+		arg.EmailChangeSendWindowStartedAt,
+		arg.EmailChangeSendCount,
+		arg.EmailChangeAttemptWindowStartedAt,
+		arg.EmailChangeAttemptCount,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const updateAccountBackedPlayerUsername = `-- name: UpdateAccountBackedPlayerUsername :one
+UPDATE players
+SET username = $2
+WHERE id = $1
+    AND deleted_at IS NULL
+RETURNING id,
+    username,
+    session_token,
+    created_at,
+    deleted_at,
+    session_expires_at
+`
+
+type UpdateAccountBackedPlayerUsernameParams struct {
+	ID       uuid.UUID
+	Username string
+}
+
+func (q *Queries) UpdateAccountBackedPlayerUsername(ctx context.Context, arg UpdateAccountBackedPlayerUsernameParams) (Player, error) {
+	row := q.db.QueryRow(ctx, updateAccountBackedPlayerUsername, arg.ID, arg.Username)
+	var i Player
+	err := row.Scan(
+		&i.ID,
+		&i.Username,
+		&i.SessionToken,
+		&i.CreatedAt,
+		&i.DeletedAt,
+		&i.SessionExpiresAt,
+	)
+	return i, err
+}
+
 const updateAccountPlayerSession = `-- name: UpdateAccountPlayerSession :one
 UPDATE players AS player
 SET session_token = $2,
@@ -374,4 +809,117 @@ func (q *Queries) UpdateAccountPlayerSession(ctx context.Context, arg UpdateAcco
 		&i.SessionExpiresAt,
 	)
 	return i, err
+}
+
+const updateAccountPlayerSessionForSettings = `-- name: UpdateAccountPlayerSessionForSettings :one
+UPDATE players AS player
+SET session_token = $2,
+    session_expires_at = $3
+WHERE player.id = $1
+    AND player.session_token = $4
+    AND player.session_expires_at > $5
+    AND player.deleted_at IS NULL
+    AND EXISTS (
+        SELECT 1 FROM player_accounts AS account
+        WHERE account.player_id = player.id
+            AND account.email_verified_at IS NOT NULL
+    )
+RETURNING player.id,
+    player.username,
+    player.session_token,
+    player.created_at,
+    player.deleted_at,
+    player.session_expires_at
+`
+
+type UpdateAccountPlayerSessionForSettingsParams struct {
+	ID                  uuid.UUID
+	NewSessionToken     uuid.NullUUID
+	NewSessionExpiresAt pgtype.Timestamptz
+	CurrentSessionToken uuid.NullUUID
+	Now                 pgtype.Timestamptz
+}
+
+func (q *Queries) UpdateAccountPlayerSessionForSettings(ctx context.Context, arg UpdateAccountPlayerSessionForSettingsParams) (Player, error) {
+	row := q.db.QueryRow(ctx, updateAccountPlayerSessionForSettings,
+		arg.ID,
+		arg.NewSessionToken,
+		arg.NewSessionExpiresAt,
+		arg.CurrentSessionToken,
+		arg.Now,
+	)
+	var i Player
+	err := row.Scan(
+		&i.ID,
+		&i.Username,
+		&i.SessionToken,
+		&i.CreatedAt,
+		&i.DeletedAt,
+		&i.SessionExpiresAt,
+	)
+	return i, err
+}
+
+const updatePlayerAccountPasswordHash = `-- name: UpdatePlayerAccountPasswordHash :execrows
+UPDATE player_accounts
+SET password_hash = $2
+WHERE id = $1
+    AND player_id IS NOT NULL
+    AND email_verified_at IS NOT NULL
+`
+
+type UpdatePlayerAccountPasswordHashParams struct {
+	ID           uuid.UUID
+	PasswordHash string
+}
+
+func (q *Queries) UpdatePlayerAccountPasswordHash(ctx context.Context, arg UpdatePlayerAccountPasswordHashParams) (int64, error) {
+	result, err := q.db.Exec(ctx, updatePlayerAccountPasswordHash, arg.ID, arg.PasswordHash)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const updatePlayerAccountUsername = `-- name: UpdatePlayerAccountUsername :execrows
+UPDATE player_accounts
+SET username = $2,
+    username_normalized = $3
+WHERE id = $1
+    AND player_id IS NOT NULL
+`
+
+type UpdatePlayerAccountUsernameParams struct {
+	ID                 uuid.UUID
+	Username           string
+	UsernameNormalized string
+}
+
+func (q *Queries) UpdatePlayerAccountUsername(ctx context.Context, arg UpdatePlayerAccountUsernameParams) (int64, error) {
+	result, err := q.db.Exec(ctx, updatePlayerAccountUsername, arg.ID, arg.Username, arg.UsernameNormalized)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const updatePlayerAccountUsernameReservation = `-- name: UpdatePlayerAccountUsernameReservation :execrows
+UPDATE player_username_reservations
+SET normalized_username = $2
+WHERE account_id = $1
+    AND normalized_username = $3
+`
+
+type UpdatePlayerAccountUsernameReservationParams struct {
+	AccountID                 uuid.NullUUID
+	NewNormalizedUsername     string
+	CurrentNormalizedUsername string
+}
+
+func (q *Queries) UpdatePlayerAccountUsernameReservation(ctx context.Context, arg UpdatePlayerAccountUsernameReservationParams) (int64, error) {
+	result, err := q.db.Exec(ctx, updatePlayerAccountUsernameReservation, arg.AccountID, arg.NewNormalizedUsername, arg.CurrentNormalizedUsername)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }

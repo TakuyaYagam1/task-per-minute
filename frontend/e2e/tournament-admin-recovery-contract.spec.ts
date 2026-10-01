@@ -8,6 +8,7 @@ import {
   publicTournament,
   tournamentFixtureIds,
 } from "./tournament/fixtures";
+import { openAccountMenu } from "./support/common";
 
 type Schema = components["schemas"];
 
@@ -315,8 +316,11 @@ test("stale recovery refreshes the snapshot without an optimistic restart and wo
   const routes = await installRoutes(page, replaySnapshot());
   routes.setConflict(true);
   await openOperator(page);
-  await page.getByRole("button", { name: "Светлая тема" }).click();
+  const lightThemeMenu = await openAccountMenu(page);
+  await lightThemeMenu.getByRole("button", { name: "Светлая тема" }).click();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("region", { name: "Аккаунт" })).toBeHidden();
   await confirmRecovery(page, "Проверка stale снимка");
   const button = page.getByRole("button", { name: "Повторить игру" });
   await button.click();
@@ -325,7 +329,10 @@ test("stale recovery refreshes the snapshot without an optimistic restart and wo
   expect(routes.replayRequests).toHaveLength(1);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
 
-  await page.getByRole("button", { name: "Темная тема" }).focus();
+  const darkThemeMenu = await openAccountMenu(page);
+  await darkThemeMenu.getByRole("button", { name: "Темная тема" }).focus();
   await page.keyboard.press("Tab");
   await expect(page.locator(":focus-visible")).toHaveCount(1);
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("region", { name: "Аккаунт" })).toBeHidden();
 });

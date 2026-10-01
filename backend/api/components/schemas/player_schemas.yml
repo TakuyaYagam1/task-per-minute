@@ -41,12 +41,14 @@ PlayerRegistrationRequest:
       format: email
       minLength: 3
       maxLength: 254
+      description: A bare ASCII dot-atom mailbox with a 1-64 character local part and at least two ASCII DNS labels. Each label is 1-63 characters with alphanumeric edges and optional internal hyphens. The final label must be at least two ASCII letters or begin with xn--.
     password:
       type: string
       format: password
       writeOnly: true
-      minLength: 15
+      minLength: 10
       maxLength: 128
+      description: Must contain at least one Unicode lowercase letter, uppercase letter, decimal digit, and punctuation or symbol. Whitespace alone does not satisfy the punctuation or symbol requirement.
 
 PlayerLoginRequest:
   type: object
@@ -86,6 +88,7 @@ PlayerResendVerificationRequest:
       format: email
       minLength: 3
       maxLength: 254
+      description: A bare ASCII dot-atom mailbox with a 1-64 character local part and at least two ASCII DNS labels. Each label is 1-63 characters with alphanumeric edges and optional internal hyphens. The final label must be at least two ASCII letters or begin with xn--.
 
 PlayerAccountAcceptedResponse:
   type: object
@@ -94,6 +97,111 @@ PlayerAccountAcceptedResponse:
     accepted:
       type: boolean
       enum: [true]
+
+PlayerAccountSettingsResponse:
+  type: object
+  additionalProperties: false
+  required: [username, email, pending_email, pending_email_expires_at, email_resend_available_at]
+  properties:
+    username:
+      type: string
+      minLength: 2
+      maxLength: 50
+      pattern: '^[a-zA-Z0-9_-]+$'
+    email:
+      type: string
+      format: email
+      maxLength: 254
+    pending_email:
+      type: string
+      format: email
+      maxLength: 254
+      nullable: true
+    pending_email_expires_at:
+      type: string
+      format: date-time
+      nullable: true
+    email_resend_available_at:
+      type: string
+      format: date-time
+      nullable: true
+
+PlayerAccountUsernameRequest:
+  type: object
+  additionalProperties: false
+  required: [current_password, username]
+  properties:
+    current_password:
+      type: string
+      format: password
+      writeOnly: true
+      minLength: 1
+      maxLength: 128
+    username:
+      type: string
+      minLength: 2
+      maxLength: 50
+      pattern: '^[a-zA-Z0-9_-]+$'
+
+PlayerAccountPasswordRequest:
+  type: object
+  additionalProperties: false
+  required: [current_password, new_password]
+  properties:
+    current_password:
+      type: string
+      format: password
+      writeOnly: true
+      minLength: 1
+      maxLength: 128
+    new_password:
+      type: string
+      format: password
+      writeOnly: true
+      minLength: 10
+      maxLength: 128
+      description: Must contain at least one Unicode lowercase letter, uppercase letter, decimal digit, and punctuation or symbol. Whitespace alone does not satisfy the punctuation or symbol requirement.
+
+PlayerAccountEmailChangeRequest:
+  type: object
+  additionalProperties: false
+  required: [current_password, new_email]
+  properties:
+    current_password:
+      type: string
+      format: password
+      writeOnly: true
+      minLength: 1
+      maxLength: 128
+    new_email:
+      type: string
+      format: email
+      minLength: 3
+      maxLength: 254
+      description: A bare ASCII dot-atom mailbox with a 1-64 character local part and at least two ASCII DNS labels. Each label is 1-63 characters with alphanumeric edges and optional internal hyphens. The final label must be at least two ASCII letters or begin with xn--.
+
+PlayerAccountEmailChangeConfirmRequest:
+  type: object
+  additionalProperties: false
+  required: [code]
+  properties:
+    code:
+      type: string
+      minLength: 6
+      maxLength: 6
+      pattern: '^[0-9]{6}$'
+
+PlayerAccountEmailChangeConfirmedResponse:
+  type: object
+  additionalProperties: false
+  required: [email, previous_email_notified]
+  properties:
+    email:
+      type: string
+      format: email
+      maxLength: 254
+    previous_email_notified:
+      type: boolean
 
 CreatePlayerRequest:
   type: object

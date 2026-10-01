@@ -23,27 +23,43 @@ func TestHandleError_MapsAllSentinels(t *testing.T) {
 		name   string
 		err    error
 		status int
+		code   domain.ErrorCode
 		detail string
 	}{
-		{"player_not_found", domain.ErrPlayerNotFound, http.StatusNotFound, domain.ErrPlayerNotFound.Message},
-		{"task_not_found", domain.ErrTaskNotFound, http.StatusNotFound, domain.ErrTaskNotFound.Message},
-		{"tournament_not_found", domain.ErrTournamentNotFound, http.StatusNotFound, domain.ErrTournamentNotFound.Message},
-		{"tournament_projection_not_found", domain.ErrTournamentProjectionNotFound, http.StatusNotFound, domain.ErrTournamentProjectionNotFound.Message},
-		{"invalid_credentials", domain.ErrInvalidCredentials, http.StatusUnauthorized, domain.ErrInvalidCredentials.Message},
-		{"token_expired", domain.ErrTokenExpired, http.StatusUnauthorized, domain.ErrTokenExpired.Message},
-		{"token_revoked", domain.ErrTokenRevoked, http.StatusUnauthorized, domain.ErrTokenRevoked.Message},
-		{"invalid_session", domain.ErrInvalidSession, http.StatusUnauthorized, domain.ErrInvalidSession.Message},
-		{"forbidden", domain.ErrForbidden, http.StatusForbidden, domain.ErrForbidden.Message},
-		{"foreign_assignment", domain.ErrAssignmentParticipant, http.StatusForbidden, domain.ErrForbidden.Message},
-		{"username_taken", domain.ErrUsernameTaken, http.StatusConflict, domain.ErrUsernameTaken.Message},
-		{"task_in_use", domain.ErrTaskInUse, http.StatusConflict, domain.ErrTaskInUse.Message},
-		{"conflict", domain.ErrConflict, http.StatusConflict, domain.ErrConflict.Message},
-		{"invalid_content_configuration", domain.ErrInvalidContentConfiguration, http.StatusUnprocessableEntity, domain.ErrInvalidContentConfiguration.Error()},
-		{"validation", domain.ErrValidation, http.StatusBadRequest, domain.ErrValidation.Message},
-		{"username_invalid", domain.ErrUsernameInvalid, http.StatusBadRequest, domain.ErrUsernameInvalid.Message},
-		{"task_validation", domain.ErrTaskValidation, http.StatusBadRequest, domain.ErrTaskValidation.Message},
-		{"rate_limited", domain.ErrRateLimited, http.StatusTooManyRequests, domain.ErrRateLimited.Message},
-		{"internal", domain.ErrInternal, http.StatusInternalServerError, domain.ErrInternal.Message},
+		{"player_not_found", domain.ErrPlayerNotFound, http.StatusNotFound, domain.ErrPlayerNotFound.Code, domain.ErrPlayerNotFound.Message},
+		{"task_not_found", domain.ErrTaskNotFound, http.StatusNotFound, domain.ErrTaskNotFound.Code, domain.ErrTaskNotFound.Message},
+		{"tournament_not_found", domain.ErrTournamentNotFound, http.StatusNotFound, domain.ErrTournamentNotFound.Code, domain.ErrTournamentNotFound.Message},
+		{"tournament_projection_not_found", domain.ErrTournamentProjectionNotFound, http.StatusNotFound, domain.ErrTournamentProjectionNotFound.Code, domain.ErrTournamentProjectionNotFound.Message},
+		{"avatar_not_found", domain.ErrAvatarNotFound, http.StatusNotFound, domain.ErrAvatarNotFound.Code, domain.ErrAvatarNotFound.Message},
+		{"invalid_credentials", domain.ErrInvalidCredentials, http.StatusUnauthorized, domain.ErrInvalidCredentials.Code, domain.ErrInvalidCredentials.Message},
+		{"email_unverified", domain.ErrEmailUnverified, http.StatusUnauthorized, domain.ErrEmailUnverified.Code, domain.ErrEmailUnverified.Message},
+		{"email_already_verified", domain.ErrEmailAlreadyVerified, http.StatusConflict, domain.ErrEmailAlreadyVerified.Code, domain.ErrEmailAlreadyVerified.Message},
+		{"token_expired", domain.ErrTokenExpired, http.StatusUnauthorized, domain.ErrTokenExpired.Code, domain.ErrTokenExpired.Message},
+		{"token_revoked", domain.ErrTokenRevoked, http.StatusUnauthorized, domain.ErrTokenRevoked.Code, domain.ErrTokenRevoked.Message},
+		{"invalid_session", domain.ErrInvalidSession, http.StatusUnauthorized, domain.ErrInvalidSession.Code, domain.ErrInvalidSession.Message},
+		{"account_deleted", domain.ErrAccountDeleted, http.StatusUnauthorized, domain.ErrAccountDeleted.Code, domain.ErrAccountDeleted.Message},
+		{"forbidden", domain.ErrForbidden, http.StatusForbidden, domain.ErrForbidden.Code, domain.ErrForbidden.Message},
+		{"foreign_assignment", domain.ErrAssignmentParticipant, http.StatusForbidden, domain.ErrorCodeForbidden, domain.ErrForbidden.Message},
+		{"username_taken", domain.ErrUsernameTaken, http.StatusConflict, domain.ErrUsernameTaken.Code, domain.ErrUsernameTaken.Message},
+		{"email_taken", domain.ErrEmailTaken, http.StatusConflict, domain.ErrEmailTaken.Code, domain.ErrEmailTaken.Message},
+		{"task_in_use", domain.ErrTaskInUse, http.StatusConflict, domain.ErrTaskInUse.Code, domain.ErrTaskInUse.Message},
+		{"conflict", domain.ErrConflict, http.StatusConflict, domain.ErrConflict.Code, domain.ErrConflict.Message},
+		{"invalid_content_configuration", domain.ErrInvalidContentConfiguration, http.StatusUnprocessableEntity, domain.ErrorCodeValidation, domain.ErrInvalidContentConfiguration.Error()},
+		{"current_password_invalid", domain.ErrCurrentPasswordInvalid, http.StatusUnprocessableEntity, domain.ErrCurrentPasswordInvalid.Code, domain.ErrCurrentPasswordInvalid.Message},
+		{"email_change_code_invalid", domain.ErrEmailChangeCodeInvalid, http.StatusUnprocessableEntity, domain.ErrEmailChangeCodeInvalid.Code, domain.ErrEmailChangeCodeInvalid.Message},
+		{"validation", domain.ErrValidation, http.StatusBadRequest, domain.ErrValidation.Code, domain.ErrValidation.Message},
+		{"username_invalid", domain.ErrUsernameInvalid, http.StatusBadRequest, domain.ErrUsernameInvalid.Code, domain.ErrUsernameInvalid.Message},
+		{"task_validation", domain.ErrTaskValidation, http.StatusBadRequest, domain.ErrTaskValidation.Code, domain.ErrTaskValidation.Message},
+		{"avatar_invalid", domain.ErrAvatarInvalid, http.StatusBadRequest, domain.ErrAvatarInvalid.Code, domain.ErrAvatarInvalid.Message},
+		{"avatar_too_large", domain.ErrAvatarTooLarge, http.StatusRequestEntityTooLarge, domain.ErrAvatarTooLarge.Code, domain.ErrAvatarTooLarge.Message},
+		{"avatar_unsupported_media_type", domain.ErrAvatarUnsupportedMediaType, http.StatusUnsupportedMediaType, domain.ErrAvatarUnsupportedMediaType.Code, domain.ErrAvatarUnsupportedMediaType.Message},
+		{"rate_limited", domain.ErrRateLimited, http.StatusTooManyRequests, domain.ErrRateLimited.Code, domain.ErrRateLimited.Message},
+		{"email_change_attempts_exceeded", domain.ErrEmailChangeAttemptsExceeded, http.StatusTooManyRequests, domain.ErrEmailChangeAttemptsExceeded.Code, domain.ErrEmailChangeAttemptsExceeded.Message},
+		{"email_change_rate_limited", domain.ErrEmailChangeRateLimited, http.StatusTooManyRequests, domain.ErrEmailChangeRateLimited.Code, domain.ErrEmailChangeRateLimited.Message},
+		{"avatar_busy", domain.ErrAvatarBusy, http.StatusTooManyRequests, domain.ErrAvatarBusy.Code, domain.ErrAvatarBusy.Message},
+		{"email_change_unavailable", domain.ErrEmailChangeUnavailable, http.StatusServiceUnavailable, domain.ErrEmailChangeUnavailable.Code, domain.ErrEmailChangeUnavailable.Message},
+		{"avatar_video_unavailable", domain.ErrAvatarVideoUnavailable, http.StatusServiceUnavailable, domain.ErrAvatarVideoUnavailable.Code, domain.ErrAvatarVideoUnavailable.Message},
+		{"internal", domain.ErrInternal, http.StatusInternalServerError, domain.ErrInternal.Code, domain.ErrInternal.Message},
 	}
 
 	for _, tt := range tests {
@@ -57,6 +73,8 @@ func TestHandleError_MapsAllSentinels(t *testing.T) {
 			require.Equal(t, "about:blank", problem.Type)
 			require.Equal(t, http.StatusText(tt.status), problem.Title)
 			require.Equal(t, int32(tt.status), problem.Status)
+			require.NotNil(t, problem.Code)
+			require.Equal(t, string(tt.code), *problem.Code)
 			require.NotNil(t, problem.Detail)
 			require.Equal(t, tt.detail, *problem.Detail)
 			require.NotNil(t, problem.Instance)

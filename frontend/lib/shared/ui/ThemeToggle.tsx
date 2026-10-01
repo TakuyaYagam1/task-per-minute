@@ -43,7 +43,7 @@ const applyTheme = (theme: Theme) => {
 
 type ThemeToggleProps = {
   storageKey: string;
-  variant?: "floating" | "inline";
+  variant?: "floating" | "inline" | "menu" | "switch";
 };
 
 const MoonIcon = () => (
@@ -84,11 +84,21 @@ export const ThemeToggle = ({ storageKey, variant = "floating" }: ThemeTogglePro
   const [theme, setTheme] = useState<Theme>(DEFAULT_THEME);
 
   useEffect(() => {
+    const observer = new MutationObserver(() => {
+      setTheme(readDocumentTheme());
+    });
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["data-theme"],
+    });
+
     const storedTheme = readStoredTheme(storageKey);
     const nextTheme = storedTheme ?? readDocumentTheme();
 
     setTheme(nextTheme);
     applyTheme(nextTheme);
+
+    return () => observer.disconnect();
   }, [storageKey]);
 
   const selectTheme = (nextTheme: Theme) => {
@@ -102,14 +112,41 @@ export const ThemeToggle = ({ storageKey, variant = "floating" }: ThemeTogglePro
     }
   };
 
+  if (variant === "switch") {
+    return (
+      <button
+        className={styles.switchButton}
+        type="button"
+        role="switch"
+        aria-label="Светлая тема"
+        aria-checked={theme === "light"}
+        data-theme-choice={theme}
+        title="Светлая тема"
+        onClick={() => selectTheme(theme === "light" ? "dark" : "light")}
+      >
+        <span className={`${styles.switchTrack} ${theme === "light" ? styles.switchLight : ""}`}>
+          <span aria-hidden="true" className={`${styles.switchGlyph} ${styles.switchMoon}`}>
+            <MoonIcon />
+          </span>
+          <span aria-hidden="true" className={`${styles.switchGlyph} ${styles.switchSun}`}>
+            <SunIcon />
+          </span>
+          <span aria-hidden="true" className={styles.switchKnob}>
+            {theme === "light" ? <SunIcon /> : <MoonIcon />}
+          </span>
+        </span>
+      </button>
+    );
+  }
+
   return (
     <div
-      className={`${styles.toggle} ${variant === "inline" ? styles.inline : ""}`}
+      className={`${styles.toggle} ${variant === "inline" ? styles.inline : ""} ${variant === "menu" ? styles.menu : ""}`}
       role="group"
       aria-label="Тема интерфейса"
     >
       <button
-        className={styles.button}
+        className={`${styles.button} ${variant === "menu" ? styles.menuButton : ""}`}
         type="button"
         data-theme-choice="dark"
         aria-label="Темная тема"
@@ -118,9 +155,10 @@ export const ThemeToggle = ({ storageKey, variant = "floating" }: ThemeTogglePro
         onClick={() => selectTheme("dark")}
       >
         <MoonIcon />
+        {variant === "menu" ? <span>Темная</span> : null}
       </button>
       <button
-        className={styles.button}
+        className={`${styles.button} ${variant === "menu" ? styles.menuButton : ""}`}
         type="button"
         data-theme-choice="light"
         aria-label="Светлая тема"
@@ -129,6 +167,7 @@ export const ThemeToggle = ({ storageKey, variant = "floating" }: ThemeTogglePro
         onClick={() => selectTheme("light")}
       >
         <SunIcon />
+        {variant === "menu" ? <span>Светлая</span> : null}
       </button>
     </div>
   );

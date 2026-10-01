@@ -53,6 +53,8 @@ paths:
     $ref: 'routes/player.yml#/~1api~1v1~1players~1register'
   /api/v1/players/login:
     $ref: 'routes/player.yml#/~1api~1v1~1players~1login'
+  /api/v1/players/login/resend-verification:
+    $ref: 'routes/player.yml#/~1api~1v1~1players~1login~1resend-verification'
   /api/v1/players/verify-email:
     $ref: 'routes/player.yml#/~1api~1v1~1players~1verify-email'
   /api/v1/players/resend-verification:
@@ -61,6 +63,22 @@ paths:
     $ref: 'routes/player.yml#/~1api~1v1~1players~1me'
   /api/v1/players/logout:
     $ref: 'routes/player.yml#/~1api~1v1~1players~1logout'
+  /api/v1/players/account:
+    $ref: 'routes/player_account_settings.yml#/~1api~1v1~1players~1account'
+  /api/v1/players/account/username:
+    $ref: 'routes/player_account_settings.yml#/~1api~1v1~1players~1account~1username'
+  /api/v1/players/account/password:
+    $ref: 'routes/player_account_settings.yml#/~1api~1v1~1players~1account~1password'
+  /api/v1/players/account/email:
+    $ref: 'routes/player_account_settings.yml#/~1api~1v1~1players~1account~1email'
+  /api/v1/players/account/email/resend:
+    $ref: 'routes/player_account_settings.yml#/~1api~1v1~1players~1account~1email~1resend'
+  /api/v1/players/account/email/confirm:
+    $ref: 'routes/player_account_settings.yml#/~1api~1v1~1players~1account~1email~1confirm'
+  /api/v1/players/account/avatar:
+    $ref: 'routes/player_account_settings.yml#/~1api~1v1~1players~1account~1avatar'
+  /api/v1/players/{player_id}/avatar:
+    $ref: 'routes/player_public_avatar.yml#/~1api~1v1~1players~1{player_id}~1avatar'
   /api/v1/players/notifications:
     $ref: 'routes/player_notifications.yml#/~1api~1v1~1players~1notifications'
   /api/v1/players/notifications/events:

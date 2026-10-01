@@ -59,10 +59,37 @@ export interface paths {
         /**
          * Log in to a verified player account
          * @description Accepts a case-insensitive username or email address. Invalid credentials
-         *     and unverified accounts return the same response. Success issues the
-         *     existing HttpOnly player session cookie and a session-bound CSRF token.
+         *     return a generic response. A correct password for an unverified account
+         *     returns code `player.email_unverified` with an activation instruction.
+         *     Neither failure issues a session. Success issues the existing HttpOnly
+         *     player session cookie and a session-bound CSRF token.
          */
         post: operations["loginPlayer"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/players/login/resend-verification": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Resend verification after confirming login credentials
+         * @description Accepts the same username-or-email and password fields as player login.
+         *     A verification link is sent only to the email address stored for the
+         *     pending account. Successful delivery returns 202. Incorrect credentials
+         *     return a generic 401. A correct password for an already verified account
+         *     returns code `player.email_already_verified`. This operation never creates
+         *     or issues a player session.
+         */
+        post: operations["resendPlayerVerificationForLogin"];
         delete?: never;
         options?: never;
         head?: never;
@@ -147,6 +174,166 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/players/account": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read settings for the current player account
+         * @description Returns private account settings for the authenticated player only. The response is not cacheable and is never available through public player views.
+         */
+        get: operations["getPlayerAccountSettings"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/players/account/username": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Change the current player's username */
+        post: operations["changePlayerUsername"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/players/account/password": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Change the current player's password
+         * @description A successful change rotates the current player session and its CSRF token. The replacement cookies are set on the response.
+         */
+        post: operations["changePlayerPassword"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/players/account/email": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start changing the current player's email address
+         * @description Sends a confirmation code to the new address. The current email remains active until the code is confirmed.
+         */
+        post: operations["beginPlayerEmailChange"];
+        /** Cancel a pending email change */
+        delete: operations["cancelPlayerEmailChange"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/players/account/email/resend": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Resend a pending email change confirmation code */
+        post: operations["resendPlayerEmailChange"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/players/account/email/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Confirm the current player's pending email change
+         * @description A successful confirmation changes the active email address and rotates the current player session and its CSRF token. The response reports whether a notice could also be sent to the previous address.
+         */
+        post: operations["confirmPlayerEmailChange"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/players/account/avatar": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read the current player's private avatar
+         * @description Avatar bytes are available only to the authenticated player and are never cached.
+         */
+        get: operations["getPlayerAccountAvatar"];
+        /**
+         * Replace the current player's avatar
+         * @description Accepts one file part named `file`. The server validates the actual image or video bytes, limits the upload to 5 MiB, and stores canonical content privately. Images are normalized and stripped of metadata. MP4 input is limited to 10 seconds, 60 frames per second, 600 frames, 1920 pixels per side, and 2,073,600 total pixels. It is canonicalized to silent H.264 yuv420p video with a maximum side of 512 pixels and 30 frames per second. The filename and declared content type are not trusted.
+         */
+        put: operations["replacePlayerAccountAvatar"];
+        post?: never;
+        /** Remove the current player's avatar */
+        delete: operations["deletePlayerAccountAvatar"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/players/{player_id}/avatar": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read the current public avatar for a player
+         * @description Returns the canonical avatar bytes only when the requested lowercase SHA-256 version still identifies the active player's current avatar. Missing avatars, deleted players, and stale versions return the same 404. Avatar bytes are never cached.
+         */
+        get: operations["getPublicPlayerAvatar"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/players/notifications": {
         parameters: {
             query?: never;
@@ -156,7 +343,7 @@ export interface paths {
         };
         /**
          * List active notifications for the current player
-         * @description Returns notifications created during the last 30 minutes. The player is resolved from the authenticated HttpOnly session cookie. Expired notifications are omitted automatically.
+         * @description New notifications remain active for 24 hours. Existing notifications retain their assigned expiry. The player is resolved from the authenticated HttpOnly session cookie. Expired notifications are omitted automatically.
          */
         get: operations["listPlayerNotifications"];
         put?: never;
@@ -200,8 +387,8 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Top-50 leaderboard
-         * @description Aggregated from committed tournament results and ordered by wins DESC, average_solve_time_ms ASC, then username ASC.
+         * Search and page the public leaderboard
+         * @description Returns a stable public ranking ordered by wins, average solve time, username, then player ID. Search matches a literal username substring. Rank is calculated before search and wins filters are applied.
          */
         get: operations["getLeaderboard"];
         put?: never;
@@ -396,8 +583,13 @@ export interface paths {
         post?: never;
         /**
          * Soft-delete a player
-         * @description Soft-deletes the player, clears their session token, and hides them from admin/player leaderboard lists.
-         *     Returns 409 while tournament records still reference the player.
+         * @description Soft-deletes the player, clears their session token and leaderboard override,
+         *     and hides them from active admin/player lists while preserving tournament
+         *     history. Linked account credentials and username reservations are removed
+         *     so the email address and username can be registered again. An unexpired
+         *     session is revoked and reported as `player.account_deleted` until its
+         *     original expiration. Returns 409 while tournament records still reserve
+         *     the player for active participation.
          */
         delete: operations["deletePlayer"];
         options?: never;
@@ -1516,6 +1708,11 @@ export interface components {
     schemas: {
         /** @description RFC 7807 error envelope used by REST validation and operation errors. */
         ProblemDetails: {
+            /**
+             * @description Stable application error code for clients that need to handle a specific failure.
+             * @example player.email_unverified
+             */
+            code?: string;
             /** @example username must be 2..50 characters */
             detail?: string;
             /** @example /api/v1/players/join */
@@ -1536,9 +1733,15 @@ export interface components {
             type: string;
         };
         PlayerRegistrationRequest: {
-            /** Format: email */
+            /**
+             * Format: email
+             * @description A bare ASCII dot-atom mailbox with a 1-64 character local part and at least two ASCII DNS labels. Each label is 1-63 characters with alphanumeric edges and optional internal hyphens. The final label must be at least two ASCII letters or begin with xn--.
+             */
             email: string;
-            /** Format: password */
+            /**
+             * Format: password
+             * @description Must contain at least one Unicode lowercase letter, uppercase letter, decimal digit, and punctuation or symbol. Whitespace alone does not satisfy the punctuation or symbol requirement.
+             */
             password: string;
             /** @example takuya */
             username: string;
@@ -1561,7 +1764,10 @@ export interface components {
             token: string;
         };
         PlayerResendVerificationRequest: {
-            /** Format: email */
+            /**
+             * Format: email
+             * @description A bare ASCII dot-atom mailbox with a 1-64 character local part and at least two ASCII DNS labels. Each label is 1-63 characters with alphanumeric edges and optional internal hyphens. The final label must be at least two ASCII letters or begin with xn--.
+             */
             email: string;
         };
         PlayerResponse: {
@@ -1573,6 +1779,48 @@ export interface components {
         };
         CurrentPlayerResponse: {
             player: components["schemas"]["PlayerResponse"];
+        };
+        PlayerAccountSettingsResponse: {
+            /** Format: email */
+            email: string;
+            /** Format: date-time */
+            email_resend_available_at: string | null;
+            /** Format: email */
+            pending_email: string | null;
+            /** Format: date-time */
+            pending_email_expires_at: string | null;
+            username: string;
+        };
+        PlayerAccountUsernameRequest: {
+            /** Format: password */
+            current_password: string;
+            username: string;
+        };
+        PlayerAccountPasswordRequest: {
+            /** Format: password */
+            current_password: string;
+            /**
+             * Format: password
+             * @description Must contain at least one Unicode lowercase letter, uppercase letter, decimal digit, and punctuation or symbol. Whitespace alone does not satisfy the punctuation or symbol requirement.
+             */
+            new_password: string;
+        };
+        PlayerAccountEmailChangeRequest: {
+            /** Format: password */
+            current_password: string;
+            /**
+             * Format: email
+             * @description A bare ASCII dot-atom mailbox with a 1-64 character local part and at least two ASCII DNS labels. Each label is 1-63 characters with alphanumeric edges and optional internal hyphens. The final label must be at least two ASCII letters or begin with xn--.
+             */
+            new_email: string;
+        };
+        PlayerAccountEmailChangeConfirmRequest: {
+            code: string;
+        };
+        PlayerAccountEmailChangeConfirmedResponse: {
+            /** Format: email */
+            email: string;
+            previous_email_notified: boolean;
         };
         /** @enum {string} */
         PlayerNotificationType: "tournament_player_removed";
@@ -1591,7 +1839,21 @@ export interface components {
         PlayerNotificationsResponse: {
             notifications: components["schemas"]["PlayerNotification"][];
         };
+        /**
+         * @default all
+         * @enum {string}
+         */
+        LeaderboardWinsFilter: "all" | "withwins" | "withoutwins";
+        LeaderboardAvatar: {
+            /** @enum {string} */
+            content_type: "image/jpeg" | "image/png" | "image/gif" | "video/mp4";
+            /** Format: uuid */
+            player_id: string;
+            /** @description Lowercase SHA-256 digest of the canonical avatar bytes. */
+            version: string;
+        };
         LeaderboardEntry: {
+            avatar?: components["schemas"]["LeaderboardAvatar"] | null;
             /** Format: int64 */
             average_solve_time_ms: number;
             /** Format: int32 */
@@ -1602,6 +1864,14 @@ export interface components {
         };
         LeaderboardResponse: {
             entries: components["schemas"]["LeaderboardEntry"][];
+            /** Format: int32 */
+            page: number;
+            /** Format: int32 */
+            per_page: number;
+            /** Format: int64 */
+            total: number;
+            /** Format: int64 */
+            total_pages: number;
         };
         /** @description Independent operating health and traffic readiness for one tournament dependency. */
         DependencyStatus: {
@@ -3857,6 +4127,15 @@ export interface components {
                 "application/problem+json": components["schemas"]["ProblemDetails"];
             };
         };
+        /** @description The command payload violates a semantic request rule. */
+        InvalidRequestProblem: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/problem+json": components["schemas"]["ProblemDetails"];
+            };
+        };
         /** @description The authenticated session is missing, invalid, or expired. */
         UnauthorizedProblem: {
             headers: {
@@ -3868,15 +4147,6 @@ export interface components {
         };
         /** @description The authenticated identity lacks access. Mutations can also fail when the CSRF token, origin, or referer is invalid. */
         ForbiddenProblem: {
-            headers: {
-                [name: string]: unknown;
-            };
-            content: {
-                "application/problem+json": components["schemas"]["ProblemDetails"];
-            };
-        };
-        /** @description The command payload violates a semantic request rule. */
-        InvalidRequestProblem: {
             headers: {
                 [name: string]: unknown;
             };
@@ -3953,6 +4223,8 @@ export interface components {
     parameters: {
         /** @description Required when the request carries an existing player session cookie. */
         PlayerCSRFToken: string;
+        /** @description Session-bound CSRF token required for this player mutation. */
+        RequiredPlayerCSRFToken: string;
         /** @description Cookie-bound CSRF token required for this admin mutation. */
         AdminCSRFToken: string;
         TournamentStateFilter: components["schemas"]["TournamentState"];
@@ -3978,8 +4250,6 @@ export interface components {
         /** @description Last operator recovery watermark held by the client. Older or equal values return a fresh full snapshot; a value ahead of the authoritative snapshot is rejected as a revision conflict. */
         OperatorRecoveryCursor: components["schemas"]["OperatorRecoveryCursor"];
         GoldenAttemptId: string;
-        /** @description Session-bound CSRF token required for this player mutation. */
-        RequiredPlayerCSRFToken: string;
         ParticipantRecoveryCursor: components["schemas"]["ParticipantRecoveryCursor"];
         /** @description Optional public recovery watermark with projection_revision and event_sequence. Missing, older, or equal values return one fresh full snapshot. If either value is ahead of the durable server watermark, the request returns HTTP 409. This REST cursor is separate from WebSocket resume_id. */
         PublicRecoveryCursor: components["schemas"]["PublicRecoveryCursor"];
@@ -4180,7 +4450,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["ProblemDetails"];
                 };
             };
-            /** @description Invalid credentials. */
+            /** @description Invalid credentials or an unverified account. A correct password for a pending account uses code player.email_unverified. */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -4220,6 +4490,105 @@ export interface operations {
             429: {
                 headers: {
                     "Retry-After"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            default: components["responses"]["UnexpectedServerProblem"];
+        };
+    };
+    resendPlayerVerificationForLogin: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PlayerLoginRequest"];
+            };
+        };
+        responses: {
+            /** @description A new verification email was sent. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlayerAccountAcceptedResponse"];
+                };
+            };
+            /** @description Invalid request body. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Login credentials are invalid. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Request origin or referer is not allowed. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Email is already verified. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Request body exceeds the JSON size limit. */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Request content type must be application/json. */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Verification resend cooldown is active. */
+            429: {
+                headers: {
+                    /** @description Seconds until another verification email can be sent. */
+                    "Retry-After"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Email verification is temporarily unavailable. */
+            503: {
+                headers: {
                     [name: string]: unknown;
                 };
                 content: {
@@ -4398,7 +4767,7 @@ export interface operations {
                     "application/json": components["schemas"]["CurrentPlayerResponse"];
                 };
             };
-            /** @description Missing or invalid session token. */
+            /** @description Missing or invalid session token. A valid session revoked by account deletion returns `player.account_deleted` and clears the session and CSRF cookies. */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -4432,6 +4801,803 @@ export interface operations {
             /** @description CSRF token is invalid for an existing session, or the request origin or referer is not allowed. */
             403: {
                 headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            default: components["responses"]["UnexpectedServerProblem"];
+        };
+    };
+    getPlayerAccountSettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Current account settings. */
+            200: {
+                headers: {
+                    /** @example private, no-store */
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlayerAccountSettingsResponse"];
+                };
+            };
+            /** @description Missing or invalid player session. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            default: components["responses"]["UnexpectedServerProblem"];
+        };
+    };
+    changePlayerUsername: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Session-bound CSRF token required for this player mutation. */
+                "X-CSRF-Token": components["parameters"]["RequiredPlayerCSRFToken"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PlayerAccountUsernameRequest"];
+            };
+        };
+        responses: {
+            /** @description Updated player identity. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlayerResponse"];
+                };
+            };
+            /** @description Invalid username or request body. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Missing or invalid player session. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Player CSRF token or request origin is invalid. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Username is already taken. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Request body exceeds the JSON size limit. */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Request content type must be application/json. */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Current password is invalid. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Too many sensitive account changes were attempted. */
+            429: {
+                headers: {
+                    "Retry-After"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            default: components["responses"]["UnexpectedServerProblem"];
+        };
+    };
+    changePlayerPassword: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Session-bound CSRF token required for this player mutation. */
+                "X-CSRF-Token": components["parameters"]["RequiredPlayerCSRFToken"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PlayerAccountPasswordRequest"];
+            };
+        };
+        responses: {
+            /** @description Password changed and the current session was rotated. */
+            204: {
+                headers: {
+                    /** @description CSRF token bound to the replacement player session. */
+                    "X-CSRF-Token"?: string;
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Invalid password or request body. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Missing or invalid player session. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Player CSRF token or request origin is invalid. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Request body exceeds the JSON size limit. */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Request content type must be application/json. */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Current password is invalid. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Too many sensitive account changes were attempted. */
+            429: {
+                headers: {
+                    "Retry-After"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            default: components["responses"]["UnexpectedServerProblem"];
+        };
+    };
+    beginPlayerEmailChange: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Session-bound CSRF token required for this player mutation. */
+                "X-CSRF-Token": components["parameters"]["RequiredPlayerCSRFToken"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PlayerAccountEmailChangeRequest"];
+            };
+        };
+        responses: {
+            /** @description Email change was accepted and a confirmation code was sent. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlayerAccountSettingsResponse"];
+                };
+            };
+            /** @description Invalid email address or request body. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Missing or invalid player session. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Player CSRF token or request origin is invalid. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Email address is already in use or a change cannot be started in the current state. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Request body exceeds the JSON size limit. */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Request content type must be application/json. */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Current password is invalid. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Email change limits or resend cooldown prevent another message. */
+            429: {
+                headers: {
+                    "Retry-After"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Email delivery is temporarily unavailable. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            default: components["responses"]["UnexpectedServerProblem"];
+        };
+    };
+    cancelPlayerEmailChange: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Session-bound CSRF token required for this player mutation. */
+                "X-CSRF-Token": components["parameters"]["RequiredPlayerCSRFToken"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Current account settings after cancellation. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlayerAccountSettingsResponse"];
+                };
+            };
+            /** @description Missing or invalid player session. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Player CSRF token or request origin is invalid. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            default: components["responses"]["UnexpectedServerProblem"];
+        };
+    };
+    resendPlayerEmailChange: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Session-bound CSRF token required for this player mutation. */
+                "X-CSRF-Token": components["parameters"]["RequiredPlayerCSRFToken"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A new confirmation code was sent to the pending address. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlayerAccountSettingsResponse"];
+                };
+            };
+            /** @description Missing or invalid player session. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Player CSRF token or request origin is invalid. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description There is no pending email change. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Email change resend cooldown or rate limit is active. */
+            429: {
+                headers: {
+                    "Retry-After"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Email delivery is temporarily unavailable. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            default: components["responses"]["UnexpectedServerProblem"];
+        };
+    };
+    confirmPlayerEmailChange: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Session-bound CSRF token required for this player mutation. */
+                "X-CSRF-Token": components["parameters"]["RequiredPlayerCSRFToken"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PlayerAccountEmailChangeConfirmRequest"];
+            };
+        };
+        responses: {
+            /** @description Email address changed; the replacement session was issued. */
+            200: {
+                headers: {
+                    /** @description CSRF token bound to the replacement player session. */
+                    "X-CSRF-Token"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlayerAccountEmailChangeConfirmedResponse"];
+                };
+            };
+            /** @description Invalid request body or confirmation code format. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Missing or invalid player session. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Player CSRF token or request origin is invalid. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The pending email address was taken before confirmation. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Request body exceeds the JSON size limit. */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Request content type must be application/json. */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Confirmation code is invalid, expired, or exhausted. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The confirmation attempt limit is active. */
+            429: {
+                headers: {
+                    "Retry-After"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            default: components["responses"]["UnexpectedServerProblem"];
+        };
+    };
+    getPlayerAccountAvatar: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Canonical avatar image bytes or a silent H.264 MP4 avatar. */
+            200: {
+                headers: {
+                    /** @example private, no-store */
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "image/jpeg": string;
+                    "image/png": string;
+                    "image/gif": string;
+                    "video/mp4": string;
+                };
+            };
+            /** @description Missing or invalid player session. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The current player has no avatar. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            default: components["responses"]["UnexpectedServerProblem"];
+        };
+    };
+    replacePlayerAccountAvatar: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Session-bound CSRF token required for this player mutation. */
+                "X-CSRF-Token": components["parameters"]["RequiredPlayerCSRFToken"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": {
+                    /** Format: binary */
+                    file: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Avatar stored for the current player. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The uploaded bytes are invalid, exceed video limits, or do not match the declared media type. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Missing or invalid player session. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Player CSRF token or request origin is invalid. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The request body or avatar exceeds the 5 MiB upload limit. */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Request content type or declared file media type is unsupported. */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Upload rate or decode concurrency limit was reached. */
+            429: {
+                headers: {
+                    "Retry-After"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description MP4 video processing is unavailable. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            default: components["responses"]["UnexpectedServerProblem"];
+        };
+    };
+    deletePlayerAccountAvatar: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Session-bound CSRF token required for this player mutation. */
+                "X-CSRF-Token": components["parameters"]["RequiredPlayerCSRFToken"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Avatar removed from the current player's account. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Missing or invalid player session. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Player CSRF token or request origin is invalid. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Avatar mutation rate limit was reached. */
+            429: {
+                headers: {
+                    "Retry-After"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            default: components["responses"]["UnexpectedServerProblem"];
+        };
+    };
+    getPublicPlayerAvatar: {
+        parameters: {
+            query: {
+                v: string;
+            };
+            header?: never;
+            path: {
+                player_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Canonical avatar bytes for the requested current version. */
+            200: {
+                headers: {
+                    /** @example no-store */
+                    "Cache-Control"?: string;
+                    /** @example nosniff */
+                    "X-Content-Type-Options"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "image/jpeg": string;
+                    "image/png": string;
+                    "image/gif": string;
+                    "video/mp4": string;
+                };
+            };
+            /** @description The avatar version is missing or is not lowercase hexadecimal SHA-256. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The player is deleted, has no avatar, or the requested version is no longer current. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Public avatar rate or read-concurrency limit was reached. */
+            429: {
+                headers: {
+                    "Retry-After"?: string;
                     [name: string]: unknown;
                 };
                 content: {
@@ -4503,14 +5669,19 @@ export interface operations {
     };
     getLeaderboard: {
         parameters: {
-            query?: never;
+            query?: {
+                search?: string;
+                wins?: components["schemas"]["LeaderboardWinsFilter"];
+                page?: number;
+                per_page?: number;
+            };
             header?: never;
             path?: never;
             cookie?: never;
         };
         requestBody?: never;
         responses: {
-            /** @description Top 50 players by tournament wins. */
+            /** @description One page of matching players and pagination metadata. */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -4519,6 +5690,7 @@ export interface operations {
                     "application/json": components["schemas"]["LeaderboardResponse"];
                 };
             };
+            400: components["responses"]["InvalidRequestProblem"];
             /** @description Too many leaderboard requests from the same client IP. */
             429: {
                 headers: {

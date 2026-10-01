@@ -96,6 +96,7 @@ func requiresPlayerCSRF(r *http.Request) bool {
 func isPublicPlayerAuthPath(path string) bool {
 	switch path {
 	case "/api/v1/players/join", "/api/v1/players/register", "/api/v1/players/login",
+		"/api/v1/players/login/resend-verification",
 		"/api/v1/players/verify-email", "/api/v1/players/resend-verification":
 		return true
 	default:

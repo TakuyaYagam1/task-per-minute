@@ -148,6 +148,18 @@ func TestNewHandler_RateLimitsInvalidPublicBodiesBeforeOpenAPIValidation(t *test
 				}
 			},
 		},
+		{
+			name:  "login verification resend",
+			path:  "/api/v1/players/login/resend-verification",
+			body:  `{}`,
+			event: "player.login.resend_verification",
+			deps: func(t *testing.T, log logkit.Logger) Dependencies {
+				return Dependencies{
+					JoinLimiter: newOneRequestRateLimiter(t, "3600"),
+					Log:         log,
+				}
+			},
+		},
 	}
 
 	for _, tt := range tests {

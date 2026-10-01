@@ -4,6 +4,7 @@ import {
   createTournamentFixtureSet,
   tournamentFixtureIds,
 } from "./tournament/fixtures";
+import { selectTheme } from "./support/common";
 
 const tournamentId = tournamentFixtureIds.tournament;
 const publicPath = `/api/v1/tournaments/${tournamentId}`;
@@ -381,7 +382,7 @@ test("FE-018 preserves the published 180-second deadline across clock changes, r
   await expect(deadline).toContainText(expectedDeadline);
   await expect(page.getByTestId("server-countdown")).toHaveCount(0);
 
-  await page.getByRole("button", { name: "Светлая тема" }).click();
+  await selectTheme(page, "light");
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
   await page.setViewportSize({ width: 390, height: 844 });
   const bodyWidth = await page.evaluate(() => document.body.scrollWidth);

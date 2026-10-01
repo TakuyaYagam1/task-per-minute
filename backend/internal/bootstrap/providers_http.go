@@ -32,6 +32,9 @@ const (
 func provideRESTServerWithClock(
 	players restv1.PlayerService,
 	playerAccounts inbound.PlayerAccountService,
+	accountSettings inbound.AccountSettingsService,
+	playerAvatars inbound.PlayerAvatarService,
+	publicPlayerAvatars inbound.PublicPlayerAvatarService,
 	playerNotifications notificationusecase.PlayerNotifications,
 	auth restv1.AdminAuthService,
 	tasks restv1.AdminTaskService,
@@ -60,6 +63,9 @@ func provideRESTServerWithClock(
 	operatorTournamentMutationLimiter operatorTournamentMutationRateLimiter,
 	participantTournamentReadLimiter participantTournamentReadRateLimiter,
 	participantTournamentMutationLimiter participantTournamentMutationRateLimiter,
+	accountSensitiveLimiter accountSensitiveRateLimiter,
+	avatarMutationLimiter avatarMutationRateLimiter,
+	publicAvatarReadLimiter publicAvatarReadRateLimiter,
 	log logkit.Logger,
 ) *restv1.Server {
 	var now func() time.Time
@@ -69,6 +75,9 @@ func provideRESTServerWithClock(
 	return restv1.New(restv1.Dependencies{
 		Players:                              players,
 		PlayerAccounts:                       playerAccounts,
+		AccountSettings:                      accountSettings,
+		PlayerAvatars:                        playerAvatars,
+		PublicPlayerAvatars:                  publicPlayerAvatars,
 		PlayerNotifications:                  playerNotifications,
 		AdminAuth:                            auth,
 		Tasks:                                tasks,
@@ -97,8 +106,41 @@ func provideRESTServerWithClock(
 		OperatorTournamentMutationLimiter:    operatorTournamentMutationLimiter.Inner,
 		ParticipantTournamentReadLimiter:     participantTournamentReadLimiter.Inner,
 		ParticipantTournamentMutationLimiter: participantTournamentMutationLimiter.Inner,
+		AccountSensitiveLimiter:              accountSensitiveLimiter.Inner,
+		AvatarMutationLimiter:                avatarMutationLimiter.Inner,
+		PublicAvatarReadLimiter:              publicAvatarReadLimiter.Inner,
 		Log:                                  log,
 	})
+}
+
+type accountSensitiveRateLimiter struct {
+	Inner middleware.RateLimiter
+}
+
+func provideAccountSensitiveRateLimiter(client *goredis.Client, cfg *config.Config) accountSensitiveRateLimiter {
+	return accountSensitiveRateLimiter{Inner: redisadapter.NewRateLimiter(
+		client, "player-account-sensitive", cfg.Player.JoinRateAttempts, cfg.Player.JoinRateWindow,
+	)}
+}
+
+type avatarMutationRateLimiter struct {
+	Inner middleware.RateLimiter
+}
+
+type publicAvatarReadRateLimiter struct {
+	Inner middleware.RateLimiter
+}
+
+func providePublicAvatarReadRateLimiter(client *goredis.Client) publicAvatarReadRateLimiter {
+	return publicAvatarReadRateLimiter{Inner: redisadapter.NewRateLimiter(
+		client, "player-avatar-public-read", 300, time.Minute,
+	)}
+}
+
+func provideAvatarMutationRateLimiter(client *goredis.Client, cfg *config.Config) avatarMutationRateLimiter {
+	return avatarMutationRateLimiter{Inner: redisadapter.NewRateLimiter(
+		client, "player-avatar-mutation", cfg.Player.JoinRateAttempts, cfg.Player.JoinRateWindow,
+	)}
 }
 
 type loginRateLimiter struct {

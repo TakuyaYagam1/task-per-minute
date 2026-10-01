@@ -5,9 +5,10 @@ import styles from "./PlayerAuthPanel.module.css";
 
 type PlayerAuthPanelProps = Readonly<{
   title: string;
-  description: string;
+  description?: ReactNode;
   children: ReactNode;
-  footer: ReactNode;
+  footer?: ReactNode;
+  variant?: "default" | "centered";
 }>;
 
 export function PlayerAuthPanel({
@@ -15,17 +16,22 @@ export function PlayerAuthPanel({
   description,
   children,
   footer,
+  variant = "default",
 }: PlayerAuthPanelProps) {
+  const panelClassName = variant === "centered"
+    ? `${styles.panel} ${styles.centered}`
+    : styles.panel;
+
   return (
     <main className={styles.page}>
-      <section className={styles.panel} aria-labelledby="player-auth-title">
+      <section className={panelClassName} aria-labelledby="player-auth-title">
         <Link className={styles.brand} href="/" aria-label="Task Per Minute - на главную">
           Task Per Minute
         </Link>
         <h1 className={styles.title} id="player-auth-title">{title}</h1>
-        <p className={styles.description}>{description}</p>
+        {description ? <p className={styles.description}>{description}</p> : null}
         <div className={styles.content}>{children}</div>
-        <div className={styles.footer}>{footer}</div>
+        {footer ? <div className={styles.footer}>{footer}</div> : null}
       </section>
     </main>
   );

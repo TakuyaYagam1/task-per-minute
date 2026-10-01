@@ -1,0 +1,79 @@
+/api/v1/players/{player_id}/avatar:
+  get:
+    operationId: getPublicPlayerAvatar
+    tags: [player]
+    summary: Read the current public avatar for a player
+    description: >-
+      Returns the canonical avatar bytes only when the requested lowercase
+      SHA-256 version still identifies the active player's current avatar.
+      Missing avatars, deleted players, and stale versions return the same 404.
+      Avatar bytes are never cached.
+    security: []
+    parameters:
+      - in: path
+        name: player_id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - in: query
+        name: v
+        required: true
+        schema:
+          type: string
+          minLength: 64
+          maxLength: 64
+          pattern: '^[0-9a-f]{64}$'
+    responses:
+      '200':
+        description: Canonical avatar bytes for the requested current version.
+        headers:
+          Cache-Control:
+            schema:
+              type: string
+            example: no-store
+          X-Content-Type-Options:
+            schema:
+              type: string
+            example: nosniff
+        content:
+          image/jpeg:
+            schema:
+              type: string
+              format: binary
+          image/png:
+            schema:
+              type: string
+              format: binary
+          image/gif:
+            schema:
+              type: string
+              format: binary
+          video/mp4:
+            schema:
+              type: string
+              format: binary
+      '400':
+        description: The avatar version is missing or is not lowercase hexadecimal SHA-256.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '404':
+        description: The player is deleted, has no avatar, or the requested version is no longer current.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '429':
+        description: Public avatar rate or read-concurrency limit was reached.
+        headers:
+          Retry-After:
+            schema:
+              type: string
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      default:
+        $ref: '../components/responses.yml#/UnexpectedServerProblem'
