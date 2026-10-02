@@ -176,8 +176,8 @@ JOIN LATERAL (
     FROM wave_series
     JOIN waves AS wave ON wave.id = wave_series.wave_id
     WHERE wave_series.series_id = assignment.series_id
-    ORDER BY (wave.state <> 'superseded') DESC,
-        wave.updated_at DESC,
+        AND wave.state <> 'superseded'
+    ORDER BY wave.created_at DESC,
         wave.id DESC
     LIMIT 1
 ) AS current_wave ON TRUE
@@ -688,7 +688,7 @@ WHERE roster.tournament_id = $1
             )
     )
 ORDER BY (wave.state <> 'superseded') DESC,
-    wave.updated_at DESC,
+    wave.created_at DESC,
     wave.id DESC
 LIMIT 1
 `
@@ -768,7 +768,7 @@ LEFT JOIN LATERAL (
     JOIN waves AS wave ON wave.id = wave_series.wave_id
     WHERE wave_series.series_id = series.id
     ORDER BY (wave.state <> 'superseded') DESC,
-        wave.updated_at DESC,
+        wave.created_at DESC,
         wave.id DESC
     LIMIT 1
 ) AS current_wave ON TRUE

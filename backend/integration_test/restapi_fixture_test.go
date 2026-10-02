@@ -199,7 +199,7 @@ func (f *restFixture) joinPlayerViaUsecase(t *testing.T, username string) *domai
 	return player
 }
 
-const restPlayerPassword = "synthetic-player-password-123"
+const restPlayerPassword = "Synthetic-player-password-123"
 
 type restVerificationMailer struct{ link string }
 

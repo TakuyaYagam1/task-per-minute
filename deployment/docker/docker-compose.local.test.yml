@@ -1,7 +1,9 @@
 name: task-per-minute-local
 
 include:
-  - path: ./docker-compose.local.yml
+  - path:
+      - ./docker-compose.local.yml
+      - ./docker-compose.test.backend.yml
   - path: ../../test-data/web/docker-compose.yml
 
 services:
@@ -49,7 +51,6 @@ services:
       service: test-data-seed
 
   test-data-importer:
-    profiles: ["task-import"]
     extends:
       file: ./docker-compose.test.yml
       service: test-data-importer
@@ -58,6 +59,8 @@ services:
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:?ADMIN_PASSWORD is required in the local environment}
       TEST_DATA_ROOT: /test-data
       TEST_TASK_SEED_FILE: /seed/key
+      TEST_BOTS_CATALOG_DIR: /bots
+      TEST_BOTS_CONTROL_DIR: /bot-control
       TASK_WEB_SCHEME: http
       TASK_COOKIE_URL: http://localhost:3001
       TASK_ARCHIVE_URL: http://localhost:3002
@@ -86,6 +89,22 @@ services:
         condition: service_healthy
     restart: "no"
 
+  test-accounts:
+    extends:
+      file: ./docker-compose.test.yml
+      service: test-accounts
+    networks: !override
+      - default
+
+  test-bots:
+    extends:
+      file: ./docker-compose.test.yml
+      service: test-bots
+    environment:
+      TEST_BOTS_ORIGIN: ${TEST_BOTS_ORIGIN:-http://localhost:3000}
+    networks: !override
+      - default
+
 networks:
   tasks:
     name: task-per-minute-local_tasks
@@ -95,3 +114,5 @@ networks:
 
 volumes:
   test-task-seed:
+  test-account-seed:
+  test-bot-state:

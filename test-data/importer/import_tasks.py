@@ -18,6 +18,7 @@ from pathlib import Path
 from urllib import error, request
 
 from easy_tasks import generated_specs
+from bot_manifest import write_catalog
 
 
 class ImportFailure(RuntimeError):
@@ -267,7 +268,7 @@ def same_fixture_task(task: dict, spec: dict) -> bool:
     return all(task.get(field) == spec[field] for field in fields)
 
 
-def import_specs(api: AdminAPI, specs: list[dict]) -> tuple[int, int]:
+def import_specs(api: AdminAPI, specs: list[dict], catalog: list[dict] | None = None) -> tuple[int, int]:
     existing = api.list_tasks()
     imported = 0
     reused = 0
@@ -285,6 +286,8 @@ def import_specs(api: AdminAPI, specs: list[dict]) -> tuple[int, int]:
             reused += 1
             if task.get("source_file_url") is None:
                 api.upload_source(task_id, spec["source_archive"])
+            if catalog is not None:
+                catalog.append(task)
             continue
 
         task = api.create_task(spec)
@@ -294,6 +297,8 @@ def import_specs(api: AdminAPI, specs: list[dict]) -> tuple[int, int]:
         api.upload_source(task_id, spec["source_archive"])
         imported += 1
         existing.append(task)
+        if catalog is not None:
+            catalog.append(task)
     return imported, reused
 
 
@@ -321,8 +326,22 @@ def run() -> None:
         raise ImportFailure("unable to load generated test tasks") from exc
     api = AdminAPI(base_url, password)
     api.login()
-    imported, reused = import_specs(api, specs)
-    api.tournament_content()
+    catalog: list[dict] = []
+    imported, reused = import_specs(api, specs, catalog)
+    # Uploading a source archive can append an immutable task version.
+    # Capture the final version, including tasks reused on later imports.
+    current = {task["id"]: task for task in api.list_tasks()}
+    try:
+        catalog = [current[task["id"]] for task in catalog]
+    except KeyError as exc:
+        raise ImportFailure("test catalog changed during import; retry import") from exc
+    content = api.tournament_content()
+    if directory := os.environ.get("TEST_BOTS_CATALOG_DIR"):
+        try:
+            control_directory = Path(os.environ.get("TEST_BOTS_CONTROL_DIR", directory))
+            write_catalog(Path(directory), catalog, content["content_revision"], control_directory)
+        except (OSError, ValueError) as exc:
+            raise ImportFailure("unable to write private bot catalog") from exc
     print(f"test task import ready: {len(specs)} tasks ({imported} created, {reused} reused)")
 
 

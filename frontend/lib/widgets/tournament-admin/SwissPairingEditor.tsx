@@ -18,6 +18,7 @@ import { Button, Message, Panel, Status } from "../../shared/ui";
 
 import { useAdminLiveRefresh } from "../../features/admin-live";
 import styles from "./SwissPairingEditor.module.css";
+import { getBotPairings, type BotPair } from "../../shared/api/test-bots";
 
 type SwissPairingEditorProps = Readonly<{
   tournaments: readonly Tournament[];
@@ -309,6 +310,15 @@ export const SwissPairingEditor = ({
   const [formError, setFormError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [botPairs, setBotPairs] = useState<BotPair[] | null>(null);
+  useEffect(() => {
+    const controller = new AbortController();
+    setBotPairs(null);
+    if (selectedTournamentId) void getBotPairings(selectedTournamentId, roundNumber, controller.signal)
+      .then((pairs) => { if (!controller.signal.aborted) setBotPairs(pairs); })
+      .catch(() => { if (!controller.signal.aborted) setBotPairs(null); });
+    return () => controller.abort();
+  }, [selectedTournamentId, roundNumber, roster]);
 
   useEffect(() => {
     if (!selectedTournamentId) {
@@ -778,6 +788,11 @@ export const SwissPairingEditor = ({
 
             <fieldset className={styles.modeFieldset} disabled={pairingFormDisabled}>
               <legend>Способ формирования пар</legend>
+              {botPairs && <Button variant="secondary" onClick={() => {
+                setPairingMode("manual"); setCategoryMode("admin"); setCategories(["crypto"]); setByeParticipantId("");
+                setDraftPairings(botPairs.map((pair) => ({ firstParticipantId: pair.first_participant_id, secondParticipantId: pair.second_participant_id })));
+                setNotice("Пары сценария подставлены. Проверьте и сохраните настройки раунда.");
+              }}>Подставить пары сценария</Button>}
               <label className={styles.radioOption}>
                 <input
                   type="radio"

@@ -22,6 +22,20 @@ RUN --mount=type=cache,target=/go/pkg/mod \
         -trimpath -ldflags='-s -w' \
         -o /out/migrate ./cmd/migrate
 
+FROM go-base AS account-seed-builder
+
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=0 GOOS=linux go build \
+        -trimpath -ldflags='-s -w' \
+        -o /out/testseed ./cmd/testseed
+
+FROM go-base AS test-bots-builder
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags='-s -w' -o /out/testbots ./cmd/testbots && \
+    CGO_ENABLED=0 GOOS=linux go build -tags=testtools -trimpath -ldflags='-s -w' -o /out/test-server ./cmd/app
+
 FROM alpine:3.23 AS media-builder
 
 RUN apk add --no-cache \
@@ -98,7 +112,22 @@ RUN GOTOOLCHAIN=local go mod download
 ENV GOTOOLCHAIN=local GOPROXY=off GOSUMDB=off
 CMD ["go", "test", "-tags=media_integration", "./internal/adapter/outbound/media/ffmpeg"]
 
-FROM alpine:3.23 AS runtime
+FROM alpine:3.23 AS account-seed
+
+RUN addgroup -g 1001 -S appgroup && \
+    adduser -S -u 1001 -G appgroup appuser && \
+    mkdir -p /app /seed && \
+    chown 1001:1001 /app /seed && \
+    chmod 0700 /seed
+
+COPY --from=go-base /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
+COPY --from=account-seed-builder --chown=1001:1001 /out/testseed /app/testseed
+
+WORKDIR /app
+USER 1001:1001
+ENTRYPOINT ["/app/testseed"]
+
+FROM alpine:3.23 AS runtime-base
 
 ARG BACKEND_PORT=8080
 
@@ -125,3 +154,20 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD wget --quiet --tries=1 -O /dev/null "http://127.0.0.1:${HTTP_PORT:-8080}/health" || exit 1
 
 ENTRYPOINT ["/app/server"]
+
+FROM runtime-base AS test-backend
+USER root
+RUN mkdir -p /bot-control && chown 1001:1001 /bot-control && chmod 0700 /bot-control
+USER appuser
+COPY --from=test-bots-builder --chown=1001:1001 /out/test-server /app/server
+
+FROM alpine:3.23 AS test-bots
+RUN addgroup -g 1001 -S appgroup && adduser -S -u 1001 -G appgroup appuser && \
+    mkdir -p /app /state && chown 1001:1001 /app /state && chmod 0700 /state
+COPY --from=go-base /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
+COPY --from=test-bots-builder --chown=1001:1001 /out/testbots /app/testbots
+USER 1001:1001
+ENTRYPOINT ["/app/testbots"]
+
+# Building without an explicit target always produces the production server.
+FROM runtime-base AS runtime

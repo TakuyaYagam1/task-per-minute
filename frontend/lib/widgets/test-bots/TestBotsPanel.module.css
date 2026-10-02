@@ -1,0 +1,62 @@
+.panel {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1rem;
+  margin-block: 1rem;
+}
+
+.panel summary {
+  cursor: pointer;
+  font-weight: 700;
+  min-height: 44px;
+  align-content: center;
+}
+
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: .75rem;
+  margin-block: 1rem;
+}
+
+.controls label {
+  display: grid;
+  gap: .4rem;
+  max-width: 100%;
+}
+
+.controls select,
+.controls input {
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-small);
+  padding: .6rem;
+  min-height: 44px;
+  max-width: 100%;
+}
+
+.controls input { width: 7rem; }
+
+.bots {
+  list-style: none;
+  padding: 0;
+  max-height: 18rem;
+  overflow: auto;
+}
+
+.bots li {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  border-top: 1px solid var(--border);
+  padding-block: .6rem;
+}
+
+.answer {
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+
+.error { color: var(--error); }

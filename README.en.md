@@ -135,4 +135,11 @@ from prebuilt image tags.
 
 ## License
 
-This project is licensed under the [MIT License](LICENSE).
+Copyright (c) 2025 Task Per Minute contributors.
+
+This project is licensed under the [GNU General Public License, version 3](LICENSE)
+(`GPL-3.0-only`). You may redistribute and modify this program under the terms
+of that license. This program is provided without any warranty, including the
+implied warranties of merchantability or fitness for a particular purpose.
+
+Third-party components retain their own licenses and copyright notices.

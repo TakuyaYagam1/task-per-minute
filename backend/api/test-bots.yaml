@@ -1,0 +1,178 @@
+openapi: 3.0.3
+info:
+  title: Tournament test controls
+  version: 1.0.0
+  description: |
+    Available only with the testtools build tag and a configured tester ID.
+    Standard builds return 404. Player routes require a real player session
+    belonging to that tester. Mutations require the session-bound CSRF token.
+    Every response has Cache-Control no-store. No credentials, command ledger,
+    or task catalog are returned. Bot actions use the regular player APIs.
+servers:
+  - url: /
+security:
+  - playerSession: []
+paths:
+  /api/v1/players/test-bots/{tournament_id}/state:
+    parameters:
+      - $ref: '#/components/parameters/TournamentID'
+    get:
+      operationId: getTestBotState
+      responses:
+        '200':
+          description: Available control panel and current run
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Run'
+        '401': {description: No valid player session}
+        '403': {description: Not the configured tester}
+        '404': {description: Test controls disabled}
+        '503': {description: Test service unavailable}
+  /api/v1/players/test-bots/{tournament_id}/actions:
+    parameters:
+      - $ref: '#/components/parameters/TournamentID'
+      - $ref: '#/components/parameters/CSRF'
+    post:
+      operationId: controlTestBots
+      description: |
+        One active run per stack. Start requires open registration with only
+        the tester enrolled. Configure affects the next series; a started
+        series retains its policy for all games. Pause preserves presence and
+        does not pause tournament timers. Restart always restores a paused run.
+        Repeating start while a run exists returns 409; pause and configure
+        repeat safely. Player commands retain durable idempotency keys.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [action]
+              properties:
+                action: {type: string, enum: [start, configure, pause, resume]}
+                scenario: {type: string, enum: [free, golden]}
+                outcome: {type: string, enum: [human_wins, bot_wins]}
+                delay: {type: integer, minimum: 2, maximum: 120, default: 15}
+      responses:
+        '200':
+          description: Updated run
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Run'
+        '400': {description: Invalid action or configuration}
+        '401': {description: No valid player session}
+        '403': {description: Wrong tester or missing CSRF token}
+        '404': {description: Test controls disabled}
+        '409': {description: Run or tournament incompatible; JSON message explains the cause}
+        '503': {description: Test service unavailable}
+  /api/v1/players/test-bots/{tournament_id}/answer:
+    parameters:
+      - $ref: '#/components/parameters/TournamentID'
+      - $ref: '#/components/parameters/CSRF'
+    post:
+      operationId: getOwnTestAnswer
+      description: |
+        No request parameters or task IDs accepted. Revalidates the caller's
+        session, reads their current assignment through player APIs and matches
+        its exact task version. Only active, unexpired normal or Golden tasks.
+        The browser retains the response only in component memory for 30 seconds.
+      responses:
+        '200':
+          description: Current own test answer
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [answer]
+                properties:
+                  answer: {type: string, maxLength: 4096}
+        '401': {description: No valid player session}
+        '403': {description: Wrong tester or missing CSRF token}
+        '404': {description: Test controls disabled}
+        '409': {description: No active own assignment or missing exact task version}
+        '503': {description: Test service unavailable}
+  /api/v1/admin/test-bots/{tournament_id}/pairings:
+    parameters:
+      - $ref: '#/components/parameters/TournamentID'
+      - name: round
+        in: query
+        required: true
+        schema: {type: integer, minimum: 1, maximum: 4}
+    get:
+      operationId: getTestScenarioPairings
+      security:
+        - adminSession: []
+      description: Read-only suggested pairs. Saving and starting remain ordinary admin actions.
+      responses:
+        '200':
+          description: XOR pairs for the selected Golden scenario round
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [pairs]
+                properties:
+                  pairs:
+                    type: array
+                    minItems: 4
+                    maxItems: 8
+                    items:
+                      type: object
+                      required: [first_participant_id, second_participant_id]
+                      properties:
+                        first_participant_id: {type: string, format: uuid}
+                        second_participant_id: {type: string, format: uuid}
+        '401': {description: No valid admin session}
+        '404': {description: Test controls disabled or no run}
+        '409': {description: Incomplete roster or incompatible scenario or round}
+        '503': {description: Test service unavailable}
+components:
+  securitySchemes:
+    playerSession: {type: apiKey, in: cookie, name: tpm_player_session}
+    adminSession: {type: apiKey, in: cookie, name: tpm_admin_access}
+  parameters:
+    TournamentID:
+      name: tournament_id
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+    CSRF:
+      name: X-CSRF-Token
+      in: header
+      required: true
+      schema: {type: string}
+  schemas:
+    Policy:
+      type: object
+      required: [outcome, delay]
+      properties:
+        outcome: {type: string, enum: [human_wins, bot_wins]}
+        delay: {type: integer, minimum: 2, maximum: 120}
+    Run:
+      type: object
+      required: [available, tournament_id, status, message, size, scenario, next, bots]
+      properties:
+        available: {type: boolean, enum: [true]}
+        tournament_id: {type: string, format: uuid}
+        status: {type: string, enum: [idle, busy, running, paused, completed, cancelled]}
+        message: {type: string}
+        size: {type: integer, enum: [0, 8, 16]}
+        scenario: {type: string, enum: ['', free, golden]}
+        next: {$ref: '#/components/schemas/Policy'}
+        bots:
+          type: array
+          maxItems: 15
+          items:
+            type: object
+            required: [username, player_id, participant_id, slot, status, message]
+            properties:
+              username: {type: string}
+              player_id: {type: string, format: uuid}
+              participant_id: {type: string, description: Empty before joining}
+              slot: {type: integer, minimum: 0, maximum: 15}
+              status: {type: string, enum: [waiting, running, paused, error]}
+              message: {type: string}

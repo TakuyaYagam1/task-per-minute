@@ -5,6 +5,7 @@ include:
       - ./docker-compose.yml
       - ./docker-compose.release.yml
       - ./docker-compose.test.production.override.yml
+      - ./docker-compose.test.backend.yml
   - path:
       - ../../test-data/web/docker-compose.yml
       - ./docker-compose.test.web.override.yml
@@ -35,6 +36,8 @@ services:
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:?ADMIN_PASSWORD is required (set it in the local environment)}
       TEST_DATA_ROOT: /test-data
       TEST_TASK_SEED_FILE: /seed/key
+      TEST_BOTS_CATALOG_DIR: /bots
+      TEST_BOTS_CONTROL_DIR: /bot-control
       TASK_WEB_SCHEME: ${TASK_WEB_SCHEME:-https}
       TASK_COOKIE_DOMAIN: ${TASK_COOKIE_DOMAIN:-myfirstsite.${APP_DOMAIN:?APP_DOMAIN is required for Caddy task certificates}}
       TASK_ARCHIVE_DOMAIN: ${TASK_ARCHIVE_DOMAIN:-archive.${APP_DOMAIN:?APP_DOMAIN is required for Caddy task certificates}}
@@ -59,6 +62,8 @@ services:
     networks:
       - internal
     volumes:
+      - test-bot-catalog:/bots
+      - test-bot-control:/bot-control
       - type: volume
         source: test-task-seed
         target: /seed
@@ -226,5 +231,73 @@ services:
         condition: service_healthy
     restart: "no"
 
+  test-accounts:
+    build:
+      context: ../../backend
+      dockerfile: Dockerfile
+      target: account-seed
+    environment:
+      TEST_ACCOUNTS_ENABLED: "true"
+      DB_DSN: ${DB_DSN:?DB_DSN is required}
+      TEST_ACCOUNTS_EXPECTED_DB: ${POSTGRES_DB:?POSTGRES_DB is required}
+      TEST_ACCOUNTS_FILE: /seed/accounts.json
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=16m
+    pids_limit: 64
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
+          pids: 64
+    networks:
+      - internal
+    volumes:
+      - test-account-seed:/seed
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: "no"
+
+  test-bots:
+    build:
+      context: ../../backend
+      dockerfile: Dockerfile
+      target: test-bots
+    environment:
+      TEST_BOTS_BACKEND_URL: http://backend:${BACKEND_PORT:-8080}
+      TEST_BOTS_ORIGIN: ${TEST_BOTS_ORIGIN:-https://${APP_DOMAIN}}
+      TEST_BOTS_CONTROLLER_PLAYER_ID: ${TEST_BOTS_CONTROLLER_PLAYER_ID:-}
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    networks: [internal]
+    volumes:
+      - test-account-seed:/accounts:ro
+      - test-bot-catalog:/catalog:ro
+      - test-bot-control:/control:ro
+      - test-bot-state:/state
+    depends_on:
+      backend:
+        condition: service_healthy
+      test-data-importer:
+        condition: service_completed_successfully
+      test-accounts:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "1"
+          memory: 256M
+          pids: 64
+
 volumes:
   test-task-seed:
+  test-account-seed:
+  test-bot-state:

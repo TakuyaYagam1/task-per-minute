@@ -1,6 +1,8 @@
 import { expect, test } from '@playwright/test';
 import { jsonHeaders } from './support/common';
 
+const PAGE_SIZE = 25;
+
 interface TestLeaderboardEntry {
   rank: number;
   username: string;
@@ -15,12 +17,12 @@ const leaderboardPayload = (
 ) => ({
   entries,
   page,
-  per_page: 100,
+  per_page: PAGE_SIZE,
   total,
-  total_pages: total === 0 ? 0 : Math.ceil(total / 100),
+  total_pages: total === 0 ? 0 : Math.ceil(total / PAGE_SIZE),
 });
 
-test('leaderboard renders the public page and requests a complete first page', async ({ page }) => {
+test('leaderboard renders the public page and requests 25 rows per page', async ({ page }) => {
   const requests: URL[] = [];
   await page.route('**/api/v1/leaderboard*', async (route) => {
     requests.push(new URL(route.request().url()));
@@ -40,7 +42,7 @@ test('leaderboard renders the public page and requests a complete first page', a
   await expect.poll(() => requests.length).toBeGreaterThan(0);
   expect(requests[0].searchParams.get('wins')).toBe('all');
   expect(requests[0].searchParams.get('page')).toBe('1');
-  expect(requests[0].searchParams.get('per_page')).toBe('100');
+  expect(requests[0].searchParams.get('per_page')).toBe('25');
   await expect(page.getByRole('navigation', { name: 'Навигация рейтинга' })).toHaveCount(0);
   await expect(page.locator('main').getByRole('link', { name: 'На главную' })).toHaveCount(0);
   await expect(page.locator('main').getByRole('link', { name: 'Arena', exact: true })).toHaveCount(0);
@@ -48,9 +50,6 @@ test('leaderboard renders the public page and requests a complete first page', a
   await expect(page.getByText('Найдено игроков')).toBeVisible();
   await expect(page.getByText('Побед на странице')).toBeVisible();
   await expect(page.getByText('Среднее время на странице')).toBeVisible();
-  await expect(page.getByText('Страница 1 из 1')).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Предыдущая' })).toBeDisabled();
-  await expect(page.getByRole('button', { name: 'Следующая' })).toBeDisabled();
   await expect(page.getByText('Победы').first()).toBeVisible();
   await expect(page.getByText('Задач', { exact: true })).toBeHidden();
   await expect(page.getByText('Задачи', { exact: true })).toBeHidden();
@@ -70,6 +69,142 @@ test('leaderboard renders the public page and requests a complete first page', a
   });
   await errorPage.goto('/leaderboard');
   await expect(errorPage.getByText('leaderboard unavailable')).toBeVisible();
+});
+
+test('leaderboard hides pagination when the result set is empty', async ({ page }) => {
+  await page.route('**/api/v1/leaderboard*', async (route) => {
+    await route.fulfill({
+      status: 200,
+      headers: jsonHeaders,
+      body: JSON.stringify(leaderboardPayload([], 1, 0)),
+    });
+  });
+
+  await page.goto('/leaderboard');
+  await expect(page.getByText('Пока нет данных о игроках')).toBeVisible();
+  await expect(page.getByRole('navigation', { name: 'Навигация рейтинга' })).toHaveCount(0);
+});
+
+test('leaderboard uses numeric pages, keeps 25-row bounds, and preserves page focus', async ({ page }) => {
+  const requests: URL[] = [];
+  const total = 257;
+  await page.route('**/api/v1/leaderboard*', async (route) => {
+    const url = new URL(route.request().url());
+    requests.push(url);
+    const requestedPage = Number(url.searchParams.get('page') ?? '1');
+    const firstRank = (requestedPage - 1) * PAGE_SIZE + 1;
+    const count = Math.max(0, Math.min(PAGE_SIZE, total - firstRank + 1));
+    const entries = Array.from({ length: count }, (_, index) => ({
+      rank: firstRank + index,
+      username: `player-${firstRank + index}`,
+      wins: 1,
+      average_solve_time_ms: 42_100,
+    }));
+    await route.fulfill({
+      status: 200,
+      headers: jsonHeaders,
+      body: JSON.stringify(leaderboardPayload(entries, requestedPage, total)),
+    });
+  });
+
+  await page.goto('/leaderboard');
+  const navigation = page.getByRole('navigation', { name: 'Навигация рейтинга' });
+  await expect(page.getByText('player-1', { exact: true })).toBeVisible();
+  await expect(page.locator('tbody tr')).toHaveCount(PAGE_SIZE);
+  await expect(navigation.getByRole('button', { name: 'Страница 1', exact: true })).toHaveAttribute(
+    'aria-current',
+    'page',
+  );
+  await expect(navigation.getByRole('button', { name: 'Страница 11', exact: true })).toBeVisible();
+  await expect(navigation.getByText('...', { exact: true }).first()).toBeVisible();
+  await expect(navigation.getByRole('button', { name: '...' })).toHaveCount(0);
+  expect(requests[0].searchParams.get('per_page')).toBe('25');
+
+  const pageTwo = navigation.getByRole('button', { name: 'Страница 2', exact: true });
+  await pageTwo.click();
+  await expect(page).toHaveURL(/page=2/);
+  await expect(page.getByText('player-26', { exact: true })).toBeVisible();
+  await expect(page.locator('tbody tr')).toHaveCount(PAGE_SIZE);
+  await expect(pageTwo).toHaveAttribute('aria-current', 'page');
+  await expect(pageTwo).toBeFocused();
+
+  await navigation.getByRole('button', { name: 'Страница 11', exact: true }).click();
+  await expect(page.getByText('player-251', { exact: true })).toBeVisible();
+  await expect(page.locator('tbody tr')).toHaveCount(7);
+  await expect(navigation.getByRole('button', { name: 'Страница 11', exact: true })).toHaveAttribute(
+    'aria-current',
+    'page',
+  );
+  expect(requests.at(-1)?.searchParams.get('per_page')).toBe('25');
+
+  await navigation.getByRole('button', { name: 'Страница 1', exact: true }).click();
+  await expect(page.getByText('player-1', { exact: true })).toBeVisible();
+  await expect(page.locator('tbody tr')).toHaveCount(PAGE_SIZE);
+  await expect(navigation.getByRole('button', { name: 'Страница 1', exact: true })).toHaveAttribute(
+    'aria-current',
+    'page',
+  );
+});
+
+test('leaderboard pagination fits 320px and 375px viewports with 44px controls', async ({ page }) => {
+  const total = 175;
+  await page.route('**/api/v1/leaderboard*', async (route) => {
+    const url = new URL(route.request().url());
+    const requestedPage = Number(url.searchParams.get('page') ?? '1');
+    const firstRank = (requestedPage - 1) * PAGE_SIZE + 1;
+    const count = Math.max(0, Math.min(PAGE_SIZE, total - firstRank + 1));
+    const entries = Array.from({ length: count }, (_, index) => ({
+      rank: firstRank + index,
+      username: `player-${firstRank + index}`,
+      wins: 1,
+      average_solve_time_ms: 42_100,
+    }));
+    await route.fulfill({
+      status: 200,
+      headers: jsonHeaders,
+      body: JSON.stringify(leaderboardPayload(entries, requestedPage, total)),
+    });
+  });
+
+  await page.goto('/leaderboard?page=4');
+  const navigation = page.getByRole('navigation', { name: 'Навигация рейтинга' });
+  await expect(navigation).toBeVisible();
+  await expect(navigation.getByRole('button', { name: 'Страница 4', exact: true })).toHaveAttribute(
+    'aria-current',
+    'page',
+  );
+  await expect(navigation.getByRole('button', { name: 'Страница 1', exact: true })).toBeVisible();
+  await expect(navigation.getByRole('button', { name: 'Страница 7', exact: true })).toBeVisible();
+
+  for (const width of [375, 320]) {
+    await page.setViewportSize({ width, height: 800 });
+    const layout = await navigation.evaluate((element) => {
+      const buttons = [...element.querySelectorAll('button')].filter(
+        (button) => button.getClientRects().length > 0,
+      );
+      const navRect = element.getBoundingClientRect();
+      return {
+        documentWidth: document.documentElement.scrollWidth,
+        viewportWidth: document.documentElement.clientWidth,
+        visiblePages: [...element.querySelectorAll('ol')]
+          .filter((list) => list.getClientRects().length > 0)
+          .flatMap((list) => [...list.querySelectorAll('button[aria-current="page"]')])
+          .length,
+        ellipses: [...element.querySelectorAll('ol')]
+          .filter((list) => list.getClientRects().length > 0)
+          .flatMap((list) => [...list.querySelectorAll('li span')])
+          .length,
+        controlsFit: buttons.every((button) => {
+          const rect = button.getBoundingClientRect();
+          return rect.width >= 44 && rect.height >= 44 && rect.left >= navRect.left && rect.right <= navRect.right;
+        }),
+      };
+    });
+    expect(layout.documentWidth).toBeLessThanOrEqual(layout.viewportWidth);
+    expect(layout.visiblePages).toBe(1);
+    expect(layout.ellipses).toBe(2);
+    expect(layout.controlsFit).toBe(true);
+  }
 });
 
 test('malformed leaderboard response shows fallback instead of rendering invalid values', async ({ page }) => {
@@ -159,12 +294,15 @@ test('leaderboard search and wins filter reset paging and follow browser history
   });
 
   await page.goto('/leaderboard?search=alice&wins=withwins&page=2');
-  await expect(page.getByText('Страница 2 из 2')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Страница 2', exact: true })).toHaveAttribute(
+    'aria-current',
+    'page',
+  );
   const previousCount = requests.length;
   await page.getByLabel('Победы').selectOption('withoutwins');
   await expect(page).toHaveURL(/search=alice&wins=withoutwins/);
   await expect(page).not.toHaveURL(/page=2/);
-  await expect(page.getByText('Страница 1 из 1')).toBeVisible();
+  await expect(page.getByRole('navigation', { name: 'Навигация рейтинга' })).toHaveCount(0);
   await expect.poll(() => requests.length).toBeGreaterThan(previousCount);
   expect(requests.at(-1)?.searchParams.get('search')).toBe('alice');
   expect(requests.at(-1)?.searchParams.get('wins')).toBe('withoutwins');
@@ -172,7 +310,10 @@ test('leaderboard search and wins filter reset paging and follow browser history
 
   await page.goBack();
   await expect(page).toHaveURL(/search=alice&wins=withwins&page=2/);
-  await expect(page.getByText('Страница 2 из 2')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Страница 2', exact: true })).toHaveAttribute(
+    'aria-current',
+    'page',
+  );
   await expect.poll(() => requests.length).toBeGreaterThan(previousCount + 1);
 });
 

@@ -30,6 +30,13 @@ import (
 func TestFinalProjectionRepositoryCommitsAuthoritativeResult(t *testing.T) {
 	ctx := context.Background()
 	publication, final, opponentID := createFinalPublicationFixture(t)
+	reservations := func() int {
+		var count int
+		require.NoError(t, sharedPool.QueryRow(ctx, `SELECT count(*) FROM participant_reservations WHERE tournament_id = $1`, publication.Scope.TournamentID).Scan(&count))
+		return count
+	}
+	heldReservations := reservations()
+	require.Positive(t, heldReservations)
 	tournamentRevision := publication.Expected.TournamentRevision
 	repository := projectionrepo.NewProjectionPostgres(postgres.NewTxManager(sharedPool))
 
@@ -81,6 +88,7 @@ func TestFinalProjectionRepositoryCommitsAuthoritativeResult(t *testing.T) {
 	})
 	require.ErrorIs(t, err, abort)
 	assertFinalProjectionNotPersisted(ctx, t, publication, tournamentRevision)
+	require.Equal(t, heldReservations, reservations(), "rollback must retain live participation locks")
 
 	receipt, err := repository.PublishFinal(ctx, publication)
 	require.NoError(t, err)
@@ -92,6 +100,7 @@ func TestFinalProjectionRepositoryCommitsAuthoritativeResult(t *testing.T) {
 	require.Equal(t, tournamentRevision+1, receipt.TournamentRevision)
 
 	assertFinalProjectionCommit(ctx, t, publication, final, receipt)
+	require.Zero(t, reservations(), "champion publication must release live participation locks")
 
 	replayed, err := repository.PublishFinal(ctx, publication)
 	require.NoError(t, err)

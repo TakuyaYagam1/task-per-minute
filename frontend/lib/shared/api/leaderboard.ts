@@ -28,7 +28,7 @@ export const leaderboardApi = {
             search: query.search,
             wins: query.wins,
             page: query.page,
-            per_page: 100,
+            per_page: 25,
           },
         },
         signal,

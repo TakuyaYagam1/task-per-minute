@@ -37,6 +37,7 @@ import {
   type TournamentRecoveryRenderContext,
 } from "../../features/tournament-live";
 import { TournamentEntry } from "../../features/tournament-entry";
+import { TestBotsPanel } from "../../widgets/test-bots";
 import {
   TournamentBroadcastPanel,
   type TournamentBroadcastView,
@@ -820,6 +821,7 @@ export const ArenaPublicTournamentPage = ({
             </nav>
 
             <aside className={styles.participationSlot} aria-label="Участие в соревновании">
+              <TestBotsPanel tournamentId={loadState.item.tournamentId} />
               <TournamentEntry
                 key={loadState.item.tournamentId}
                 publicId={loadState.item.publicId}

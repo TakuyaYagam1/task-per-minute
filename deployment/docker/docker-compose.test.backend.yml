@@ -1,0 +1,14 @@
+services:
+  backend:
+    build:
+      target: test-backend
+    environment:
+      TEST_BOTS_CONTROLLER_PLAYER_ID: ${TEST_BOTS_CONTROLLER_PLAYER_ID:-}
+      TEST_BOTS_URL: http://test-bots:8090
+      TEST_BOTS_KEY_FILE: /bot-control/control.key
+    volumes:
+      - test-bot-control:/bot-control:ro
+
+volumes:
+  test-bot-catalog:
+  test-bot-control:

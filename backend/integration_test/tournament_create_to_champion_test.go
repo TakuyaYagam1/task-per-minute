@@ -43,6 +43,7 @@ import (
 	adminresultrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/admin/result"
 	rosterrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/admin/roster"
 	snapshotrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/admin/snapshot"
+	admissionrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/admission"
 	cancellationrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/cancellation"
 	catalogrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/catalog"
 	configurationrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/configuration"
@@ -80,6 +81,7 @@ import (
 	tournamentadminreplay "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/replay"
 	tournamentadminresult "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/result"
 	tournamentadminroster "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/roster"
+	admissionusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admission"
 	tournamentcancellation "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/cancellation"
 	catalogusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/catalog"
 	tournamentlifecycle "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/lifecycle"
@@ -602,8 +604,9 @@ func newTournamentFlowRESTFixture(t *testing.T) *restFixture {
 	accounts, _ := newRESTAccountService(t, database)
 	server := restv1.New(restv1.Dependencies{
 		Players: playerusecase.SessionNewUseCase(database.mgr, database.players, clock), AdminAuth: auth,
-		PlayerAccounts: accounts,
-		Tournaments:    catalog, TournamentAdmin: admin, TournamentConfiguration: configuration,
+		PlayerAccounts:      accounts,
+		TournamentAdmission: admissionusecase.NewAdmissionUseCase(admissionrepo.NewTournamentAdmissionPostgres(tx), clock),
+		Tournaments:         catalog, TournamentAdmin: admin, TournamentConfiguration: configuration,
 		TournamentSnapshots:   tournamentsnapshotrepo.NewTournamentSnapshotPostgres(tx),
 		TournamentParticipant: participantObserved, ParticipantArchive: tournamentFlowParticipantArchive{}, Golden: golden,
 		LoginLimiter: limiter, JoinLimiter: limiter,

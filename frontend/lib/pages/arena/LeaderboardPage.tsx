@@ -26,8 +26,52 @@ const WINS_FILTERS: readonly LeaderboardWinsFilter[] = [
   'withoutwins',
 ];
 
-const PAGE_SIZE = 100;
 const MAX_SEARCH_LENGTH = 50;
+
+type PaginationItem =
+  | { kind: 'page'; page: number }
+  | { kind: 'ellipsis'; key: string };
+
+const buildPaginationItems = (
+  pages: readonly number[],
+  includeSinglePageGaps: boolean,
+): PaginationItem[] => {
+  const sortedPages = [...new Set(pages)].sort((left, right) => left - right);
+  const items: PaginationItem[] = [];
+
+  sortedPages.forEach((page, index) => {
+    const previousPage = sortedPages[index - 1];
+    if (previousPage !== undefined) {
+      const gap = page - previousPage;
+      if (gap === 2 && includeSinglePageGaps) {
+        items.push({ kind: 'page', page: previousPage + 1 });
+      } else if (gap > 1) {
+        items.push({ kind: 'ellipsis', key: `ellipsis-${previousPage}-${page}` });
+      }
+    }
+    items.push({ kind: 'page', page });
+  });
+
+  return items;
+};
+
+const desktopPaginationItems = (page: number, totalPages: number): PaginationItem[] =>
+  buildPaginationItems(
+    [1, totalPages, page - 1, page, page + 1].filter(
+      (value) => value >= 1 && value <= totalPages,
+    ),
+    true,
+  );
+
+const compactPaginationItems = (page: number, totalPages: number): PaginationItem[] => {
+  const neighbor = page <= totalPages / 2 ? page + 1 : page - 1;
+  return buildPaginationItems(
+    [1, totalPages, page, neighbor].filter(
+      (value) => value >= 1 && value <= totalPages,
+    ),
+    false,
+  );
+};
 
 const formatTime = (ms: number): string => {
   const totalSeconds = ms / 1000;
@@ -75,6 +119,10 @@ export default function LeaderboardPage() {
   const [page, setPage] = useState(1);
   const [totalPlayers, setTotalPlayers] = useState(0);
   const [totalPages, setTotalPages] = useState(0);
+  const [paginationFilter, setPaginationFilter] = useState<{
+    search: string;
+    wins: LeaderboardWinsFilter;
+  } | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const entriesRef = useRef<LeaderboardEntry[]>([]);
@@ -88,6 +136,7 @@ export default function LeaderboardPage() {
       queryRef.current = nextQuery;
       setQuery(nextQuery);
       setSearchInput(nextQuery.search);
+      setPage(nextQuery.page);
       setQueryReady(true);
     };
     syncQuery();
@@ -122,9 +171,14 @@ export default function LeaderboardPage() {
   };
 
   const handlePageChange = (nextPage: number) => {
-    if (nextPage < 1 || nextPage === queryRef.current.page) {
+    if (
+      nextPage < 1 ||
+      nextPage > totalPages ||
+      nextPage === queryRef.current.page
+    ) {
       return;
     }
+    setPage(nextPage);
     changeQuery({ ...queryRef.current, page: nextPage }, 'pushState');
   };
 
@@ -145,7 +199,6 @@ export default function LeaderboardPage() {
     entriesRef.current = [];
     setEntries([]);
     setTotalPlayers(0);
-    setTotalPages(0);
     setLoading(true);
     setLoadError(null);
 
@@ -221,6 +274,7 @@ export default function LeaderboardPage() {
         setPage(data.page);
         setTotalPlayers(data.total);
         setTotalPages(data.total_pages);
+        setPaginationFilter({ search: query.search, wins: query.wins });
         setLoadError(null);
       } catch (error) {
         if (isAbortError(error)) {
@@ -282,6 +336,31 @@ export default function LeaderboardPage() {
     : query.search || query.wins !== 'all'
       ? 'Игроки не найдены'
       : 'Пока нет данных о игроках';
+
+  const renderPaginationItems = (items: readonly PaginationItem[]) =>
+    items.map((item) => (
+      <li key={item.kind === 'page' ? `page-${item.page}` : item.key}>
+        {item.kind === 'ellipsis' ? (
+          <span className={styles.pageEllipsis} aria-hidden="true">...</span>
+        ) : (
+          <button
+            className={styles.pageButton}
+            type="button"
+            aria-label={`Страница ${item.page}`}
+            aria-current={item.page === page ? 'page' : undefined}
+            onClick={() => handlePageChange(item.page)}
+          >
+            {item.page}
+          </button>
+        )}
+      </li>
+    ));
+
+  const showPagination =
+    paginationFilter !== null &&
+    totalPages > 1 &&
+    paginationFilter.search === query.search &&
+    paginationFilter.wins === query.wins;
 
   return (
     <main className={styles.container}>
@@ -384,27 +463,42 @@ export default function LeaderboardPage() {
           </div>
         )}
       </div>
-      <nav className={styles.pagination} aria-label="Страницы рейтинга">
-        <button
-          className={styles.paginationButton}
-          type="button"
-          disabled={loading || query.page <= 1}
-          onClick={() => handlePageChange(query.page - 1)}
+      {showPagination && (
+        <nav
+          className={styles.pagination}
+          aria-label="Навигация рейтинга"
+          aria-busy={loading || undefined}
         >
-          Предыдущая
-        </button>
-        <span className={styles.pageSummary} aria-live="polite">
-          {totalPages > 0 ? `Страница ${page} из ${totalPages}` : 'Нет страниц'}
-        </span>
-        <button
-          className={styles.paginationButton}
-          type="button"
-          disabled={loading || query.page >= totalPages}
-          onClick={() => handlePageChange(query.page + 1)}
-        >
-          Следующая
-        </button>
-      </nav>
+          <button
+            className={styles.paginationArrow}
+            type="button"
+            aria-label="Предыдущая страница"
+            aria-disabled={page <= 1}
+            onClick={() => handlePageChange(page - 1)}
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <path d="m15 18-6-6 6-6" />
+            </svg>
+          </button>
+          <ol className={`${styles.pageList} ${styles.desktopPageList}`}>
+            {renderPaginationItems(desktopPaginationItems(page, totalPages))}
+          </ol>
+          <ol className={`${styles.pageList} ${styles.compactPageList}`}>
+            {renderPaginationItems(compactPaginationItems(page, totalPages))}
+          </ol>
+          <button
+            className={styles.paginationArrow}
+            type="button"
+            aria-label="Следующая страница"
+            aria-disabled={page >= totalPages}
+            onClick={() => handlePageChange(page + 1)}
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <path d="m9 18 6-6-6-6" />
+            </svg>
+          </button>
+        </nav>
+      )}
     </main>
   );
 }

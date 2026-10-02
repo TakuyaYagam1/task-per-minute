@@ -261,6 +261,12 @@ func (r *ProjectionPostgres) persistFinalProjection(
 	if err != nil {
 		return projection.FinalPublicationReceipt{}, projectionCASWriteError("complete Tournament", err)
 	}
+	// Final publication completes the tournament directly, without the generic
+	// lifecycle transition. Release its live participation locks atomically so
+	// players can join a new tournament while historical evidence stays intact.
+	if _, err = querier.ReleaseTournamentReservations(ctx, publication.Scope.TournamentID); err != nil {
+		return projection.FinalPublicationReceipt{}, projectionCASWriteError("release participant reservations", err)
+	}
 	championEvent, err := r.createFinalChampionOutboxEvent(ctx, publication, currentRevision+1)
 	if err != nil {
 		return projection.FinalPublicationReceipt{}, err

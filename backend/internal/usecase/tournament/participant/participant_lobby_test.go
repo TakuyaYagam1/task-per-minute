@@ -57,6 +57,20 @@ func TestDeriveParticipantLobbyState(t *testing.T) {
 			status: usecase.LobbyStatusAssigned, action: usecase.LobbyRequiredActionReady,
 		},
 		{
+			name: "completed BO3 game allows readiness for the next wave",
+			mutate: func(view *usecase.RecoveryView) {
+				view.Assignment = &usecase.TournamentParticipantAssignmentView{
+					Context: usecase.ParticipantAssignmentContextView{GameState: domain.GameStateCompleted},
+				}
+				view.Series = &domain.Series{State: domain.SeriesStateReady, Format: domain.SeriesFormatBO3}
+				view.Wave = &usecase.WaveView{Wave: domain.Wave{
+					Members:     []domain.WaveMember{{ParticipantID: participantID}},
+					ReadyWindow: &domain.ReadyWindow{State: domain.ReadyWindowStateOpen},
+				}}
+			},
+			status: usecase.LobbyStatusAssigned, action: usecase.LobbyRequiredActionReady,
+		},
+		{
 			name: "assigned draft",
 			mutate: func(view *usecase.RecoveryView) {
 				actor := participantID

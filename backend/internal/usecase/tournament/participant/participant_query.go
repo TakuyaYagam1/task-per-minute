@@ -344,7 +344,9 @@ func deriveParticipantLobbyState(view usecase.RecoveryView) (usecase.LobbyStatus
 		}
 		return usecase.LobbyStatusAssigned, usecase.LobbyRequiredActionWait
 	}
-	if view.Assignment != nil {
+	// A completed BO3 game's assignment remains visible until the next game.
+	// It must not hide that next wave's readiness action.
+	if view.Assignment != nil && !view.Assignment.Context.GameState.IsTerminal() {
 		return usecase.LobbyStatusAssigned, usecase.LobbyRequiredActionPlay
 	}
 	if view.Series != nil && view.Series.State.IsTerminal() {

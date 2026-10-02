@@ -43,6 +43,7 @@ import {
 } from "../../widgets/tournament-player";
 import { TournamentBroadcastPanel } from "../../widgets/tournament-broadcast";
 import arenaStyles from "../../widgets/arena/arena.module.css";
+import { TestBotsPanel } from "../../widgets/test-bots";
 
 type ArenaRolePageProps = Readonly<{
   returnPath?: string | null;
@@ -472,6 +473,7 @@ export const ArenaRolePage = ({ returnPath, role, tournamentId }: ArenaRolePageP
           : undefined
       }
     >
+      {role === "participant" && state.accessStatus === "ready" && <TestBotsPanel tournamentId={tournamentId} />}
       {safePublicReturnPath && (
         <Link className={arenaStyles.stateAction} href={safePublicReturnPath}>
           Вернуться к соревнованию

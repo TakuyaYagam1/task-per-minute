@@ -37,7 +37,7 @@ interface TestLeaderboardEntry {
 const leaderboardPayload = (entries: TestLeaderboardEntry[]) => ({
   entries,
   page: 1,
-  per_page: 100,
+  per_page: 25,
   total: entries.length,
   total_pages: entries.length === 0 ? 0 : 1,
 });
@@ -183,11 +183,11 @@ test('avatar media loads only near the viewport and survives five-second leaderb
 
 test('offscreen avatar requests wait until its leaderboard row approaches the viewport', async ({ page }) => {
   await installGuestSession(page);
-  const entries = Array.from({ length: 100 }, (_, index) =>
+  const entries = Array.from({ length: 25 }, (_, index) =>
     entry(
       index + 1,
       `player-${index + 1}`,
-      index === 99
+      index === 24
         ? { player_id: pngPlayerID, version: firstVersion, content_type: 'image/png' }
         : undefined,
     ),
@@ -201,7 +201,7 @@ test('offscreen avatar requests wait until its leaderboard row approaches the vi
   });
 
   await page.goto('/leaderboard');
-  const row = page.locator('tbody tr').filter({ hasText: 'player-100' });
+  const row = page.locator('tbody tr').filter({ hasText: 'player-25' });
   await expect(row).toBeAttached();
   await expect(row).not.toBeInViewport();
   await page.waitForTimeout(150);

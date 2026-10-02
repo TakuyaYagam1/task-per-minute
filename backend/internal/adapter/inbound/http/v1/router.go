@@ -20,6 +20,10 @@ type HandlerOptions struct {
 }
 
 func NewHandler(server *Server, opts HandlerOptions) http.Handler {
+	if opts.Router == nil {
+		opts.Router = chi.NewRouter()
+	}
+	registerTestBotRoutes(server, opts)
 	middlewares := make([]api.MiddlewareFunc, 0, len(opts.Middlewares)+3)
 	if opts.RequestValidator != nil {
 		middlewares = append(middlewares, opts.RequestValidator)
