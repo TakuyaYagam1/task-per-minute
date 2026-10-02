@@ -129,15 +129,15 @@ test-fast: test-migration-create ## Cached unit tests without race instrumentati
 	go test -parallel=5 $$(go list ./... | grep -v /integration_test)
 
 .PHONY: test-int-fast
-test-int-fast: ## Integration tests without race instrumentation, sharing one PostgreSQL container
+test-int-fast: mocks ## Integration tests without race instrumentation, sharing one PostgreSQL container
 	bash scripts/test-integration.sh --suite-fast
 
 .PHONY: test-int
-test-int: ## Integration tests with sequential root shards and in-process parallelism 5
+test-int: mocks ## Integration tests with sequential root shards and in-process parallelism 5
 	bash scripts/test-integration.sh --suite-race
 
 .PHONY: test-int-compile
-test-int-compile: ## Compile the integration package with race instrumentation without starting fixtures
+test-int-compile: mocks ## Compile the integration package with race instrumentation without starting fixtures
 	@set -e; \
 	for package in $$(go list -tags=integration ./integration_test/...); do \
 		echo "compile $$package"; \
