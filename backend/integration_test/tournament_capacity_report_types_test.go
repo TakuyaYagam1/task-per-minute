@@ -19,8 +19,7 @@ const (
 	tournamentCapacityDeadlineBuffer    = 2 * time.Minute
 	tournamentCapacityGitCommandTimeout = 5 * time.Second
 	tournamentCapacityGitOutputLimit    = 4096
-	tournamentCapacityGitExecutable     = "/nix/store/6f0qqak4qbcrbw4f750phr88c9yhpf5s-git-2.55.0/bin/git"
-	tournamentCapacityGitExecutableSHA  = "d776b30d3f856aca98c8681a249cf8606fd14d4a9dc9debd358014522fa7d067"
+	tournamentCapacityGitExecutable     = "git"
 )
 
 type tournamentCapacityStatus string

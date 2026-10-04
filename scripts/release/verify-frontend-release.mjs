@@ -10,7 +10,6 @@ import { validateImage } from './validate-frontend-image.mjs';
 const defaultLockfile = fileURLToPath(new URL('../../frontend/package-lock.json', import.meta.url));
 const defaultPolicy = Object.freeze({ version: 'v3.1.3', acceptedExecutableSha256: Object.freeze([
   '4629c757b7618056f8ddd7e2625ae9fdd94c0372a65049520bc7d9df9efc7f71', // Official Linux amd64 release.
-  '94fb86540f71e51c7929bb565f8b428696ce495f1b8440d6dd9ef049a08f0663', // Verified Nix store build.
 ]) });
 const issuer = 'https://token.actions.githubusercontent.com';
 const maxJsonBytes = 32 * 1024 * 1024;

@@ -3,9 +3,10 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)"
 REPORT_PATH="${NPM_BUILD_TOOL_AUDIT_REPORT:-}"
-LOCKED_NODE="/nix/store/jy3vlmdzmyjpb37r6r2n24lc3zarhjz3-nodejs-slim-24.18.1/bin/node"
-LOCKED_NPM="/nix/store/3nyq1g44akas41r304bk8ai76ywl9p9h-nodejs-slim-24.18.1-npm/lib/node_modules/npm/bin/npm-cli.js"
-RUNTIME_PATH="$(dirname "$LOCKED_NODE"):/run/current-system/sw/bin:/usr/bin:/bin"
+LOCKED_NODE="$(command -v node)"
+LOCKED_NPM="$(node -e 'process.stdout.write(require("node:fs").realpathSync(process.argv[1]))' "$(command -v npm)")"
+RUNTIME_PATH="$PATH"
+BROWSER_CACHE="${PLAYWRIGHT_BROWSERS_PATH:-${XDG_CACHE_HOME:-$HOME/.cache}/ms-playwright}"
 
 fail() {
   printf 'frontend build-tool audit: %s\n' "$*" >&2
@@ -30,7 +31,7 @@ done
 command -v git >/dev/null 2>&1 || fail 'git executable not found'
 
 run_locked_node() {
-  env -i HOME=/nonexistent LANG=C LC_ALL=C NO_COLOR=1 PATH="$RUNTIME_PATH" \
+  env -i HOME=/nonexistent LANG=C LC_ALL=C NO_COLOR=1 PATH="$RUNTIME_PATH" PLAYWRIGHT_BROWSERS_PATH="$BROWSER_CACHE" \
     "$LOCKED_NODE" "$@"
 }
 
@@ -47,6 +48,7 @@ snapshot_sources() {
   sha256sum \
     "$REPO_ROOT/frontend/package.json" \
     "$REPO_ROOT/frontend/package-lock.json" \
+    "$REPO_ROOT/frontend/scripts/configure-ci-runtime.mjs" \
     "$REPO_ROOT/backend/go.mod" \
     "$REPO_ROOT/backend/go.sum" \
     "$REPO_ROOT/security/tools/openapi-tools.policy" \
@@ -60,11 +62,11 @@ snapshot_sources() {
 SOURCE_SNAPSHOT_BEFORE="$(snapshot_sources)"
 
 set +e
-env -i HOME=/nonexistent LANG=C LC_ALL=C NO_COLOR=1 PATH="$RUNTIME_PATH" \
+env -i HOME=/nonexistent LANG=C LC_ALL=C NO_COLOR=1 PATH="$RUNTIME_PATH" PLAYWRIGHT_BROWSERS_PATH="$BROWSER_CACHE" \
   bash "$REPO_ROOT/scripts/release/verify-security-tools.sh" --scope frontend \
   >"$TMP_ROOT/security.out" 2>&1
 SECURITY_STATUS=$?
-env -i HOME=/nonexistent LANG=C LC_ALL=C NO_COLOR=1 PATH="$RUNTIME_PATH" \
+env -i HOME=/nonexistent LANG=C LC_ALL=C NO_COLOR=1 PATH="$RUNTIME_PATH" PLAYWRIGHT_BROWSERS_PATH="$BROWSER_CACHE" \
   bash "$REPO_ROOT/scripts/release/validate-openapi-toolchain-trust.sh" \
   >"$TMP_ROOT/openapi.out" 2>&1
 OPENAPI_STATUS=$?
@@ -102,14 +104,14 @@ OPENAPI_OUTPUT_SHA256="$(sha256sum "$TMP_ROOT/openapi.out" | awk '{print $1}')"
 TOOL_VERSIONS="$(run_locked_node - "$REPO_ROOT/frontend/package-lock.json" "$REPO_ROOT/security/tools/release-tools.lock.json" <<'NODE'
 const fs = require('node:fs');
 const lock = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
-const tools = JSON.parse(fs.readFileSync(process.argv[3], 'utf8'));
-const findTool = (name) => tools.tools?.find((tool) => tool.name === name)?.version ?? null;
+const browsers = JSON.parse(fs.readFileSync(require('node:path').join(require('node:path').dirname(process.argv[2]), 'node_modules/playwright-core/browsers.json'), 'utf8'));
+const browserVersion = browsers.browsers.find(browser => browser.name === 'chromium')?.browserVersion ?? null;
 const result = {
   redocly: lock.packages?.['node_modules/@redocly/cli']?.version ?? null,
   openapi_typescript: lock.packages?.['node_modules/openapi-typescript']?.version ?? null,
-  playwright: findTool('playwright'),
-  chromium: findTool('chromium'),
-  chromium_binding: tools.playwright_chromium?.chromium_browser_version ?? null,
+  playwright: lock.packages?.['node_modules/playwright-core']?.version ?? null,
+  chromium: browserVersion,
+  chromium_binding: browserVersion,
 };
 process.stdout.write(JSON.stringify(result));
 NODE
@@ -128,10 +130,10 @@ const report = {
   exit_code: result === "PASS" ? 0 : 1,
   source_snapshot: { before: sourceSnapshotBefore, after: sourceSnapshotAfter, stable: snapshotStable === "true" },
   tools: [
-    { name: "node", version: nodeVersion, identity_check: "security/tools/release-tools.lock.json", exit_code: Number(securityStatus) },
-    { name: "npm", version: npmVersion, identity_check: "security/tools/release-tools.lock.json", exit_code: Number(securityStatus) },
-    { name: "playwright", version: toolVersions.playwright, identity_check: "security/tools/release-tools.lock.json", exit_code: Number(securityStatus) },
-    { name: "chromium", version: toolVersions.chromium, binding_version: toolVersions.chromium_binding, identity_check: "security/tools/release-tools.lock.json", exit_code: Number(securityStatus) },
+    { name: "node", version: nodeVersion, identity_check: "frontend/scripts/configure-ci-runtime.mjs", exit_code: Number(securityStatus) },
+    { name: "npm", version: npmVersion, identity_check: "frontend/scripts/configure-ci-runtime.mjs", exit_code: Number(securityStatus) },
+    { name: "playwright", version: toolVersions.playwright, identity_check: "frontend/scripts/configure-ci-runtime.mjs", exit_code: Number(securityStatus) },
+    { name: "chromium", version: toolVersions.chromium, binding_version: toolVersions.chromium_binding, identity_check: "frontend/scripts/configure-ci-runtime.mjs", exit_code: Number(securityStatus) },
     { name: "@redocly/cli", version: toolVersions.redocly, identity_check: "security/tools/openapi-tools.policy", exit_code: Number(openapiStatus) },
     { name: "openapi-typescript", version: toolVersions.openapi_typescript, identity_check: "security/tools/openapi-tools.policy", exit_code: Number(openapiStatus) },
   ],

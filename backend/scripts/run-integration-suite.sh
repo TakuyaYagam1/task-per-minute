@@ -17,6 +17,11 @@ if [[ ! "$shard_count" =~ ^[1-9][0-9]*$ ]]; then
 	echo "TPM_TEST_ROOT_SHARDS must be a positive integer" >&2
 	exit 2
 fi
+readonly shard_index="${TPM_TEST_SHARD_INDEX:-}"
+if [[ -n "$shard_index" ]] && { [[ ! "$shard_index" =~ ^[1-9][0-9]*$ ]] || ((shard_index > shard_count)); }; then
+	echo "TPM_TEST_SHARD_INDEX must be between 1 and TPM_TEST_ROOT_SHARDS" >&2
+	exit 2
+fi
 readonly root_parallel="${TPM_TEST_ROOT_PARALLEL:-5}"
 if [[ ! "$root_parallel" =~ ^[1-9][0-9]*$ ]]; then
 	echo "TPM_TEST_ROOT_PARALLEL must be a positive integer" >&2
@@ -28,7 +33,8 @@ if [[ ! "$subpackage_parallel" =~ ^[1-9][0-9]*$ ]]; then
 	exit 2
 fi
 
-readonly scratch_dir="$(mktemp -d)"
+scratch_dir="$(mktemp -d)"
+readonly scratch_dir
 root_pid=""
 cleanup() {
 	if [[ -n "$root_pid" ]]; then
@@ -75,7 +81,16 @@ done <"$scratch_dir/root-tests.txt"
 echo "root integration tests: $index tests across $shard_count isolated shards"
 root_status=0
 for ((shard = 0; shard < shard_count; shard++)); do
+	if [[ -n "$shard_index" ]] && ((shard + 1 != shard_index)); then
+		continue
+	fi
+	if [[ ! -s "$scratch_dir/shard-${shard}.txt" ]]; then
+		echo "root integration shard $((shard + 1))/$shard_count has no tests" >&2
+		exit 1
+	fi
 	test_pattern="^($(paste -sd '|' "$scratch_dir/shard-${shard}.txt"))$"
+	started_at=$SECONDS
+	echo "root integration shard $((shard + 1))/$shard_count: starting"
 	"$root_binary" \
 		-test.count=1 \
 		"-test.parallel=${root_parallel}" \
@@ -84,7 +99,7 @@ for ((shard = 0; shard < shard_count; shard++)); do
 		>"$scratch_dir/shard-${shard}.log" 2>&1 &
 	root_pid="$!"
 	if wait "$root_pid"; then
-		echo "root integration shard $((shard + 1))/$shard_count: PASS"
+		echo "root integration shard $((shard + 1))/$shard_count: PASS ($((SECONDS - started_at))s)"
 	else
 		echo "root integration shard $((shard + 1))/$shard_count: FAIL" >&2
 		cat "$scratch_dir/shard-${shard}.log" >&2
@@ -94,16 +109,27 @@ for ((shard = 0; shard < shard_count; shard++)); do
 done
 
 root_package="$(go list -tags=integration ./integration_test)"
+package_list="$(go list -tags=integration ./integration_test/...)"
 mapfile -t subpackages < <(
-	go list -tags=integration ./integration_test/... | while IFS= read -r package; do
+	while IFS= read -r package; do
 		if [[ "$package" != "$root_package" ]]; then
 			printf '%s\n' "$package"
 		fi
-	done
+	done <<<"$package_list"
 )
 
+if [[ -n "$shard_index" ]]; then
+	selected=()
+	for index in "${!subpackages[@]}"; do
+		if ((index % shard_count + 1 == shard_index)); then
+			selected+=("${subpackages[index]}")
+		fi
+	done
+	subpackages=("${selected[@]}")
+fi
+
 subpackage_status=0
-if ! go test "${subpackage_args[@]}" "${subpackages[@]}"; then
+if ((${#subpackages[@]} > 0)) && ! go test "${subpackage_args[@]}" "${subpackages[@]}"; then
 	subpackage_status=1
 fi
 

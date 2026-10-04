@@ -129,10 +129,13 @@ jobs:
         run: make test
 
   integration-test:
-    name: integration test
+    name: integration test (${{ matrix.shard }}/5)
     runs-on: ubuntu-latest
-    # Two sequential shards and the remaining packages each have a 20-minute limit.
-    timeout-minutes: 75
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5]
     steps:
       - name: checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -175,6 +178,9 @@ jobs:
 
       - name: make test-int
         working-directory: ${{ env.GO_WORKDIR }}
+        env:
+          TPM_TEST_ROOT_SHARDS: '5'
+          TPM_TEST_SHARD_INDEX: ${{ matrix.shard }}
         run: make test-int
 
   media-test:

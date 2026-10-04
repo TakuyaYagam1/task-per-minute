@@ -154,9 +154,23 @@ test('every reusable CI job is included in the merge gate', () => {
     ['reusable-frontend-verify.yml', 'frontend verify'],
     ['reusable-build-images.yml', 'build images'],
   ]) {
-    for (const match of read(`.github/workflows/${file}`).matchAll(/^    name: (.+)$/gm)) {
-      expected.push(`${prefix} / ${match[1]}`);
+    const workflow = read(`.github/workflows/${file}`);
+    for (const match of workflow.matchAll(/^    name: (.+)$/gm)) {
+      if (match[1].includes('${{ matrix.shard }}')) {
+        const shards = JSON.parse(workflow.match(/^        shard: (\[.+\])$/m)[1]);
+        for (const shard of shards) expected.push(`${prefix} / ${match[1].replace('${{ matrix.shard }}', shard)}`);
+      } else expected.push(`${prefix} / ${match[1]}`);
     }
   }
   assert.deepEqual([...requiredJobs].sort(), expected.sort());
+});
+
+test('a missing or unsuccessful integration shard prevents merging', () => {
+  for (const name of requiredJobs.filter(name => name.includes('integration test ('))) {
+    const jobs = fixture().jobs;
+    assert.equal(completePipeline(jobs.filter(job => job.name !== name)), false);
+    for (const conclusion of ['failure', 'skipped', 'cancelled']) {
+      assert.equal(completePipeline(jobs.map(job => job.name === name ? { ...job, conclusion } : job)), false);
+    }
+  }
 });

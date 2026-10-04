@@ -170,31 +170,19 @@
     },
     "provisioning": {
       "oneOf": [
-        {"$ref": "#/$defs/nixProvisioning"},
+        {"$ref": "#/$defs/systemProvisioning"},
         {"$ref": "#/$defs/archiveProvisioning"},
         {"$ref": "#/$defs/testProvisioning"},
         {"$ref": "#/$defs/unresolvedProvisioning"}
       ]
     },
-    "nixProvisioning": {
+    "systemProvisioning": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "kind",
-        "immutable_root",
-        "relative_path",
-        "executable_sha256",
-        "nar_hash"
-      ],
+      "required": ["kind", "command"],
       "properties": {
-        "kind": {"const": "nix_store"},
-        "immutable_root": {"$ref": "#/$defs/absolutePath"},
-        "relative_path": {"$ref": "#/$defs/relativePath"},
-        "executable_sha256": {"$ref": "#/$defs/sha256"},
-        "nar_hash": {
-          "type": "string",
-          "pattern": "^sha256:[0-9a-z]{52}$"
-        }
+        "kind": {"const": "system"},
+        "command": {"type": "string", "pattern": "^[a-z][a-z0-9-]*$"}
       }
     },
     "archiveProvisioning": {

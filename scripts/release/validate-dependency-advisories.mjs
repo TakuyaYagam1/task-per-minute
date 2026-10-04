@@ -43,7 +43,7 @@ function audit(name, argumentsList) {
       LANG: "C",
       LC_ALL: "C",
       NO_COLOR: "1",
-      PATH: process.env.AUDIT_RUNTIME_PATH || "/run/current-system/sw/bin:/usr/bin:/bin",
+      PATH: process.env.AUDIT_RUNTIME_PATH || process.env.PATH || "/usr/bin:/bin",
       npm_config_ignore_scripts: "true",
       npm_config_userconfig: userConfig,
       npm_config_registry: "https://registry.npmjs.org/",

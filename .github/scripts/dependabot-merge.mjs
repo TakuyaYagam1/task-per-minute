@@ -6,7 +6,7 @@ export const requiredJobs = [
   'backend checks / sql lint',
   'backend checks / lint',
   'backend checks / unit test',
-  'backend checks / integration test',
+  ...[1, 2, 3, 4, 5].map(shard => `backend checks / integration test (${shard}/5)`),
   'backend checks / media test',
   'backend checks / build',
   'frontend verify / verify',
