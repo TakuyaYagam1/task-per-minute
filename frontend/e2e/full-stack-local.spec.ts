@@ -1323,7 +1323,9 @@ test.describe('local compose full stack e2e', () => {
 
     const accountMenu = await openAccountMenu(page);
     await accountMenu.getByRole('button', { name: 'Выйти', exact: true }).click();
-    await expect(page.getByRole('link', { name: 'Войти', exact: true })).toBeVisible({ timeout: 15_000 });
+    await expect(page).toHaveURL(`${frontendURL}/login`);
+    await expect(page.getByRole('heading', { name: 'Вход участника', exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Войти', exact: true })).toBeVisible();
     await expect(page.getByRole('link', { name: 'Создать аккаунт', exact: true })).toBeVisible();
     await expectNoSensitiveAuthStorage(page);
 

@@ -1,6 +1,6 @@
-import { accessSync, constants, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { accessSync, chmodSync, constants, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
-import { dirname, join, resolve } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
 
@@ -77,6 +77,59 @@ function executionTests(report) {
   }
   visit(report);
   return tests;
+}
+
+function reportExecutionSummary(report) {
+  // Never persist assertion values, source snippets, attachments, cookies or response bodies.
+  const location = (value) => {
+    if (typeof value?.file !== "string") return null;
+    const file = relative(frontendRoot, resolve(report.config?.rootDir || frontendRoot, value.file));
+    if (!file || file.startsWith("..") || isAbsolute(file)) return null;
+    return {
+      file,
+      line: Number.isSafeInteger(value.line) ? value.line : null,
+      column: Number.isSafeInteger(value.column) ? value.column : null,
+    };
+  };
+  const tests = [];
+  function visit(suite) {
+    for (const spec of suite.specs ?? []) {
+      for (const test of spec.tests ?? []) {
+        const results = test.results ?? [];
+        tests.push({
+          ...location(spec),
+          title: typeof spec.title === "string" ? spec.title.slice(0, 300) : "unknown test",
+          status: test.status,
+          expected_status: test.expectedStatus,
+          attempts: results.map((result) => ({
+            status: result.status,
+            error_locations: [result.errorLocation, ...(result.errors ?? []).map((error) => error.location)]
+              .map(location).filter(Boolean),
+          })),
+        });
+      }
+    }
+    for (const child of suite.suites ?? []) visit(child);
+  }
+  visit(report);
+  const summary = {
+    schema_version: 1,
+    tests,
+    error_count: report.errors?.length ?? 0,
+    error_locations: (report.errors ?? []).map((error) => location(error.location)).filter(Boolean),
+  };
+  if (process.env.E2E_SUMMARY_FILE) {
+    const path = resolve(process.env.E2E_SUMMARY_FILE);
+    mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
+    writeFileSync(path, `${JSON.stringify(summary, null, 2)}\n`, { mode: 0o600 });
+    chmodSync(path, 0o600);
+  }
+  for (const test of tests.filter((item) => item.status === "unexpected" || item.status === "flaky").slice(0, 10)) {
+    process.stderr.write(`frontend e2e failure: ${JSON.stringify(test)}\n`);
+  }
+  if (summary.error_count > 0) {
+    process.stderr.write(`frontend e2e runner errors: ${summary.error_count}; locations: ${JSON.stringify(summary.error_locations)}\n`);
+  }
 }
 
 function parseExecutionReport(outputPath, stdout) {
@@ -211,6 +264,7 @@ try {
   );
   if (result.stderr) process.stderr.write(result.stderr);
   const report = parseExecutionReport(executionReportPath, "");
+  reportExecutionSummary(report);
   if (result.status !== 0) {
     throw new Error(`Playwright execution failed with status ${result.status}`);
   }

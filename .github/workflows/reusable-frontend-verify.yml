@@ -62,7 +62,7 @@ jobs:
 
       - name: test frontend runtime validation
         working-directory: ${{ env.FRONTEND_WORKDIR }}
-        run: node --test scripts/configure-ci-runtime.test.mjs
+        run: node --test scripts/configure-ci-runtime.test.mjs scripts/run-e2e.test.mjs
 
       - name: install frontend dependencies
         working-directory: ${{ env.FRONTEND_WORKDIR }}
@@ -88,6 +88,7 @@ jobs:
         working-directory: ${{ env.FRONTEND_WORKDIR }}
         env:
           E2E_WORKERS: 1
+          E2E_SUMMARY_FILE: ${{ env.FRONTEND_CI_REPORT_DIR }}/e2e-summary.json
         run: npm run verify:ci
 
       - name: finalize verification evidence
@@ -207,6 +208,7 @@ jobs:
 
       - name: full-stack e2e
         env:
+          E2E_SUMMARY_FILE: ${{ runner.temp }}/frontend-full-stack/e2e-summary.json
           E2E_ADMIN_PASSWORD: tpm-ci-admin-password
           E2E_COMPOSE_ENV_FILE: ${{ runner.temp }}/task-per-minute-e2e.env
           E2E_COMPOSE_REPORT_FILE: ${{ runner.temp }}/frontend-full-stack/full-stack-verify.json
