@@ -36,7 +36,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags='-s -w' -o /out/testbots ./cmd/testbots && \
     CGO_ENABLED=0 GOOS=linux go build -tags=testtools -trimpath -ldflags='-s -w' -o /out/test-server ./cmd/app
 
-FROM alpine:3.23 AS media-builder
+FROM alpine:3.24 AS media-builder
 
 RUN apk add --no-cache \
         build-base \
@@ -112,7 +112,7 @@ RUN GOTOOLCHAIN=local go mod download
 ENV GOTOOLCHAIN=local GOPROXY=off GOSUMDB=off
 CMD ["go", "test", "-tags=media_integration", "./internal/adapter/outbound/media/ffmpeg"]
 
-FROM alpine:3.23 AS account-seed
+FROM alpine:3.24 AS account-seed
 
 RUN addgroup -g 1001 -S appgroup && \
     adduser -S -u 1001 -G appgroup appuser && \
@@ -127,7 +127,7 @@ WORKDIR /app
 USER 1001:1001
 ENTRYPOINT ["/app/testseed"]
 
-FROM alpine:3.23 AS runtime-base
+FROM alpine:3.24 AS runtime-base
 
 ARG BACKEND_PORT=8080
 
@@ -161,7 +161,7 @@ RUN mkdir -p /bot-control && chown 1001:1001 /bot-control && chmod 0700 /bot-con
 USER appuser
 COPY --from=test-bots-builder --chown=1001:1001 /out/test-server /app/server
 
-FROM alpine:3.23 AS test-bots
+FROM alpine:3.24 AS test-bots
 RUN addgroup -g 1001 -S appgroup && adduser -S -u 1001 -G appgroup appuser && \
     mkdir -p /app /state && chown 1001:1001 /app /state && chmod 0700 /state
 COPY --from=go-base /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
