@@ -181,6 +181,18 @@ function checkReadOnly(text) {
 function checkPipeline(text) {
   const events = section(text, 'on', 0);
   assert.deepEqual([...entries(events, 2).keys()], ['push', 'pull_request', 'workflow_dispatch']);
+  const pullRequest = section(events, 'pull_request', 2);
+  for (const branch of ['main', 'dev']) {
+    assert.ok(section(pullRequest, 'branches', 4).split('\n').some((line) => line.trim() === `- ${branch}`),
+      `pull requests to ${branch} must run checks`);
+  }
+  for (const event of ['push', 'pull_request']) {
+    const paths = section(section(events, event, 2), 'paths', 4);
+    for (const path of ['frontend/**', 'backend/**', 'test-data/**', '.github/dependabot.yml']) {
+      assert.ok(paths.split('\n').some((line) => line.trim() === `- '${path}'`),
+        `${event} must check dependency updates in ${path}`);
+    }
+  }
   for (const event of ['push', 'pull_request']) assert.match(section(events, event, 2), /^      - 'security\/\*\*'$/m);
   assert.deepEqual([...entries(section(text, 'jobs', 0), 2).keys()], ['resolve', 'backend-checks', 'frontend-verify', 'build-images']);
   const build = job(text, 'build-images');
@@ -624,6 +636,11 @@ test('ordinary pipeline rejects inherited secrets and PR build exclusion', () =>
   assert.throws(() => checkReadOnly(replaceOnce(pipeline, target, `${target}    secrets: inherit\n`)));
   assert.throws(() => checkPipeline(replaceOnce(pipeline, target, `${target}    if: github.event_name != 'pull_request'\n`)));
   assert.throws(() => checkPipeline(pipeline.replace("      - 'security/**'\n", '')));
+});
+test('dependency updates cannot lose PR checks through branch or path filters', () => {
+  for (const filter of ['      - dev\n', "      - 'frontend/**'\n", "      - 'test-data/**'\n", "      - '.github/dependabot.yml'\n"]) {
+    assert.throws(() => checkPipeline(pipeline.replaceAll(filter, '')));
+  }
 });
 
 test('legacy deployment guard cannot omit any manual protected-main restriction', () => {

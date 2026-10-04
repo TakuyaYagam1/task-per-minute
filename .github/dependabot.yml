@@ -7,3 +7,20 @@ updates:
     schedule:
       interval: daily
     open-pull-requests-limit: 10
+
+  - package-ecosystem: npm
+    directory: /frontend
+    target-branch: dev
+    schedule:
+      interval: daily
+    open-pull-requests-limit: 10
+
+  - package-ecosystem: docker
+    directories:
+      - /backend
+      - /frontend
+      - /test-data/importer
+    target-branch: dev
+    schedule:
+      interval: daily
+    open-pull-requests-limit: 10

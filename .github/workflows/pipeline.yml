@@ -10,21 +10,26 @@ on:
       - 'deployment/**'
       - 'scripts/**'
       - 'security/**'
+      - 'test-data/**'
       - '.env.example'
       - 'package*.json'
       - '.github/workflows/**'
+      - '.github/dependabot.yml'
   pull_request:
     branches:
       - main
+      - dev
     paths:
       - 'backend/**'
       - 'frontend/**'
       - 'deployment/**'
       - 'scripts/**'
       - 'security/**'
+      - 'test-data/**'
       - '.env.example'
       - 'package*.json'
       - '.github/workflows/**'
+      - '.github/dependabot.yml'
   workflow_dispatch:
     inputs:
       sha:
