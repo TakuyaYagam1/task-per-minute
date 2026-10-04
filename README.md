@@ -1,10 +1,8 @@
 # Task Per Minute
 
-[English](README.en.md)
-
 Task Per Minute - соревновательная CTF-платформа для турниров. Участники
-проходят Swiss-раунды, Golden-этап и playoffs, а backend остается источником
-истины для roster, заданий, результатов, recovery evidence и проекций.
+проходят раунды по швейцарской системе, этап Golden и плей-офф. Сервер
+управляет составом участников, заданиями, результатами и восстановлением игр.
 
 Проект создан для **RedShift**.
 
@@ -21,14 +19,13 @@ cp .env.example .env.local
 cp .env.example .env
 ```
 
-- Заполните секреты в `.env.local` для локального compose и в `.env` для
-  production/server compose.
+- Заполните секреты в `.env.local` для локального запуска и в `.env` для сервера.
 
-В Docker Compose backend получает `DB_DSN` из выбранного env-файла, поэтому для
-контейнерного запуска DSN должен указывать на внутренний host `postgres:5432`.
+В Docker Compose backend получает `DB_DSN` из выбранного файла окружения, поэтому
+для контейнерного запуска DSN должен указывать на внутренний адрес `postgres:5432`.
 `REDIS_ADDR` и `SEAWEEDFS_ENDPOINT` внутри compose задаются как
-`redis:6379` и `seaweedfs:8333`; host-варианты нужны только для запуска backend
-прямо с хоста:
+`redis:6379` и `seaweedfs:8333`; адреса localhost нужны при запуске backend
+непосредственно на компьютере:
 
 ```env
 DB_DSN=postgres://admin:password@postgres:5432/task_per_minute?sslmode=disable
@@ -38,31 +35,31 @@ SEAWEEDFS_PUBLIC_ENDPOINT=localhost:8333
 SEAWEEDFS_PUBLIC_SECURE=false
 ```
 
-Для backend без контейнера временно используйте host-вариант
+Для backend без контейнера временно используйте адрес
 `postgres://admin:password@localhost:5432/task_per_minute?sslmode=disable`.
 
 `POSTGRES_PORT`, `REDIS_PORT` и `SEAWEEDFS_*_PORT` публикуются на хост для
-локальной отладки; внутри docker-сети остаются дефолтные порты контейнеров.
-`SEAWEEDFS_PUBLIC_ENDPOINT` попадает в presigned URL для браузера.
+локальной отладки; внутри сети Docker остаются стандартные порты контейнеров.
+`SEAWEEDFS_PUBLIC_ENDPOINT` используется в подписанных ссылках для браузера.
 
-- Запустите локальный compose:
+- Запустите локальный стенд:
 
 ```bash
 cd deployment/docker
 docker compose --env-file ../../.env.local -f docker-compose.local.yml up -d --build
 ```
 
-Локальный compose поднимает backend и production-сборку frontend. По умолчанию
+Локальный Compose запускает backend и готовую сборку frontend. По умолчанию
 backend слушает `BACKEND_PORT=8080`, frontend слушает `FRONTEND_PORT=3000`.
 
-Health-check:
+Проверка доступности:
 
 ```bash
 curl -fsS http://127.0.0.1:8080/health
 curl -fsS http://127.0.0.1:3000/
 ```
 
-Frontend для разработки без Docker:
+Разработка интерфейса без Docker:
 
 ```bash
 cd frontend
@@ -70,29 +67,29 @@ npm install
 npm run dev
 ```
 
-Backend для разработки:
+Разработка серверной части (Go 1.26.8):
 
 ```bash
 cd backend
+make mocks
 go test ./...
 go run ./cmd/app
 ```
 
-Игрок регистрирует логин, email и пароль на `/register`, подтверждает почту
-по ссылке из письма и входит на `/login`. Логин отображается на борде.
+Игрок указывает логин, почту и пароль на `/register`, подтверждает почту
+по ссылке из письма и входит на `/login`. Логин отображается в рейтинге.
 Вход только по нику закрыт: `POST /api/v1/players/join` возвращает `410`.
-Настройки Resend, SMTP и перехода со старых сессий описаны в
-[руководстве по почте](docs/ru/email.md).
+Параметры Resend и SMTP перечислены в `.env.example`.
 
 ## Сервер
 
 [scripts/server-bootstrap.sh](scripts/server-bootstrap.sh) - это скрипт
 первичной подготовки Ubuntu/Debian сервера. Он ставит Docker, Docker Compose и
-git, создает runtime-пользователя, каталог приложения, `.env` и базовые firewall
-rules.
+Git, создает пользователя приложения, каталог, `.env` и базовые правила
+межсетевого экрана.
 
-Он не является deploy pipeline. Автоматический деплой выполняется через GitHub
-Actions по SSH, а bootstrap нужен один раз перед первым запуском сервера.
+Скрипт нужен один раз перед первым запуском сервера и не заменяет
+процедуру публикации и развертывания приложения.
 
 Минимальный первый запуск после заполнения `.env`:
 
@@ -102,34 +99,25 @@ cd /opt/task-per-minute/deployment/docker
 docker compose --env-file ../../.env up -d --build --remove-orphans
 ```
 
-Основной production compose собирает backend/frontend из исходников на сервере.
-CI/CD deploy использует тот же стек с override-файлом
-`deployment/docker/docker-compose.ci.yml`, где backend/frontend запускаются из
-заранее собранных image-тегов.
-
-## Документация
-
-- [Развертывание на сервере](docs/ru/deploy.md)
-- [Runbook деплоя и отката](docs/ru/runbook.md)
+Основной серверный Compose собирает backend и frontend из исходников.
+Дополнительный файл `deployment/docker/docker-compose.ci.yml` позволяет
+запускать тот же стек с заранее собранными образами.
 
 ## Источники контракта
 
 - [OpenAPI](backend/api/openapi.yml) - актуальный REST-контракт.
-- [Развертывание](docs/ru/deploy.md) - production-конфигурация, cookie-auth,
-  CSRF и WebSocket origin policy.
-- [Runbook](docs/ru/runbook.md) - операционные проверки, rollback и runtime
-  механики турнира.
+- [Конфигурации Docker Compose](deployment/docker/) - настройки окружений.
 
 ## Команда разработки
 
-- [CaXaRo4iK](https://github.com/CaXaRo4iK) - DevOps, деплой, инфраструктура и таски
-- [FANATBEBRbl](https://github.com/FANATBEBRbl) - Frontend
-- [TakuyaYagam1](https://github.com/TakuyaYagam1) - Backend
+- [CaXaRo4iK](https://github.com/CaXaRo4iK) - развертывание, инфраструктура и задачи
+- [FANATBEBRbl](https://github.com/FANATBEBRbl) - интерфейс
+- [TakuyaYagam1](https://github.com/TakuyaYagam1) - серверная часть
 
 ## Социальные ссылки
 
 - RedShift Telegram: [@redshift_ctf](https://t.me/redshift_ctf)
-- RedShift chat: [@redshift_ctf_chat](https://t.me/redshift_ctf_chat)
+- Чат RedShift: [@redshift_ctf_chat](https://t.me/redshift_ctf_chat)
 
 ## Лицензия
 
