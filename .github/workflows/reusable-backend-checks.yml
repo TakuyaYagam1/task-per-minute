@@ -166,6 +166,13 @@ jobs:
       - name: check docker
         run: docker version
 
+      - name: install integration media dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends ffmpeg
+          ffmpeg -version
+          ffprobe -version
+
       - name: make test-int
         working-directory: ${{ env.GO_WORKDIR }}
         run: make test-int
