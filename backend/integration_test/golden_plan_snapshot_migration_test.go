@@ -31,6 +31,16 @@ type goldenSnapshotParticipantReservation struct {
 }
 
 func TestGoldenPlanSnapshotMigrationPreservesHistoricalEvidence(t *testing.T) {
+	t.Run("migration_28", func(t *testing.T) {
+		testGoldenPlanSnapshotMigrationPreservesHistoricalEvidence(t, true)
+	})
+	t.Run("current_schema", func(t *testing.T) {
+		testGoldenPlanSnapshotMigrationPreservesHistoricalEvidence(t, false)
+	})
+}
+
+func testGoldenPlanSnapshotMigrationPreservesHistoricalEvidence(t *testing.T, historical bool) {
+	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 
@@ -39,6 +49,9 @@ func TestGoldenPlanSnapshotMigrationPreservesHistoricalEvidence(t *testing.T) {
 
 	pool, database := testkit.CreateIsolatedDatabase(ctx, t, sharedPool, "golden_snapshot_upgrade")
 	migrationsDir := bootstrap.ResolveMigrationsDir("db/migrations")
+	if historical {
+		migrationsDir = testkit.MigrationsThrough(t, migrationsDir, 28)
+	}
 	require.NoError(t, goose.SetDialect("postgres"))
 	require.NoError(t, goose.UpToContext(ctx, database, migrationsDir, 27))
 
@@ -87,8 +100,10 @@ func TestGoldenPlanSnapshotMigrationPreservesHistoricalEvidence(t *testing.T) {
 	require.Equal(t, int64(len(before)), commandTag.RowsAffected(),
 		"released live reservations must not erase Golden snapshot history")
 
-	// Exercise migration 28's guard even when the source head has advanced.
-	require.NoError(t, goose.DownToContext(ctx, database, migrationsDir, 28))
+	if !historical {
+		return
+	}
+	// Exercise migration 28's guard without crossing later irreversible migrations.
 	err = migrator.Down(ctx)
 	require.ErrorContains(t, err, "cannot roll back while Golden snapshot reservation history differs")
 	require.Equal(t, before, readGoldenSnapshotParticipantReservations(ctx, t, pool, fixture.golden.tournamentID),

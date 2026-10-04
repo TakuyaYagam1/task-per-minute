@@ -131,7 +131,7 @@ jobs:
   integration-test:
     name: integration test
     runs-on: ubuntu-latest
-    # Две последовательные группы и остальные пакеты имеют лимит по 20 минут.
+    # Two sequential shards and the remaining packages each have a 20-minute limit.
     timeout-minutes: 75
     steps:
       - name: checkout

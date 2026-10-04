@@ -19,7 +19,30 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/bootstrap"
 )
 
-const schemaHeadVersion int64 = 34
+const (
+	schemaBaselineVersion int64 = 34
+	schemaHeadVersion     int64 = 41
+)
+
+func TestCurrentSchemaMigrationRejectsIrreversibleRollback(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), 90*time.Second)
+	defer cancel()
+	migrationLock := testkit.MigrationLock{}
+	migrationLock.Lock()
+	defer migrationLock.Unlock()
+	pool, _ := testkit.CreateIsolatedDatabase(ctx, t, postgresPool, "current_schema")
+	migrator := bootstrap.NewMigrator(testkit.MigrationDSN(t, pool, "public"), migrationsDirAbs())
+	require.NoError(t, migrator.Up(ctx))
+	requireMigrationVersion(ctx, t, pool, schemaHeadVersion)
+	for version := schemaHeadVersion - 1; version >= 36; version-- {
+		require.NoError(t, migrator.Down(ctx))
+		requireMigrationVersion(ctx, t, pool, version)
+	}
+	require.ErrorContains(t, migrator.Down(ctx), "migration 000036 is irreversible")
+	requireMigrationVersion(ctx, t, pool, 36)
+	require.NoError(t, migrator.Up(ctx))
+	requireMigrationVersion(ctx, t, pool, schemaHeadVersion)
+}
 
 func TestSchemaMigration(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
@@ -30,7 +53,8 @@ func TestSchemaMigration(t *testing.T) {
 	defer migrationLock.Unlock()
 
 	pool, database := testkit.CreateIsolatedDatabase(ctx, t, postgresPool, "empty")
-	migrator := bootstrap.NewMigrator(testkit.MigrationDSN(t, pool, "public"), migrationsDirAbs())
+	migrationsDir := testkit.MigrationsThrough(t, migrationsDirAbs(), schemaBaselineVersion)
+	migrator := bootstrap.NewMigrator(testkit.MigrationDSN(t, pool, "public"), migrationsDir)
 
 	var (
 		publicNamespaceExists       bool
@@ -73,12 +97,12 @@ func TestSchemaMigration(t *testing.T) {
 	require.Zero(t, publicRoutines, "new database must not inherit public routines")
 	require.False(t, versionTable.Valid, "Goose metadata must not pre-exist")
 
-	for version := int64(1); version <= schemaHeadVersion; version++ {
-		require.NoError(t, goose.UpToContext(ctx, database, migrationsDirAbs(), version))
+	for version := int64(1); version <= schemaBaselineVersion; version++ {
+		require.NoError(t, goose.UpToContext(ctx, database, migrationsDir, version))
 		requireMigrationVersion(ctx, t, pool, version)
 		require.NoError(t, migrator.Status(ctx))
 	}
-	require.NoError(t, migrator.Up(ctx), "the current domain head must be accepted")
+	require.NoError(t, migrator.Up(ctx), "the historical baseline head must be accepted")
 	requireProjectionEvidencePayloadStorage(ctx, t, pool)
 
 	var (
@@ -91,9 +115,9 @@ func TestSchemaMigration(t *testing.T) {
 		FROM goose_db_version
 		WHERE is_applied AND version_id > 0`,
 	).Scan(&appliedCount, &firstVersion, &lastVersion))
-	require.Equal(t, int(schemaHeadVersion), appliedCount)
+	require.Equal(t, int(schemaBaselineVersion), appliedCount)
 	require.EqualValues(t, 1, firstVersion)
-	require.Equal(t, schemaHeadVersion, lastVersion)
+	require.Equal(t, schemaBaselineVersion, lastVersion)
 
 	var versionsAreContinuous bool
 	require.NoError(t, pool.QueryRow(ctx, `
@@ -103,7 +127,7 @@ func TestSchemaMigration(t *testing.T) {
 			LEFT JOIN goose_db_version AS applied
 				ON applied.version_id = expected.version AND applied.is_applied
 			WHERE applied.version_id IS NULL
-		)`, schemaHeadVersion).Scan(&versionsAreContinuous))
+		)`, schemaBaselineVersion).Scan(&versionsAreContinuous))
 	require.True(t, versionsAreContinuous,
 		"the domain baseline must apply every version through the head")
 
@@ -343,7 +367,7 @@ func TestSchemaMigration(t *testing.T) {
 	).Scan(&baselineObjectsPresent))
 	require.True(t, baselineObjectsPresent, "domain baseline objects must be complete")
 
-	for expectedVersion := schemaHeadVersion - 1; expectedVersion >= 0; expectedVersion-- {
+	for expectedVersion := schemaBaselineVersion - 1; expectedVersion >= 0; expectedVersion-- {
 		require.NoError(t, migrator.Down(ctx))
 		requireMigrationVersion(ctx, t, pool, expectedVersion)
 	}
@@ -361,7 +385,7 @@ func TestSchemaMigration(t *testing.T) {
 	requireProjectionEvidencePayloadColumnsAbsent(ctx, t, pool)
 
 	require.NoError(t, migrator.Up(ctx))
-	requireMigrationVersion(ctx, t, pool, schemaHeadVersion)
+	requireMigrationVersion(ctx, t, pool, schemaBaselineVersion)
 
 	var reappliedObjectsPresent bool
 	require.NoError(t, pool.QueryRow(ctx, `
