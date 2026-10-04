@@ -517,13 +517,12 @@ test("FE-028 task list uses two columns on desktop and one on mobile with modal 
   await expect(editDialog.getByPlaceholder("Введите название...")).toHaveValue("FE-028 Grid First");
 });
 
-test("FE-028 empty catalog and unavailable content keep Russian responsive UI in both themes", async ({ page }) => {
+test("FE-028 unpublished catalog keeps Russian responsive UI in both themes", async ({ page }) => {
   await setupAdminRoutes(page, { contentStatus: 422 });
   await loginAndOpenTaskCatalog(page);
 
-  await expect(page.getByText("Публикации пока нет")).toBeVisible();
-  await expect(page.getByText(/Опубликованных задач пока нет/)).toBeVisible();
   await expect(page.getByText("Пока нет созданных задач")).toBeVisible();
+  await expect(page.getByRole("main").getByRole("alert")).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Создать задачу" })).toBeEnabled();
   const contentRoot = page.locator('article[aria-labelledby="admin-task-list-title"]');
 
@@ -542,6 +541,6 @@ test("FE-028 empty catalog and unavailable content keep Russian responsive UI in
   expect(darkBackground).not.toBe(lightBackground);
 
   await page.setViewportSize({ width: 390, height: 844 });
-  await expect(page.getByText("Публикации пока нет")).toBeVisible();
+  await expect(page.getByText("Пока нет созданных задач")).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });

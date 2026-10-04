@@ -394,8 +394,7 @@ const loginAndOpenSeriesEditor = async (page: Page): Promise<ReturnType<Page['ge
   await page.getByPlaceholder('Введите пароль...').fill('correct-password');
   await page.getByRole('button', { name: 'Войти' }).click();
   await page.getByRole('button', { name: 'Соревнования' }).click();
-  const row = page.getByRole('row').filter({ hasText: 'Series конфигурация' });
-  await row.getByRole('button', { name: 'Открыть' }).click();
+  await page.getByRole('button', { name: 'Открыть соревнование Series конфигурация', exact: true }).click();
   await page.getByRole('button', { name: 'Сетка и серии' }).click();
   const region = page.getByRole('region', { name: 'Конфигурация серий' });
   await expect(region).toBeVisible();
@@ -482,7 +481,7 @@ test.describe('FE-031 per-Series category configuration', () => {
     await reserveSave.click();
 
     await expect.poll(() => configurationPatches.length).toBe(1);
-    await expect(region.getByRole('alert')).toContainText('Состояние конфигурации устарело');
+    await expect(region.getByRole('alert')).toContainText('Настройки соревнования изменились');
     await expect(reserveSelect).toHaveValue('1');
     await expect(reserveSelect).toBeEnabled();
   });
@@ -611,7 +610,8 @@ test.describe('FE-031 per-Series category configuration', () => {
     });
     await expect(semifinal.getByLabel('Режим серии 3')).toHaveValue('draft');
 
-    await region.getByRole('button', { name: 'Обновить конфигурацию' }).click();
+    await page.getByRole('button', { name: 'Обзор', exact: true }).click();
+    await page.getByRole('button', { name: 'Сетка и серии', exact: true }).click();
     await expect(swiss.getByLabel('Режим серии 1')).toHaveValue('admin');
     await expect(swiss.getByLabel('Категория серии 1')).toHaveValue('crypto');
     await expect(golden.getByLabel('Режим серии 2')).toHaveValue('random');
@@ -635,8 +635,8 @@ test.describe('FE-031 per-Series category configuration', () => {
     await swiss.getByRole('button', { name: 'Сохранить серию 1' }).click();
 
     await expect.poll(() => seriesPatches.length).toBe(1);
-    await expect(region.getByRole('alert')).toContainText('Состояние конфигурации устарело');
-    await expect(region.getByRole('alert')).toContainText('Перезагрузите данные');
+    await expect(region.getByRole('alert')).toContainText('Настройки соревнования изменились');
+    await expect(region.getByRole('alert')).toContainText('Повторите отправку после автоматического обновления');
     await expect(swiss.getByLabel('Режим серии 1')).toHaveValue('admin');
     await expect(swiss.getByLabel('Категория серии 1')).toHaveValue('crypto');
   });

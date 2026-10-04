@@ -163,7 +163,14 @@ const loginAndOpenTournamentList = async (page: Page): Promise<void> => {
   await page.getByRole("button", { name: "Войти" }).click();
   await expect(page.getByRole("button", { name: "Соревнования" })).toBeVisible();
   await page.getByRole("button", { name: "Соревнования" }).click();
-  await expect(page.getByRole("heading", { name: "Новое соревнование" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Список соревнований" })).toBeVisible();
+};
+
+const openCreateDialog = async (page: Page) => {
+  await page.getByRole("button", { name: "Создать соревнование", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Создать соревнование", exact: true });
+  await expect(dialog).toBeVisible();
+  return dialog;
 };
 
 test("показывает состояния загрузки списка турниров и контента", async ({ page }) => {
@@ -196,14 +203,16 @@ test("показывает состояния загрузки списка ту
 
   await loginAndOpenTournamentList(page);
   await expect(
-    page.getByRole("region", { name: "Новое соревнование" }).getByText("Проверяем публикацию"),
+    page.getByRole("article", { name: "Список соревнований" }).getByText("Загрузка соревнований"),
   ).toBeVisible();
+  const createDialog = await openCreateDialog(page);
   await expect(
-    page.getByRole("region", { name: "Список соревнований" }).getByText("Загружаем соревнования"),
+    createDialog.getByText("Проверяем публикацию"),
   ).toBeVisible();
 
   releaseContent?.();
   releaseList?.();
+  await createDialog.getByRole("button", { name: "Отменить", exact: true }).click();
   await expect(page.getByText("Соревнований пока нет")).toBeVisible();
 });
 
@@ -211,7 +220,7 @@ test("показывает пустой список турниров", async ({
   await setupAdminRoutes(page);
   await loginAndOpenTournamentList(page);
 
-  await expect(page.getByText("Всего: 0")).toBeVisible();
+  await expect(page.getByText("Показано: 0 из 0")).toBeVisible();
   await expect(page.getByText("Соревнований пока нет")).toBeVisible();
 });
 
@@ -223,7 +232,7 @@ test("открывает detail турнира, сохраняет подраз�
   await setupAdminRoutes(page, { listBody: { items: [selected], next_cursor: null } });
   await loginAndOpenTournamentList(page);
 
-  await page.getByRole("row").filter({ hasText: "Detail турнир" }).getByRole("button", { name: "Открыть" }).click();
+  await page.getByRole("button", { name: "Открыть соревнование Detail турнир", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Detail турнир" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Обзор" })).toHaveAttribute("aria-current", "page");
   await expect(page.getByText("Формат", { exact: true })).toBeVisible();
@@ -262,13 +271,13 @@ test("показывает ошибку списка и доступен пов�
   });
 
   await loginAndOpenTournamentList(page);
-  await expect(page.getByRole("region", { name: "Список соревнований" }).getByRole("alert")).toContainText(
-    "Ошибка. Сервис списка временно недоступен",
+  await expect(page.getByRole("article", { name: "Список соревнований" }).getByRole("alert")).toContainText(
+    "Сервис списка временно недоступен",
   );
   const failedRequestCount = listRequests;
   expect(failedRequestCount).toBeGreaterThanOrEqual(1);
   listUnavailable = false;
-  await page.getByRole("region", { name: "Список соревнований" }).getByRole("button", { name: "Обновить список" }).click();
+  await page.getByRole("article", { name: "Список соревнований" }).getByRole("button", { name: "Повторить" }).click();
   await expect(page.getByText("Соревнований пока нет")).toBeVisible();
   expect(listRequests).toBe(failedRequestCount + 1);
 });
@@ -374,16 +383,14 @@ test("отображает серверные состояния, состав, 
   await setupAdminRoutes(page, { listBody: { items, next_cursor: null } });
   await loginAndOpenTournamentList(page);
 
-  const table = page
-    .getByRole("region", { name: "Список соревнований" })
-    .getByRole("table");
-  await expect(table.getByRole("row")).toHaveCount(stateCases.length + 1);
+  const cards = page.getByRole("article", { name: "Список соревнований" }).getByRole("article");
+  await expect(cards).toHaveCount(stateCases.length);
   for (const item of stateCases) {
-    const row = table.getByRole("row").filter({ hasText: `Состояние ${item.state}` });
-    await expect(row).toContainText(item.label);
-    await expect(row).toContainText(`${item.rosterSize} / ${item.plannedRosterSize}`);
-    await expect(row).toContainText("13.09");
-    await expect(row.getByRole("button", { name: "Открыть" })).toBeVisible();
+    const card = cards.filter({ has: page.getByRole("heading", { name: `Состояние ${item.state}`, exact: true }) });
+    await expect(card).toContainText(item.label);
+    await expect(card).toContainText(`${item.rosterSize} / ${item.plannedRosterSize}`);
+    await expect(card).toContainText("13.09");
+    await expect(card.getByRole("button", { name: `Открыть соревнование Состояние ${item.state}`, exact: true })).toBeVisible();
   }
 });
 
@@ -407,12 +414,12 @@ test("создает турнир с актуальной ревизией и о
   });
 
   await loginAndOpenTournamentList(page);
+  const createPanel = await openCreateDialog(page);
   await page.getByLabel("Название соревнования").fill("Весенний турнир");
   await page.getByLabel("Плановый размер состава").selectOption("8");
-  const createPanel = page.getByRole("region", { name: "Новое соревнование" });
   await expect(createPanel.getByText("Задачи опубликованы", { exact: true })).toHaveCount(0);
   await expect(createPanel.getByText(/Опубликовано/)).toHaveCount(0);
-  const createButton = page.getByRole("button", { name: "Создать соревнование" });
+  const createButton = createPanel.getByRole("button", { name: "Создать соревнование", exact: true });
   await expect(createButton).toBeEnabled();
   await Promise.all([
     page.waitForURL(new RegExp(`[?&]tournament=${createdID}(?:&|$)`)),
@@ -448,8 +455,9 @@ test("двойное нажатие отправляет один запрос �
   });
 
   await loginAndOpenTournamentList(page);
+  const createDialog = await openCreateDialog(page);
   await page.getByLabel("Название соревнования").fill("Двойной клик");
-  const createButton = page.getByRole("button", { name: "Создать соревнование" });
+  const createButton = createDialog.getByRole("button", { name: "Создать соревнование", exact: true });
   await createButton.click({ clickCount: 2 });
   await expect.poll(() => createRequests.length).toBe(1);
   releaseCreate?.();
@@ -475,15 +483,18 @@ test("не возвращает пользователя в турнир пос�
   });
 
   await loginAndOpenTournamentList(page);
+  await page.getByRole("button", { name: "Задачи", exact: true }).click();
+  await page.getByRole("button", { name: "Соревнования", exact: true }).click();
+  const createDialog = await openCreateDialog(page);
   await page.getByLabel("Название соревнования").fill("Поздний ответ");
-  await page.getByRole("button", { name: "Создать соревнование" }).click();
+  await createDialog.getByRole("button", { name: "Создать соревнование", exact: true }).click();
   await expect.poll(() => createRequests.length).toBe(1);
 
   const dialogPromise = page.waitForEvent("dialog").then(async (dialog) => {
     expect(dialog.message()).toContain("несохраненные изменения");
     await dialog.accept();
   });
-  await page.getByRole("button", { name: "Задачи" }).click();
+  await page.goBack();
   await dialogPromise;
   await page.getByRole("button", { name: "Создать задачу", exact: true }).click();
   await expect(page.getByRole("dialog", { name: "Создать задачу" })).toBeVisible();
@@ -501,14 +512,15 @@ test("409 показывает восстановимое сообщение и 
   });
 
   await loginAndOpenTournamentList(page);
+  const createDialog = await openCreateDialog(page);
   const name = "Конфликтный турнир";
   await page.getByLabel("Название соревнования").fill(name);
-  await page.getByRole("button", { name: "Создать соревнование" }).click();
-  await expect(page.getByRole("region", { name: "Новое соревнование" }).getByRole("alert")).toContainText(
+  await createDialog.getByRole("button", { name: "Создать соревнование", exact: true }).click();
+  await expect(createDialog.getByRole("alert")).toContainText(
     "Турнир уже был создан другим оператором",
   );
   await expect(page.getByLabel("Название соревнования")).toHaveValue(name);
-  await expect(page.getByRole("button", { name: "Создать соревнование" })).toBeEnabled();
+  await expect(createDialog.getByRole("button", { name: "Создать соревнование", exact: true })).toBeEnabled();
 });
 
 test("422 показывает сообщение о ревизии и сохраняет введенное название", async ({ page }) => {
@@ -519,14 +531,15 @@ test("422 показывает сообщение о ревизии и сохр�
   });
 
   await loginAndOpenTournamentList(page);
+  const createDialog = await openCreateDialog(page);
   const name = "Устаревшая ревизия";
   await page.getByLabel("Название соревнования").fill(name);
-  await page.getByRole("button", { name: "Создать соревнование" }).click();
-  await expect(page.getByRole("region", { name: "Новое соревнование" }).getByRole("alert")).toContainText(
+  await createDialog.getByRole("button", { name: "Создать соревнование", exact: true }).click();
+  await expect(createDialog.getByRole("alert")).toContainText(
     "Ревизия контента больше недоступна",
   );
   await expect(page.getByLabel("Название соревнования")).toHaveValue(name);
-  await expect(page.getByRole("button", { name: "Создать соревнование" })).toBeEnabled();
+  await expect(createDialog.getByRole("button", { name: "Создать соревнование", exact: true })).toBeEnabled();
 });
 
 test("список не создает горизонтальный overflow в темной и светлой теме на мобильной ширине", async ({ page }) => {
@@ -565,8 +578,7 @@ test("список не создает горизонтальный overflow в 
   }
   await expect(
     page
-      .getByRole("region", { name: "Список соревнований" })
-      .getByRole("table")
+      .getByRole("article", { name: "Список соревнований" })
       .getByText("Мобильный турнир", { exact: true }),
   ).toBeVisible();
 });

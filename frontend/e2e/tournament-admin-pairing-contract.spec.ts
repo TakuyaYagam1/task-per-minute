@@ -334,8 +334,7 @@ const openPairingEditor = async (page: Page): Promise<ReturnType<typeof pairingR
   await page.getByPlaceholder("Введите пароль...").fill("correct-password");
   await page.getByRole("button", { name: "Войти" }).click();
   await page.getByRole("button", { name: "Соревнования" }).click();
-  const row = page.getByRole("row").filter({ hasText: "Swiss контракт" });
-  await row.getByRole("button", { name: "Открыть" }).click();
+  await page.getByRole("button", { name: "Открыть соревнование Swiss контракт", exact: true }).click();
   await expect(page.locator("#tournament-detail-title")).toHaveText("Swiss контракт");
   await page.getByRole("button", { name: "Сетка и серии" }).click();
   const region = pairingRegion(page);
@@ -380,7 +379,7 @@ test("отправляет automatic план и отображает полны
     round_number: 1,
     pairing_mode: "automatic",
     category_mode: "random",
-    categories: ["web", "crypto"],
+    categories: ["web", "crypto", "pwn"],
   });
   await expect(region).toContainText("План раунда 1");
   await expect(region).toContainText("Игрок 1");
@@ -542,7 +541,7 @@ test("сохраняет прежний server result после 409 и дает
   await submit.click();
   await expect.poll(() => pairingRequests.length).toBe(2);
   await expect(region.getByRole("alert")).toContainText("Ревизия соревнования устарела");
-  await expect(region.getByRole("alert")).toContainText("Результат предыдущего сохранения оставлен на экране");
+  await expect(region.getByRole("alert")).toContainText("Настройки сохранены в форме");
   await expect(region).toContainText("План раунда 1");
   await expect(region).toContainText("Игрок 4");
 });

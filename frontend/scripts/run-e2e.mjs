@@ -252,17 +252,16 @@ let executionError = null;
 try {
   const result = run(
     playwrightPath,
-    ["test", ...withoutReporterArgs(playwrightArgs), "--reporter=json"],
+    ["test", ...withoutReporterArgs(playwrightArgs), `--reporter=json,${join(scriptRoot, "e2e-progress.mjs")}`],
     {
       env: {
         ...process.env,
         PLAYWRIGHT_JSON_OUTPUT_NAME: executionReportPath,
       },
-      stdio: ["ignore", "ignore", "pipe"],
+      stdio: ["ignore", "ignore", "inherit"],
       encoding: "utf8",
     },
   );
-  if (result.stderr) process.stderr.write(result.stderr);
   const report = parseExecutionReport(executionReportPath, "");
   reportExecutionSummary(report);
   if (result.status !== 0) {

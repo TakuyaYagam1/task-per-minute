@@ -3,7 +3,7 @@ import { expect, test, type Locator, type Page, type Route } from '@playwright/t
 import type { components } from '../lib/shared/api/schema';
 import { createTournamentFixtureSet, tournamentFixtureIds } from './tournament/fixtures';
 import { adminSessionResponse, taskResponse } from './support/admin';
-import { jsonHeaders, openAccountMenu } from './support/common';
+import { jsonHeaders, openAccountMenu, selectTheme } from './support/common';
 
 type Schema = components['schemas'];
 
@@ -254,17 +254,6 @@ const setupAdminVisualApi = async (page: Page): Promise<void> => {
   });
 };
 
-const setTheme = async (page: Page, theme: 'dark' | 'light'): Promise<void> => {
-  const label = theme === 'dark' ? 'Темная тема' : 'Светлая тема';
-  const accountMenu = await openAccountMenu(page);
-  const button = accountMenu.getByRole('button', { name: label, exact: true });
-  await button.click();
-  await expect(button).toHaveAttribute('aria-pressed', 'true');
-  await expect.poll(() => page.evaluate(() => document.documentElement.dataset.theme)).toBe(theme);
-  await page.keyboard.press('Escape');
-  await expect(page.getByRole('region', { name: 'Аккаунт', exact: true })).toBeHidden();
-};
-
 const assertOpaqueSurface = async (locator: Locator, label: string): Promise<void> => {
   const style = await locator.evaluate((element) => {
     const computed = getComputedStyle(element);
@@ -331,9 +320,11 @@ const checkVisualState = async (
   await page.evaluate(() => window.scrollTo(0, 0));
   await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0);
   const geometry = await page.evaluate((isAuthenticated) => {
-    const accountMenu = document.querySelector<HTMLElement>('button[aria-label="Меню аккаунта"]');
+    const accountMenu = document.querySelector<HTMLElement>(isAuthenticated
+      ? 'button[aria-label="Меню аккаунта"]'
+      : 'button[role="switch"][aria-label="Светлая тема"]');
     const target = isAuthenticated
-      ? document.querySelector<HTMLElement>('main > header')
+      ? document.querySelector<HTMLElement>('main h2')
       : document.querySelector<HTMLElement>('#admin-login-title')?.closest('section');
     if (!accountMenu || !target) {
       return null;
@@ -403,7 +394,7 @@ const loginAdmin = async (page: Page, theme: 'dark' | 'light'): Promise<void> =>
   await expect(
     page.getByText('Введите пароль, чтобы продолжить работу с панелью управления.', { exact: true }),
   ).toHaveCount(0);
-  await setTheme(page, theme);
+  await selectTheme(page, theme);
   await expect(page.getByRole('heading', { name: 'Вход администратора' })).toBeVisible();
 };
 
@@ -462,15 +453,20 @@ test('admin visual matrix covers loaded sections, themes, focus, and mobile over
 
       await page.getByRole('button', { name: 'Соревнования', exact: true }).click();
       await assertActiveNavigationContrast(page, 'Соревнования');
-      const tournamentRow = page.getByRole('row').filter({ hasText: visualTournament.name });
-      await expect(tournamentRow).toBeVisible();
+      const openTournament = page.getByRole('button', { name: `Открыть соревнование ${visualTournament.name}`, exact: true });
+      await expect(openTournament).toBeVisible();
+      await page.getByRole('button', { name: 'Создать соревнование', exact: true }).click();
+      const tournamentDialog = page.getByRole('dialog', { name: 'Создать соревнование', exact: true });
+      await expect(tournamentDialog).toBeVisible();
       await checkVisualState(
         page,
         `${theme}-${viewport}-tournaments`,
-        page.getByLabel('Название соревнования'),
+        tournamentDialog.getByLabel('Название соревнования'),
         true,
       );
-      await tournamentRow.getByRole('button', { name: 'Открыть', exact: true }).click();
+      await tournamentDialog.getByRole('button', { name: 'Закрыть форму создания соревнования', exact: true }).click();
+      await expect(tournamentDialog).toBeHidden();
+      await openTournament.click();
       await expect(page.getByRole('heading', { name: visualTournament.name, exact: true })).toBeVisible();
       await expect(page.getByRole('heading', { name: 'Рабочая область соревнования', exact: true })).toHaveCount(0);
 
@@ -515,7 +511,7 @@ test('admin visual matrix covers loaded sections, themes, focus, and mobile over
       await checkVisualState(
         page,
         `${theme}-${viewport}-tournament-conduct`,
-        page.getByTestId('operator-wave-control-panel').getByRole('button', { name: 'Обновить матчи' }),
+        tournamentViews.getByRole('button', { name: 'Проведение', exact: true }),
         true,
       );
 

@@ -15,6 +15,10 @@ const jsonHeaders = {
   date: new Date(serverTimestamp).toUTCString(),
 };
 
+const publicSocketCount = (page: Page): Promise<number> => page.evaluate(() => (
+  window as Window & { __publicSocketCount?: number }
+).__publicSocketCount ?? 0);
+
 const installSocketStub = async (
   page: Page,
   initialFrame: Record<string, unknown> | null = null,
@@ -603,6 +607,7 @@ test("FE-041 anchors countdown to the latest public websocket timestamp", async 
 
 test("FE-047 falls back to fresh public REST snapshots after terminal realtime close", async ({ page }) => {
   let snapshotRequests = 0;
+  let fallbackRequests = 0;
   let refreshRequestsWithCursor = 0;
   let releaseFirstRefresh = (): void => {
     throw new Error("Synthetic refresh barrier was not initialized");
@@ -623,14 +628,16 @@ test("FE-047 falls back to fresh public REST snapshots after terminal realtime c
   });
   await page.route(`**${snapshotPath}*`, async (route) => {
     snapshotRequests += 1;
-    if (snapshotRequests >= 2 && new URL(route.request().url()).searchParams.has("cursor")) {
+    const afterClose = await publicSocketCount(page) > 0;
+    if (afterClose) fallbackRequests += 1;
+    if (afterClose && new URL(route.request().url()).searchParams.has("cursor")) {
       refreshRequestsWithCursor += 1;
     }
-    if (snapshotRequests === 2) {
+    if (afterClose && fallbackRequests === 1) {
       await firstRefreshBarrier;
     }
     await route.fulfill({
-      body: JSON.stringify(snapshotRequests === 1 ? publicSnapshot("live") : nextDraftSnapshot),
+      body: JSON.stringify(afterClose ? nextDraftSnapshot : publicSnapshot("live")),
       headers: jsonHeaders,
       status: 200,
     });
@@ -656,9 +663,9 @@ test("FE-047 falls back to fresh public REST snapshots after terminal realtime c
   expect(refreshRequestsWithCursor).toBe(0);
 
   await page.clock.runFor(4_999);
-  expect(snapshotRequests).toBe(2);
+  expect(fallbackRequests).toBe(1);
   await page.clock.runFor(1);
-  await expect.poll(() => snapshotRequests).toBeGreaterThanOrEqual(3);
+  await expect.poll(() => fallbackRequests).toBe(2);
   expect(refreshRequestsWithCursor).toBe(0);
   expect(await page.evaluate(() => (
     window as Window & { __publicSocketCount?: number }
@@ -692,6 +699,7 @@ test("FE-047 falls back to fresh public REST snapshots after terminal realtime c
 
 test("FE-047 stops public polling after an authoritative terminal REST snapshot", async ({ page }) => {
   let snapshotRequests = 0;
+  let fallbackRequests = 0;
   await page.clock.install({ time: serverTimestamp });
   await installSocketStub(page, publicRealtimeFrame("live", "2026-09-15T10:01:00Z"), 4403);
   await page.route(`**${tournamentPath}`, async (route) => {
@@ -703,8 +711,10 @@ test("FE-047 stops public polling after an authoritative terminal REST snapshot"
   });
   await page.route(`**${snapshotPath}*`, async (route) => {
     snapshotRequests += 1;
+    const afterClose = await publicSocketCount(page) > 0;
+    if (afterClose) fallbackRequests += 1;
     await route.fulfill({
-      body: JSON.stringify(snapshotRequests === 1 ? publicSnapshot("live") : publicSnapshot("result")),
+      body: JSON.stringify(afterClose ? publicSnapshot("result") : publicSnapshot("live")),
       headers: jsonHeaders,
       status: 200,
     });
@@ -717,13 +727,16 @@ test("FE-047 stops public polling after an authoritative terminal REST snapshot"
   const summary = page.getByTestId("public-realtime-summary");
   await expect(summary).toHaveAttribute("data-refreshing", "false");
   await expect(page.getByTestId("broadcast-official-result")).toContainText("2:1");
+  const requestsAtCompletion = snapshotRequests;
   await page.clock.runFor(20_000);
-  expect(snapshotRequests).toBe(2);
+  expect(snapshotRequests).toBe(requestsAtCompletion);
+  expect(fallbackRequests).toBe(1);
 });
 
 for (const responseStatus of [403, 404] as const) {
   test(`FE-047 stops public polling after permanent REST ${responseStatus}`, async ({ page }) => {
     let snapshotRequests = 0;
+    let fallbackRequests = 0;
     await page.clock.install({ time: serverTimestamp });
     await installSocketStub(page, publicRealtimeFrame("live", "2026-09-15T10:01:00Z"), 4403);
     await page.route(`**${tournamentPath}`, async (route) => {
@@ -735,7 +748,7 @@ for (const responseStatus of [403, 404] as const) {
     });
     await page.route(`**${snapshotPath}*`, async (route) => {
       snapshotRequests += 1;
-      if (snapshotRequests === 1) {
+      if (await publicSocketCount(page) === 0) {
         await route.fulfill({
           body: JSON.stringify(publicSnapshot("live")),
           headers: jsonHeaders,
@@ -743,6 +756,7 @@ for (const responseStatus of [403, 404] as const) {
         });
         return;
       }
+      fallbackRequests += 1;
       await route.fulfill({
         body: JSON.stringify({ detail: `HTTP ${responseStatus}`, status: responseStatus, title: "Synthetic error" }),
         headers: jsonHeaders,
@@ -755,9 +769,11 @@ for (const responseStatus of [403, 404] as const) {
     });
 
     const summary = page.getByTestId("public-realtime-summary");
+    await expect.poll(() => fallbackRequests).toBe(1);
     await expect(summary).toHaveAttribute("data-refreshing", "false");
+    const requestsAtRejection = snapshotRequests;
     await page.clock.runFor(20_000);
-    expect(snapshotRequests).toBe(2);
+    expect(snapshotRequests).toBe(requestsAtRejection);
     expect(await page.evaluate(() => (
       window as Window & { __publicSocketCount?: number }
     ).__publicSocketCount ?? 0)).toBe(1);

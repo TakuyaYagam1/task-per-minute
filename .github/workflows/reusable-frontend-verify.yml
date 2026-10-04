@@ -87,7 +87,7 @@ jobs:
       - name: frontend verification
         working-directory: ${{ env.FRONTEND_WORKDIR }}
         env:
-          E2E_WORKERS: 1
+          E2E_WORKERS: 2
           E2E_SUMMARY_FILE: ${{ env.FRONTEND_CI_REPORT_DIR }}/e2e-summary.json
         run: npm run verify:ci
 

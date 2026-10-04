@@ -4,7 +4,7 @@ import { createServer } from "node:net";
 import { resolve } from "node:path";
 import { type Readable } from "node:stream";
 
-import { expect, test, type Page, type Route, type WebSocketRoute } from "@playwright/test";
+import { expect, test, type Page, type Request, type Route, type WebSocketRoute } from "@playwright/test";
 
 import {
   ApiError,
@@ -282,6 +282,21 @@ const installOperatorWebSocketStub = async (page: Page): Promise<void> => {
         })),
       },
     });
+  });
+};
+
+const invalidatePublicStream = async (page: Page): Promise<void> => {
+  // A malformed frame must trigger REST recovery without reloading the page.
+  await page.evaluate(() => {
+    const control = (window as unknown as {
+      __operatorWebSocketControl: {
+        get: () => Array<{ readyState: number }>;
+        emit: (index: number, value: unknown) => void;
+      };
+    }).__operatorWebSocketControl;
+    const index = control.get().findLastIndex((socket) => socket.readyState === WebSocket.OPEN);
+    if (index < 0) throw new Error('Public stream is not open');
+    control.emit(index, { type: 'tournament.public', payload: null });
   });
 };
 
@@ -1482,15 +1497,19 @@ test("FE-013 participant route retries with no cursor after a cursor conflict", 
   const serverTimestamp = "2026-09-15T10:00:00Z";
   const deadline = "2026-09-15T10:01:00Z";
   let cursorRejected = false;
-  const snapshotRequests: URL[] = [];
+  const requests: Request[] = [];
+  // Reopening the socket may supersede and abort the manual REST request.
+  const snapshotRequests = () => requests.filter((request) => request.failure() === null)
+    .map((request) => new URL(request.url()));
 
   await page.clock.install({ time: serverTimestamp });
+  await page.clock.pauseAt(serverTimestamp);
   await installArenaAccessRoutes(page, fixtureSet);
   await installParticipantWebSocketRejection(page);
   await page.route(`**${arenaParticipantSnapshotPath}*`, async (route) => {
     expect(route.request().method()).toBe("GET");
     const requestURL = new URL(route.request().url());
-    snapshotRequests.push(requestURL);
+    requests.push(route.request());
 
     if (requestURL.search === "") {
       await fulfillJSON(
@@ -1510,19 +1529,19 @@ test("FE-013 participant route retries with no cursor after a cursor conflict", 
   });
   await expect(page.getByTestId("participant-player-panel")).toBeVisible();
   await expect(page.getByTestId("participant-recovery-fallback")).toBeVisible();
-  snapshotRequests.length = 0;
+  requests.length = 0;
   await page.getByRole("button", { name: "Повторить", exact: true }).click();
 
-  await expect.poll(() => snapshotRequests.length).toBe(2);
+  await expect.poll(() => snapshotRequests().length).toBe(2);
   await expect(page.getByTestId("participant-player-panel")).toHaveAttribute(
     "data-projection-revision",
     "10",
   );
   expect(cursorRejected).toBe(true);
-  expect(snapshotRequests[0]?.searchParams.get("cursor[projection_revision]")).toBe("9");
-  expect(snapshotRequests[0]?.searchParams.get("cursor[participant_view_revision]")).toBe("5");
-  expect(snapshotRequests[0]?.searchParams.get("cursor[event_sequence]")).toBe("14");
-  expect(snapshotRequests[1]?.search).toBe("");
+  expect(snapshotRequests()[0]?.searchParams.get("cursor[projection_revision]")).toBe("9");
+  expect(snapshotRequests()[0]?.searchParams.get("cursor[participant_view_revision]")).toBe("5");
+  expect(snapshotRequests()[0]?.searchParams.get("cursor[event_sequence]")).toBe("14");
+  expect(snapshotRequests()[1]?.search).toBe("");
 });
 
 test("FE-013 participant route retries once without a cursor after an unknown schema", async ({ page }) => {
@@ -1530,15 +1549,18 @@ test("FE-013 participant route retries once without a cursor after an unknown sc
   const serverTimestamp = "2026-09-15T10:00:00Z";
   const deadline = "2026-09-15T10:01:00Z";
   let initialLoaded = false;
-  const snapshotRequests: URL[] = [];
+  const requests: Request[] = [];
+  const snapshotRequests = () => requests.filter((request) => request.failure() === null)
+    .map((request) => new URL(request.url()));
 
   await page.clock.install({ time: serverTimestamp });
+  await page.clock.pauseAt(serverTimestamp);
   await installArenaAccessRoutes(page, fixtureSet);
   await installParticipantWebSocketRejection(page);
   await page.route(`**${arenaParticipantSnapshotPath}*`, async (route) => {
     expect(route.request().method()).toBe("GET");
     const requestURL = new URL(route.request().url());
-    snapshotRequests.push(requestURL);
+    requests.push(route.request());
 
     if (requestURL.search !== "") {
       await fulfillJSON(
@@ -1554,7 +1576,6 @@ test("FE-013 participant route retries once without a cursor after an unknown sc
       participantRecoveryWithDeadline(initialLoaded ? 10 : 9, serverTimestamp, deadline),
       { date: new Date(serverTimestamp).toUTCString() },
     );
-    initialLoaded = true;
   });
 
   await page.goto(`/arena/participant/${arenaTournamentId}`, {
@@ -1562,17 +1583,18 @@ test("FE-013 participant route retries once without a cursor after an unknown sc
   });
   await expect(page.getByTestId("participant-player-panel")).toBeVisible();
   await expect(page.getByTestId("participant-recovery-fallback")).toBeVisible();
-  snapshotRequests.length = 0;
+  requests.length = 0;
+  initialLoaded = true;
 
   await page.getByRole("button", { name: "Повторить", exact: true }).click();
 
-  await expect.poll(() => snapshotRequests.length).toBe(2);
+  await expect.poll(() => snapshotRequests().length).toBe(2);
   await expect(page.getByTestId("participant-player-panel")).toHaveAttribute(
     "data-projection-revision",
     "10",
   );
-  expect(snapshotRequests[0]?.searchParams.get("cursor[projection_revision]")).toBe("9");
-  expect(snapshotRequests[1]?.search).toBe("");
+  expect(snapshotRequests()[0]?.searchParams.get("cursor[projection_revision]")).toBe("9");
+  expect(snapshotRequests()[1]?.search).toBe("");
 });
 
 test("FE-013 unknown schema retry stops after one fresh response and keeps stale state", async ({ page }) => {
@@ -1580,15 +1602,18 @@ test("FE-013 unknown schema retry stops after one fresh response and keeps stale
   const serverTimestamp = "2026-09-15T10:00:00Z";
   const deadline = "2026-09-15T10:01:00Z";
   let initialLoaded = false;
-  const snapshotRequests: URL[] = [];
+  const requests: Request[] = [];
+  const snapshotRequests = () => requests.filter((request) => request.failure() === null)
+    .map((request) => new URL(request.url()));
 
   await page.clock.install({ time: serverTimestamp });
+  await page.clock.pauseAt(serverTimestamp);
   await installArenaAccessRoutes(page, fixtureSet);
   await installParticipantWebSocketRejection(page);
   await page.route(`**${arenaParticipantSnapshotPath}*`, async (route) => {
     expect(route.request().method()).toBe("GET");
     const requestURL = new URL(route.request().url());
-    snapshotRequests.push(requestURL);
+    requests.push(route.request());
 
     if (requestURL.search === "" && !initialLoaded) {
       await fulfillJSON(
@@ -1596,7 +1621,6 @@ test("FE-013 unknown schema retry stops after one fresh response and keeps stale
         participantRecoveryWithDeadline(9, serverTimestamp, deadline),
         { date: new Date(serverTimestamp).toUTCString() },
       );
-      initialLoaded = true;
       return;
     }
 
@@ -1612,17 +1636,18 @@ test("FE-013 unknown schema retry stops after one fresh response and keeps stale
   });
   await expect(page.getByTestId("participant-player-panel")).toBeVisible();
   await expect(page.getByTestId("participant-recovery-fallback")).toBeVisible();
-  snapshotRequests.length = 0;
+  requests.length = 0;
+  initialLoaded = true;
 
   await page.getByRole("button", { name: "Повторить", exact: true }).click();
 
-  await expect.poll(() => snapshotRequests.length).toBe(2);
+  await expect.poll(() => snapshotRequests().length).toBe(2);
   await expect(page.getByTestId("participant-recovery-fallback")).toBeVisible();
   await expect(page.getByTestId("participant-player-panel")).toHaveAttribute(
     "data-projection-revision",
     "9",
   );
-  expect(snapshotRequests[1]?.search).toBe("");
+  expect(snapshotRequests()[1]?.search).toBe("");
 });
 
 test("FE-013 mounted participant recovery exposes stale status while its deadline remains", async ({ page }) => {
@@ -1711,7 +1736,7 @@ test("FE-013 spectator route mounts public recovery and keeps only the public cu
   expect(headingBox.x).toBeGreaterThanOrEqual(0);
   expect(headingBox.x + headingBox.width).toBeLessThanOrEqual(390);
 
-  await page.getByRole("button", { name: "Обновить трансляцию" }).click();
+  await invalidatePublicStream(page);
   await expect.poll(() => snapshotRequests.length).toBe(initialRequestCount + 1);
   const retryURL = snapshotRequests.at(-1);
   expect(retryURL?.searchParams.get("cursor[projection_revision]")).toBe("9");
@@ -1793,11 +1818,11 @@ test("FE-013 public equal-cursor recovery refreshes the full match list without 
   await expect(broadcast.getByText("Матчи пока не опубликованы.", { exact: true })).toBeVisible();
   let navigations = 0;
   page.on("framenavigated", () => { navigations += 1; });
+  const snapshotsBeforeRefresh = snapshotRequests.length;
 
-  const livePanel = page.getByRole("region", { name: "Трансляция соревнования" });
-  await livePanel.getByRole("button", { name: "Обновить трансляцию" }).click();
+  await invalidatePublicStream(page);
 
-  await expect.poll(() => snapshotRequests.length).toBe(2);
+  await expect.poll(() => snapshotRequests.length).toBe(snapshotsBeforeRefresh + 1);
   await expect(broadcast.getByRole("button", { name: /Чарли.*Дана/ })).toBeVisible();
   expect(snapshotRequests.at(-1)?.searchParams.get("cursor[projection_revision]")).toBe("9");
   expect(snapshotRequests.at(-1)?.searchParams.get("cursor[event_sequence]")).toBe("14");
@@ -2036,7 +2061,7 @@ test("FE-039 public scoreboard applies cutoff, Golden, bye, and correction from 
   await expect(byeEntry.getByRole("cell").nth(4)).toHaveText("1");
 
   currentSnapshot = resolvedSnapshot;
-  await page.getByRole("button", { name: "Обновить трансляцию" }).click();
+  await invalidatePublicStream(page);
 
   const qualifiedAfterGolden = table.getByRole("row").filter({ hasText: "Участник 05" });
   const eliminatedAfterGolden = table.getByRole("row").filter({ hasText: "Участник 04" });
@@ -2257,12 +2282,12 @@ test("FE-040 public Swiss history and Single Elimination follow server snapshots
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 
   currentSnapshot = finalTwoZero;
-  await page.getByRole("button", { name: "Обновить трансляцию" }).click();
+  await invalidatePublicStream(page);
   await expect(broadcast.getByTestId("playoff-final")).toContainText("2:0");
   await expect(broadcast.getByTestId("playoff-final")).toContainText("Чемпион: Алиса");
 
   currentSnapshot = finalTwoOne;
-  await page.getByRole("button", { name: "Обновить трансляцию" }).click();
+  await invalidatePublicStream(page);
   await expect(broadcast.getByTestId("playoff-final")).toContainText("2:1");
   await expect(broadcast.getByTestId("playoff-final")).toContainText("Чемпион: Алиса");
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
@@ -2486,6 +2511,7 @@ for (const role of ["public", "operator"] as const) {
       const realtimePath = snapshotPath.replace(/\/snapshot$/, "/realtime");
       const realtimeMessage = role === "public" ? publicRealtimeMessage : operatorRealtimeEnvelope;
       const snapshotRequests: URL[] = [];
+      let snapshotRevision = 9;
       const sockets: WebSocketRoute[] = [];
       const closes: Array<{ code: number | undefined; reason: string | undefined }> = [];
       const pageErrors: string[] = [];
@@ -2501,7 +2527,7 @@ for (const role of ["public", "operator"] as const) {
       await page.route(`**${snapshotPath}*`, async (route) => {
         expect(route.request().method()).toBe("GET");
         snapshotRequests.push(new URL(route.request().url()));
-        const revision = 8 + snapshotRequests.length;
+        const revision = snapshotRevision;
         await fulfillJSON(
           route,
           role === "public" ? publicRecovery(revision) : operatorSnapshot(revision),
@@ -2531,6 +2557,7 @@ for (const role of ["public", "operator"] as const) {
       expect(sockets).toHaveLength(1);
       const originalSocket = sockets[0]!;
       const snapshotsBeforeFailure = snapshotRequests.length;
+      snapshotRevision = 10;
 
       originalSocket.send(failure === "invalid frame" ? "{" : JSON.stringify({
         type: "tournament.rejected",
@@ -2612,6 +2639,7 @@ test("FE-012 public realtime rejection is terminal and visible", async ({ page }
     });
     return sockets.length;
   }).toBe(1);
+  const requestsBeforeRejection = snapshotRequests.length;
   await page.evaluate((message) => {
     const control = (window as unknown as {
       __operatorWebSocketControl: { emit: (index: number, value: unknown) => void };
@@ -2626,7 +2654,7 @@ test("FE-012 public realtime rejection is terminal and visible", async ({ page }
   await expect(state).toHaveAttribute("data-refreshing", "true");
   await expect(state).toContainText("Периодическое обновление");
   await expect(state).toHaveAttribute("data-ready", "true");
-  await expect.poll(() => snapshotRequests.length).toBe(2);
+  await expect.poll(() => snapshotRequests.length).toBe(requestsBeforeRejection + 1);
   const refreshRequest = snapshotRequests.at(-1);
   expect(refreshRequest?.search).toBe("");
   await expect.poll(async () => {
@@ -2780,6 +2808,17 @@ test("FE-013 operator route mounts operator recovery and keeps only the operator
   expect(headingBox.x).toBeGreaterThanOrEqual(0);
   expect(headingBox.x + headingBox.width).toBeLessThanOrEqual(390);
 
+  await page.evaluate(() => {
+    const control = (window as unknown as {
+      __operatorWebSocketControl: {
+        get: () => Array<{ readyState: number }>;
+        emit: (index: number, value: unknown) => void;
+      };
+    }).__operatorWebSocketControl;
+    const index = control.get().findLastIndex((socket) => socket.readyState === WebSocket.OPEN);
+    if (index < 0) throw new Error('Operator stream is not open');
+    control.emit(index, { type: 'tournament.rejected', code: 'tournament.forbidden', message: 'Operator stream rejected' });
+  });
   await page.getByRole("button", { name: "Повторить", exact: true }).click();
   await expect.poll(() => snapshotRequests.length).toBe(initialRequestCount + 1);
   const retryURL = snapshotRequests.at(-1);

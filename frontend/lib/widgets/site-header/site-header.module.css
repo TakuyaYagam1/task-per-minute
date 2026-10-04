@@ -91,7 +91,12 @@
   gap: 0.45rem;
 }
 
+.guestHeaderInner {
+  flex-wrap: wrap;
+}
+
 .guestHeaderActions {
+  flex-wrap: wrap;
   gap: 0.4rem;
 }
 

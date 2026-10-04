@@ -343,7 +343,7 @@ const setupRosterRoutes = async (
         await options.onReplace(route, bodyParticipants);
         return;
       }
-      await fulfillJSON(route, 200, roster(
+      initialRoster = roster(
         bodyParticipants.map((item, index) => participant(
           index,
           item.player_id,
@@ -351,7 +351,8 @@ const setupRosterRoutes = async (
           item.seed,
         )),
         { revision: initialRoster.revision + 1 },
-      ));
+      );
+      await fulfillJSON(route, 200, initialRoster);
       return;
     }
     if (path === "/api/v1/admin/players/events" && method === "GET") {
@@ -373,8 +374,7 @@ const openRoster = async (page: Page, expectParticipant: boolean = true): Promis
   await page.getByPlaceholder("Введите пароль...").fill("correct-password");
   await page.getByRole("button", { name: "Войти" }).click();
   await page.getByRole("button", { name: "Соревнования" }).click();
-  const row = page.getByRole("row").filter({ hasText: "Турнир состава" });
-  const open = row.getByRole("button", { name: "Открыть" });
+  const open = page.getByRole("button", { name: "Открыть соревнование Турнир состава", exact: true });
   await expect(open).toBeVisible();
   await open.click();
   await expect(page.getByRole("heading", { name: "Турнир состава" })).toBeVisible();
@@ -446,7 +446,7 @@ test("добавляет участника и отклоняет duplicate иг
   await expect(addedGroup.getByRole("option", { name: players[0].username, exact: true })).toHaveCount(0);
 });
 
-test("показывает editable empty state и не отправляет PUT для состава меньше минимума", async ({ page }) => {
+test("сохраняет неполный состав во время регистрации", async ({ page }) => {
   const players = [player(0, "Алиса"), player(1, "Боб"), player(2, "Вера"), player(3, "Глеб")];
   const { replaceRequests } = await setupRosterRoutes(page, roster([]), { players });
   await openRoster(page, false);
@@ -459,8 +459,9 @@ test("показывает editable empty state и не отправляет PUT
 
   for (let count = 0; count <= 3; count += 1) {
     await save.click();
-    await expect(region.getByRole("alert")).toContainText(/минимум 4|не менее 4|4 участник/i);
-    expect(replaceRequests).toHaveLength(0);
+    await expect.poll(() => replaceRequests.length).toBe(count + 1);
+    await expect(region).toContainText("Состав сохранен.");
+    expect(replaceRequests[count].body.participants).toHaveLength(count);
     if (count < 3) {
       await add.click();
       await expect(rosterGroup(page, count + 1)).toBeVisible();
@@ -483,17 +484,21 @@ test("проверяет позиции в диапазоне 1..N и остав
 
   const region = rosterRegion(page);
   await rosterGroup(page, 2).getByRole("button", { name: "Удалить" }).click();
+  await expect.poll(() => replaceRequests.length).toBe(1);
+  await expect(region).toContainText("Состав сохранен.");
+  await expect(rosterGroup(page, 4).getByRole("spinbutton", { name: "Позиция" })).toHaveValue("4");
+  await rosterGroup(page, 4).getByRole("spinbutton", { name: "Позиция" }).fill("5");
   await region.getByRole("button", { name: /Сохранить состав/i }).click();
   await expect(region.getByRole("alert")).toContainText(/от 1 до 4|без пропусков|последовательн/i);
-  expect(replaceRequests).toHaveLength(0);
+  expect(replaceRequests).toHaveLength(1);
   await expect(rosterGroup(page, 1).getByRole("spinbutton", { name: "Позиция" })).toBeEditable();
 
   await rosterGroup(page, 2).getByRole("spinbutton", { name: "Позиция" }).fill("2");
   await rosterGroup(page, 3).getByRole("spinbutton", { name: "Позиция" }).fill("3");
   await rosterGroup(page, 4).getByRole("spinbutton", { name: "Позиция" }).fill("4");
   await region.getByRole("button", { name: /Сохранить состав/i }).click();
-  await expect.poll(() => replaceRequests.length).toBe(1);
-  expect(replaceRequests[0].body.participants).toEqual([
+  await expect.poll(() => replaceRequests.length).toBe(2);
+  expect(replaceRequests[1].body.participants).toEqual([
     { player_id: players[0].id, seed: 1, attendance: "registered" },
     { player_id: players[2].id, seed: 2, attendance: "registered" },
     { player_id: players[3].id, seed: 3, attendance: "registered" },
@@ -512,7 +517,7 @@ test("явно ограничивает 17-го участника", async ({ pa
   await expect(fullRegion.getByRole("alert")).toContainText(/16|максим|переполн/i);
 });
 
-test("заменяет и удаляет участника, отправляет полный roster с revision и принимает серверный порядок", async ({ page }) => {
+test("заменяет участника, отправляет полный roster с revision и принимает серверный порядок", async ({ page }) => {
   const players = [
     player(0, "Алиса"),
     player(1, "Боб"),
@@ -531,7 +536,6 @@ test("заменяет и удаляет участника, отправляе�
     participant(1, players[1].id, "registered", 2),
     participant(2, players[3].id, "registered", 3),
     participant(3, players[4].id, "registered", 4),
-    participant(4, players[2].id, "registered", 5),
   ]), {
     players,
     projectionRevision: 9,
@@ -548,7 +552,6 @@ test("заменяет и удаляет участника, отправляе�
   await openRoster(page);
 
   const region = rosterRegion(page);
-  await rosterGroup(page, 5).getByRole("button", { name: "Удалить" }).click();
   await selectPlayerByName(rosterGroup(page, 2), players[2].username);
   await rosterGroup(page, 2).getByRole("spinbutton", { name: "Позиция" }).fill("3");
   await rosterGroup(page, 1).getByRole("spinbutton", { name: "Позиция" }).fill("4");
@@ -596,6 +599,7 @@ test("сохраняет draft при русском 409 и показывает
   await openRoster(page);
   const region = rosterRegion(page);
   await rosterGroup(page, 1).getByRole("spinbutton", { name: "Позиция" }).fill("4");
+  await rosterGroup(page, 4).getByRole("spinbutton", { name: "Позиция" }).fill("1");
   await region.getByRole("button", { name: /Сохранить состав/i }).click();
   await expect(region.getByRole("alert")).toContainText("Игрок уже зарезервирован в другом турнире");
   await expect(rosterGroup(page, 1).getByRole("spinbutton", { name: "Позиция" })).toHaveValue("4");

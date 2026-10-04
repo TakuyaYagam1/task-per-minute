@@ -5,9 +5,32 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
+import ProgressReporter from "./e2e-progress.mjs";
 
 const source = join(dirname(fileURLToPath(import.meta.url)), "run-e2e.mjs");
 const sensitiveValue = "synthetic-private-assertion-value";
+
+test("progress is emitted before completion without assertion values or private paths", (t) => {
+  let output = "";
+  t.mock.method(process.stderr, "write", (chunk) => { output += chunk; return true; });
+  const reporter = new ProgressReporter();
+  const currentTest = {
+    location: { file: join(dirname(source), "../e2e/logout.spec.ts"), line: 12 },
+    title: sensitiveValue,
+  };
+  reporter.onBegin({}, { allTests: () => [currentTest] });
+  reporter.onTestBegin(currentTest, { workerIndex: 0 });
+  assert.match(output, /e2e\/logout.spec.ts:12 started/);
+  assert.doesNotMatch(output, /1\/1/);
+  reporter.onTestEnd(currentTest, {
+    status: "timedOut", duration: 60000, errors: [{ message: sensitiveValue }],
+  });
+  assert.match(output, /1\/1: e2e\/logout.spec.ts:12 timedOut \(60000ms\)/);
+  reporter.onTestBegin({ location: { file: "/private/account-data", line: 1 } }, { workerIndex: 1 });
+  assert.match(output, /unknown test started/);
+  assert.equal(output.includes(sensitiveValue), false);
+  assert.equal(output.includes("/private/account-data"), false);
+});
 
 function runFixture(t, { status = "expected", resultStatus = "passed", exitCode = 0, discovered = 1, errors = [] } = {}) {
   const root = mkdtempSync(join(tmpdir(), "e2e-runner-test-"));
