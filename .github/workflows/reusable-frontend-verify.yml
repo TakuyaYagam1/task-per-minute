@@ -78,6 +78,8 @@ jobs:
 
       - name: dependency advisory gate
         working-directory: ${{ env.FRONTEND_WORKDIR }}
+        env:
+          NPM_AUDIT_REPORT: ${{ env.FRONTEND_CI_REPORT_DIR }}/dependency-audit.json
         run: npm run audit:dependencies
 
       - name: frontend verification
@@ -135,6 +137,10 @@ jobs:
         working-directory: ${{ env.FRONTEND_WORKDIR }}
         run: node node_modules/playwright/cli.js install --with-deps chromium
 
+      - name: validate disposable Compose configuration
+        working-directory: ${{ env.FRONTEND_WORKDIR }}
+        run: node --test scripts/e2e-compose-config.test.mjs
+
       - name: write disposable e2e env
         env:
           FULL_STACK_ENV_FILE: ${{ runner.temp }}/task-per-minute-e2e.env
@@ -170,6 +176,7 @@ jobs:
           JWT_SECRET=tpm-ci-jwt-secret-with-at-least-32-chars
           JWT_ACCESS_TTL=15m
           JWT_REFRESH_TTL=168h
+          INCIDENT_EXPORT_HMAC_KEY_ID=ci-e2e
           ADMIN_PASSWORD=tpm-ci-admin-password
           ADMIN_LOGIN_RATE_ATTEMPTS=10
           ADMIN_LOGIN_RATE_WINDOW=3m
@@ -193,6 +200,8 @@ jobs:
           NEXT_PUBLIC_API_URL=
           NEXT_PUBLIC_ADMIN_API_URL=
           ENV
+          # Each disposable stack gets its own signing key.
+          node -e 'const fs = require("node:fs"); const { randomBytes } = require("node:crypto"); fs.appendFileSync(process.env.FULL_STACK_ENV_FILE, "INCIDENT_EXPORT_HMAC_SECRET=" + randomBytes(32).toString("hex") + "\n");'
 
       - name: full-stack e2e
         env:

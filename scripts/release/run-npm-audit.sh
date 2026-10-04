@@ -165,6 +165,17 @@ fi
 
 if [ "$VALIDATION_STATUS" -ne 0 ]; then
   printf 'npm dependency audit: FAIL (validator status %s)\n' "$VALIDATION_STATUS" >&2
+  if [ "$SECURITY_STATUS" -ne 0 ]; then
+    printf 'npm dependency audit: frontend runtime preflight failed (status %s)\n' "$SECURITY_STATUS" >&2
+  else
+    # Print the validator's bounded diagnostic, not raw registry output.
+    run_locked_node - "$TMP_ROOT/validator.err" <<'NODE' >&2
+const { readFileSync } = require('node:fs');
+const diagnostic = readFileSync(process.argv[2], 'utf8').split('\n')
+  .find((line) => line.startsWith('dependency advisory validation: '));
+if (diagnostic) console.error(diagnostic.replace(/[\x00-\x1f\x7f]/g, '').slice(0, 500));
+NODE
+  fi
   exit "$VALIDATION_STATUS"
 fi
 

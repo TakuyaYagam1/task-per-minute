@@ -348,6 +348,8 @@ if [[ -n "$full_stack_grep" ]]; then
   playwright_suite+=(--grep "$full_stack_grep")
 fi
 
+run_step "compose configuration" "${compose[@]}" config --quiet || die "compose configuration is invalid"
+
 compose_project_started=1
 if ! run_step "compose startup" "${compose[@]}" up --build -d; then
   "${compose[@]}" ps >&2 || true
