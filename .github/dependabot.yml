@@ -3,6 +3,7 @@ version: 2
 multi-ecosystem-groups:
   dependencies:
     target-branch: dev
+    open-pull-requests-limit: 1
     schedule:
       interval: daily
 
@@ -11,13 +12,11 @@ updates:
     directory: /backend
     patterns: ["*"]
     multi-ecosystem-group: dependencies
-    open-pull-requests-limit: 1
 
   - package-ecosystem: npm
     directory: /frontend
     patterns: ["*"]
     multi-ecosystem-group: dependencies
-    open-pull-requests-limit: 1
 
   - package-ecosystem: docker
     directories:
@@ -26,4 +25,3 @@ updates:
       - /test-data/importer
     patterns: ["*"]
     multi-ecosystem-group: dependencies
-    open-pull-requests-limit: 1

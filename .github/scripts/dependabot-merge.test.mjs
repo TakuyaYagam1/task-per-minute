@@ -45,6 +45,15 @@ function fixture() {
 
 const writes = state => state.calls.filter(call => call.method !== 'GET');
 
+test('grouped dependency updates keep PR options at the group level', () => {
+  const source = read('.github/dependabot.yml');
+  const [groups, updates] = source.split(/^updates:\s*$/m);
+  assert.ok(updates, 'expected ecosystem updates');
+  assert.match(groups, /^    open-pull-requests-limit: 1$/m);
+  assert.match(groups, /^    target-branch: dev$/m);
+  assert.doesNotMatch(updates, /^\s+(open-pull-requests-limit|target-branch|milestone|commit-message|pull-request-branch-name):/m);
+});
+
 test('approves the tested commit and merges it into dev only after every pipeline job passes', async () => {
   const state = fixture();
   assert.match(await mergeDependencyUpdate(state.api, 19), /Merged dependency pull request #7 into dev/);
