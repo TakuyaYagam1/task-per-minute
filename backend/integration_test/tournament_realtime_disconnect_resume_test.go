@@ -420,6 +420,7 @@ func TestTournamentRealtimeDisconnectResume(t *testing.T) {
 
 func setRealtimePlayerSession(ctx context.Context, t *testing.T, playerID uuid.UUID) uuid.UUID {
 	t.Helper()
+	ensureVerifiedPlayerAccount(ctx, t, playerID)
 	token := uuid.New()
 	expiresAt := time.Now().UTC().Add(time.Hour).Truncate(time.Microsecond)
 	_, err := sharedPool.Exec(ctx, `

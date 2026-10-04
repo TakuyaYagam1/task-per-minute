@@ -395,6 +395,7 @@ func participantArchivePlayer(t *testing.T, participantID uuid.UUID) tournamentF
 
 func participantArchiveSessionForPlayer(t *testing.T, playerID uuid.UUID) tournamentFlowPlayer {
 	t.Helper()
+	ensureVerifiedPlayerAccount(context.Background(), t, playerID)
 	token := uuid.New()
 	expiresAt := time.Now().UTC().Add(time.Hour)
 	_, err := sharedPool.Exec(context.Background(), `

@@ -39,6 +39,7 @@ func TestParticipantConnectionBindingFollowsCurrentSubscriberFence(t *testing.T)
 	fixture := createParticipantReconnectSwissProofFixture(ctx, t)
 	playerID := fixture.participants[0]
 	playerAccountID := participantReconnectPlayerAccount(ctx, t, playerID)
+	ensureVerifiedPlayerAccount(ctx, t, playerAccountID)
 	sessionToken := uuid.New()
 	sessionExpiresAt := time.Now().UTC().Add(time.Hour)
 	_, err := sharedPool.Exec(ctx, `
@@ -172,6 +173,7 @@ func TestParticipantConnectionBindingSurvivesFinalGameAdvance(t *testing.T) {
 	participantID := finalParticipants[0]
 	participantConnectionEnsurePresence(ctx, t, fixture, ids.FinalSeriesID, finalParticipants)
 	playerAccountID := participantReconnectPlayerAccount(ctx, t, participantID)
+	ensureVerifiedPlayerAccount(ctx, t, playerAccountID)
 	sessionToken := uuid.New()
 	sessionExpiresAt := time.Now().UTC().Add(time.Hour)
 	_, err = sharedPool.Exec(ctx, `
