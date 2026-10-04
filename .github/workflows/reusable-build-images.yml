@@ -193,7 +193,8 @@ jobs:
             scripts/release/tests/frontend-publication.test.mjs \
             scripts/release/tests/validate-frontend-rollout.test.mjs \
             scripts/release/tests/frontend-readiness.test.mjs \
-            scripts/release/tests/check-frontend-readiness.test.mjs
+            scripts/release/tests/check-frontend-readiness.test.mjs \
+            .github/scripts/dependabot-merge.test.mjs
 
       - name: build frontend OCI artifact
         env:
