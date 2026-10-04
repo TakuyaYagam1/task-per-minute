@@ -6,6 +6,11 @@ VALIDATOR="$REPO_ROOT/scripts/release/validate-dependency-advisories.mjs"
 TEST_TMP="$(mktemp -d "${TMPDIR:-/tmp}/dependency-advisory-test.XXXXXX")"
 trap 'rm -rf -- "$TEST_TMP"' EXIT
 
+# Keep advisory fixtures independent of the application's dependency count.
+mkdir -p "$TEST_TMP/frontend/config"
+printf '%s\n' '{"lockfileVersion":3,"packages":{"":{},"node_modules/fixture-runtime":{"version":"1.0.0"},"node_modules/fixture-package":{"version":"1.0.0","dev":true}}}' >"$TEST_TMP/frontend/package-lock.json"
+: >"$TEST_TMP/frontend/config/npm-empty-userconfig"
+
 FAKE_NPM="$TEST_TMP/npm"
 cat >"$FAKE_NPM" <<'EOF'
 #!/usr/bin/env bash
@@ -21,20 +26,20 @@ for argument in "$@"; do
 done
 
 if [ "$fixture" = "wrong-format" ]; then
-  printf '%s\n' '{"auditReportVersion":1,"vulnerabilities":{},"metadata":{"dependencies":{"prod":22,"dev":398,"optional":61,"peer":0,"peerOptional":0,"total":458},"vulnerabilities":{"info":0,"low":0,"moderate":0,"high":0,"critical":0,"total":0}}}'
+  printf '%s\n' '{"auditReportVersion":1,"vulnerabilities":{},"metadata":{"dependencies":{"prod":1,"dev":1,"optional":0,"peer":0,"peerOptional":0,"total":2},"vulnerabilities":{"info":0,"low":0,"moderate":0,"high":0,"critical":0,"total":0}}}'
   exit 0
 fi
 if [ "$fixture" = "inconsistent" ]; then
-  printf '%s\n' '{"auditReportVersion":2,"vulnerabilities":{"fixture-package":{"via":[{"source":12345}],"severity":"high"}},"metadata":{"dependencies":{"prod":22,"dev":398,"optional":61,"peer":0,"peerOptional":0,"total":458},"vulnerabilities":{"info":0,"low":0,"moderate":0,"high":0,"critical":0,"total":0}}}'
+  printf '%s\n' '{"auditReportVersion":2,"vulnerabilities":{"fixture-package":{"via":[{"source":12345}],"severity":"high"}},"metadata":{"dependencies":{"prod":1,"dev":1,"optional":0,"peer":0,"peerOptional":0,"total":2},"vulnerabilities":{"info":0,"low":0,"moderate":0,"high":0,"critical":0,"total":0}}}'
   exit 0
 fi
 
 if [ "$fixture" = "production" ] || { [ "$fixture" = "development" ] && [ "$is_production" = false ]; }; then
-  printf '%s\n' '{"auditReportVersion":2,"vulnerabilities":{"fixture-package":{"via":[{"source":12345}],"severity":"high"}},"metadata":{"dependencies":{"prod":22,"dev":398,"optional":61,"peer":0,"peerOptional":0,"total":458},"vulnerabilities":{"info":0,"low":0,"moderate":0,"high":1,"critical":0,"total":1}}}'
+  printf '%s\n' '{"auditReportVersion":2,"vulnerabilities":{"fixture-package":{"via":[{"source":12345}],"severity":"high"}},"metadata":{"dependencies":{"prod":1,"dev":1,"optional":0,"peer":0,"peerOptional":0,"total":2},"vulnerabilities":{"info":0,"low":0,"moderate":0,"high":1,"critical":0,"total":1}}}'
   exit 1
 fi
 
-printf '%s\n' '{"auditReportVersion":2,"vulnerabilities":{},"metadata":{"dependencies":{"prod":22,"dev":398,"optional":61,"peer":0,"peerOptional":0,"total":458},"vulnerabilities":{"info":0,"low":0,"moderate":0,"high":0,"critical":0,"total":0}}}'
+printf '%s\n' '{"auditReportVersion":2,"vulnerabilities":{},"metadata":{"dependencies":{"prod":1,"dev":1,"optional":0,"peer":0,"peerOptional":0,"total":2},"vulnerabilities":{"info":0,"low":0,"moderate":0,"high":0,"critical":0,"total":0}}}'
 EOF
 chmod +x "$FAKE_NPM"
 
@@ -49,7 +54,8 @@ EOF
 run_validator() {
   local fixture="$1"
   ln -sf -- "$FAKE_NPM" "$TEST_TMP/npm-$fixture"
-  DEPENDENCY_AUDIT_EXCEPTIONS="$TEST_TMP/exceptions.json" \
+  DEPENDENCY_AUDIT_FRONTEND_ROOT="$TEST_TMP/frontend" \
+    DEPENDENCY_AUDIT_EXCEPTIONS="$TEST_TMP/exceptions.json" \
     NPM_BIN="$TEST_TMP/npm-$fixture" \
     node "$VALIDATOR"
 }
