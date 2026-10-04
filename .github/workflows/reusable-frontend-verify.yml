@@ -76,6 +76,8 @@ jobs:
         working-directory: ${{ env.FRONTEND_WORKDIR }}
         run: node node_modules/playwright/cli.js install --with-deps chromium
 
+      # NOTE: The unpatched ESLint transitive braces advisory is temporarily accepted
+      # in frontend/config/npm-audit-exceptions.json until 2026-10-18. Other findings block CI.
       - name: dependency advisory gate
         working-directory: ${{ env.FRONTEND_WORKDIR }}
         env:

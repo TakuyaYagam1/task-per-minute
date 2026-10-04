@@ -84,6 +84,8 @@ expires_on="$(date -u -d '+30 days' +%Y-%m-%d)"
 write_exceptions "$reviewed_on" "$expires_on"
 run_validator development >/dev/null
 printf 'PASS: accepted current development exception\n'
+expect_reject production-finding-with-development-exception production
+grep -Fq 'production findings are not exception eligible' "$TEST_TMP/production-finding-with-development-exception.out"
 
 expired_on="$(date -u -d '-1 day' +%Y-%m-%d)"
 write_exceptions "$(date -u -d '-30 days' +%Y-%m-%d)" "$expired_on"

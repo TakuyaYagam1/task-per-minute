@@ -35,15 +35,6 @@ type OperatorRecoverySnapshot = components["schemas"]["OperatorRecoverySnapshot"
 let fixtureProcess: ChildProcessByStdio<null, Readable, Readable> | undefined;
 let fixtureURL = "";
 
-const jsonResponse = (
-  status: number,
-  body: unknown,
-  headers: Record<string, string> = {},
-): Response => new Response(JSON.stringify(body), {
-  status,
-  headers: { "content-type": "application/json", ...headers },
-});
-
 const problemBody = (status: number, title: string) => ({
   type: "about:blank",
   title,

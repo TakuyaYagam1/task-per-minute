@@ -30,7 +30,6 @@ import {
   TournamentAdminPanel,
   TournamentJournalSection,
   TournamentTasksSection,
-  type TournamentAdminView,
 } from "../../widgets/tournament-admin";
 import {
   AdminShell,

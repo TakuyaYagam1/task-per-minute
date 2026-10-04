@@ -64,20 +64,6 @@ const stateTone = (state: GoldenOperatorGroup["state"]): StatusTone => {
 
 const memberTone = (ready: boolean): StatusTone => (ready ? "success" : "warning");
 
-const formatDateTime = (value: string | null | undefined): string => {
-  if (!value) {
-    return "-";
-  }
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return "Дата недоступна";
-  }
-  return new Intl.DateTimeFormat("ru-RU", {
-    dateStyle: "short",
-    timeStyle: "short",
-  }).format(date);
-};
-
 const bracketDisplayName = (value: string | null): string => value ?? "Ожидается";
 
 const groupIsReady = (group: GoldenOperatorGroup): boolean =>

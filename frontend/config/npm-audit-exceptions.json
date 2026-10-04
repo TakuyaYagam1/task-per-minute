@@ -1,4 +1,16 @@
 {
   "schema_version": 1,
-  "exceptions": []
+  "exceptions": [
+    {
+      "package": "braces",
+      "advisory_id": 1240992,
+      "advisory_url": "https://github.com/advisories/GHSA-vfj7-8cjw-p6xm",
+      "scope": "development",
+      "owner": "TakuyaYagam1",
+      "reviewed_by": "TakuyaYagam1",
+      "reason": "NOTE: Known stack-exhaustion vulnerability in braces <=3.0.3, pulled in by ESLint through fast-glob/micromatch. No patched release is available as of 2026-10-04. The maintainer accepts this temporary development-only risk; production findings and other advisories remain blocking. Recheck upstream before expiry.",
+      "reviewed_on": "2026-10-04",
+      "expires_on": "2026-10-18"
+    }
+  ]
 }

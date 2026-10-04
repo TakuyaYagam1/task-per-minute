@@ -378,7 +378,7 @@ test("отображает серверные состояния, состав, 
     .getByRole("region", { name: "Список соревнований" })
     .getByRole("table");
   await expect(table.getByRole("row")).toHaveCount(stateCases.length + 1);
-  for (const [index, item] of stateCases.entries()) {
+  for (const item of stateCases) {
     const row = table.getByRole("row").filter({ hasText: `Состояние ${item.state}` });
     await expect(row).toContainText(item.label);
     await expect(row).toContainText(`${item.rosterSize} / ${item.plannedRosterSize}`);

@@ -358,7 +358,6 @@ export const playerModel = {
   },
 
   async refreshCurrentPlayer(
-    player: Player,
     signal?: AbortSignal,
   ): Promise<RefreshPlayerResult> {
     const requestEpoch = getPlayerSessionEpoch();
