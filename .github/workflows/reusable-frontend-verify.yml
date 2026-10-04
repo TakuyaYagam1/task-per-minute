@@ -18,7 +18,7 @@ env:
 jobs:
   verify:
     name: verify
-    runs-on: [self-hosted, linux, nix]
+    runs-on: ubuntu-24.04
     timeout-minutes: 40
     steps:
       - name: configure temporary paths
@@ -31,16 +31,22 @@ jobs:
         with:
           ref: ${{ inputs.target_sha }}
 
-      - name: initialize verification evidence
-        working-directory: ${{ env.FRONTEND_WORKDIR }}
-        run: node scripts/verify-frontend-ci.mjs --init
-
       - name: setup node
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
           cache-dependency-path: frontend/package-lock.json
+
+      - name: initialize verification evidence
+        working-directory: ${{ env.FRONTEND_WORKDIR }}
+        run: node scripts/verify-frontend-ci.mjs --init
+
+      - name: setup go for OpenAPI generation
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
 
       - name: setup python
         uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
@@ -54,6 +60,10 @@ jobs:
       - name: install openapi generator dependency
         run: python -m pip install --disable-pip-version-check PyYAML==6.0.3
 
+      - name: test frontend runtime validation
+        working-directory: ${{ env.FRONTEND_WORKDIR }}
+        run: node --test scripts/configure-ci-runtime.test.mjs scripts/run-e2e.test.mjs
+
       - name: install frontend dependencies
         working-directory: ${{ env.FRONTEND_WORKDIR }}
         run: npm ci --ignore-scripts --userconfig config/npm-empty-userconfig
@@ -62,14 +72,23 @@ jobs:
         working-directory: ${{ env.FRONTEND_WORKDIR }}
         run: node scripts/configure-ci-runtime.mjs --verify-packages
 
+      - name: install Playwright Chromium
+        working-directory: ${{ env.FRONTEND_WORKDIR }}
+        run: node node_modules/playwright/cli.js install --with-deps chromium
+
+      # NOTE: The unpatched ESLint transitive braces advisory is temporarily accepted
+      # in frontend/config/npm-audit-exceptions.json until 2026-10-18. Other findings block CI.
       - name: dependency advisory gate
         working-directory: ${{ env.FRONTEND_WORKDIR }}
+        env:
+          NPM_AUDIT_REPORT: ${{ env.FRONTEND_CI_REPORT_DIR }}/dependency-audit.json
         run: npm run audit:dependencies
 
       - name: frontend verification
         working-directory: ${{ env.FRONTEND_WORKDIR }}
         env:
-          E2E_WORKERS: 1
+          E2E_WORKERS: 2
+          E2E_SUMMARY_FILE: ${{ env.FRONTEND_CI_REPORT_DIR }}/e2e-summary.json
         run: npm run verify:ci
 
       - name: finalize verification evidence
@@ -90,7 +109,7 @@ jobs:
 
   full-stack-e2e:
     name: full-stack e2e
-    runs-on: [self-hosted, linux, nix]
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
       - name: checkout
@@ -116,6 +135,14 @@ jobs:
       - name: verify installed Playwright runtime
         working-directory: ${{ env.FRONTEND_WORKDIR }}
         run: node scripts/configure-ci-runtime.mjs --verify-packages
+
+      - name: install Playwright Chromium
+        working-directory: ${{ env.FRONTEND_WORKDIR }}
+        run: node node_modules/playwright/cli.js install --with-deps chromium
+
+      - name: validate disposable Compose configuration
+        working-directory: ${{ env.FRONTEND_WORKDIR }}
+        run: node --test scripts/e2e-compose-config.test.mjs
 
       - name: write disposable e2e env
         env:
@@ -152,6 +179,7 @@ jobs:
           JWT_SECRET=tpm-ci-jwt-secret-with-at-least-32-chars
           JWT_ACCESS_TTL=15m
           JWT_REFRESH_TTL=168h
+          INCIDENT_EXPORT_HMAC_KEY_ID=ci-e2e
           ADMIN_PASSWORD=tpm-ci-admin-password
           ADMIN_LOGIN_RATE_ATTEMPTS=10
           ADMIN_LOGIN_RATE_WINDOW=3m
@@ -175,9 +203,12 @@ jobs:
           NEXT_PUBLIC_API_URL=
           NEXT_PUBLIC_ADMIN_API_URL=
           ENV
+          # Each disposable stack gets its own signing key.
+          node -e 'const fs = require("node:fs"); const { randomBytes } = require("node:crypto"); fs.appendFileSync(process.env.FULL_STACK_ENV_FILE, "INCIDENT_EXPORT_HMAC_SECRET=" + randomBytes(32).toString("hex") + "\n");'
 
       - name: full-stack e2e
         env:
+          E2E_SUMMARY_FILE: ${{ runner.temp }}/frontend-full-stack/e2e-summary.json
           E2E_ADMIN_PASSWORD: tpm-ci-admin-password
           E2E_COMPOSE_ENV_FILE: ${{ runner.temp }}/task-per-minute-e2e.env
           E2E_COMPOSE_REPORT_FILE: ${{ runner.temp }}/frontend-full-stack/full-stack-verify.json

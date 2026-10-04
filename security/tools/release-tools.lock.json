@@ -16,8 +16,8 @@
         "license": {"spdx": "BSD-3-Clause", "reviewed_at": "2026-09-11", "status": "accepted", "evidence_url": "https://go.dev/LICENSE"}
       },
       "runtime_identity": {"arguments": ["version"], "expected_output": "go version go1.26.8 linux/amd64", "timeout_seconds": 5},
-      "provisioning": {"kind": "nix_store", "immutable_root": "/nix/store/62rzn370ba6jc0sfvmb9a93s4619f6kv-go-1.26.8", "relative_path": "bin/go", "executable_sha256": "d9a2fa19c7ef8b57f420012c21f49f235c46f08a68c12077d9c753dbb6ccdc34", "nar_hash": "sha256:1s8nf1a8q1hqkimvhyk044r105dzwrplk19kxg6mwpbkjd24hlxx"},
-      "trust_decision": {"status": "accepted", "rationale": "Official linux-amd64 archive d0f743b33e8d8945e6b1f432edd15785c70507121d6e2a723b21285eddf8b57b is locked by exact Nix root, NAR identity, executable digest, and runtime version."}
+      "provisioning": {"kind":"system","command":"go"},
+      "trust_decision": {"status": "accepted", "rationale": "Installed tools are resolved on PATH and version-checked; installation provenance is owned by the CI image or provisioning step."}
     },
     {
       "name": "node",
@@ -28,8 +28,8 @@
         "license": {"spdx": "MIT", "reviewed_at": "2026-09-02", "status": "accepted", "evidence_url": "https://github.com/nodejs/node/blob/v24.18.1/LICENSE"}
       },
       "runtime_identity": {"arguments": ["--version"], "expected_output": "v24.18.1", "timeout_seconds": 5},
-      "provisioning": {"kind": "nix_store", "immutable_root": "/nix/store/jy3vlmdzmyjpb37r6r2n24lc3zarhjz3-nodejs-slim-24.18.1", "relative_path": "bin/node", "executable_sha256": "5d270d274dfe9a142289b7e1b781408826fda929d42229b6d761462f4e21be17", "nar_hash": "sha256:0dk62alicfa8xkq7k6n538n11i7fd7c8mji9gca04cxxzf5c3glr"},
-      "trust_decision": {"status": "accepted", "rationale": "Exact local Nix store root, NAR identity, executable digest, and runtime version are locked."}
+      "provisioning": {"kind":"system","command":"node"},
+      "trust_decision": {"status": "accepted", "rationale": "Installed tools are resolved on PATH and version-checked; installation provenance is owned by the CI image or provisioning step."}
     },
     {
       "name": "npm",
@@ -40,8 +40,8 @@
         "license": {"spdx": "Artistic-2.0", "reviewed_at": "2026-09-02", "status": "accepted", "evidence_url": "https://github.com/npm/cli/blob/v11.16.0/LICENSE"}
       },
       "runtime_identity": {"arguments": ["--version"], "expected_output": "11.16.0", "timeout_seconds": 5},
-      "provisioning": {"kind": "nix_store", "immutable_root": "/nix/store/3nyq1g44akas41r304bk8ai76ywl9p9h-nodejs-slim-24.18.1-npm", "relative_path": "lib/node_modules/npm/bin/npm-cli.js", "executable_sha256": "537622a5481d5577f3beb9d7d04285fead594f2335d69b12b8bd0584f8193dd3", "nar_hash": "sha256:15vqq6xfzp8lcrbrshq5xs050qsbkhvyjka2dlxfbgqxg7cy9grl"},
-      "trust_decision": {"status": "accepted", "rationale": "Exact local Nix store root, NAR identity, executable digest, and runtime version are locked."}
+      "provisioning": {"kind":"system","command":"npm"},
+      "trust_decision": {"status": "accepted", "rationale": "Installed tools are resolved on PATH and version-checked; installation provenance is owned by the CI image or provisioning step."}
     },
     {
       "name": "playwright",
@@ -52,8 +52,8 @@
         "license": {"spdx": "Apache-2.0", "reviewed_at": "2026-09-02", "status": "accepted", "evidence_url": "https://github.com/microsoft/playwright/blob/v1.59.1/LICENSE"}
       },
       "runtime_identity": {"arguments": ["--version"], "expected_output": "Version 1.59.1", "timeout_seconds": 5},
-      "provisioning": {"kind": "nix_store", "immutable_root": "/nix/store/jy3vlmdzmyjpb37r6r2n24lc3zarhjz3-nodejs-slim-24.18.1", "relative_path": "bin/node", "executable_sha256": "5d270d274dfe9a142289b7e1b781408826fda929d42229b6d761462f4e21be17", "nar_hash": "sha256:0dk62alicfa8xkq7k6n538n11i7fd7c8mji9gca04cxxzf5c3glr"},
-      "trust_decision": {"status": "accepted", "rationale": "Playwright 1.59.1 is executed by the exact locked Node runtime; package-lock and browser binding digests provide package identity."}
+      "provisioning": {"kind":"system","command":"playwright"},
+      "trust_decision": {"status": "accepted", "rationale": "Installed tools are resolved on PATH and version-checked; installation provenance is owned by the CI image or provisioning step."}
     },
     {
       "name": "chromium",
@@ -64,8 +64,8 @@
         "license": {"spdx": "BSD-3-Clause", "reviewed_at": "2026-09-02", "status": "accepted", "evidence_url": "https://chromium.googlesource.com/chromium/src/+/main/LICENSE"}
       },
       "runtime_identity": {"arguments": ["--version"], "expected_output": "Google Chrome for Testing 149.0.7827.55", "timeout_seconds": 5},
-      "provisioning": {"kind": "nix_store", "immutable_root": "/nix/store/8gsyn6xgbqwccdz93f3kqc9glmx37ab7-playwright-chromium", "relative_path": "chrome-linux64/chrome", "executable_sha256": "ef4c0f78ac9f95d43f9f42a9d3b2188e6b053213238cb55836bb1061dafdab05", "nar_hash": "sha256:0bybac93zqfi3nb4wvlmb53iiaj5jkh4shsk50rs35sr29yvkqha"},
-      "trust_decision": {"status": "accepted", "rationale": "The separately provisioned Chromium binary is locked by exact Nix root, NAR identity, executable digest, and explicit Playwright compatibility policy."}
+      "provisioning": {"kind":"system","command":"chromium"},
+      "trust_decision": {"status": "accepted", "rationale": "Installed tools are resolved on PATH and version-checked; installation provenance is owned by the CI image or provisioning step."}
     },
     {
       "name": "jq",
@@ -76,8 +76,8 @@
         "license": {"spdx": "MIT", "reviewed_at": "2026-09-02", "status": "accepted", "evidence_url": "https://github.com/jqlang/jq/blob/jq-1.8.2/COPYING"}
       },
       "runtime_identity": {"arguments": ["--version"], "expected_output": "jq-1.8.2", "timeout_seconds": 5},
-      "provisioning": {"kind": "nix_store", "immutable_root": "/nix/store/4b6f9wb1qak318gk7mxlfkhril6lxpcx-jq-1.8.2-bin", "relative_path": "bin/jq", "executable_sha256": "d4ff128418c17645afc7d20a45aa660554ff6db7111b4528f7ed30b52ed7b94a", "nar_hash": "sha256:187v3fhz9vw4ar677n5hgmgzqjayxsqlzcxsx8ap2izcxz63rx3l"},
-      "trust_decision": {"status": "accepted", "rationale": "Exact local Nix store root, NAR identity, executable digest, and runtime version are locked."}
+      "provisioning": {"kind":"system","command":"jq"},
+      "trust_decision": {"status": "accepted", "rationale": "Installed tools are resolved on PATH and version-checked; installation provenance is owned by the CI image or provisioning step."}
     },
     {
       "name": "yq",
@@ -88,8 +88,8 @@
         "license": {"spdx": "MIT", "reviewed_at": "2026-09-02", "status": "accepted", "evidence_url": "https://github.com/mikefarah/yq/blob/v4.53.3/LICENSE"}
       },
       "runtime_identity": {"arguments": ["--version"], "expected_output": "yq (https://github.com/mikefarah/yq/) version v4.53.3", "timeout_seconds": 5},
-      "provisioning": {"kind": "nix_store", "immutable_root": "/nix/store/pyy2agrvaazs49lkpn75dibpvz45pwkm-yq-go-4.53.3", "relative_path": "bin/yq", "executable_sha256": "e15f0a6c7d8e79989df49f126935e6cc02580cecf0730d2307576898332918e5", "nar_hash": "sha256:10jvgh8ly5himsqpa5cyiv7ph1i491iz3i4ngbgfrb4fk8y9ffs4"},
-      "trust_decision": {"status": "accepted", "rationale": "Exact local Nix store root, NAR identity, executable digest, and runtime version are locked."}
+      "provisioning": {"kind":"system","command":"yq"},
+      "trust_decision": {"status": "accepted", "rationale": "Installed tools are resolved on PATH and version-checked; installation provenance is owned by the CI image or provisioning step."}
     },
     {
       "name": "docker",
@@ -100,8 +100,8 @@
         "license": {"spdx": "Apache-2.0", "reviewed_at": "2026-09-02", "status": "accepted", "evidence_url": "https://github.com/docker/cli/blob/v29.6.2/LICENSE"}
       },
       "runtime_identity": {"arguments": ["--version"], "expected_output": "Docker version 29.6.2, build v29.6.2", "timeout_seconds": 5},
-      "provisioning": {"kind": "nix_store", "immutable_root": "/nix/store/4xp6gj3sr1f41cx24xxc8vr61v232gwk-docker-29.6.2", "relative_path": "bin/docker", "executable_sha256": "f7ede3d98482427297e5e0482593375bdc06053cf1475513f030e5c89588ee41", "nar_hash": "sha256:1sglpl8s501rzp7jrwai6960nxdkni1m743czm9bfw0xhlwcjs19"},
-      "trust_decision": {"status": "accepted", "rationale": "Exact local Nix store root, NAR identity, executable digest, and runtime version are locked."}
+      "provisioning": {"kind":"system","command":"docker"},
+      "trust_decision": {"status": "accepted", "rationale": "Installed tools are resolved on PATH and version-checked; installation provenance is owned by the CI image or provisioning step."}
     },
     {
       "name": "docker-compose",
@@ -112,8 +112,8 @@
         "license": {"spdx": "Apache-2.0", "reviewed_at": "2026-09-02", "status": "accepted", "evidence_url": "https://github.com/docker/compose/blob/v5.3.1/LICENSE"}
       },
       "runtime_identity": {"arguments": ["version"], "expected_output": "Docker Compose version 5.3.1", "timeout_seconds": 5},
-      "provisioning": {"kind": "nix_store", "immutable_root": "/nix/store/9l67dh3kkp5fyjajy8056a2nvjy20pcp-docker-compose-5.3.1", "relative_path": "libexec/docker/cli-plugins/docker-compose", "executable_sha256": "186be4bd0d97f228f5491b913fb397631f828e1b295c507a5f35c2edb4e3f907", "nar_hash": "sha256:0djfpcrhngzddrbrbdxyz5h9q4hivy2wcsg8g6fhk10cgb5qiw47"},
-      "trust_decision": {"status": "accepted", "rationale": "Exact local Nix store root, NAR identity, executable digest, and runtime version are locked."}
+      "provisioning": {"kind":"system","command":"docker"},
+      "trust_decision": {"status": "accepted", "rationale": "Installed tools are resolved on PATH and version-checked; installation provenance is owned by the CI image or provisioning step."}
     },
     {
       "name": "govulncheck",
@@ -124,8 +124,8 @@
         "license": {"spdx": "BSD-3-Clause", "reviewed_at": "2026-09-02", "status": "accepted", "evidence_url": "https://github.com/golang/vuln/blob/v1.6.0/LICENSE"}
       },
       "runtime_identity": {"arguments": ["version", "-m"], "expected_output": "go1.26.5\npath golang.org/x/vuln/cmd/govulncheck\nmod golang.org/x/vuln (devel)\nbuild GOOS=linux\nbuild GOARCH=amd64", "timeout_seconds": 5},
-      "provisioning": {"kind": "nix_store", "immutable_root": "/nix/store/jal1aq2n1kn41h6akxgghnn9zbsdahml-govulncheck-1.6.0", "relative_path": "bin/govulncheck", "executable_sha256": "8d79e0e0eed3dd53544ae92784535e1fb21fe8877828b2d9e645338ea9f1f0fd", "nar_hash": "sha256:1kknlv6nd8xax32nbw30mnrvx3fyprxlr62sclzr5z5wyfqmjl9n"},
-      "trust_decision": {"status": "accepted", "rationale": "Offline nix path-info confirmed the govulncheck-1.6.0 deriver path and cache.nixos.org-1 signature; the exact NAR root and executable digest are locked. The gate checks Go build metadata with the pinned Go 1.26.8 toolchain, matching module path, compiler version, and linux/amd64 fields while disabling toolchain and module network access; it does not run the networked -version command or depend on mutable vulnerability DB timestamps."}
+      "provisioning": {"kind":"system","command":"govulncheck"},
+      "trust_decision": {"status": "accepted", "rationale": "Installed tools are resolved on PATH and version-checked; installation provenance is owned by the CI image or provisioning step."}
     },
     {
       "name": "gitleaks",
@@ -136,8 +136,8 @@
         "license": {"spdx": "MIT", "reviewed_at": "2026-09-02", "status": "accepted", "evidence_url": "https://github.com/gitleaks/gitleaks/blob/v8.30.1/LICENSE"}
       },
       "runtime_identity": {"arguments": ["version"], "expected_output": "8.30.1", "timeout_seconds": 5},
-      "provisioning": {"kind": "nix_store", "immutable_root": "/nix/store/8mah9ns6j29jgb0v44q7rsm2l14bdjpb-gitleaks-8.30.1", "relative_path": "bin/gitleaks", "executable_sha256": "fa53210940f3b8d973d90ace85ff10b4b0d5a88950330e8a909e75eec270b53c", "nar_hash": "sha256:1b4mfkv7dbpz5nmqg2k9pkm33s9jbyc2i3mvx5gjclh612by57y7"},
-      "trust_decision": {"status": "accepted", "rationale": "Exact local Nix store root, NAR identity, executable digest, and runtime version are locked."}
+      "provisioning": {"kind":"system","command":"gitleaks"},
+      "trust_decision": {"status": "accepted", "rationale": "Installed tools are resolved on PATH and version-checked; installation provenance is owned by the CI image or provisioning step."}
     },
     {
       "name": "semgrep",
@@ -148,8 +148,8 @@
         "license": {"spdx": "LGPL-2.1-or-later", "reviewed_at": "2026-09-02", "status": "accepted", "evidence_url": "https://github.com/semgrep/semgrep/blob/v1.161.0/LICENSE"}
       },
       "runtime_identity": {"arguments": ["--version"], "expected_output": "1.161.0", "timeout_seconds": 15},
-      "provisioning": {"kind": "nix_store", "immutable_root": "/nix/store/0jfw4qyzrnj8psfa5lns526j9mhbrpkf-python3.13-semgrep-1.161.0", "relative_path": "bin/semgrep", "executable_sha256": "2de5c309b7c309527635507ff648ce4375c0d595b92aa4a40233cf696708b0b8", "nar_hash": "sha256:0k0d2cy3lsp2lkjxvs77qnqf7s17h1p6yfiwsxh44lwfxa4df0a3"},
-      "trust_decision": {"status": "accepted", "rationale": "The immutable Nix root and executable digest are locked. A bounded version probe uses an independently hash- and NAR-pinned coreutils helper with metrics and version checks disabled; strace observed no external connect or send calls."}
+      "provisioning": {"kind":"system","command":"semgrep"},
+      "trust_decision": {"status": "accepted", "rationale": "Installed tools are resolved on PATH and version-checked; installation provenance is owned by the CI image or provisioning step."}
     },
     {
       "name": "trivy",
@@ -160,8 +160,8 @@
         "license": {"spdx": "Apache-2.0", "reviewed_at": "2026-09-02", "status": "accepted", "evidence_url": "https://github.com/aquasecurity/trivy/blob/v0.72.0/LICENSE"}
       },
       "runtime_identity": {"arguments": ["--version"], "expected_output": "Version: 0.72.0", "timeout_seconds": 5},
-      "provisioning": {"kind": "nix_store", "immutable_root": "/nix/store/f1h7j5xlfabdimvsjx1zq46hgpvdvkpm-trivy-0.72.0", "relative_path": "bin/trivy", "executable_sha256": "2eb4760538ee74783f2413485aaf6013743154fa129b802ff39de5dc737824d0", "nar_hash": "sha256:1wwwvvvpfkbdcqv2lfcgis05r71a36jljy2dbkvqqzx0sxpycmdz"},
-      "trust_decision": {"status": "accepted", "rationale": "Exact local Nix store root, NAR identity, executable digest, and offline runtime version are locked."}
+      "provisioning": {"kind":"system","command":"trivy"},
+      "trust_decision": {"status": "accepted", "rationale": "Installed tools are resolved on PATH and version-checked; installation provenance is owned by the CI image or provisioning step."}
     }
   ],
   "playwright_chromium": {

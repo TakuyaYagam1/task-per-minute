@@ -1,0 +1,44 @@
+name: merge dependency updates
+
+on:
+  workflow_run:
+    workflows: [pipeline]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: Successful pull request pipeline run to check again
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dependabot-merge-dev
+  cancel-in-progress: false
+
+jobs:
+  merge:
+    if: >-
+      github.repository == 'TakuyaYagam1/task-per-minute' &&
+      ((github.event_name == 'workflow_run' &&
+        github.event.workflow_run.event == 'pull_request' &&
+        github.event.workflow_run.conclusion == 'success') ||
+       (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      # workflow_run uses the trusted default-branch revision, never PR code.
+      - name: checkout merge policy
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          sparse-checkout: .github/scripts
+
+      - name: approve and merge verified dependency update
+        env:
+          GH_TOKEN: ${{ secrets.TOKEN }}
+          RUN_ID: ${{ github.event.workflow_run.id || inputs.run_id }}
+        run: node .github/scripts/dependabot-merge.mjs

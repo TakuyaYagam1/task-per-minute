@@ -121,7 +121,7 @@ fmt: ## golangci-lint fmt
 	$(GOLANGCI_LINT) fmt ./...
 
 .PHONY: test
-test: test-migration-create ## Unit tests with race detector (skips integration_test/)
+test: test-migration-create test-integration-shards ## Unit tests with race detector (skips integration_test/)
 	go test -race -count=1 -parallel=5 $$(go list ./... | grep -v /integration_test)
 
 .PHONY: test-fast
@@ -129,11 +129,15 @@ test-fast: test-migration-create ## Cached unit tests without race instrumentati
 	go test -parallel=5 $$(go list ./... | grep -v /integration_test)
 
 .PHONY: test-int-fast
+.PHONY: test-integration-shards
+test-integration-shards: ## Verify integration shard coverage and failure propagation
+	bash scripts/run-integration-suite_test.sh
+
 test-int-fast: mocks ## Integration tests without race instrumentation, sharing one PostgreSQL container
 	bash scripts/test-integration.sh --suite-fast
 
 .PHONY: test-int
-test-int: mocks ## Integration tests with sequential root shards and in-process parallelism 5
+test-int: mocks ## Race integration tests; TPM_TEST_SHARD_INDEX selects one CI shard
 	bash scripts/test-integration.sh --suite-race
 
 .PHONY: test-int-compile

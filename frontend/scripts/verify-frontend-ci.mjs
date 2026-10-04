@@ -229,7 +229,7 @@ try {
   runCommand("lint", npmCommand, ["run", "lint"]);
   runCommand("production build", npmCommand, ["run", "build"]);
   verifyProductionBuild();
-  runCommand("mocked browser suite", npmCommand, ["run", "test:e2e", "--", "--reporter=line"]);
+  runCommand("mocked browser suite", npmCommand, ["run", "test:e2e", "--", "--max-failures=10"]);
   report.status = "passed";
   report.exit_code = 0;
   report.finished_at = new Date().toISOString();

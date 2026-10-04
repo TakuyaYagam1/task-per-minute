@@ -115,8 +115,16 @@ if ((canonical == 0)); then
   report_label='release security fixture'
 fi
 
-python_bin='/nix/store/gxzhl7aaiid7zp3y47jqqiq7zg5mqpwp-python3-3.14.6/bin/python3.14'
-if [[ ! -f "$python_bin" || ! -x "$python_bin" || -L "$python_bin" ]]; then
+if ((canonical)) && [[ "$scope" == frontend || "$scope" == all ]]; then
+  node "$repo_root/frontend/scripts/configure-ci-runtime.mjs" --verify-browser
+  if [[ "$scope" == frontend ]]; then
+    exit 0
+  fi
+  scope=backend
+fi
+
+python_bin="$(command -v python3)"
+if [[ ! -f "$python_bin" || ! -x "$python_bin" ]]; then
   echo "$report_label: ERROR: reviewed Python verifier runtime is unavailable" >&2
   exit 1
 fi
@@ -141,6 +149,7 @@ import pathlib
 import platform
 import pwd
 import re
+import shutil
 import stat
 import subprocess
 import sys
@@ -164,8 +173,8 @@ class StrictJsonError(ValueError):
 CANONICAL_SCHEMA_ID = "https://task-per-minute.local/schemas/release-tools.schema.json"
 CANONICAL_LOCK_SCHEMA = "security/tools/release-tools.schema.json"
 CANONICAL_LOCK_SCHEMA_VERSION = 1
-CANONICAL_LOCK_SHA256 = "e6220da1cc29ca14c9d351d00e5f36ecff85cbb2aa8df7c0636dbedd3496f503"
-CANONICAL_SCHEMA_SHA256 = "e88e299e4eaf307ce59b7f1f9ddeaa4074384e183a05aac6cb627a8381aedc86"
+CANONICAL_LOCK_SHA256 = "c5c051bcf4564dc15463f29f7774a7e5de32b784fe7fa8779ad283a0aa4797d2"
+CANONICAL_SCHEMA_SHA256 = "4ebbcea44638322934cde70751b97f774759b07e7cabc7837ad7b79dde906850"
 CANONICAL_ROOT_FIELDS = frozenset(
     {
         "schema",
@@ -261,7 +270,7 @@ BACKEND_TOOLS = frozenset(TOOL_POLICY) - FRONTEND_TOOLS
 SCOPES = frozenset({"frontend", "backend", "all"})
 
 # Playwright 1.59.1's browsers.json records revision 1217 as browser
-# 147.0.7727.15. The reviewed Nix browser is provisioned separately at
+# 147.0.7727.15. The historical fixture browser was provisioned separately at
 # 149.0.7827.55. Keep this exact tuple allowlisted so a different separately
 # provisioned browser cannot silently bypass the package metadata decision.
 SEPARATELY_PROVISIONED_PLAYWRIGHT_BINDINGS = frozenset(
@@ -301,12 +310,6 @@ IMAGE_POLICY = {
     ),
 }
 TRIVY_DATABASE_SOURCE = "https://github.com/aquasecurity/trivy-db"
-SEMGREP_HELPER_ROOT = pathlib.Path(
-    "/nix/store/si964wmmwd8qc03hwxy47iw27dp4bcmj-coreutils-full-9.11"
-)
-SEMGREP_HELPER_NAR_HASH = "sha256:17dazp85nz7vg4vay7nwfwxc059sf2wq62dvsy1fhlkmpk2jvxlx"
-SEMGREP_HELPER_SHA256 = "a942e6422d472d03a5410319221631c0e36b30c946b0321801d995dfbbf23951"
-SEMGREP_HELPER_PATH = SEMGREP_HELPER_ROOT / "bin"
 
 
 def exact_regular_file(path_text: str, label: str) -> pathlib.Path:
@@ -568,60 +571,6 @@ def run_exact(
     return completed.stdout.strip()
 
 
-def verify_semgrep_helper() -> pathlib.Path:
-    root = safe_root(str(SEMGREP_HELPER_ROOT), "Semgrep helper root")
-    nix_store = pathlib.Path("/run/current-system/sw/bin/nix-store")
-    if not nix_store.is_file():
-        raise VerificationError("fixed nix-store verifier is unavailable")
-    nar_hash = run_exact(
-        [str(nix_store), "-q", "--hash", str(root)],
-        10,
-        "Semgrep helper NAR identity probe",
-    )
-    if nar_hash != SEMGREP_HELPER_NAR_HASH:
-        raise VerificationError("Semgrep helper NAR identity mismatch")
-    executable = safe_member(root, "bin/coreutils", "Semgrep helper executable")
-    mode = executable.stat().st_mode
-    if not stat.S_ISREG(mode) or mode & (stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH) == 0:
-        raise VerificationError("Semgrep helper is not a regular executable file")
-    if mode & (stat.S_IWGRP | stat.S_IWOTH):
-        raise VerificationError("Semgrep helper is group/world writable")
-    if sha256_file(executable) != SEMGREP_HELPER_SHA256:
-        raise VerificationError("Semgrep helper executable SHA-256 mismatch")
-    return SEMGREP_HELPER_PATH
-
-
-def private_scratch_root() -> pathlib.Path:
-    uid = os.getuid()
-    home = pathlib.Path(pwd.getpwuid(uid).pw_dir)
-    home = safe_root(str(home), "owner home directory")
-    if home.lstat().st_uid != uid:
-        raise VerificationError("owner home directory has an unexpected owner")
-    codex_root = safe_root(str(home / ".codex"), "Codex scratch parent")
-    if codex_root.lstat().st_uid != uid:
-        raise VerificationError("Codex scratch parent has an unexpected owner")
-    if codex_root.stat().st_mode & (stat.S_IWGRP | stat.S_IWOTH):
-        raise VerificationError("Codex scratch parent is group/world writable")
-
-    scratch = codex_root / ".tmp"
-    try:
-        scratch.lstat()
-    except FileNotFoundError:
-        try:
-            scratch.mkdir(mode=0o700)
-        except FileExistsError:
-            pass
-        except OSError as exc:
-            raise VerificationError(f"private scratch directory is unavailable: {exc}") from exc
-    except OSError as exc:
-        raise VerificationError(f"private scratch directory is unavailable: {exc}") from exc
-    exact_scratch = safe_root(str(scratch), "private scratch directory")
-    metadata = exact_scratch.lstat()
-    if metadata.st_uid != uid or stat.S_IMODE(metadata.st_mode) != 0o700:
-        raise VerificationError("private scratch directory owner or mode mismatch")
-    return exact_scratch
-
-
 def govulncheck_build_identity(output: str) -> str:
     lines = output.splitlines()
     if not lines:
@@ -708,6 +657,46 @@ def verify_tool(
     if provisioning["kind"] == "test_root" and canonical:
         raise VerificationError(f"{name} uses test-only provisioning in canonical mode")
 
+    if provisioning["kind"] == "system":
+        command_name = provisioning["command"]
+        if command_name != ("docker" if name == "docker-compose" else name):
+            raise VerificationError(f"{name} executable name mismatch")
+        resolved = shutil.which(command_name)
+        if not resolved:
+            raise VerificationError(f"{name} is not installed on PATH")
+        executable = pathlib.Path(resolved).resolve(strict=True)
+        metadata = executable.stat()
+        if not executable.is_file() or not os.access(executable, os.X_OK) or metadata.st_mode & 0o022:
+            raise VerificationError(f"{name} executable is missing or group/world writable")
+        arguments = tool["runtime_identity"]["arguments"]
+        if name == "docker-compose":
+            arguments = ["compose", "version", "--short"]
+        if name == "govulncheck":
+            go = verified_tools.get("go", (None, ""))[0]
+            if go is None:
+                raise VerificationError("Go is required for govulncheck build metadata")
+            output = run_exact([str(go), "version", "-m", str(executable)], 10, "govulncheck metadata")
+            if not re.search(r"mod\s+golang\.org/x/vuln\s+v" + re.escape(tool["version"]) + r"(?:\s|$)", output):
+                raise VerificationError("govulncheck module version mismatch; install the pinned Go module")
+        else:
+            with tempfile.TemporaryDirectory(prefix="release-tool-home-") as tool_home:
+                output = run_exact(
+                    [str(executable), *arguments], 15, f"{name} version",
+                    env_overrides={
+                        "HOME": tool_home,
+                        "XDG_CACHE_HOME": f"{tool_home}/cache",
+                        "XDG_CONFIG_HOME": f"{tool_home}/config",
+                        "XDG_DATA_HOME": f"{tool_home}/data",
+                        "PATH": os.environ.get("PATH", os.defpath),
+                        "SEMGREP_SEND_METRICS": "off",
+                        "SEMGREP_ENABLE_VERSION_CHECK": "0",
+                    },
+                )
+            if not re.search(r"(?<![0-9.])" + re.escape(tool["version"]) + r"(?![0-9.])", output):
+                raise VerificationError(f"{name} runtime/version identity mismatch")
+        # Record the installed binary identity without claiming archive attestation.
+        return executable, sha256_file(executable)
+
     root = safe_root(provisioning["immutable_root"], f"{name} immutable root")
     if provisioning["kind"] == "test_root":
         if test_root is None:
@@ -716,20 +705,6 @@ def verify_tool(
             root.relative_to(test_root)
         except ValueError as exc:
             raise VerificationError(f"{name} test provisioning escapes --test-root") from exc
-    if provisioning["kind"] == "nix_store":
-        if not str(root).startswith("/nix/store/"):
-            raise VerificationError(f"{name} Nix root is outside /nix/store")
-        nix_store = pathlib.Path("/run/current-system/sw/bin/nix-store")
-        if not nix_store.is_file():
-            raise VerificationError("fixed nix-store verifier is unavailable")
-        nar_hash = run_exact(
-            [str(nix_store), "-q", "--hash", str(root)],
-            10,
-            f"{name} NAR identity probe",
-        )
-        if nar_hash != provisioning["nar_hash"]:
-            raise VerificationError(f"{name} NAR identity mismatch")
-
     executable = safe_member(root, provisioning["relative_path"], f"{name} executable")
     mode = executable.stat().st_mode
     if not stat.S_ISREG(mode) or mode & (stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH) == 0:
@@ -746,17 +721,6 @@ def verify_tool(
 
     identity = tool["runtime_identity"]
     command = [str(executable), *identity["arguments"]]
-    if name == "playwright" and provisioning["kind"] == "nix_store":
-        if project_root is None:
-            raise VerificationError("Playwright project root is required for its Node binding")
-        playwright_cli = project_member(
-            project_root,
-            "frontend/node_modules/playwright/cli.js",
-            "Playwright CLI",
-        )
-        if not playwright_cli.is_file():
-            raise VerificationError("Playwright CLI is not a regular file")
-        command = [str(executable), str(playwright_cli), *identity["arguments"]]
     env_overrides: dict[str, str] | None = None
     if name == "govulncheck":
         go_executable = verified_tools.get("go", (None, ""))[0]
@@ -777,11 +741,8 @@ def verify_tool(
             )
         )
     elif name == "semgrep" and canonical:
-        helper_path = verify_semgrep_helper()
-        scratch_root = private_scratch_root()
         with tempfile.TemporaryDirectory(
             prefix="release-semgrep-home-",
-            dir=str(scratch_root),
         ) as temp_home:
             os.chmod(temp_home, 0o700)
             env_overrides = {
@@ -789,7 +750,7 @@ def verify_tool(
                 "XDG_CACHE_HOME": f"{temp_home}/cache",
                 "XDG_CONFIG_HOME": f"{temp_home}/config",
                 "XDG_DATA_HOME": f"{temp_home}/data",
-                "PATH": str(helper_path),
+                "PATH": os.environ.get("PATH", os.defpath),
                 # Disable both sources of Semgrep's outbound version/metrics requests.
                 "SEMGREP_SEND_METRICS": "off",
                 "SEMGREP_ENABLE_VERSION_CHECK": "0",

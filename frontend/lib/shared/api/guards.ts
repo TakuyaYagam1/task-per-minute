@@ -1523,12 +1523,6 @@ const operatorCancelledGameResultReasons = new Set<string>([
   "series_cancelled",
   "tournament_cancelled",
 ]);
-const operatorSeriesResultReasons = new Set<string>([
-  "score_complete",
-  "operator_correction",
-  "series_cancelled",
-  "tournament_cancelled",
-]);
 const operatorCategories = new Set<string>([
   "web",
   "crypto",

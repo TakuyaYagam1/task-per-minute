@@ -143,8 +143,13 @@ const expectNoAuthorization = (evidence: NetworkEvidence): void => {
 const expectOnlyPaths = (
   evidence: NetworkEvidence,
   expectedPaths: readonly string[],
+  activeParticipant = false,
 ): void => {
-  expect(new Set(evidence.apiPaths)).toEqual(new Set(expectedPaths));
+  const paths = [...expectedPaths];
+  if (activeParticipant) {
+    paths.push(`/api/v1/players/test-bots/${tournamentId}/state`);
+  }
+  expect(new Set(evidence.apiPaths)).toEqual(new Set(paths));
 };
 
 test("Arena landing exposes the public catalog without a role picker", async ({ page }) => {
@@ -195,7 +200,7 @@ test("direct participant link uses the participant API boundary", async ({ page 
   await expect(page.getByRole("region", { name: "Контекст соревнования" })).toContainText("Участник");
   await expect(page.getByRole("heading", { name: /Участник/ })).toBeVisible();
 
-  expectOnlyPaths(evidence, [publicPath, participantPath, participantSnapshotPath]);
+  expectOnlyPaths(evidence, [publicPath, participantPath, participantSnapshotPath, playerMePath], true);
   expect(evidence.apiPaths.some((path) => path.includes("/admin/"))).toBe(false);
   expectNoAuthorization(evidence);
 });
@@ -243,7 +248,7 @@ test("direct spectator link remains anonymous and does not call protected endpoi
   await expect(page.getByRole("heading", { name: /Наблюдатель/ })).toBeVisible();
   await expect(page.getByRole("button", { name: "Выйти" })).toHaveCount(0);
 
-  expectOnlyPaths(evidence, [publicPath, publicSnapshotPath]);
+  expectOnlyPaths(evidence, [publicPath, publicSnapshotPath, playerMePath]);
   expectNoAuthorization(evidence);
 });
 
@@ -274,7 +279,8 @@ test("successful role links preserve path and query parameters across reload", a
     operatorPath,
     adminPlayersPath,
     publicSnapshotPath,
-  ]);
+    playerMePath,
+  ], true);
   expectNoAuthorization(evidence);
 });
 
@@ -301,7 +307,7 @@ test("participant access distinguishes 401 from 403", async ({ page }) => {
   await expect(page.locator("strong").filter({ hasText: "Доступ запрещен" })).toBeVisible();
   await expect(page.getByRole("link", { name: "Войти как участник" })).toHaveCount(0);
 
-  expectOnlyPaths(evidence, [publicPath, participantPath]);
+  expectOnlyPaths(evidence, [publicPath, participantPath, playerMePath]);
   expectNoAuthorization(evidence);
 });
 
@@ -439,6 +445,9 @@ test("participant logout calls the player logout API and clears local session st
     logoutCSRF = route.request().headers()["x-csrf-token"];
     await route.fulfill({ status: 204, body: "" });
   });
+  await page.route(`**${playerMePath}`, async (route) => {
+    await fulfillJSON(route, { player: { id: playerId, username: "arena-player", created_at: new Date().toISOString() } });
+  });
 
   await page.goto(roleURL("participant"));
   const participantAccountMenu = await openAccountMenu(page);
@@ -457,7 +466,9 @@ test("participant logout calls the player logout API and clears local session st
     participantPath,
     participantSnapshotPath,
     playerLogoutPath,
-  ]);
+    playerMePath,
+    "/api/v1/players/account/avatar",
+  ], true);
   expectNoAuthorization(evidence);
 });
 
@@ -503,7 +514,7 @@ test("unknown tournament shows a controlled missing state without protected requ
   await expect(page.getByRole("link", { name: "Выбрать другое соревнование" })).toBeVisible();
   await expect(page.getByRole("heading", { name: /Наблюдатель/ })).toHaveCount(0);
 
-  expectOnlyPaths(evidence, [publicPath]);
+  expectOnlyPaths(evidence, [publicPath, playerMePath]);
   expectNoAuthorization(evidence);
 });
 
@@ -540,6 +551,7 @@ test("completed tournaments are read-only after role authorization", async ({ pa
     participantSnapshotPath,
     operatorPath,
     publicSnapshotPath,
+    playerMePath,
   ]);
   expectNoAuthorization(evidence);
 });

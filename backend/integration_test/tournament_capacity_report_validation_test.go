@@ -138,19 +138,19 @@ func (output *tournamentCapacityBoundedOutput) String() string {
 
 func tournamentCapacityGitOutput(tb testing.TB, args ...string) string {
 	tb.Helper()
-	gitInfo, err := os.Lstat(tournamentCapacityGitExecutable)
+	gitPath, err := exec.LookPath(tournamentCapacityGitExecutable)
+	require.NoError(tb, err)
+	gitPath, err = filepath.EvalSymlinks(gitPath)
+	require.NoError(tb, err)
+	gitInfo, err := os.Stat(gitPath)
 	require.NoError(tb, err)
 	require.True(tb, gitInfo.Mode().IsRegular())
-	require.Zero(tb, gitInfo.Mode()&os.ModeSymlink)
-	require.Equal(tb, os.FileMode(0o555), gitInfo.Mode().Perm())
-	gitBytes, err := os.ReadFile(tournamentCapacityGitExecutable)
-	require.NoError(tb, err)
-	require.Equal(tb, "sha256:"+tournamentCapacityGitExecutableSHA, tournamentCapacityDigest(gitBytes))
+	require.Zero(tb, gitInfo.Mode().Perm()&0o022)
 
 	ctx, cancel := context.WithTimeout(context.Background(), tournamentCapacityGitCommandTimeout)
 	defer cancel()
 
-	command := exec.CommandContext(ctx, tournamentCapacityGitExecutable, args...)
+	command := exec.CommandContext(ctx, gitPath, args...)
 	command.Dir = tournamentCapacityRepositoryRoot(tb)
 	command.Env = []string{
 		"GIT_CONFIG_NOSYSTEM=1",

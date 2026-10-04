@@ -14,6 +14,7 @@ on:
       - '.env.example'
       - 'package*.json'
       - '.github/workflows/**'
+      - '.github/scripts/**'
       - '.github/dependabot.yml'
   pull_request:
     branches:
@@ -29,6 +30,7 @@ on:
       - '.env.example'
       - 'package*.json'
       - '.github/workflows/**'
+      - '.github/scripts/**'
       - '.github/dependabot.yml'
   workflow_dispatch:
     inputs:

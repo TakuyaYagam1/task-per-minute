@@ -62,6 +62,8 @@ const loginAdminAndOpenTournamentTaskCatalog = async (
 };
 
 test.beforeEach(async ({ page }) => {
+  // A healthy shared SSE connection stays open until the browser context closes.
+  await page.route('**/api/v1/admin/events', () => {});
   await page.route('**/api/v1/admin/tournament-content', async (route) => {
     await route.fulfill({
       status: 200,
@@ -200,7 +202,7 @@ test('admin task lifecycle uses cookie auth, refresh retry, and source upload', 
 
     if (path === '/api/v1/admin/tasks' && method === 'GET') {
       listCalls += 1;
-      if (refreshCalls === 0) {
+      if (listCalls === 1) {
         expect(authorization).toBeUndefined();
         await route.fulfill({
           status: 401,
@@ -365,7 +367,8 @@ test('admin task lifecycle uses cookie auth, refresh retry, and source upload', 
   await expect(page.getByText('Задача удалена')).toBeVisible();
   await expect(page.getByText('Пока нет созданных задач')).toBeVisible();
 
-  expect(refreshCalls).toBe(1);
+  // One refresh opens the shared stream; the other retries the expired task request.
+  expect(refreshCalls).toBe(2);
   expect(createCalls).toBe(1);
   expect(uploadCalls).toBe(1);
   expect(updateCalls).toBe(1);
@@ -653,11 +656,20 @@ test('admin players section updates and deletes player stats', async ({ page }) 
   await expect(auditDialog.getByText('delete-jti-1234567890')).toBeVisible();
 });
 
-test('admin players realtime SSE failures do not spam refresh', async ({ page }) => {
+test('admin shared SSE failures refresh once per reconnect without polling players', async ({ page }) => {
   const playerID = '88888888-8888-8888-8888-888888888888';
   let refreshCalls = 0;
   let eventsCalls = 0;
   let playerListCalls = 0;
+  let lastConnectionRefreshCalls = 0;
+
+  await page.route('**/api/v1/admin/events', async (route) => {
+    eventsCalls += 1;
+    expect(route.request().headers().authorization).toBeUndefined();
+    if (eventsCalls > 1) expect(refreshCalls - lastConnectionRefreshCalls).toBe(1);
+    lastConnectionRefreshCalls = refreshCalls;
+    await route.fulfill({ status: 500, headers: jsonHeaders, body: '{}' });
+  });
 
   await page.route('**/api/v1/admin/login', async (route) => {
     await route.fulfill({
@@ -684,11 +696,6 @@ test('admin players realtime SSE failures do not spam refresh', async ({ page })
   await page.route('**/api/v1/admin/players**', async (route) => {
     const path = new URL(route.request().url()).pathname;
     expect(route.request().headers().authorization).toBeUndefined();
-    if (path === '/api/v1/admin/players/events') {
-      eventsCalls += 1;
-      await route.fulfill({ status: 500, headers: jsonHeaders, body: '{}' });
-      return;
-    }
     if (path === '/api/v1/admin/players') {
       playerListCalls += 1;
       await route.fulfill({
@@ -717,10 +724,11 @@ test('admin players realtime SSE failures do not spam refresh', async ({ page })
   await page.getByRole('button', { name: 'Войти' }).click();
   await page.getByRole('button', { name: 'Игроки' }).click();
   await expect(page.getByText('poll_user')).toBeVisible();
+  const initialPlayerListCalls = playerListCalls;
 
   await expect.poll(() => eventsCalls, { timeout: 5000 }).toBeGreaterThanOrEqual(2);
-  await expect.poll(() => playerListCalls, { timeout: 5000 }).toBeGreaterThanOrEqual(2);
-  expect(refreshCalls).toBe(1);
+  expect(playerListCalls).toBe(initialPlayerListCalls);
+  expect(refreshCalls).toBe(lastConnectionRefreshCalls);
 });
 
 test('admin malformed player audit response does not break players section', async ({ page }) => {
@@ -1478,12 +1486,15 @@ test('admin create refresh is reused for source upload in the same submit', asyn
     await route.fulfill({ status: 404, headers: jsonHeaders, body: '{}' });
   });
 
+  const streamOpened = page.waitForRequest('**/api/v1/admin/events');
   await page.goto('/admin');
   await page.getByPlaceholder('Введите пароль...').fill('correct-password');
   await page.getByRole('button', { name: 'Войти' }).click();
+  await streamOpened;
   await openTournamentTaskCatalog(page);
 
   await expect(page.getByText('Пока нет созданных задач')).toBeVisible();
+  const initialRefreshCalls = refreshCalls;
 
   await openCreateTaskEditor(page);
   await page.getByPlaceholder('Введите название...').fill('Refresh Reuse Task');
@@ -1502,7 +1513,7 @@ test('admin create refresh is reused for source upload in the same submit', asyn
   await submitCreateTask(page);
 
   await expect(page.getByText('Задача успешно создана!')).toBeVisible();
-  await expect.poll(() => refreshCalls).toBe(1);
+  await expect.poll(() => refreshCalls).toBe(initialRefreshCalls + 1);
   expect(listAuthorizations).toEqual([undefined]);
   expect(createAuthorizations).toEqual([undefined, undefined]);
   expect(uploadAuthorizations).toEqual([undefined]);
@@ -1808,7 +1819,7 @@ test('malformed admin retry refresh clears an active cookie session', async ({ p
     await route.fulfill({
       status: 200,
       headers: jsonHeaders,
-      body: JSON.stringify({ expires_in: 'invalid' }),
+      body: JSON.stringify(listCalls === 0 ? adminSessionResponse() : { expires_in: 'invalid' }),
     });
   });
 
@@ -1830,23 +1841,29 @@ test('malformed admin retry refresh clears an active cookie session', async ({ p
     });
   });
 
+  const streamOpened = page.waitForRequest('**/api/v1/admin/events');
   await page.goto('/admin');
   await page.getByPlaceholder('Введите пароль...').fill('correct-password');
   await page.getByRole('button', { name: 'Войти' }).click();
+  await streamOpened;
+  const initialRefreshCalls = refreshCalls;
   await page.getByRole('button', { name: 'Задачи' }).click();
 
   await expect(page.getByText('Сессия истекла. Войдите снова.')).toBeVisible();
   await expect(
     page.getByRole('heading', { name: 'Вход администратора' }),
   ).toBeVisible();
-  expect(refreshCalls).toBe(1);
+  expect(refreshCalls).toBe(initialRefreshCalls + 1);
   expect(listCalls).toBeGreaterThanOrEqual(1);
   expect(authorizationHeaders).toEqual([]);
 });
 
 test('admin logout ignores delayed refresh and prevents stale retry', async ({ page }) => {
   let releaseRefresh: () => void = () => {};
+  let accessExpired = false;
+  let refreshReturned = false;
   let refreshCalls = 0;
+  let delayedRefreshCalls = 0;
   const listAuthorizations: Array<string | undefined> = [];
   const refreshGate = new Promise<void>((resolve) => {
     releaseRefresh = resolve;
@@ -1859,7 +1876,7 @@ test('admin logout ignores delayed refresh and prevents stale retry', async ({ p
   await page.route('**/api/v1/admin/refresh', async (route) => {
     refreshCalls += 1;
     expect(route.request().postData()).toBeNull();
-    if (refreshCalls === 1) {
+    if (!accessExpired) {
       await route.fulfill({
         status: 200,
         headers: jsonHeaders,
@@ -1867,7 +1884,9 @@ test('admin logout ignores delayed refresh and prevents stale retry', async ({ p
       });
       return;
     }
+    delayedRefreshCalls += 1;
     await refreshGate;
+    refreshReturned = true;
     await route.fulfill({
       status: 200,
       headers: jsonHeaders,
@@ -1886,8 +1905,12 @@ test('admin logout ignores delayed refresh and prevents stale retry', async ({ p
     const method = request.method();
     const authorization = request.headers().authorization;
     if (path === '/api/v1/admin/tasks' && method === 'GET') {
+      if (!accessExpired) {
+        await route.fulfill({ status: 200, headers: jsonHeaders, body: '[]' });
+        return;
+      }
       listAuthorizations.push(authorization);
-      if (refreshCalls < 2) {
+      if (!refreshReturned) {
         expect(authorization).toBeUndefined();
         await route.fulfill({
           status: 401,
@@ -1912,9 +1935,17 @@ test('admin logout ignores delayed refresh and prevents stale retry', async ({ p
     await route.fulfill({ status: 404, headers: jsonHeaders, body: '{}' });
   });
 
+  const streamOpened = page.waitForRequest('**/api/v1/admin/events');
   await page.goto('/admin');
+  await streamOpened;
   await openTournamentTaskCatalog(page);
-  await expect.poll(() => refreshCalls).toBe(2);
+  await expect(page.getByText('Пока нет созданных задач')).toBeVisible();
+  accessExpired = true;
+  await page.getByRole('button', { name: 'Соревнования' }).click();
+  await page.getByRole('button', { name: 'Задачи' }).click();
+  await expect.poll(() => delayedRefreshCalls).toBe(1);
+  expect(refreshCalls).toBeGreaterThan(1);
+  const requestsBeforeLogout = listAuthorizations.length;
 
   const accountMenu = await openAccountMenu(page);
   await expect(accountMenu.getByRole('button', { name: 'Выйти', exact: true })).toBeVisible();
@@ -1930,6 +1961,7 @@ test('admin logout ignores delayed refresh and prevents stale retry', async ({ p
     page.getByRole('heading', { name: 'Вход администратора' }),
   ).toBeVisible();
   await expect(page.getByText('Stale Refreshed Task')).toBeHidden();
+  expect(listAuthorizations).toHaveLength(requestsBeforeLogout);
   expect(listAuthorizations.length).toBeGreaterThanOrEqual(1);
   expect(listAuthorizations.every((authorization) => authorization === undefined)).toBe(true);
 });
@@ -2079,7 +2111,7 @@ test('admin new login ignores delayed refresh from previous session', async ({ p
   await page.route('**/api/v1/admin/refresh', async (route) => {
     refreshCalls += 1;
     expect(route.request().postData()).toBeNull();
-    if (refreshCalls === 1) {
+    if (listAuthorizations.length === 0 || newLoginStarted) {
       await route.fulfill({
         status: 200,
         headers: jsonHeaders,
@@ -2133,9 +2165,12 @@ test('admin new login ignores delayed refresh from previous session', async ({ p
     await route.fulfill({ status: 404, headers: jsonHeaders, body: '{}' });
   });
 
+  const streamOpened = page.waitForRequest('**/api/v1/admin/events');
   await page.goto('/admin');
+  await streamOpened;
+  const initialRefreshCalls = refreshCalls;
   await openTournamentTaskCatalog(page);
-  await expect.poll(() => refreshCalls).toBe(2);
+  await expect.poll(() => refreshCalls).toBe(initialRefreshCalls + 1);
 
   const accountMenu = await openAccountMenu(page);
   await expect(accountMenu.getByRole('button', { name: 'Выйти', exact: true })).toBeVisible();

@@ -94,48 +94,6 @@ const participantRealtimeFrame = (sequence: number): string => JSON.stringify({
   },
 });
 
-const installPassiveWebSocket = async (page: Page): Promise<void> => {
-  await page.addInitScript(() => {
-    const NativeWebSocket = window.WebSocket;
-    class PassiveSocket {
-      static readonly CLOSED = 3;
-      static readonly CLOSING = 2;
-      static readonly CONNECTING = 0;
-      static readonly OPEN = 1;
-      onclose: ((event: { code: number }) => void) | null = null;
-      onerror: (() => void) | null = null;
-      onmessage: ((event: { data: string }) => void) | null = null;
-      onopen: (() => void) | null = null;
-      readyState = PassiveSocket.CONNECTING;
-
-      constructor(readonly url: string) {
-        queueMicrotask(() => {
-          this.readyState = PassiveSocket.OPEN;
-          this.onopen?.();
-        });
-      }
-
-      close(code = 1000): void {
-        this.readyState = PassiveSocket.CLOSED;
-        this.onclose?.({ code });
-      }
-
-      send(_value: string): void {}
-    }
-
-    const WebSocketProxy = new Proxy(NativeWebSocket, {
-      construct(target, args) {
-        const url = String(args[0] ?? "");
-        if (url.includes("/api/v1/") && url.endsWith("/realtime")) {
-          return new PassiveSocket(url);
-        }
-        return Reflect.construct(target, args);
-      },
-    });
-    Object.defineProperty(window, "WebSocket", { configurable: true, value: WebSocketProxy });
-  });
-};
-
 const cutoffSnapshot = (fixtureSet: FixtureSet): PublicSnapshot => {
   const base = publicRecoveryWithRoster(16, 9, 14);
   return {
@@ -252,7 +210,11 @@ const finalSnapshot = (): PublicSnapshot => {
 
 test("player demo renders BO3, Golden, and a confirmed reconnect on the real Arena page", async ({ page }) => {
   const fixtureSet = createTournamentFixtureSet();
-  const snapshot = participantRecoveryWithDraft(participantBo3Draft());
+  const baseSnapshot = participantRecoveryWithDraft(participantBo3Draft());
+  const snapshot = {
+    ...baseSnapshot,
+    lobby: { ...baseSnapshot.lobby, state: "golden" as const },
+  };
   const resumedSnapshot = {
     ...participantRecoveryWithDraft(participantBo3Draft({
       current_actor_id: tournamentFixtureIds.secondParticipant,
@@ -264,6 +226,7 @@ test("player demo renders BO3, Golden, and a confirmed reconnect on the real Are
   };
   let currentSnapshot = snapshot;
   const connections: URL[] = [];
+  let firstSocket: WebSocketRoute | undefined;
   const snapshotRequests: string[] = [];
   expect(() => assertTournamentFixtureSet(fixtureSet)).not.toThrow();
   await installParticipantAccess(page, fixtureSet, snapshot);
@@ -279,7 +242,7 @@ test("player demo renders BO3, Golden, and a confirmed reconnect on the real Are
       const sequence = connections.length;
       if (sequence === 2) currentSnapshot = resumedSnapshot;
       socket.send(participantRealtimeFrame(sequence));
-      if (sequence === 1) await socket.close({ code: 1013, reason: "demo reconnect" });
+      if (sequence === 1) firstSocket = socket;
     },
   );
 
@@ -292,6 +255,8 @@ test("player demo renders BO3, Golden, and a confirmed reconnect on the real Are
   await expect(draft).toHaveAttribute("data-draft-format", "bo3");
   await expect(golden).toHaveAttribute("data-golden-state", "active");
   await expect(golden).toHaveAttribute("data-runtime-revision", "4");
+  expect(firstSocket).toBeDefined();
+  await firstSocket!.close({ code: 1013, reason: "demo reconnect" });
   await expect.poll(() => connections.length).toBe(2);
   expect(connections[0]?.searchParams.has("resume_id")).toBe(false);
   expect(connections[1]?.searchParams.get("resume_id")).toBe(tournamentFixtureIds.resume);
@@ -328,7 +293,10 @@ test("spectator demo shows the tie-to-Golden result and the completed BO3 bracke
     snapshotFetches.push(currentSnapshot.next_cursor.projection_revision);
     return currentSnapshot;
   });
-  await installPassiveWebSocket(page);
+  let publicSocket: WebSocketRoute | undefined;
+  await page.routeWebSocket((url) => url.pathname === `${publicPath}/realtime`, (socket) => {
+    publicSocket = socket;
+  });
 
   await page.goto(spectatorURL, { waitUntil: "domcontentloaded" });
   const broadcast = page.getByTestId("tournament-broadcast");
@@ -340,7 +308,8 @@ test("spectator demo shows the tie-to-Golden result and the completed BO3 bracke
   const initialFetchCount = snapshotFetches.length;
 
   currentSnapshot = resolvedSnapshot();
-  await page.getByRole("button", { name: "Обновить трансляцию" }).click();
+  await expect.poll(() => publicSocket !== undefined).toBe(true);
+  publicSocket!.send(JSON.stringify({ type: 'tournament.public', payload: null }));
   await expect.poll(() => snapshotFetches[snapshotFetches.length - 1] ?? 0).toBe(10);
   expect(snapshotFetches.length).toBeGreaterThan(initialFetchCount);
   await broadcast.getByRole("tab", { name: "Таблица" }).click();

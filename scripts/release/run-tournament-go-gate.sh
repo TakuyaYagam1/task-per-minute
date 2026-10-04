@@ -37,10 +37,10 @@ fi
 script_dir="$(cd -- "$script_parent" && pwd -P)"
 repo_root="$(cd -- "$script_dir/../.." && pwd -P)"
 schema_path="$repo_root/scripts/release/schemas/tournament-go-gate.schema.json"
-python_bin='/nix/store/gxzhl7aaiid7zp3y47jqqiq7zg5mqpwp-python3-3.14.6/bin/python3.14'
+python_bin="$(command -v python3)"
 
-if [[ ! -f "$python_bin" || ! -x "$python_bin" || -L "$python_bin" ]]; then
-  printf 'tournament go gate: pinned Python runtime is unavailable or unsafe\n' >&2
+if [[ ! -f "$python_bin" || ! -x "$python_bin" ]]; then
+  printf 'tournament go gate: Python runtime is unavailable\n' >&2
   exit 1
 fi
 
@@ -54,6 +54,7 @@ import os
 import pathlib
 import platform
 import re
+import shutil
 import selectors
 import signal
 import stat
@@ -102,26 +103,23 @@ RECORD_ROOT_KEYS = frozenset(
     }
 )
 FIXTURE_CANARY = "fixture-secret-canary-7261"
-PINNED_PYTHON = pathlib.Path(
-    "/nix/store/gxzhl7aaiid7zp3y47jqqiq7zg5mqpwp-python3-3.14.6/bin/python3.14"
-)
-PINNED_PYTHON_SHA256 = "465d82f95e8e1069347b0ebf288d14d37802a1ae6cb831c15953cba0859ff766"
-PINNED_GO = pathlib.Path(
-    "/nix/store/62rzn370ba6jc0sfvmb9a93s4619f6kv-go-1.26.8/bin/go"
-)
-PINNED_GO_SHA256 = "d9a2fa19c7ef8b57f420012c21f49f235c46f08a68c12077d9c753dbb6ccdc34"
-PINNED_GIT = pathlib.Path(
-    "/nix/store/6f0qqak4qbcrbw4f750phr88c9yhpf5s-git-2.55.0/bin/git"
-)
-PINNED_GIT_SHA256 = "d776b30d3f856aca98c8681a249cf8606fd14d4a9dc9debd358014522fa7d067"
-PINNED_ENV = pathlib.Path(
-    "/nix/store/5y8jchf95jisr09cjx2q7lgz3qwnfi5j-coreutils-full-9.11/bin/env"
-)
-PINNED_ENV_SHA256 = "c88776f602efc831ecffdda48d347648e9584b5e76c9ff4d6d4676a5daa5b4a7"
-PINNED_BASH = pathlib.Path(
-    "/nix/store/bwry105g7v5jspr41bx9x3fcfqsmfkq2-bash-interactive-5.3p15/bin/bash"
-)
-PINNED_BASH_SHA256 = "4eadb049773ad49e107adec9ad130ee83c0ec44f404740289620b234eeacc69d"
+def runtime_executable(name: str) -> pathlib.Path:
+    candidate = shutil.which(name)
+    if candidate is None:
+        raise RuntimeError(f"Required executable is not on PATH: {name}")
+    path = pathlib.Path(candidate).resolve(strict=True)
+    if not path.is_file() or not os.access(path, os.X_OK) or path.stat().st_mode & 0o022:
+        raise RuntimeError(f"Unsafe runtime executable: {name}")
+    return path
+
+
+PYTHON = pathlib.Path(sys.executable).resolve(strict=True)
+GO = runtime_executable("go")
+GIT = runtime_executable("git")
+ENV = runtime_executable("env")
+BASH = runtime_executable("bash")
+RUNTIME_DIGESTS = {path: hashlib.sha256(path.read_bytes()).hexdigest()
+                   for path in (PYTHON, GO, GIT, ENV, BASH)}
 CAPACITY_REPORT_PREFIX = "TOURNAMENT_CAPACITY_REPORT "
 CAPACITY_REPORT_PREFIX_BYTES = CAPACITY_REPORT_PREFIX.encode("ascii")
 CAPACITY_PACKAGE = "github.com/TakuyaYagam1/task-per-minute/integration_test"
@@ -192,38 +190,12 @@ def timestamp(value: dt.datetime) -> str:
     return value.astimezone(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:23] + "Z"
 
 
-def validate_pinned_python() -> None:
-    try:
-        runtime = PINNED_PYTHON.resolve(strict=True)
-        active_runtime = pathlib.Path(sys.executable).resolve(strict=True)
-    except OSError as exc:
-        fail(f"pinned Python runtime cannot be resolved: {exc}")
-    if runtime != PINNED_PYTHON or active_runtime != PINNED_PYTHON:
-        fail("active Python runtime does not match the pinned path")
-    metadata = runtime.stat()
-    if not runtime.is_file() or not os.access(runtime, os.X_OK):
-        fail("pinned Python runtime is not an executable regular file")
-    if stat.S_IMODE(metadata.st_mode) != 0o555:
-        fail("pinned Python runtime mode does not match the immutable declaration")
-    if sha256_file(runtime) != PINNED_PYTHON_SHA256:
-        fail("pinned Python runtime digest does not match the immutable declaration")
-
-
-def validate_pinned_executable(
-    name: str,
-    executable: pathlib.Path,
-    expected_sha256: str,
-) -> None:
-    try:
-        metadata = executable.stat()
-    except OSError as exc:
-        fail(f"pinned {name} executable cannot be resolved: {exc}")
-    if not executable.is_file() or not os.access(executable, os.X_OK):
-        fail(f"pinned {name} path is not an executable regular file")
-    if stat.S_IMODE(metadata.st_mode) != 0o555:
-        fail(f"pinned {name} executable mode does not match the immutable declaration")
-    if sha256_file(executable) != expected_sha256:
-        fail(f"pinned {name} executable digest does not match the immutable declaration")
+def validate_runtime() -> None:
+    for path, digest in RUNTIME_DIGESTS.items():
+        if not path.is_file() or not os.access(path, os.X_OK) or path.stat().st_mode & 0o022:
+            fail("runtime executable is missing or unsafe")
+        if sha256_file(path) != digest:
+            fail("runtime executable changed during verification")
 
 
 def validate_evidence_dir(path_text: str, repo_root: pathlib.Path) -> pathlib.Path:
@@ -269,11 +241,11 @@ def child_environment() -> dict[str, str]:
     result = {
         "PATH": ":".join(
             str(path.parent)
-            for path in (PINNED_GO, PINNED_GIT, PINNED_ENV, PINNED_BASH, PINNED_PYTHON)
+            for path in (GO, GIT, ENV, BASH, PYTHON)
         ),
-        "GOCACHE": "/home/takuya/.cache/go-build",
-        "GOMODCACHE": "/home/takuya/go/pkg/mod",
-        "GOPATH": "/home/takuya/go",
+        "GOCACHE": str(pathlib.Path.home() / ".cache/go-build"),
+        "GOMODCACHE": str(pathlib.Path.home() / "go/pkg/mod"),
+        "GOPATH": str(pathlib.Path.home() / "go"),
         "CGO_ENABLED": "0",
         "GOENV": "off",
         "HOME": "/nonexistent",
@@ -309,7 +281,7 @@ def child_environment() -> dict[str, str]:
 
 def source_identity(repo_root: pathlib.Path) -> tuple[str, bool]:
     environment = {
-        "PATH": str(PINNED_GIT.parent),
+        "PATH": str(GIT.parent),
         "LANG": "C",
         "LC_ALL": "C",
         "GIT_CONFIG_NOSYSTEM": "1",
@@ -319,7 +291,7 @@ def source_identity(repo_root: pathlib.Path) -> tuple[str, bool]:
 
     try:
         revision_probe = subprocess.run(
-            [str(PINNED_GIT), "-C", str(repo_root), "rev-parse", "--verify", "HEAD"],
+            [str(GIT), "-C", str(repo_root), "rev-parse", "--verify", "HEAD"],
             stdin=subprocess.DEVNULL,
             capture_output=True,
             check=False,
@@ -335,7 +307,7 @@ def source_identity(repo_root: pathlib.Path) -> tuple[str, bool]:
     try:
         status_probe = subprocess.run(
             [
-                str(PINNED_GIT),
+                str(GIT),
                 "-C",
                 str(repo_root),
                 "status",
@@ -420,7 +392,7 @@ def artifact_digest_records(
             for path in migrations_dir.glob("*.sql")
         }
         migration_env = {
-            "PATH": str(PINNED_GIT.parent),
+            "PATH": str(GIT.parent),
             "LANG": "C",
             "LC_ALL": "C",
             "GIT_CONFIG_NOSYSTEM": "1",
@@ -430,7 +402,7 @@ def artifact_digest_records(
         try:
             migration_probe = subprocess.run(
                 [
-                    str(PINNED_GIT),
+                    str(GIT),
                     "-C",
                     str(repo_root),
                     "ls-files",
@@ -449,7 +421,7 @@ def artifact_digest_records(
             )
             deleted_probe = subprocess.run(
                 [
-                    str(PINNED_GIT),
+                    str(GIT),
                     "-C",
                     str(repo_root),
                     "ls-files",
@@ -546,8 +518,8 @@ def command_policy(
         expected = nominal if gate == "capacity-nominal" else peak
         if command != expected:
             fail(f"command does not match the {gate} allowlist")
-        launcher = PINNED_ENV
-        go_executable = PINNED_GO
+        launcher = ENV
+        go_executable = GO
         if pathlib.Path.cwd().resolve(strict=True) != (repo_root / "backend").resolve(strict=True):
             fail("capacity gates must run from the repository backend directory")
         identity = "TestTournamentNominal60Minute" if gate == "capacity-nominal" else "TestTournamentPeakSoak"
@@ -623,7 +595,7 @@ def command_policy(
     if not any(command == fixed_prefix + suffix for suffix in fixture_suffixes.values()):
         fail("command does not match the fixture-test allowlist")
 
-    launcher = PINNED_BASH
+    launcher = BASH
     record = {
         "allowlist_id": "fixture-test-v1",
         "kind": "fixture",
@@ -1526,18 +1498,7 @@ evidence_text = sys.argv[4]
 command = sys.argv[5:]
 
 try:
-    validate_pinned_python()
-    for executable_name, executable_path, executable_sha256 in (
-        ("Go", PINNED_GO, PINNED_GO_SHA256),
-        ("Git", PINNED_GIT, PINNED_GIT_SHA256),
-        ("env", PINNED_ENV, PINNED_ENV_SHA256),
-        ("Bash", PINNED_BASH, PINNED_BASH_SHA256),
-    ):
-        validate_pinned_executable(
-            executable_name,
-            executable_path,
-            executable_sha256,
-        )
+    validate_runtime()
     evidence_dir = validate_evidence_dir(evidence_text, repo_root)
     if (
         not schema_path.is_file()

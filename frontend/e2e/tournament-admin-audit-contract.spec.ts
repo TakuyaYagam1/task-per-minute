@@ -311,7 +311,7 @@ test("сохраняет недоступный ID турнира в журна�
 
   await expect(page.getByRole("heading", { name: "Журнал соревнования" })).toBeVisible();
   await expect(page).toHaveURL(new RegExp(`[?&]tournament=${unavailableTournamentId}(?:&|$)`));
-  await expect(page.getByRole("alert").filter({ hasText: "Соревнование недоступно" })).toBeVisible();
+  await expect(page.getByRole("status").filter({ hasText: "Соревнование не найдено" })).toBeVisible();
 });
 
 test("FE-037 downloads the permitted envelope without exposing closed content", async ({ page }) => {

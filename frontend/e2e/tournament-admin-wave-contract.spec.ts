@@ -295,12 +295,14 @@ const contentSelection = () => ({
 const setupRoutes = async (page: Page): Promise<{
   getSnapshotCount: () => number;
   getWaveActions: () => Array<{ body: Record<string, unknown>; idempotencyKey: string; waveId: string }>;
-  setConflictNextWaveAction: () => void;
+  setConflictNextWaveAction: () => () => void;
   setSnapshot: (next: ReturnType<typeof operatorSnapshot>) => void;
 }> => {
   let currentSnapshot = operatorSnapshot(1);
   let snapshotCount = 0;
   let conflictNextWaveAction = false;
+  let recoveryGate: Promise<void> | undefined;
+  let releaseRecovery = () => {};
   const waveActions: Array<{ body: Record<string, unknown>; idempotencyKey: string; waveId: string }> = [];
 
   await page.route("**/api/v1/admin/login", async (route) => {
@@ -327,6 +329,7 @@ const setupRoutes = async (page: Page): Promise<{
     }
     if (path.endsWith("/snapshot") && request.method() === "GET") {
       snapshotCount += 1;
+      await recoveryGate;
       await fulfillJSON(route, 200, currentSnapshot, { Date: "Sun, 13 Sep 2026 10:00:00 GMT" });
       return;
     }
@@ -341,6 +344,7 @@ const setupRoutes = async (page: Page): Promise<{
       const target = currentSnapshot.waves.find((item) => item.id === waveId);
       if (conflictNextWaveAction) {
         conflictNextWaveAction = false;
+        recoveryGate = new Promise<void>((resolve) => { releaseRecovery = resolve; });
         await fulfillJSON(route, 409, problem(409, "Предыдущий раунд не завершен"));
         return;
       }
@@ -372,6 +376,7 @@ const setupRoutes = async (page: Page): Promise<{
     getWaveActions: () => waveActions,
     setConflictNextWaveAction: () => {
       conflictNextWaveAction = true;
+      return () => { releaseRecovery(); recoveryGate = undefined; };
     },
     setSnapshot: (next) => {
       currentSnapshot = next;
@@ -384,8 +389,8 @@ const openAdminTournament = async (page: Page): Promise<void> => {
   await page.getByPlaceholder("Введите пароль...").fill("correct-password");
   await page.getByRole("button", { name: "Войти" }).click();
   await page.getByRole("button", { name: "Соревнования" }).click();
-  await expect(page.getByRole("heading", { name: "Новое соревнование" })).toBeVisible();
-  await page.getByRole("button", { name: "Открыть" }).click();
+  await expect(page.getByRole("heading", { name: "Список соревнований" })).toBeVisible();
+  await page.getByRole("button", { name: /^Открыть соревнование / }).click();
   await page.getByRole("button", { name: "Проведение" }).click();
   await expect(page.getByTestId("operator-wave-control-panel")).toBeVisible();
 };
@@ -404,7 +409,7 @@ test("показывает одну Wave с 8 Series, всеми 16 участн
   await expect(page.getByTestId("operator-match")).toHaveCount(8);
   await expect(page.getByTestId("operator-wave-board").getByText("Участник", { exact: true })).toHaveCount(16);
   await expect(page.getByTestId("operator-wave-board").locator("[data-series-id]")).toHaveCount(8);
-  await expect(page.getByText("Связь потеряна", { exact: true }).first()).toBeVisible();
+  await expect(page.getByTestId("operator-match-members").getByText("Не готов", { exact: true })).toHaveCount(16);
   await expect(page.getByTestId("operator-wave-connection")).toContainText("Обновляется автоматически");
   await expect(page.getByTestId("operator-wave-board")).toContainText("0:0");
   expect(routes.getSnapshotCount()).toBeGreaterThan(0);
@@ -441,7 +446,7 @@ test("открывает и запускает волну с текущей ре
 
   const readySnapshot = operatorSnapshot(2, wave("ready", true));
   routes.setSnapshot(readySnapshot);
-  await expect.poll(() => realtimeConnections).toBeGreaterThan(connectionsBeforeOpen);
+  expect(realtimeConnections).toBe(connectionsBeforeOpen);
   if (operatorSocket) {
     sendRealtimeFrame(operatorSocket, readySnapshot, 2, "ready", true);
   }
@@ -462,7 +467,7 @@ test("открывает и запускает волну с текущей ре
 
   const activeSnapshot = operatorSnapshot(3, wave("active", true), "active");
   routes.setSnapshot(activeSnapshot);
-  await expect.poll(() => realtimeConnections).toBeGreaterThan(connectionsBeforeStart);
+  expect(realtimeConnections).toBe(connectionsBeforeStart);
   if (operatorSocket) {
     sendRealtimeFrame(operatorSocket, activeSnapshot, 3, "active", true);
   }
@@ -512,7 +517,7 @@ test("для истекшего окна готовности подсказыв
   );
 
   await openAdminTournament(page);
-  await expect(page.getByText("Окно готовности истекло. Обновите данные и проверьте участников, которые не подтвердили готовность.")).toBeVisible();
+  await expect(page.getByText("Окно готовности истекло. Проверьте участников, которые не подтвердили готовность.")).toBeVisible();
   await expect(page.locator('[data-testid^="wave-open-"]').first()).toBeDisabled();
   await expect(page.locator('[data-testid^="wave-start-"]').first()).toBeDisabled();
 });
@@ -525,17 +530,17 @@ test("unfinished previous round 409 блокирует повтор до refresh
       sendRealtimeFrame(socket, operatorSnapshot(1), 1);
     },
   );
-  routes.setConflictNextWaveAction();
+  const releaseRecovery = routes.setConflictNextWaveAction();
 
   await openAdminTournament(page);
   const staleOpen = page.locator('[data-testid^="wave-open-"]').first();
   await staleOpen.click();
-  await expect(page.getByText("Состояние соревнования устарело. Обновите данные перед повтором.")).toBeVisible();
+  await expect(page.getByText("Состояние соревнования изменилось.", { exact: true })).toBeVisible();
   const actionCountAfterConflict = routes.getWaveActions().length;
   await expect(staleOpen).toBeDisabled();
   await staleOpen.click({ force: true });
   expect(routes.getWaveActions()).toHaveLength(actionCountAfterConflict);
-  await page.getByTestId("operator-wave-control-panel").getByRole("button", { name: "Обновить данные" }).click();
+  releaseRecovery();
   await expect(staleOpen).toBeEnabled();
   expect(routes.getWaveActions()[0]?.body.expected_projection_revision).toBe(1);
 });

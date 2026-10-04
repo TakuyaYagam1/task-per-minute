@@ -1,72 +1,63 @@
-import { accessSync, appendFileSync, constants, readFileSync } from "node:fs";
+import { accessSync, constants, readFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
+import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
-const scriptRoot = dirname(fileURLToPath(import.meta.url));
-const frontendRoot = resolve(scriptRoot, "..");
-const repositoryRoot = resolve(frontendRoot, "..");
-const lockPath = join(repositoryRoot, "security", "tools", "release-tools.lock.json");
-const lock = JSON.parse(readFileSync(lockPath, "utf8"));
-const tools = new Map(lock.tools.map((tool) => [tool.name, tool]));
+const frontendRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const readJSON = (path) => JSON.parse(readFileSync(path, "utf8"));
 
-function executablePath(name) {
-  const tool = tools.get(name);
-  if (!tool || tool.provisioning?.kind !== "nix_store") {
-    throw new Error(`${name} is not backed by the reviewed Nix runtime`);
-  }
-  const path = join(tool.provisioning.immutable_root, tool.provisioning.relative_path);
-  try {
-    accessSync(path, constants.X_OK);
-  } catch {
-    throw new Error(`reviewed ${name} runtime is unavailable: ${path}`);
-  }
-  return path;
+export function verifyPackages(root = frontendRoot) {
+  const lock = readJSON(join(root, "package-lock.json"));
+  const names = ["@playwright/test", "playwright", "playwright-core"];
+  const versions = names.map((name) => {
+    const expected = lock.packages?.[`node_modules/${name}`];
+    const installed = readJSON(join(root, "node_modules", name, "package.json"));
+    if (!expected?.integrity || installed.version !== expected.version) {
+      throw new Error(`${name} does not match package-lock.json; run npm ci`);
+    }
+    return installed.version;
+  });
+  if (new Set(versions).size !== 1) throw new Error("Playwright packages have different versions");
+  return versions[0];
 }
 
-function run(path, args) {
-  const result = spawnSync(path, args, { encoding: "utf8" });
-  if (result.error || result.status !== 0) {
-    throw new Error(`reviewed runtime probe failed: ${path}`);
-  }
+function run(command, args) {
+  const result = spawnSync(command, args, { encoding: "utf8", timeout: 15_000, maxBuffer: 1024 * 1024 });
+  if (result.error || result.status !== 0) throw new Error(`Runtime probe failed: ${command}`);
   return result.stdout.trim();
 }
 
-const nodePath = executablePath("node");
-const npmPath = executablePath("npm");
-const playwrightPath = executablePath("playwright");
-const chromiumPath = executablePath("chromium");
-const npmTool = tools.get("npm");
-const playwrightTool = tools.get("playwright");
-
-if (run(nodePath, ["--version"]) !== `v${tools.get("node").version}`) {
-  throw new Error("reviewed Node runtime identity mismatch");
-}
-if (run(nodePath, [npmPath, "--version"]) !== npmTool.runtime_identity.expected_output) {
-  throw new Error("reviewed npm runtime identity mismatch");
-}
-if (run(chromiumPath, ["--version"]) !== tools.get("chromium").runtime_identity.expected_output) {
-  throw new Error("reviewed Chromium runtime identity mismatch");
+export function verifyBrowser(root = frontendRoot) {
+  verifyPackages(root);
+  const require = createRequire(join(root, "package.json"));
+  const { chromium } = require("playwright-core");
+  const metadata = readJSON(join(root, "node_modules/playwright-core/browsers.json"));
+  const expected = metadata.browsers.find((browser) => browser.name === "chromium");
+  const executable = chromium.executablePath();
+  accessSync(executable, constants.X_OK);
+  const version = run(executable, ["--version"]).match(/\b\d+\.\d+\.\d+\.\d+\b/)?.[0];
+  if (!expected?.browserVersion || version !== expected.browserVersion) {
+    throw new Error("Chromium does not match the installed Playwright revision");
+  }
+  return version;
 }
 
-if (process.argv.includes("--verify-packages")) {
-  const localPlaywrightCli = join(frontendRoot, "node_modules", "playwright", "cli.js");
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   try {
-    accessSync(localPlaywrightCli, constants.R_OK);
-  } catch {
-    throw new Error(`installed Playwright CLI is unavailable: ${localPlaywrightCli}`);
-  }
-  if (run(nodePath, [localPlaywrightCli, "--version"]) !== playwrightTool.runtime_identity.expected_output) {
-    throw new Error("installed Playwright runtime identity mismatch");
+    // Use the same Node major as the application image, regardless of host OS.
+    const dockerfile = readFileSync(join(frontendRoot, "Dockerfile"), "utf8");
+    const nodeMajor = dockerfile.match(/^FROM node:(\d+)/m)?.[1];
+    if (!nodeMajor || process.versions.node.split(".")[0] !== nodeMajor) {
+      throw new Error(`Node ${nodeMajor || "image version"} is required`);
+    }
+    const npmVersion = run("npm", ["--version"]);
+    if (!/^\d+\.\d+\.\d+$/.test(npmVersion)) throw new Error("Invalid npm version");
+    if (process.argv.includes("--verify-packages")) verifyPackages();
+    if (process.argv.includes("--verify-browser")) verifyBrowser();
+    console.log(`Frontend runtime ready: Node ${process.versions.node}, npm ${npmVersion}`);
+  } catch (error) {
+    console.error(error.message);
+    process.exitCode = 1;
   }
 }
-
-const npmBinPath = join(npmTool.provisioning.immutable_root, "bin");
-const pathEntries = [...new Set([dirname(nodePath), npmBinPath])];
-if (process.env.GITHUB_PATH) {
-  appendFileSync(process.env.GITHUB_PATH, `${pathEntries.join("\n")}\n`, "utf8");
-}
-
-process.stdout.write(
-  `reviewed frontend runtime ready: node=${nodePath}, npm=${npmPath}, playwright=${playwrightPath}, chromium=${chromiumPath}${process.argv.includes("--verify-packages") ? " (package verified)" : ""}\n`,
-);

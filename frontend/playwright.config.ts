@@ -3,8 +3,6 @@ import path from 'node:path';
 
 import { defineConfig, devices } from '@playwright/test';
 
-import releaseTools from '../security/tools/release-tools.lock.json';
-
 const port = process.env.E2E_FRONTEND_PORT || '3101';
 const baseURL = process.env.E2E_FRONTEND_URL || `http://127.0.0.1:${port}`;
 const accountFlowMode = process.env.E2E_ACCOUNT_FULL_STACK === '1';
@@ -20,8 +18,6 @@ const fullStackMode = process.env.E2E_FULL_STACK === '1';
 const releaseProxyMode = process.env.E2E_RELEASE_PROXY === '1';
 const frontendRoot = __dirname;
 const backendRoot = path.resolve(frontendRoot, '..', 'backend');
-const chromiumTool = releaseTools.tools.find((tool) => tool.name === 'chromium');
-const chromiumProvisioning = chromiumTool?.provisioning;
 
 if (accountFlowMode && (fullStackMode || releaseProxyMode)) {
   throw new Error('Account full-stack mode cannot be combined with another dedicated E2E mode');
@@ -40,19 +36,6 @@ if (accountFlowMode) {
     throw new Error('Account full-stack mode requires a loopback HTTP backend URL');
   }
 }
-
-if (
-  chromiumProvisioning?.kind !== 'nix_store'
-  || typeof chromiumProvisioning.immutable_root !== 'string'
-  || typeof chromiumProvisioning.relative_path !== 'string'
-) {
-  throw new Error('The verified Chromium runtime is missing from the release tool manifest');
-}
-
-const chromiumExecutable = path.join(
-  chromiumProvisioning.immutable_root,
-  chromiumProvisioning.relative_path,
-);
 
 export default defineConfig({
   testDir: './e2e',
@@ -144,9 +127,6 @@ export default defineConfig({
       name: 'chromium',
       use: {
         ...devices['Desktop Chrome'],
-        launchOptions: {
-          executablePath: chromiumExecutable,
-        },
       },
     },
   ],

@@ -406,7 +406,10 @@ const installRoutes = async (
       return;
     }
     if (path === `${tournamentPath}/snapshot` && method === "GET") {
-      await fulfillJSON(route, operatorSnapshot(phaseRevision(phase)), 200, {
+      await fulfillJSON(route, {
+        ...operatorSnapshot(phaseRevision(phase)),
+        tournament: tournament(phase),
+      }, 200, {
         date: "Sat, 19 Sep 2026 10:00:00 GMT",
       });
       return;
@@ -482,11 +485,9 @@ const loginAndSelectTournament = async (page: Page): Promise<ReturnType<Page["ge
   await page.goto("/admin", { waitUntil: "domcontentloaded" });
   await page.getByPlaceholder("Введите пароль...").fill("correct-password");
   await page.getByRole("button", { name: "Войти" }).click();
-  await expect(page.getByRole("heading", { name: "Новое соревнование" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Список соревнований" })).toBeVisible();
   await page.getByRole("button", { name: "Соревнования" }).click();
-  const row = page.getByRole("row").filter({ hasText: "Golden playoff контракт" });
-  await expect(row).toBeVisible();
-  await row.getByRole("button", { name: "Открыть" }).click();
+  await page.getByRole("button", { name: "Открыть соревнование Golden playoff контракт", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Golden playoff контракт", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Проведение" }).click();
   const panel = page.getByTestId("operator-golden-playoff-control-panel");
@@ -545,7 +546,8 @@ test("управляет Golden и отображает официальный b
   await expect(panel.getByTestId("golden-start-playoffs")).toBeDisabled();
 
   harness.setPhase("golden-completed");
-  await panel.getByRole("button", { name: "Обновить данные" }).first().click();
+  await page.getByRole("button", { name: "Обзор", exact: true }).click();
+  await page.getByRole("button", { name: "Проведение", exact: true }).click();
   await expect(panel.getByText("Завершен", { exact: true })).toBeVisible();
   await expect(panel.getByTestId("golden-start-playoffs")).toBeEnabled();
 
@@ -580,20 +582,22 @@ test("управляет Golden и отображает официальный b
   await expect(bracket).not.toContainText(/нижн|lower/i);
 
   harness.setPhase("playoffs-final");
-  await panel.getByRole("button", { name: "Обновить данные" }).first().click();
+  await page.getByRole("button", { name: "Обзор", exact: true }).click();
+  await page.getByRole("button", { name: "Проведение", exact: true }).click();
   await expect(matches).toHaveCount(3);
   await expect(matches.nth(2)).toHaveAttribute("data-stage", "final");
   await expect(matches.nth(2)).toContainText("Финал - BO3");
   await expect(matches.nth(2)).toContainText("2:1");
 
   harness.setPhase("completed");
-  await panel.getByRole("button", { name: "Обновить данные" }).click();
+  await page.getByRole("button", { name: "Обзор", exact: true }).click();
+  await page.getByRole("button", { name: "Проведение", exact: true }).click();
   await expect(panel.getByTestId("server-champion")).toContainText("Алиса");
   await expect(panel.getByTestId("golden-start-lifecycle")).toBeDisabled();
   await expect(panel.getByTestId("golden-start-playoffs")).toBeDisabled();
 });
 
-test("409 stale Golden refreshes state and keeps runtime command blocked until refresh", async ({ page }) => {
+test("409 stale Golden automatically refreshes state without repeating the runtime command", async ({ page }) => {
   const harness = await installRoutes(page, {
     initialPhase: "golden-prepared",
     staleOpen: true,
@@ -609,12 +613,6 @@ test("409 stale Golden refreshes state and keeps runtime command blocked until r
     expected_runtime_revision: 0,
   });
   expectMutationHeaders(harness.openRequests[0]!);
-  await expect(panel.getByRole("alert")).toContainText(
-    "Состояние дополнительного отбора изменилось. Обновите данные перед повтором.",
-  );
-  await expect(open).toBeDisabled();
-
-  await panel.getByRole("button", { name: "Обновить данные" }).first().click();
   await expect(open).toBeDisabled();
   await expect(panel.getByTestId(`golden-start-attempt-${groupId}`)).toBeEnabled();
   expect(harness.openRequests).toHaveLength(1);

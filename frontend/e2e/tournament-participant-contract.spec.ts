@@ -504,10 +504,13 @@ test("participant lobby keeps keyboard access and long Cyrillic copy across resp
       await page.evaluate(() => {
         document.documentElement.style.fontSize = "200%";
       });
+      const overflowingElements = await page.evaluate(() => Array.from(document.querySelectorAll('body *'))
+        .filter((element) => element.getBoundingClientRect().right > window.innerWidth + 1)
+        .map((element) => `${element.tagName}.${element.className}`));
       await expect.poll(() => page.evaluate(() => (
         document.documentElement.scrollWidth <= window.innerWidth
         && document.body.scrollWidth <= window.innerWidth
-      ))).toBe(true);
+      )), { message: `Overflow at ${width}px: ${overflowingElements.join(', ')}` }).toBe(true);
       await expect(readyButton).toBeVisible();
       const readyBounds = await readyButton.boundingBox();
       expect(readyBounds).not.toBeNull();

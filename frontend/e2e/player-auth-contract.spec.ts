@@ -121,7 +121,6 @@ test('registration sends the account details and stores no credentials', async (
   await expect(page.getByRole('link', { name: 'Войти', exact: true })).toHaveCount(1);
   const resend = page.getByRole('button', { name: 'Не пришло письмо?', exact: true });
   await expect(resend).toBeDisabled();
-  await page.screenshot({ path: '/home/takuya/.codex/.tmp/registration-resend.png' });
   await page.clock.runFor(59_000);
   await expect(resend).toBeDisabled();
   expect(resendCalls).toBe(0);

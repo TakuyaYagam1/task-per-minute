@@ -34,6 +34,7 @@ const fulfillJSON = async (route: Route, body: unknown, status = 200): Promise<v
 };
 
 const installParticipantShell = async (page: Page, fixtureSet: FixtureSet): Promise<void> => {
+  const lobby = { ...fixtureSet.participant.lobby, state: "golden" as const };
   await page.addInitScript(() => {
     document.cookie = "tpm_player_csrf=golden-player-csrf; Path=/";
   });
@@ -42,9 +43,12 @@ const installParticipantShell = async (page: Page, fixtureSet: FixtureSet): Prom
     state: "golden",
   }));
   await page.route(`**${publicPath}/participant/lobby`, (route) =>
-    fulfillJSON(route, fixtureSet.participant.lobby));
+    fulfillJSON(route, lobby));
   await page.route(`**${publicPath}/participant/snapshot*`, (route) =>
-    fulfillJSON(route, fixtureSet.participant.recovery));
+    fulfillJSON(route, {
+      ...fixtureSet.participant.recovery,
+      lobby: { ...lobby, projection_revision: fixtureSet.participant.recovery.projection_revision },
+    }));
 };
 
 const activeGolden = (base: GoldenParticipant): GoldenParticipant => ({
@@ -68,7 +72,7 @@ const participantRealtimeFrame = (sequence: number): string => JSON.stringify({
         ? tournamentFixtureIds.pauseRevision
         : tournamentFixtureIds.scoreRevision,
       occurred_at: "2026-09-21T10:00:00Z",
-      projection_revision: 9,
+      projection_revision: 8 + sequence,
       resume_id: tournamentFixtureIds.resume,
       participant: {},
     },
@@ -148,6 +152,8 @@ test("participant completes server-owned Golden readiness, task and placement fl
     },
   };
   await expect.poll(() => realtimeSockets.length).toBe(1);
+  fixtureSet.participant.recovery.projection_revision += 1;
+  fixtureSet.participant.recovery.next_cursor.projection_revision += 1;
   realtimeSockets[0]?.send(participantRealtimeFrame(2));
   await expect(panel).toHaveAttribute("data-golden-state", "active");
   await expect(panel.getByRole("heading", { name: longCopy, exact: true })).toBeVisible();
@@ -199,7 +205,7 @@ test("participant completes server-owned Golden readiness, task and placement fl
   });
 
   current = { ...current, position: 2, runtime_revision: 4, state: "completed" };
-  await panel.getByRole("button", { name: "Обновить данные" }).click();
+  await page.reload({ waitUntil: "domcontentloaded" });
   await expect(panel).toHaveAttribute("data-golden-state", "completed");
   await expect(panel.getByTestId("participant-golden-position")).toContainText("2");
   await expect(panel.getByTestId("participant-golden-position")).toContainText(
@@ -253,7 +259,7 @@ test("Golden no-show and technical pause stay taskless and server-controlled", a
   await expect(panel.getByRole("region")).toHaveCount(0);
 
   current = { ...current, runtime_revision: 4, state: "technical_pause" };
-  await panel.getByRole("button", { name: "Обновить данные" }).click();
+  await page.reload({ waitUntil: "domcontentloaded" });
   await expect(panel).toContainText("Техническая пауза");
   await expect(panel.getByTestId("participant-golden-timer")).toHaveText("Остановлен");
   await expect(panel.getByRole("button", { name: "Отправить ответ", exact: true })).toHaveCount(0);

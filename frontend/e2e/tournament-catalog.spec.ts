@@ -303,7 +303,7 @@ test("catalog maps qualification stages and keeps cards keyboard accessible on m
   await expectNoHorizontalOverflow(page);
   await card.focus();
   await expect(card).toBeFocused();
-  await page.keyboard.press("Enter");
+  await card.press("Enter");
   await expect(page).toHaveURL(/\/arena\/tournaments\/live-swiss/);
 });
 
@@ -382,6 +382,7 @@ test("public detail is anonymous, keeps the catalog return path, and exposes all
     snapshotPath,
     "/api/v1/players/me",
     "/api/v1/arena/events",
+    `/api/v1/players/test-bots/${tournamentFixtureIds.tournament}/state`,
   ]));
   expect(authorizationHeaders).toEqual([]);
 });
@@ -452,8 +453,9 @@ test("detail errors distinguish missing, rate limited, and transport states and 
 
   await page.goto(`/arena/tournaments/${publicId}`);
   await expect(page.getByText("Соревнование не найдено или больше не публикуется")).toBeVisible();
+  await expect(page.getByRole("link", { name: "Вернуться к списку соревнований" })).toHaveAttribute("href", "/arena");
   mode = "success";
-  await page.getByRole("button", { name: "Повторить" }).click();
+  await page.reload();
   await expect(page.getByRole("heading", { name: "Сентябрьский контур", exact: true })).toBeVisible();
 
   mode = "rate_limited";

@@ -446,6 +446,15 @@ elif mutation == "trivy_stale":
     metadata.write_text(json.dumps({"UpdatedAt": updated_at, "Version": 2}, sort_keys=True), encoding="utf-8")
     lock["trivy_database"]["updated_at"] = updated_at
     lock["trivy_database"]["metadata_sha256"] = sha256(metadata)
+elif mutation.startswith("system_"):
+    tools_by_name["jq"]["provisioning"] = {"kind": "system", "command": "jq"}
+    if mutation == "system_version":
+        tool_paths["jq"].chmod(0o755)
+        tool_paths["jq"].write_bytes(tool_script("--version", "jq-0.0.0"))
+    elif mutation == "system_writable":
+        tool_paths["jq"].chmod(0o777)
+    elif mutation == "system_command":
+        tools_by_name["jq"]["provisioning"]["command"] = "sh"
 elif mutation not in {
     "pass",
     "path_poison",
@@ -515,10 +524,13 @@ PY
   )
 
   local run_status=0
-  if [[ "$mutation" == "path_poison" ]]; then
+  if [[ "$mutation" == system_* ]]; then
+    TPM_SECURITY_PREFLIGHT_TEST_MODE=1 PATH="$case_root/runtime/jq/bin:$PATH" "${command[@]}" >"$output" 2>&1 || run_status=$?
+  elif [[ "$mutation" == "path_poison" ]]; then
     local poison="$case_root/poison"
     mkdir -p -- "$poison"
-    for tool in python3 dirname go node npm playwright chromium jq yq docker docker-compose govulncheck gitleaks semgrep trivy; do
+    # The shell and Python bootstrap come from PATH; fixture tools remain bound to their verified files.
+    for tool in go node npm playwright chromium jq yq docker docker-compose govulncheck gitleaks semgrep trivy; do
       printf '#!/bin/sh\nexit 97\n' >"$poison/$tool"
       chmod 755 "$poison/$tool"
     done
@@ -570,7 +582,7 @@ run_canonical_digest_reject() {
   cp -- "$schema" "$case_root/security/tools/release-tools.schema.json"
   printf '\n' >>"$case_root/security/tools/release-tools.$target.json"
 
-  bash "$case_root/scripts/release/verify-security-tools.sh" >"$output" 2>&1 || run_status=$?
+  bash "$case_root/scripts/release/verify-security-tools.sh" --scope backend >"$output" 2>&1 || run_status=$?
   if ((run_status == 0)); then
     cat "$output" >&2
     echo "verify-security-tools test: canonical $target digest tamper unexpectedly passed" >&2
@@ -634,6 +646,10 @@ run_fixture trivy-metadata trivy_metadata_digest fail "Trivy metadata SHA-256 mi
 run_fixture trivy-database trivy_db_digest fail "Trivy vulnerability DB SHA-256 mismatch"
 run_fixture trivy-stale trivy_stale fail "Trivy vulnerability DB is stale"
 run_fixture path-poison path_poison pass "release security fixture: PASS"
+run_fixture system-path system_pass pass "release security fixture: PASS"
+run_fixture system-version system_version fail "jq runtime/version identity mismatch"
+run_fixture system-writable system_writable fail "jq executable is missing or group/world writable"
+run_fixture system-command system_command fail "jq executable name mismatch"
 run_canonical_digest_reject lock
 run_canonical_digest_reject schema
 

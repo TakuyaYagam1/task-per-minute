@@ -4,9 +4,10 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)"
 SOURCE_FRONTEND_ROOT="$REPO_ROOT/frontend"
 REPORT_PATH="${NPM_AUDIT_REPORT:-}"
-LOCKED_NODE="/nix/store/jy3vlmdzmyjpb37r6r2n24lc3zarhjz3-nodejs-slim-24.18.1/bin/node"
-LOCKED_NPM="/nix/store/3nyq1g44akas41r304bk8ai76ywl9p9h-nodejs-slim-24.18.1-npm/lib/node_modules/npm/bin/npm-cli.js"
-RUNTIME_PATH="$(dirname "$LOCKED_NODE"):/run/current-system/sw/bin:/usr/bin:/bin"
+LOCKED_NODE="$(command -v node)"
+LOCKED_NPM="$(node -e 'process.stdout.write(require("node:fs").realpathSync(process.argv[1]))' "$(command -v npm)")"
+RUNTIME_PATH="$PATH"
+BROWSER_CACHE="${PLAYWRIGHT_BROWSERS_PATH:-${XDG_CACHE_HOME:-$HOME/.cache}/ms-playwright}"
 
 fail() {
   printf 'npm dependency audit: %s\n' "$*" >&2
@@ -36,7 +37,7 @@ done
 command -v git >/dev/null 2>&1 || fail 'git executable not found'
 
 run_locked_node() {
-  env -i HOME=/nonexistent LANG=C LC_ALL=C NO_COLOR=1 PATH="$RUNTIME_PATH" \
+  env -i HOME=/nonexistent LANG=C LC_ALL=C NO_COLOR=1 PATH="$RUNTIME_PATH" PLAYWRIGHT_BROWSERS_PATH="$BROWSER_CACHE" \
     "$LOCKED_NODE" "$@"
 }
 
@@ -65,7 +66,7 @@ VALIDATOR_SCRIPT_SHA256="$(sha256sum "$REPO_ROOT/scripts/release/validate-depend
 AUDIT_WRAPPER_SHA256="$(sha256sum "$REPO_ROOT/scripts/release/run-npm-audit.sh" | awk '{print $1}')"
 
 set +e
-env -i HOME=/nonexistent LANG=C LC_ALL=C NO_COLOR=1 PATH="$RUNTIME_PATH" \
+env -i HOME=/nonexistent LANG=C LC_ALL=C NO_COLOR=1 PATH="$RUNTIME_PATH" PLAYWRIGHT_BROWSERS_PATH="$BROWSER_CACHE" \
   bash "$REPO_ROOT/scripts/release/verify-security-tools.sh" --scope frontend \
   >"$TMP_ROOT/security-preflight.out" 2>&1
 SECURITY_STATUS=$?
@@ -76,7 +77,7 @@ VALIDATION_STATUS=1
 : >"$TMP_ROOT/validator.err"
 if [ "$SECURITY_STATUS" -eq 0 ]; then
   set +e
-  env -i HOME=/nonexistent LANG=C LC_ALL=C NO_COLOR=1 PATH="$RUNTIME_PATH" \
+  env -i HOME=/nonexistent LANG=C LC_ALL=C NO_COLOR=1 PATH="$RUNTIME_PATH" PLAYWRIGHT_BROWSERS_PATH="$BROWSER_CACHE" \
     DEPENDENCY_AUDIT_FRONTEND_ROOT="$STAGED_FRONTEND_ROOT" \
     DEPENDENCY_AUDIT_EXCEPTIONS="$STAGED_FRONTEND_ROOT/config/npm-audit-exceptions.json" \
     DEPENDENCY_AUDIT_REPORT_DIR="$TMP_ROOT" \
@@ -164,6 +165,17 @@ fi
 
 if [ "$VALIDATION_STATUS" -ne 0 ]; then
   printf 'npm dependency audit: FAIL (validator status %s)\n' "$VALIDATION_STATUS" >&2
+  if [ "$SECURITY_STATUS" -ne 0 ]; then
+    printf 'npm dependency audit: frontend runtime preflight failed (status %s)\n' "$SECURITY_STATUS" >&2
+  else
+    # Print the validator's bounded diagnostic, not raw registry output.
+    run_locked_node - "$TMP_ROOT/validator.err" <<'NODE' >&2
+const { readFileSync } = require('node:fs');
+const diagnostic = readFileSync(process.argv[2], 'utf8').split('\n')
+  .find((line) => line.startsWith('dependency advisory validation: '));
+if (diagnostic) console.error(diagnostic.replace(/[\x00-\x1f\x7f]/g, '').slice(0, 500));
+NODE
+  fi
   exit "$VALIDATION_STATUS"
 fi
 

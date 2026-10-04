@@ -106,7 +106,7 @@ const loginAdmin = async (page: Page, path = '/admin'): Promise<void> => {
   await page.getByRole('button', { name: 'Войти' }).click();
   await expect(page.getByRole('heading', { name: 'Панель управления' })).toBeVisible();
   await expect(page.getByTestId('site-header')).toHaveCSS('position', 'sticky');
-  await expect(page.getByRole('link', { name: 'Общий рейтинг', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('link', { name: 'Общий рейтинг', exact: true })).toHaveAttribute('href', '/leaderboard');
   const accountMenu = await openAccountMenu(page);
   await expect(accountMenu.getByRole('button', { name: 'Выйти', exact: true })).toBeVisible();
   await page.keyboard.press('Escape');
@@ -233,8 +233,10 @@ test('admin dirty history cancellation preserves the forward stack', async ({ pa
   await expect(page.getByText('navigation_alpha')).toBeVisible();
 });
 
-test('admin player drafts are guarded when switching players, canceling, and logging out', async ({ page }) => {
+test('admin player drafts are guarded when closing, canceling, and navigating back', async ({ page }) => {
   await loginAdmin(page, '/admin?section=players&view=overview');
+  await page.getByRole('button', { name: 'Задачи' }).click();
+  await page.getByRole('button', { name: 'Игроки' }).click();
   await expect(page.getByText('navigation_alpha')).toBeVisible();
   await page.getByRole('button', { name: 'Редактировать игрока navigation_alpha' }).click();
   const username = page.locator('#admin-player-username');
@@ -244,13 +246,15 @@ test('admin player drafts are guarded when switching players, canceling, and log
     expect(dialog.type()).toBe('confirm');
     await dialog.dismiss();
   });
-  await page.getByRole('button', { name: 'Редактировать игрока navigation_beta' }).click();
+  await page.getByRole('button', { name: 'Закрыть редактирование игрока' }).click();
   await expect(username).toHaveValue('navigation_draft');
 
   page.once('dialog', async (dialog) => {
     expect(dialog.type()).toBe('confirm');
     await dialog.accept();
   });
+  await page.getByRole('button', { name: 'Закрыть редактирование игрока' }).click();
+  await expect(username).toBeHidden();
   await page.getByRole('button', { name: 'Редактировать игрока navigation_beta' }).click();
   await expect(username).toHaveValue('navigation_beta');
 
@@ -267,7 +271,7 @@ test('admin player drafts are guarded when switching players, canceling, and log
     await dialog.accept();
   });
   await page.getByRole('button', { name: 'Отменить' }).click();
-  await expect(username).toHaveValue('');
+  await expect(username).toBeHidden();
 
   await page.getByRole('button', { name: 'Редактировать игрока navigation_alpha' }).click();
   await username.fill('navigation_logout_draft');
@@ -275,8 +279,8 @@ test('admin player drafts are guarded when switching players, canceling, and log
     expect(dialog.type()).toBe('confirm');
     await dialog.dismiss();
   });
-  const accountMenu = await openAccountMenu(page);
-  await accountMenu.getByRole('button', { name: 'Выйти' }).click();
+  await page.goBack();
+  await expect(page).toHaveURL(/section=players/);
   await expect(page.getByRole('heading', { name: 'Панель управления' })).toBeVisible();
   await expect(username).toHaveValue('navigation_logout_draft');
 });

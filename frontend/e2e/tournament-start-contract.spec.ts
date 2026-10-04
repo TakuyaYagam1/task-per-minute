@@ -19,6 +19,7 @@ type HarnessOptions = Readonly<{
   snapshotTournament?: Tournament;
   snapshotRevision?: number;
   waitForSnapshot?: boolean;
+  waitForConflictRecovery?: boolean;
 }>;
 
 type ActionRecord = Readonly<{
@@ -108,7 +109,7 @@ const setupHarness = async (
   const snapshotRequests: Request[] = [];
   let releaseSnapshot: () => void = () => undefined;
   let settleSnapshot: () => void = () => undefined;
-  const snapshotGate = options.waitForSnapshot
+  const snapshotGate = options.waitForSnapshot || options.waitForConflictRecovery
     ? new Promise<void>((resolve) => {
         releaseSnapshot = resolve;
       })
@@ -156,7 +157,7 @@ const setupHarness = async (
     const snapshotMarker = "/api/v1/admin/tournaments/";
     if (path.endsWith("/snapshot") && path.startsWith(snapshotMarker) && request.method() === "GET") {
       snapshotRequests.push(request);
-      if (snapshotGate) {
+      if (snapshotGate && (options.waitForSnapshot || actionRequests.length > 0)) {
         await snapshotGate;
       }
       const tournamentIDFromPath = path.slice(snapshotMarker.length, -"/snapshot".length);
@@ -216,7 +217,7 @@ const loginAndOpenTournament = async (page: Page): Promise<void> => {
   await page.getByPlaceholder("Введите пароль...").fill("correct-password");
   await page.getByRole("button", { name: "Войти" }).click();
   await page.getByRole("button", { name: "Соревнования" }).click();
-  await page.getByRole("row").filter({ hasText: "Стартовый турнир" }).getByRole("button", { name: "Открыть" }).click();
+  await page.getByRole("button", { name: "Открыть соревнование Стартовый турнир", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Стартовый турнир" })).toBeVisible();
   await expect(page.getByTestId("tournament-start-controls")).toBeVisible();
 };
@@ -335,7 +336,7 @@ test("не применяет поздний снимок после ухода 
   await page.getByTestId("tournament-start-controls").getByRole("button", { name: "Открыть регистрацию" }).click();
   await expect.poll(() => harness.snapshotRequests.length).toBe(1);
   await page.getByRole("button", { name: "К списку соревнований" }).click();
-  await expect(page.getByRole("heading", { name: "Соревнования" }).first()).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Список соревнований" })).toBeVisible();
   harness.releaseSnapshot();
   await harness.snapshotSettled;
   expect(harness.actionRequests).toHaveLength(0);
@@ -349,6 +350,7 @@ test("409 показывает понятный конфликт и требуе
     listItems: [initial],
     snapshotTournament: initial,
     snapshotRevision: 41,
+    waitForConflictRecovery: true,
   });
   await loginAndOpenTournament(page);
 
@@ -358,13 +360,15 @@ test("409 показывает понятный конфликт и требуе
   const alert = panel.getByRole("alert");
   await expect(alert).toContainText("Действие недоступно");
   await expect(alert).toContainText(
-    "Не удалось выполнить переход. Обновите данные и проверьте готовность состава.",
+    "Не удалось выполнить переход: состояние соревнования изменилось.",
   );
   await expect(alert).not.toContainText("projection revision conflict");
   await expect(actionButton).toBeDisabled();
 
-  await alert.getByRole("button", { name: "Повторить загрузку" }).click();
+  await expect.poll(() => harness.snapshotRequests.length).toBe(2);
+  harness.releaseSnapshot();
   await expect(actionButton).toBeEnabled();
+  await expect(alert).toBeHidden();
   expect(harness.actionRequests).toHaveLength(1);
 });
 
@@ -376,6 +380,7 @@ test("generic 409 показывает русское сообщение о ко
     listItems: [initial],
     snapshotTournament: initial,
     snapshotRevision: 42,
+    waitForConflictRecovery: true,
   });
   await loginAndOpenTournament(page);
 
@@ -385,11 +390,14 @@ test("generic 409 показывает русское сообщение о ко
   const alert = panel.getByRole("alert");
   await expect(alert).toContainText("Действие недоступно");
   await expect(alert).toContainText(
-    "Не удалось выполнить переход. Обновите данные и проверьте готовность состава.",
+    "Не удалось выполнить переход: состояние соревнования изменилось.",
   );
   await expect(alert).not.toContainText("projection revision conflict");
   await expect(actionButton).toBeDisabled();
   expect(harness.actionRequests).toHaveLength(1);
+  harness.releaseSnapshot();
+  await expect(actionButton).toBeEnabled();
+  await expect(alert).toBeHidden();
 });
 
 test("422 показывает серверную причину и оставляет переход доступным для повтора", async ({ page }) => {

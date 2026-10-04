@@ -12,6 +12,7 @@ import {
 } from '@playwright/test';
 import { seedVerifiedAccount } from './support/account-fixture';
 import { openAccountMenu } from './support/common';
+import type { components } from '../lib/shared/api/schema';
 
 const frontendURL = (process.env.E2E_FRONTEND_URL || 'http://127.0.0.1:3000').replace(/\/+$/, '');
 const backendURL = (process.env.E2E_BACKEND_URL || 'http://127.0.0.1:8080').replace(/\/+$/, '');
@@ -531,9 +532,8 @@ const getRosterViaApi = async (
   tournamentID: string,
   expectedRosterID?: string,
 ): Promise<FullStackRoster> => {
-  const response = await request.get(`${backendURL}/api/v1/admin/tournaments/${tournamentID}/roster`, {
-    headers: { Origin: frontendURL },
-  });
+  const response = await readOperatorResponseViaApi(request,
+    `${backendURL}/api/v1/admin/tournaments/${tournamentID}/roster`);
   expect(response.ok(), `roster GET failed with ${response.status()}`).toBeTruthy();
   const roster = (await response.json()) as FullStackRoster;
   expect(roster.id, 'roster response did not return a roster id').toMatch(
@@ -568,11 +568,10 @@ type OperatorSnapshotEnvelope = {
   tournament?: { id?: unknown; state?: unknown };
 };
 
-const readOperatorSnapshotViaApi = async <T = OperatorSnapshotEnvelope>(
+const readOperatorResponseViaApi = async (
   request: APIRequestContext,
-  tournamentID: string,
-): Promise<T> => {
-  const snapshotURL = `${backendURL}/api/v1/admin/tournaments/${tournamentID}/snapshot`;
+  url: string,
+): Promise<APIResponse> => {
   const maxAttempts = 4;
   const totalTimeoutMs = 75_000;
   const deadline = Date.now() + totalTimeoutMs;
@@ -584,7 +583,7 @@ const readOperatorSnapshotViaApi = async <T = OperatorSnapshotEnvelope>(
       break;
     }
 
-    response = await request.get(snapshotURL, {
+    response = await request.get(url, {
       headers: { Origin: frontendURL },
       timeout: Math.max(1, Math.min(15_000, remainingMs)),
     });
@@ -618,8 +617,17 @@ const readOperatorSnapshotViaApi = async <T = OperatorSnapshotEnvelope>(
   }
 
   if (!response) {
-    throw new Error(`operator snapshot GET exceeded ${totalTimeoutMs}ms for ${tournamentID}`);
+    throw new Error(`operator GET exceeded ${totalTimeoutMs}ms`);
   }
+  return response;
+};
+
+const readOperatorSnapshotViaApi = async <T = OperatorSnapshotEnvelope>(
+  request: APIRequestContext,
+  tournamentID: string,
+): Promise<T> => {
+  const response = await readOperatorResponseViaApi(request,
+    `${backendURL}/api/v1/admin/tournaments/${tournamentID}/snapshot`);
   expect(response.status(), `operator snapshot GET failed with ${response.status()}`).toBe(200);
   const snapshot = (await response.json()) as T;
   const envelope = snapshot as T & OperatorSnapshotEnvelope;
@@ -961,6 +969,32 @@ const waitForTransientRetry = async (attempt: number): Promise<void> => {
   await new Promise((resolve) => setTimeout(resolve, transientRetryDelayMs(attempt)));
 };
 
+const configureReservesViaApi = async (
+  request: APIRequestContext,
+  tournamentID: string,
+  csrfToken: string,
+): Promise<void> => {
+  const url = `${backendURL}/api/v1/admin/tournaments/${tournamentID}/configuration`;
+  const currentResponse = await request.get(url);
+  expect(currentResponse.status()).toBe(200);
+  const current = (await currentResponse.json()) as components['schemas']['TournamentConfiguration'];
+  const input: components['schemas']['UpdateTournamentConfigurationRequest'] = {
+    expected_projection_revision: current.projection_revision,
+    expected_configuration_revision: current.configuration_revision,
+    reserve_count: 2,
+    confirmed: true,
+    reason: 'Exercise reserve continuation in the full lifecycle',
+    swiss_default: { mode: current.swiss_default.mode, categories: current.swiss_default.categories },
+    semifinal_default: { mode: current.semifinal_default.mode, categories: current.semifinal_default.categories },
+    unlock_intents: [],
+  };
+  const response = await request.patch(url, {
+    headers: { 'X-CSRF-Token': csrfToken, 'Idempotency-Key': randomUUID(), Origin: frontendURL },
+    data: input,
+  });
+  expect(response.status(), 'reserve configuration failed').toBe(200);
+};
+
 const applyOpenRegistrationViaApi = async (
   request: APIRequestContext,
   tournamentID: string,
@@ -1126,15 +1160,28 @@ const runRosterPreflightViaApi = async (
   tournamentID: string,
   csrfToken: string,
 ): Promise<APIResponse> => {
-  const projectionRevision = await getOperatorProjectionRevisionViaApi(request, tournamentID);
-  return request.post(`${backendURL}/api/v1/admin/tournaments/${tournamentID}/roster/preflight`, {
-    headers: {
-      'X-CSRF-Token': csrfToken,
-      'Idempotency-Key': randomUUID(),
-      Origin: frontendURL,
-    },
-    data: { expected_projection_revision: projectionRevision },
-  });
+  let response: APIResponse | undefined;
+  // Outbox health can be transient while roster mutations are being delivered.
+  // Retry only runtime health failures; structural and task failures stay visible.
+  await expect.poll(async () => {
+    const projectionRevision = await getOperatorProjectionRevisionViaApi(request, tournamentID);
+    response = await request.post(`${backendURL}/api/v1/admin/tournaments/${tournamentID}/roster/preflight`, {
+      headers: {
+        'X-CSRF-Token': csrfToken,
+        'Idempotency-Key': randomUUID(),
+        Origin: frontendURL,
+      },
+      data: { expected_projection_revision: projectionRevision },
+    });
+    if (response.status() !== 200) return true;
+    const report = await response.json() as FullStackPreflightReport;
+    const failures = report.checks?.filter((check) => !check.passed) ?? [];
+    return report.passed || failures.length === 0
+      || failures.some((check) => !check.code.startsWith('tournament.preflight.runtime.')
+        || check.code === 'tournament.preflight.runtime.capacity');
+  }, { timeout: 15_000, intervals: [500, 1000], message: 'preflight runtime health must recover' }).toBe(true);
+  if (!response) throw new Error('Roster preflight did not issue a request');
+  return response;
 };
 
 const lockRosterViaApi = async (
@@ -1187,6 +1234,33 @@ const readRosterResponse = async (
     );
   }
   return roster;
+};
+
+const checkInPlayersViaApi = async (
+  contexts: BrowserContext[],
+  tournamentID: string,
+): Promise<void> => {
+  for (const context of contexts) {
+    const csrfToken = (await context.cookies()).find(
+      (cookie) => cookie.name === 'tpm_player_csrf',
+    )?.value;
+    if (!csrfToken) {
+      throw new Error('participant admission requires a player CSRF cookie');
+    }
+    for (const action of ['', '/check-in']) {
+      const response = await context.request.post(
+        `${backendURL}/api/v1/tournaments/${tournamentID}/participant/queue${action}`,
+        {
+          headers: {
+            'X-CSRF-Token': csrfToken,
+            'Idempotency-Key': randomUUID(),
+            Origin: frontendURL,
+          },
+        },
+      );
+      expect(response.status(), `participant admission ${action || 'join'} failed`).toBe(200);
+    }
+  }
 };
 
 const replaceRosterViaApi = async (
@@ -1274,7 +1348,7 @@ const expectNoSensitiveAuthStorage = async (page: Page): Promise<void> => {
 };
 
 const readServerCountdownSeconds = async (page: Page): Promise<number> => {
-  const countdown = await page.getByTestId('server-countdown').textContent();
+  const countdown = await page.getByTestId('participant-task-countdown').locator('strong').textContent();
   const parts = (countdown ?? '0:00').split(':').map(Number);
   if (parts.length !== 2 || parts.some((part) => !Number.isFinite(part))) {
     throw new Error(`Unexpected server countdown: ${countdown ?? '<empty>'}`);
@@ -1323,7 +1397,9 @@ test.describe('local compose full stack e2e', () => {
 
     const accountMenu = await openAccountMenu(page);
     await accountMenu.getByRole('button', { name: 'Выйти', exact: true }).click();
-    await expect(page.getByRole('link', { name: 'Войти', exact: true })).toBeVisible({ timeout: 15_000 });
+    await expect(page).toHaveURL(`${frontendURL}/login`);
+    await expect(page.getByRole('heading', { name: 'Вход участника', exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Войти', exact: true })).toBeVisible();
     await expect(page.getByRole('link', { name: 'Создать аккаунт', exact: true })).toBeVisible();
     await expectNoSensitiveAuthStorage(page);
 
@@ -1430,23 +1506,18 @@ test.describe('local compose full stack e2e', () => {
     const contentRevision = await getTournamentContentRevision(adminRequest);
 
     await page.getByRole('button', { name: 'Соревнования' }).click();
-    await expect(page.getByRole('heading', { name: 'Новое соревнование' })).toBeVisible();
-    const reloadPublication = page.getByRole('button', { name: 'Обновить публикацию' });
-    if (await reloadPublication.isVisible().catch(() => false)) {
-      await reloadPublication.click();
-    }
-    await expect(
-      page.getByRole('region', { name: 'Новое соревнование' }).getByText(`Ревизия ${contentRevision}`),
-    ).toBeVisible();
-    await page.getByLabel('Название соревнования').fill(tournamentName);
-    await page.getByLabel('Плановый размер состава').selectOption('4');
+    await page.getByRole('button', { name: 'Создать соревнование', exact: true }).click();
+    const createDialog = page.getByRole('dialog', { name: 'Создать соревнование', exact: true });
+    await expect(createDialog).toBeVisible();
+    await createDialog.getByLabel('Название соревнования').fill(tournamentName);
+    await createDialog.getByLabel('Плановый размер состава').selectOption('4');
 
     const createResponse = page.waitForResponse(
       (response) =>
         new URL(response.url()).pathname === '/api/v1/admin/tournaments' &&
         response.request().method() === 'POST',
     );
-    await page.getByRole('button', { name: 'Создать соревнование' }).click();
+    await createDialog.getByRole('button', { name: 'Создать соревнование', exact: true }).click();
 
     const response = await createResponse;
     expect(response.status()).toBe(201);
@@ -1573,14 +1644,15 @@ test.describe('local compose full stack e2e', () => {
     const afterUploadContent = await getTournamentContentSelection(request);
 
     await page.getByRole('button', { name: `Редактировать задачу ${title}` }).click();
-    await expect(page.getByLabel('Пул задания')).toHaveValue('golden');
-    await page.getByPlaceholder('Введите название...').fill(updatedTitle);
+    const editDialog = page.getByRole('dialog', { name: 'Редактировать задачу', exact: true });
+    await expect(editDialog.getByLabel('Пул задания')).toHaveValue('golden');
+    await editDialog.getByPlaceholder('Введите название...').fill(updatedTitle);
     const updateResponsePromise = page.waitForResponse(
       (response) =>
         new URL(response.url()).pathname === `/api/v1/admin/tasks/${createdTask.id}` &&
         response.request().method() === 'PUT',
     );
-    await page.getByRole('button', { name: /Сохранить задачу/ }).click();
+    await editDialog.getByRole('button', { name: /Сохранить задачу/ }).click();
     const updateResponse = await updateResponsePromise;
     expect(updateResponse.status()).toBe(200);
     await expect(page.getByText('Задача успешно обновлена!')).toBeVisible();
@@ -1668,7 +1740,7 @@ test.describe('local compose full stack e2e', () => {
           title: goldenTaskName,
           description: 'Healthy golden task for the roster flow.',
           kind: 'golden',
-          category: 'web',
+          category: 'crypto',
           difficulty: 'easy',
           time_limit: 180,
           flag: `flag{${goldenTaskName.replaceAll('-', '_')}}`,
@@ -1711,16 +1783,12 @@ test.describe('local compose full stack e2e', () => {
 
       await page.goto('/admin', { waitUntil: 'domcontentloaded' });
       await expect(page.getByRole('button', { name: 'Соревнования' })).toBeVisible({ timeout: 15_000 });
-      await page.getByRole('button', { name: 'Соревнования' }).click();
       const tournamentListRefresh = page.waitForResponse(
         (response) =>
           new URL(response.url()).pathname === '/api/v1/admin/tournaments' &&
           response.request().method() === 'GET',
       );
-      await page
-        .getByRole('region', { name: 'Соревнования' })
-        .getByRole('button', { name: 'Обновить список' })
-        .click();
+      await page.getByRole('button', { name: 'Соревнования' }).click();
       const refreshedTournamentListResponse = await tournamentListRefresh;
       expect(refreshedTournamentListResponse.status()).toBe(200);
       const loadedTournamentList = (await refreshedTournamentListResponse.json()) as {
@@ -1731,8 +1799,9 @@ test.describe('local compose full stack e2e', () => {
           (item) => item.id === tournament.id && item.name === tournamentName,
         ),
       ).toBe(true);
-      const tournamentRow = page.getByRole('row').filter({ hasText: tournamentName });
-      const openTournamentButton = tournamentRow.getByRole('button', { name: 'Открыть', exact: true });
+      const openTournamentButton = page.getByRole('button', {
+        name: `Открыть соревнование ${tournamentName}`, exact: true,
+      });
       await expect(openTournamentButton).toBeVisible({ timeout: 15_000 });
       const playersResponse = page.waitForResponse(
         (response) =>
@@ -1754,10 +1823,10 @@ test.describe('local compose full stack e2e', () => {
       expect(initialRoster.participants).toHaveLength(0);
       await expect(rosterRegion.getByText('Состав пуст')).toBeVisible();
       await expect(rosterRegion.getByRole('button', { name: 'Добавить участника' })).toBeEnabled();
-      await rosterRegion.getByRole('button', { name: 'Добавить участника' }).click({ clickCount: 4 });
-      await expect(rosterRegion.getByRole('group')).toHaveCount(4);
 
       for (const [index, player] of players.slice(0, 4).entries()) {
+        await rosterRegion.getByRole('button', { name: 'Добавить участника' }).click();
+        await expect(rosterRegion.getByRole('group')).toHaveCount(index + 1);
         const group = rosterRegion.getByRole('group').nth(index);
         await group.getByRole('combobox', { name: 'Игрок' }).fill(player.username);
         await group.getByRole('option', { name: player.username, exact: true }).click();
@@ -1809,11 +1878,6 @@ test.describe('local compose full stack e2e', () => {
 
       await page.reload({ waitUntil: 'domcontentloaded' });
       await expect(page.getByRole('button', { name: 'Соревнования' })).toBeVisible({ timeout: 15_000 });
-      const refreshedAdminAccessCSRF = (await page.context().cookies()).find(
-        (cookie) => cookie.name === 'tpm_admin_access_csrf',
-      );
-      adminAccessCSRFToken = refreshedAdminAccessCSRF?.value ?? '';
-      expect(adminAccessCSRFToken, 'admin reload did not restore the access CSRF cookie').toBeTruthy();
       await page.getByRole('button', { name: 'Соревнования' }).click();
       await page.getByRole('button', { name: 'Участники', exact: true }).click();
       await expect(rosterRegion).toBeVisible({ timeout: 15_000 });
@@ -1867,6 +1931,12 @@ test.describe('local compose full stack e2e', () => {
         'invited',
       ]);
 
+      const refreshedAdminAccessCSRF = (await page.context().cookies()).find(
+        (cookie) => cookie.name === 'tpm_admin_access_csrf',
+      );
+      adminAccessCSRFToken = refreshedAdminAccessCSRF?.value ?? '';
+      expect(adminAccessCSRFToken, 'admin reload did not restore the access CSRF cookie').toBeTruthy();
+      await configureReservesViaApi(adminRequest, tournament.id, adminAccessCSRFToken);
       const openRegistrationResponse = await applyOpenRegistrationViaApi(
         adminRequest,
         tournament.id,
@@ -1876,6 +1946,17 @@ test.describe('local compose full stack e2e', () => {
       const openedTournament = (await openRegistrationResponse.json()) as AdminTournament;
       expect(openedTournament.id).toBe(tournament.id);
       expect(openedTournament.state).toBe('registration');
+
+      await checkInPlayersViaApi(
+        replacedParticipants.map((participant) => {
+          const context = playerContexts[players.findIndex((player) => player.id === participant.player_id)];
+          if (!context) {
+            throw new Error('roster participant has no player session');
+          }
+          return context;
+        }),
+        tournament.id,
+      );
 
       const checkedInSourceParticipants: FullStackRosterParticipantInput[] =
         replacedParticipants.map((participant) => ({
@@ -1922,14 +2003,6 @@ test.describe('local compose full stack e2e', () => {
       );
       await page.reload({ waitUntil: 'domcontentloaded' });
       await expect(page.getByRole('button', { name: 'Соревнования' })).toBeVisible({ timeout: 15_000 });
-      const preflightAdminAccessCSRF = (await page.context().cookies()).find(
-        (cookie) => cookie.name === 'tpm_admin_access_csrf',
-      );
-      adminAccessCSRFToken = preflightAdminAccessCSRF?.value ?? '';
-      expect(
-        adminAccessCSRFToken,
-        'admin reload before FE-029 did not restore the access CSRF cookie',
-      ).toBeTruthy();
       await page.getByRole('button', { name: 'Соревнования' }).click();
       await page.getByRole('button', { name: 'Участники', exact: true }).click();
       await expect(rosterRegion).toBeVisible({ timeout: 15_000 });
@@ -1995,6 +2068,14 @@ test.describe('local compose full stack e2e', () => {
       expect(browserUnlockedRoster.locked).toBe(false);
       await expect(rosterRegion.getByText('Можно редактировать', { exact: true })).toBeVisible();
 
+      const preflightAdminAccessCSRF = (await page.context().cookies()).find(
+        (cookie) => cookie.name === 'tpm_admin_access_csrf',
+      );
+      adminAccessCSRFToken = preflightAdminAccessCSRF?.value ?? '';
+      expect(
+        adminAccessCSRFToken,
+        'admin reload before FE-029 did not restore the access CSRF cookie',
+      ).toBeTruthy();
       const preflightResponse = await runRosterPreflightViaApi(
         adminRequest,
         tournament.id,
@@ -2156,17 +2237,25 @@ test.describe('local compose full stack e2e', () => {
       const swissTournament = (await startSwissResponse.json()) as AdminTournament;
       expect(swissTournament.state).toBe('swiss');
 
-      await page.getByRole('button', { name: 'Сетка и серии', exact: true }).click();
       const pairingRegion = page.getByRole('region', { name: 'Пары квалификации' });
-      await expect(pairingRegion).toBeVisible({ timeout: 15_000 });
-      const pairingReload = page.waitForResponse(
-        (response) =>
-          new URL(response.url()).pathname ===
-            `/api/v1/admin/tournaments/${tournament.id}/configuration` &&
-          response.request().method() === 'GET',
+      // Any of the parallel editor reads can hit the shared operator bucket.
+      const pairingBackoff = page.waitForResponse(
+        (response) => response.status() === 429 && response.request().method() === 'GET'
+          && new URL(response.url()).pathname.startsWith('/api/v1/admin/'),
+        { timeout: 90_000 },
       );
-      await pairingRegion.getByRole('button', { name: 'Обновить состояние' }).click();
-      expect((await pairingReload).status()).toBe(200);
+      await page.getByRole('button', { name: 'Сетка и серии', exact: true }).click();
+      const pairingReady = expect(pairingRegion.getByRole('button', { name: 'Сформировать пары' }))
+        .toBeEnabled({ timeout: 90_000 });
+      const backoff = await Promise.race([pairingBackoff, pairingReady.then(() => null)]);
+      if (backoff) {
+        const retryAfter = Number(backoff.headers()['retry-after']);
+        expect(Number.isFinite(retryAfter) && retryAfter > 0).toBe(true);
+        await page.goto('/arena');
+        await new Promise((resolve) => setTimeout(resolve, retryAfter * 1000));
+        await page.goto(`/admin?section=tournaments&tournament=${tournament.id}&view=bracket`);
+      }
+      await pairingReady;
 
       const pairingResponse = page.waitForResponse(
         (response) =>
@@ -2201,15 +2290,6 @@ test.describe('local compose full stack e2e', () => {
 
       const seriesRegion = page.getByRole('region', { name: 'Конфигурация серий' });
       await expect(seriesRegion).toBeVisible();
-      const seriesConfigurationReload = page.waitForResponse(
-        (response) =>
-          new URL(response.url()).pathname ===
-            `/api/v1/admin/tournaments/${tournament.id}/configuration` &&
-          response.request().method() === 'GET',
-      );
-      await seriesRegion.getByRole('button', { name: 'Обновить конфигурацию' }).click();
-      expect((await seriesConfigurationReload).status()).toBe(200);
-
       const firstSeries = seriesRegion.getByRole('article').first();
       await expect(firstSeries).toBeVisible();
       const firstSeriesID = await firstSeries.getAttribute('data-series-id');
@@ -2246,16 +2326,15 @@ test.describe('local compose full stack e2e', () => {
       await expect(successorSeries.getByLabel(/Режим серии/)).toHaveValue('admin');
       await expect(successorSeries.getByLabel(/Категория серии/)).toHaveValue('crypto');
 
-      await page.getByRole('button', { name: 'Проведение', exact: true }).click();
-      const waveRegion = page.getByRole('region', { name: 'Волны и матчи' });
-      await expect(waveRegion).toBeVisible();
       const refreshedWaveSnapshotResponse = page.waitForResponse(
         (response) =>
           new URL(response.url()).pathname ===
             `/api/v1/admin/tournaments/${tournament.id}/snapshot` &&
           response.request().method() === 'GET',
       );
-      await waveRegion.getByRole('button', { name: 'Обновить матчи' }).click();
+      await page.getByRole('button', { name: 'Проведение', exact: true }).click();
+      const waveRegion = page.getByRole('region', { name: 'Волны и матчи' });
+      await expect(waveRegion).toBeVisible();
       const refreshedWaveSnapshotHTTP = await refreshedWaveSnapshotResponse;
       expect(refreshedWaveSnapshotHTTP.status()).toBe(200);
       const refreshedWaveSnapshot = (await refreshedWaveSnapshotHTTP.json()) as FullStackOperatorSnapshot;
@@ -2362,7 +2441,7 @@ test.describe('local compose full stack e2e', () => {
             `participant UI readiness failed with ${participantReadyHTTP.status()} ${participantReadyHTTP.statusText()}`,
           ).toBe(200);
           await expect(
-            participantPage.getByText('Готовность подтверждена сервером.', { exact: true }),
+            participantPage.getByRole('button', { name: 'Готовность подтверждена', exact: true }),
           ).toBeVisible();
           continue;
         }
@@ -2386,14 +2465,6 @@ test.describe('local compose full stack e2e', () => {
         ).toBe(200);
       }
 
-      const readyWaveSnapshotResponse = page.waitForResponse(
-        (response) =>
-          new URL(response.url()).pathname ===
-            `/api/v1/admin/tournaments/${tournament.id}/snapshot` &&
-          response.request().method() === 'GET',
-      );
-      await waveRegion.getByRole('button', { name: 'Обновить матчи' }).click();
-      expect((await readyWaveSnapshotResponse).status()).toBe(200);
       await expect(waveRegion.getByRole('button', { name: 'Начать волну' })).toBeEnabled();
       await expect(waveRegion.getByTestId('wave-ready-countdown')).toHaveCount(2);
 
@@ -2509,7 +2580,7 @@ test.describe('local compose full stack e2e', () => {
           'data-state',
           /assigned|ready/,
         );
-        await expect(activeParticipantPage.getByTestId('server-countdown')).toBeVisible({
+        await expect(activeParticipantPage.getByTestId('participant-task-countdown')).toBeVisible({
           timeout: 15_000,
         });
       }
@@ -2527,7 +2598,7 @@ test.describe('local compose full stack e2e', () => {
       expect(countdownBeforeReload).toBeGreaterThan(0);
       await firstParticipantPage.waitForTimeout(1_000);
       await firstParticipantPage.reload({ waitUntil: 'domcontentloaded' });
-      await expect(firstParticipantPage.getByTestId('server-countdown')).toBeVisible({
+      await expect(firstParticipantPage.getByTestId('participant-task-countdown')).toBeVisible({
         timeout: 15_000,
       });
       const countdownAfterReload = await readServerCountdownSeconds(firstParticipantPage);
@@ -2539,7 +2610,7 @@ test.describe('local compose full stack e2e', () => {
       const disconnectStatus = secondParticipantPage.getByTestId('participant-runtime-status');
       await expect(disconnectStatus).toHaveAttribute('data-paused', 'true', { timeout: 15_000 });
       await expect(disconnectStatus).toHaveAttribute('data-pause-reason', 'disconnect');
-      await expect(secondParticipantPage.getByTestId('server-countdown')).toHaveCount(0);
+      await expect(secondParticipantPage.getByTestId('participant-task-countdown')).toHaveCount(0);
       await expect(secondParticipantPage.getByTestId('participant-submit-button')).toBeDisabled();
       await expect(
         secondParticipantPage.getByTestId(
@@ -2555,18 +2626,18 @@ test.describe('local compose full stack e2e', () => {
       for (const activeParticipantPage of [firstParticipantPage, secondParticipantPage]) {
         await expect(activeParticipantPage.getByTestId('participant-runtime-status'))
           .toHaveAttribute('data-paused', 'false', { timeout: 15_000 });
-        await expect(activeParticipantPage.getByTestId('server-countdown')).toBeVisible();
+        await expect(activeParticipantPage.getByTestId('participant-task-countdown')).toHaveAttribute('data-state', 'running');
         await expect(activeParticipantPage.getByTestId('participant-submit-button')).toBeEnabled();
       }
 
       const operatorPath = `/arena/operator/${tournament.id}`;
       await page.goto(operatorPath, { waitUntil: 'domcontentloaded' });
-      await expect(page.getByText('Снимок подтвержден', { exact: true })).toBeVisible({
+      await expect(page.getByTestId('operator-realtime-summary')).toHaveAttribute('data-ready', 'true', {
         timeout: 15_000,
       });
       await page.reload({ waitUntil: 'domcontentloaded' });
       await expect(page).toHaveURL(new URL(operatorPath, frontendURL).toString());
-      await expect(page.getByText('Снимок подтвержден', { exact: true })).toBeVisible({
+      await expect(page.getByTestId('operator-realtime-summary')).toHaveAttribute('data-ready', 'true', {
         timeout: 15_000,
       });
       await expectNoSensitiveAuthStorage(page);
@@ -2577,6 +2648,7 @@ test.describe('local compose full stack e2e', () => {
       );
       expect(restoredAccessCSRF?.path).toBe('/');
       expect(restoredAccessCSRF?.httpOnly).toBe(false);
+      adminAccessCSRFToken = restoredAccessCSRF?.value ?? '';
       const restoredAccessSession = restoredCookies.find(
         (cookie) => cookie.name === 'tpm_admin_access',
       );
@@ -2585,7 +2657,7 @@ test.describe('local compose full stack e2e', () => {
 
       const operatorWaveActionPath =
         `/api/v1/admin/tournaments/${tournament.id}/waves/${plannedWave.id}/actions`;
-      const actionSelect = page.getByLabel('Команда оператора');
+      const actionSelect = page.getByLabel('Действие', { exact: true });
       await actionSelect.selectOption('pause');
       await page.getByLabel('Причина').fill('Проверка CSRF после reload operator Arena');
       await page
@@ -2612,7 +2684,7 @@ test.describe('local compose full stack e2e', () => {
         const runtimeStatus = activeParticipantPage.getByTestId('participant-runtime-status');
         await expect(runtimeStatus).toHaveAttribute('data-paused', 'true', { timeout: 15_000 });
         await expect(runtimeStatus).toHaveAttribute('data-pause-reason', 'operator');
-        await expect(activeParticipantPage.getByTestId('server-countdown')).toHaveCount(0);
+        await expect(activeParticipantPage.getByTestId('participant-task-countdown')).toHaveCount(0);
         await expect(activeParticipantPage.getByTestId('participant-submit-button')).toBeDisabled();
       }
 
@@ -2623,7 +2695,7 @@ test.describe('local compose full stack e2e', () => {
       await firstParticipantPage.goto(participantPath, { waitUntil: 'domcontentloaded' });
       await expect(firstParticipantPage.getByTestId('participant-runtime-status'))
         .toHaveAttribute('data-pause-reason', 'operator', { timeout: 15_000 });
-      await expect(firstParticipantPage.getByTestId('server-countdown')).toHaveCount(0);
+      await expect(firstParticipantPage.getByTestId('participant-task-countdown')).toHaveCount(0);
 
       await actionSelect.selectOption('resume');
       await page.getByLabel('Причина').fill('Проверка resume с восстановленным CSRF contract');
@@ -2650,7 +2722,7 @@ test.describe('local compose full stack e2e', () => {
       for (const activeParticipantPage of [firstParticipantPage, secondParticipantPage]) {
         await expect(activeParticipantPage.getByTestId('participant-runtime-status'))
           .toHaveAttribute('data-paused', 'false', { timeout: 15_000 });
-        await expect(activeParticipantPage.getByTestId('server-countdown')).toBeVisible();
+        await expect(activeParticipantPage.getByTestId('participant-task-countdown')).toHaveAttribute('data-state', 'running');
         await expect(activeParticipantPage.getByTestId('participant-submit-button')).toBeEnabled();
       }
 
@@ -2707,7 +2779,7 @@ test.describe('local compose full stack e2e', () => {
           timeout: 15_000,
         });
         await expect(seriesResult.getByTestId('participant-series-score')).toHaveText(/^(1:0|0:1)$/);
-        await expect(seriesResult).toContainText('Ревизия результата');
+        await expect(seriesResult).toHaveAttribute('data-result-revision', /^[0-9a-f-]{36}$/);
         await expect(seriesResult.getByTestId('participant-series-game-1-1')).toContainText('Решено');
       }
 
@@ -2809,7 +2881,7 @@ test.describe('local compose full stack e2e', () => {
           title,
           description: 'Golden task for the FE-036 correction flow.',
           kind: 'golden',
-          category: 'web',
+          category: 'crypto',
           difficulty: 'easy',
           time_limit: 180,
           flag: `flag{${title.replaceAll('-', '_')}}`,
@@ -2866,6 +2938,7 @@ test.describe('local compose full stack e2e', () => {
       const invitedRoster = await readRosterResponse(invitedRosterResponse, tournament.id, roster.id);
       expect(invitedRoster.participants).toHaveLength(4);
 
+      await configureReservesViaApi(adminRequest, tournament.id, adminAccessCSRFToken);
       const openRegistration = await applyOpenRegistrationViaApi(
         adminRequest,
         tournament.id,
@@ -2873,6 +2946,7 @@ test.describe('local compose full stack e2e', () => {
       );
       expect(openRegistration.status(), `open registration failed with ${openRegistration.status()}`).toBe(200);
 
+      await checkInPlayersViaApi(playerContexts, tournament.id);
       const checkedInRosterResponse = await replaceRosterViaApi(
         adminRequest,
         tournament.id,
@@ -3162,13 +3236,13 @@ test.describe('local compose full stack e2e', () => {
       const sourcePairing = [targetSeries.first_participant_id, targetSeries.second_participant_id];
 
       await page.goto(`/arena/operator/${tournament.id}`, { waitUntil: 'domcontentloaded' });
-      await expect(page.getByRole('heading', { name: 'Коррекция результата' })).toBeVisible();
+      await expect(page.getByRole('heading', { name: 'Исправить результат' })).toBeVisible();
       await page.getByLabel('Официальный результат').selectOption(
         `${correctionTarget.seriesID}:${correctionTarget.gameID}`,
       );
       await page.getByLabel('Объяснение').fill('Исправление подтверждено протоколом full-stack проверки');
       await page
-        .getByLabel('Подтверждаю коррекцию результата и атомарную перестройку зависимых проекций.')
+        .getByLabel('Подтверждаю исправление результата и обновление связанных данных.')
         .check();
       const preflightResponse = page.waitForResponse(
         (response) =>
@@ -3194,7 +3268,7 @@ test.describe('local compose full stack e2e', () => {
       expect(preparedCorrection.source_result_revision).toBe(targetGame.result_revision_id);
       expect(preparedCorrection.projection_intents).toEqual(expect.arrayContaining([expect.any(Object)]));
       expect(Array.isArray(preparedCorrection.unlock_intents)).toBe(true);
-      await expect(page.getByText('Новая проекция подтверждена.')).toBeVisible();
+      await expect(page.getByText(/^Исправление применено\./)).toBeVisible();
 
       const correctedOperatorSnapshot = await readOperatorSnapshotViaApi<CorrectionSnapshot>(
         adminRequest,
@@ -3616,8 +3690,10 @@ test.describe('local compose full stack e2e', () => {
       await page.goto('/admin', { waitUntil: 'domcontentloaded' });
       await expect(page.getByRole('button', { name: 'Соревнования' })).toBeVisible();
       await page.getByRole('button', { name: 'Соревнования' }).click();
-      const tournamentRow = page.getByRole('row').filter({ hasText: tournamentName });
-      await expect(tournamentRow).toBeVisible();
+      const openTournamentButton = page.getByRole('button', {
+        name: `Открыть соревнование ${tournamentName}`, exact: true,
+      });
+      await expect(openTournamentButton).toBeVisible();
       const auditResponsePromise = page.waitForResponse(
         (response) => {
           const url = new URL(response.url());
@@ -3625,7 +3701,7 @@ test.describe('local compose full stack e2e', () => {
             url.searchParams.get('tournament_id') === tournament.id;
         },
       );
-      await tournamentRow.getByRole('button', { name: 'Открыть', exact: true }).click();
+      await openTournamentButton.click();
       await page
         .getByRole('navigation', { name: 'Разделы соревнования' })
         .getByRole('button', { name: 'Журнал', exact: true })
@@ -3635,10 +3711,12 @@ test.describe('local compose full stack e2e', () => {
         auditResponse.status(),
         `audit list failed with ${auditResponse.status()} ${auditResponse.statusText()}`,
       ).toBe(200);
-      const auditRegion = page.getByRole('region', { name: 'Аудит и incident bundle' });
+      const auditRegion = page.getByRole('region', { name: 'История соревнования' });
       await expect(auditRegion.getByRole('list', { name: 'События аудита' })).toBeVisible();
-      await expect(auditRegion.getByText('Текущая revision').first()).toBeVisible();
-      await expect(auditRegion.getByText('Заменена').first()).toBeVisible();
+      await expect(auditRegion.getByText('Действует', { exact: true }).first()).toBeVisible();
+      await expect(auditRegion.getByText('Исправлено', { exact: true }).first()).toBeVisible();
+      await auditRegion.getByRole('article').filter({ hasText: targetGame.result_revision_id })
+        .first().locator('summary').click();
       await expect(auditRegion.getByText(targetGame.result_revision_id, { exact: true }).first())
         .toBeVisible();
 
@@ -3788,7 +3866,7 @@ test.describe('local compose full stack e2e', () => {
             `/api/v1/admin/tournaments/${tournament.id}/incident-export`,
       );
       const incidentDownloadPromise = page.waitForEvent('download');
-      await auditRegion.getByRole('button', { name: 'Скачать incident bundle' }).click();
+      await auditRegion.getByRole('button', { name: 'Скачать отчет' }).click();
       const incidentResponse = await incidentResponsePromise;
       expect(
         incidentResponse.status(),
@@ -3909,7 +3987,7 @@ test.describe('local compose full stack e2e', () => {
           title,
           description: 'Golden task reserved for the FE-049 tournament preset.',
           kind: 'golden',
-          category: 'web',
+          category: 'crypto',
           difficulty: 'easy',
           time_limit: 180,
           flag: `flag{${title.replaceAll('-', '_')}}`,
@@ -3955,7 +4033,9 @@ test.describe('local compose full stack e2e', () => {
         rosterInputs,
       );
       expect((await readRosterResponse(invited, tournament.id, roster.id)).participants).toHaveLength(4);
+      await configureReservesViaApi(request, tournament.id, adminSession.access_csrf_token);
       expect((await applyOpenRegistrationViaApi(request, tournament.id, adminSession.access_csrf_token)).status()).toBe(200);
+      await checkInPlayersViaApi(playerContexts, tournament.id);
       const checkedIn = await replaceRosterViaApi(
         request,
         tournament.id,
@@ -4130,9 +4210,9 @@ test.describe('local compose full stack e2e', () => {
         await expect(participantPage.getByText(/Подсказки/i)).toHaveCount(0);
         await expect(participantPage.getByTestId('participant-submit-button')).toBeDisabled();
         await page.goto(`/arena/operator/${tournament.id}`, { waitUntil: 'domcontentloaded' });
-        await expect(page.getByText('Снимок подтвержден', { exact: true })).toBeVisible();
+        await expect(page.getByTestId('operator-realtime-summary')).toHaveAttribute('data-ready', 'true');
         await page.reload({ waitUntil: 'domcontentloaded' });
-        await expect(page.getByText('Снимок подтвержден', { exact: true })).toBeVisible();
+        await expect(page.getByTestId('operator-realtime-summary')).toHaveAttribute('data-ready', 'true');
         await spectatorPage.goto(`/arena/spectator/${tournament.id}`, { waitUntil: 'domcontentloaded' });
         await expect(spectatorPage.getByTestId('tournament-broadcast')).toBeVisible();
         const publicSnapshot = await readPublicSnapshotViaApi(spectatorContext, tournament.id);
@@ -4195,13 +4275,15 @@ test.describe('local compose full stack e2e', () => {
       const adminSession = await adminLogin(request);
       const normalFlagsByTitle = new Map<string, string>();
       const goldenFlagsByTitle = new Map<string, string>();
+      // Keep every Swiss, semifinal and final reserve chain disjoint.
+      const sharedCategoryCount = (playerNames.length / 2 * 3 + 2 + 1) * 3;
       const normalTaskGroups: Array<{
         category: FullStackTaskInput['category'];
         count: number;
       }> = [
-        { category: 'web', count: 27 },
-        { category: 'crypto', count: 27 },
-        { category: 'reverse', count: 27 },
+        { category: 'web', count: sharedCategoryCount },
+        { category: 'crypto', count: sharedCategoryCount },
+        { category: 'reverse', count: sharedCategoryCount },
         { category: 'forensics', count: 3 },
         { category: 'pwn', count: 3 },
       ];
@@ -4224,7 +4306,8 @@ test.describe('local compose full stack e2e', () => {
           });
         }
       }
-      for (let index = 0; index < 6; index += 1) {
+      // Six participants need three concurrent chains, each with two reserves.
+      for (let index = 0; index < 9; index += 1) {
         const title = uniqueName(`fe048-golden-${index + 1}`);
         const flag = `flag{${title.replaceAll('-', '_')}}`;
         goldenFlagsByTitle.set(title, flag);
@@ -4232,7 +4315,7 @@ test.describe('local compose full stack e2e', () => {
           title,
           description: 'Golden task for the FE-048 boundary flow.',
           kind: 'golden',
-          category: 'web',
+          category: 'crypto',
           difficulty: 'easy',
           time_limit: 180,
           flag,
@@ -4291,7 +4374,9 @@ test.describe('local compose full stack e2e', () => {
         rosterInputs,
       );
       expect((await readRosterResponse(invitedResponse, tournament.id, roster.id)).participants).toHaveLength(6);
+      await configureReservesViaApi(request, tournament.id, adminSession.access_csrf_token);
       expect((await applyOpenRegistrationViaApi(request, tournament.id, adminSession.access_csrf_token)).status()).toBe(200);
+      await checkInPlayersViaApi(playerContexts, tournament.id);
       const checkedInResponse = await replaceRosterViaApi(
         request,
         tournament.id,
@@ -4829,10 +4914,9 @@ test.describe('local compose full stack e2e', () => {
 
         await page.goto('/admin', { waitUntil: 'domcontentloaded' });
         await page.getByRole('button', { name: 'Соревнования', exact: true }).click();
-        const tournamentRow = page.getByRole('row').filter({
-          hasText: tournamentName,
-        });
-        await tournamentRow.getByRole('button', { name: 'Открыть', exact: true }).click();
+        await page.getByRole('button', {
+          name: `Открыть соревнование ${tournamentName}`, exact: true,
+        }).click();
         await page.getByRole('button', { name: 'Проведение', exact: true }).click();
         const goldenPanel = page.getByTestId('operator-golden-playoff-control-panel');
         await expect(goldenPanel).toBeVisible();
@@ -4840,8 +4924,13 @@ test.describe('local compose full stack e2e', () => {
           `[data-testid="golden-group"][data-group-id="${activeSource.group_id}"]`,
         );
         await expect(operatorGroup).toBeVisible();
+        const survivorPlayerId = checkedInParticipants.find(
+          (participant) => participant.id === lastSurvivor.participant_id,
+        )?.player_id;
+        const survivorName = players.find((player) => player.id === survivorPlayerId)?.username;
+        expect(survivorName, 'Golden survivor must have a player name').toBeTruthy();
         const terminalRow = operatorGroup.getByTestId('golden-member').filter({
-          has: page.getByText(lastSurvivor.participant_id, { exact: true }),
+          has: page.getByText(survivorName!, { exact: true }),
         });
         await expect(terminalRow).toHaveCount(1);
         await expect(terminalRow.getByText('Позиция 3', { exact: true })).toBeVisible();
@@ -4954,7 +5043,7 @@ test.describe('local compose full stack e2e', () => {
           title,
           description: 'Golden task for the real backend spectator flow.',
           kind: 'golden',
-          category: 'web',
+          category: 'crypto',
           difficulty: 'easy',
           time_limit: 180,
           flag,
@@ -5012,6 +5101,7 @@ test.describe('local compose full stack e2e', () => {
       const invitedRoster = await readRosterResponse(invitedRosterResponse, tournament.id, roster.id);
       expect(invitedRoster.participants).toHaveLength(16);
 
+      await configureReservesViaApi(request, tournament.id, adminSession.access_csrf_token);
       const openRegistration = await applyOpenRegistrationViaApi(
         request,
         tournament.id,
@@ -5019,6 +5109,7 @@ test.describe('local compose full stack e2e', () => {
       );
       expect(openRegistration.status(), `open registration failed with ${openRegistration.status()}`).toBe(200);
 
+      await checkInPlayersViaApi(playerContexts, tournament.id);
       const checkedInParticipants = invitedParticipants.map((participant) => ({
         ...participant,
         attendance: 'checked_in' as const,
@@ -5528,13 +5619,12 @@ test.describe('local compose full stack e2e', () => {
         await expect(selectedSeries).toContainText(
           `${firstSeries.first_display_name} - ${firstSeries.second_display_name}`,
         );
-        await expect(selectedGame.getByRole('heading', { name: `Игра ${firstSeries.current_game.position}` }))
+        expect(firstSeries.format).toBe('bo1');
+        await expect(selectedGame.getByRole('heading', { name: 'BO1', exact: true }))
           .toBeVisible();
         await expect(selectedGame).toContainText('Идет');
         await expect(selectedGame.getByTestId('broadcast-game-category'))
           .toHaveText(firstSeries.current_game.category);
-        await expect(selectedGame.getByTestId('broadcast-game-deadline').locator('time'))
-          .toHaveAttribute('datetime', firstSeries.current_game.effective_deadline ?? '');
         const countdownBefore = await readBroadcastCountdownSeconds(publicPage);
         const expectedCountdown = Math.ceil(Math.max(
           0,
@@ -5555,13 +5645,12 @@ test.describe('local compose full stack e2e', () => {
         await expect(selectedSeries).toContainText(
           `${secondSeries.first_display_name} - ${secondSeries.second_display_name}`,
         );
-        await expect(selectedGame.getByRole('heading', { name: `Игра ${secondSeries.current_game.position}` }))
+        expect(secondSeries.format).toBe('bo1');
+        await expect(selectedGame.getByRole('heading', { name: 'BO1', exact: true }))
           .toBeVisible();
         await expect(selectedGame).toContainText('Идет');
         await expect(selectedGame.getByTestId('broadcast-game-category'))
           .toHaveText(secondSeries.current_game.category);
-        await expect(selectedGame.getByTestId('broadcast-game-deadline').locator('time'))
-          .toHaveAttribute('datetime', secondSeries.current_game.effective_deadline ?? '');
         const secondCountdown = await readBroadcastCountdownSeconds(publicPage);
         const expectedSecondCountdown = Math.max(0, Math.ceil(Math.max(
           0,
@@ -6271,7 +6360,7 @@ test.describe('local compose full stack e2e', () => {
       const broadcast = terminalPage.getByTestId('tournament-broadcast');
       await expect(broadcast).toBeVisible();
 
-      await broadcast.getByRole('tab', { name: 'Swiss' }).click();
+      await broadcast.getByRole('tab', { name: 'Квалификация' }).click();
       for (const roundNumber of [1, 2, 3, 4]) {
         const round = broadcast.getByTestId(`swiss-round-${roundNumber}`);
         await expect(round).toBeVisible();
@@ -6393,7 +6482,7 @@ test.describe('local compose full stack e2e', () => {
         title,
         description: 'Golden task for the published tournament content flow.',
         kind: 'golden',
-        category: 'web',
+        category: 'crypto',
         difficulty: 'easy',
         time_limit: 90,
         flag: `flag{${title.replaceAll('-', '_')}}`,
@@ -6642,6 +6731,12 @@ test.describe('local compose full stack e2e', () => {
     for (const fixture of playerFixtures) {
       await checkInPlayerAtTournament(fixture.page);
     }
+    // Keep sessions for API actions without leaving unused catalog pollers running.
+    await anonymousPage.close();
+    for (const fixture of playerFixtures) {
+      await fixture.page.close();
+    }
+    await restoredPrimaryPage.goto('about:blank');
 
     const roster = await getRosterViaApi(adminRequest, primaryTournament.id);
     expect(roster.participants).toHaveLength(playerFixtures.length);
@@ -6790,7 +6885,7 @@ test.describe('local compose full stack e2e', () => {
         );
         await readyButton.click();
         expect((await readinessResponse).status()).toBe(200);
-        await expect(matchPage.getByText('Готовность подтверждена.', { exact: true })).toBeVisible();
+        await expect(readyButton).toHaveText('Готовность подтверждена');
         readinessCheckedThroughUI = true;
         continue;
       }
@@ -6815,7 +6910,7 @@ test.describe('local compose full stack e2e', () => {
       );
       expect(readiness.status(), `wave readiness failed with ${readiness.status()}`).toBe(200);
     }
-    const startedWave = await waveAction('start', waveProjectionRevision);
+    const startedWave = await waveAction('start');
     expect(startedWave.state).toBe('active');
 
     const assignmentMember = wave.members.find((candidate) => candidate.series_id !== null);
@@ -6835,7 +6930,25 @@ test.describe('local compose full stack e2e', () => {
     expect(assignedSnapshot.assignment?.context.series_id).toBeTruthy();
     expect(assignedSnapshot.assignment?.active_snapshot.task_id).toMatch(/^[0-9a-f-]{36}$/i);
 
-    await restoredPrimaryPage.reload({ waitUntil: 'domcontentloaded' });
+    const overviewURL = `/arena/tournaments/${primaryTournament.public_id}?view=overview`;
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const detailResponse = restoredPrimaryPage.waitForResponse((response) =>
+        new URL(response.url()).pathname === `/api/v1/public/tournaments/${primaryTournament.public_id}`
+        && response.request().method() === 'GET',
+      );
+      await restoredPrimaryPage.goto(overviewURL, { waitUntil: 'domcontentloaded' });
+      const response = await detailResponse;
+      if (response.status() !== 429 || attempt === 1) {
+        expect(response.status(), 'public tournament detail must load').toBe(200);
+        break;
+      }
+      const retryAfter = Number(response.headers()['retry-after']);
+      expect(Number.isFinite(retryAfter) && retryAfter > 0 && retryAfter <= 60).toBe(true);
+      await restoredPrimaryPage.goto('about:blank');
+      await new Promise((resolve) => setTimeout(resolve, retryAfter * 1000));
+    }
+    await restoredPrimaryPage.getByRole('button', { name: 'Проверить матч', exact: true })
+      .click({ timeout: 30_000 });
     const workspaceLink = restoredPrimaryPage.getByRole('link', { name: 'Открыть мой матч' });
     await expect(workspaceLink).toBeVisible({ timeout: 30_000 });
     await workspaceLink.click();

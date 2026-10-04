@@ -259,6 +259,8 @@ test('changing player clears the restore cache and sends logout CSRF', async ({ 
 
   await expect(page).toHaveURL(/\/login$/);
   await expect(page.getByRole('heading', { name: 'Вход участника', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Войти', exact: true })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Создать аккаунт', exact: true })).toBeVisible();
   await expect.poll(() => logoutCalls).toBe(1);
   await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('player_id'))).toBeNull();
   await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('username'))).toBeNull();

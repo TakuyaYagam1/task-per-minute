@@ -346,7 +346,7 @@
                 "const": "env"
               },
               "executable_sha256": {
-                "const": "c88776f602efc831ecffdda48d347648e9584b5e76c9ff4d6d4676a5daa5b4a7"
+                "$ref": "#/$defs/sha256"
               },
               "argument_count": {
                 "const": 12
@@ -355,7 +355,7 @@
                 "const": "go"
               },
               "go_executable_sha256": {
-                "const": "abe5a36e95186f29453f3e1d1840d436445e208417191e10c83998b6a7d8e652"
+                "$ref": "#/$defs/sha256"
               },
               "go_test_identity": {
                 "const": "TestTournamentNominal60Minute"
@@ -406,7 +406,7 @@
                 "const": "env"
               },
               "executable_sha256": {
-                "const": "c88776f602efc831ecffdda48d347648e9584b5e76c9ff4d6d4676a5daa5b4a7"
+                "$ref": "#/$defs/sha256"
               },
               "argument_count": {
                 "const": 12
@@ -415,7 +415,7 @@
                 "const": "go"
               },
               "go_executable_sha256": {
-                "const": "abe5a36e95186f29453f3e1d1840d436445e208417191e10c83998b6a7d8e652"
+                "$ref": "#/$defs/sha256"
               },
               "go_test_identity": {
                 "const": "TestTournamentPeakSoak"
@@ -466,7 +466,7 @@
                 "const": "bash"
               },
               "executable_sha256": {
-                "const": "4eadb049773ad49e107adec9ad130ee83c0ec44f404740289620b234eeacc69d"
+                "$ref": "#/$defs/sha256"
               },
               "go_executable_basename": {
                 "const": null
