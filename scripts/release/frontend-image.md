@@ -117,8 +117,8 @@ official release checksum and source identity, not an independently verified
 publisher signature. Its version reports source commit
 `db9e29505c3059f2b8fde34ae8cae266c5c765e9`, matching the release tag.
 
-Trivy's pins and vulnerability policy are documented in
-[`security/trivy/README.md`](../../security/trivy/README.md). Updating a tool
+Trivy's pins and vulnerability policy are defined in
+[`security/trivy/frontend-policy.json`](../../security/trivy/frontend-policy.json). Updating a tool
 version requires reviewing its source, license and executable hashes and
 rerunning the contract tests; a matching version string alone is insufficient.
 
