@@ -17,6 +17,7 @@ import (
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	inbound "github.com/TakuyaYagam1/task-per-minute/internal/port/inbound"
+	assignmentusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/assignment"
 	swissusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/swiss"
 )
 
@@ -221,6 +222,7 @@ type ConfigurationSeriesChange struct {
 }
 
 type ConfigurationRoundChange struct {
+	PreservePairings   bool
 	Previous           ConfigurationRound
 	Next               ConfigurationRound
 	Series             []ConfigurationSeriesChange
@@ -490,7 +492,7 @@ func (w *TournamentConfigurationWorkflow) reviseSwissRoundInternal(
 	if err := validateNoPriorSwissMeetings(command.ManualPairings, priorMeetingCounts); err != nil {
 		return inbound.AdminConfigurationMutationEvidence{}, err
 	}
-	if err := authority.validateStageSelection(domain.TournamentStageSwiss, inbound.AdminConfigurationStageDefault{Mode: command.CategoryMode, Categories: command.Categories}); err != nil {
+	if err := authority.validateSwissRoundSelection(command.CategoryMode, command.Categories); err != nil {
 		return inbound.AdminConfigurationMutationEvidence{}, err
 	}
 	affected := make([]ConfigurationArtifact, 0, len(round.SeriesIDs)+1)
@@ -511,6 +513,8 @@ func (w *TournamentConfigurationWorkflow) reviseSwissRoundInternal(
 	if err := validateUnlockIntents(command.TournamentID, affected, command.UnlockIntents); err != nil {
 		return inbound.AdminConfigurationMutationEvidence{}, err
 	}
+	preservePairings := slices.Equal(canonicalPairings(command.ManualPairings), canonicalPairings(round.Pairings)) &&
+		equalOptionalUUID(command.ManualByeParticipantID, round.ByeParticipantID)
 	nextRound := cloneConfigurationRound(round)
 	nextRound.Revision++
 	nextRound.Pairings = canonicalPairings(command.ManualPairings)
@@ -522,6 +526,10 @@ func (w *TournamentConfigurationWorkflow) reviseSwissRoundInternal(
 		evidenceID := byeSelection.Evidence.ID
 		nextRound.ByeRevisionID = &evidenceID
 	}
+	if preservePairings {
+		nextRound.ByeParticipantID = cloneUUID(round.ByeParticipantID)
+		nextRound.ByeRevisionID = cloneUUID(round.ByeRevisionID)
+	}
 	rebuilt, superseded := successorArtifacts(command.CommandID, affected)
 	evidence := configurationEvidence(command.CommandScope, digest, authority, authority.Configuration.Revision, affected, superseded, command.Reason, authority.UpdatedAt)
 	evidence.RebuiltArtifactIDs = artifactIDs(rebuilt)
@@ -529,7 +537,7 @@ func (w *TournamentConfigurationWorkflow) reviseSwissRoundInternal(
 		Operation: configurationOperationSwissRound, CommandID: command.CommandID, Authority: authority, RequestDigest: digest,
 		NextConfiguration: cloneContentConfiguration(authority.Configuration), Affected: cloneArtifacts(affected),
 		Superseded: cloneArtifactViews(superseded), Rebuilt: cloneArtifacts(rebuilt), UnlockIntents: cloneUnlockIntents(command.UnlockIntents),
-		RoundChange: &ConfigurationRoundChange{Previous: cloneConfigurationRound(round), Next: nextRound, PriorMeetingCounts: clonePriorMeetingCounts(priorMeetingCounts), Bye: cloneByeSelection(byeSelection)}, Evidence: evidence,
+		RoundChange: &ConfigurationRoundChange{PreservePairings: preservePairings, Previous: cloneConfigurationRound(round), Next: nextRound, PriorMeetingCounts: clonePriorMeetingCounts(priorMeetingCounts), Bye: cloneByeSelection(byeSelection)}, Evidence: evidence,
 	}
 	if len(round.SeriesIDs) != len(command.ManualPairings) {
 		return inbound.AdminConfigurationMutationEvidence{}, domain.ErrConflict
@@ -538,8 +546,10 @@ func (w *TournamentConfigurationWorkflow) reviseSwissRoundInternal(
 		series, _ := findSeries(authority.Series, seriesID)
 		nextSeries := cloneConfigurationSeries(series)
 		nextSeries.Revision++
-		nextSeries.FirstParticipantID = nextRound.Pairings[index].FirstParticipantID
-		nextSeries.SecondParticipantID = nextRound.Pairings[index].SecondParticipantID
+		if !preservePairings {
+			nextSeries.FirstParticipantID = nextRound.Pairings[index].FirstParticipantID
+			nextSeries.SecondParticipantID = nextRound.Pairings[index].SecondParticipantID
+		}
 		nextSeries.Mode = command.CategoryMode
 		nextSeries.Categories = canonicalCategories(command.Categories)
 		mutation.RoundChange.Series = append(mutation.RoundChange.Series, ConfigurationSeriesChange{Previous: cloneConfigurationSeries(series), Next: nextSeries})
@@ -557,6 +567,9 @@ func (w *TournamentConfigurationWorkflow) loadForMutation(ctx context.Context, s
 func (w *TournamentConfigurationWorkflow) execute(ctx context.Context, mutation ConfigurationMutation) (inbound.AdminConfigurationMutationEvidence, error) {
 	result, err := w.repository.ExecuteMutation(ctx, mutation)
 	if err != nil {
+		if errors.Is(err, assignmentusecase.ErrInvalidExactNormalAssignment) && errors.Is(err, domain.ErrConflict) {
+			return inbound.AdminConfigurationMutationEvidence{}, domain.ErrInvalidContentConfiguration
+		}
 		return inbound.AdminConfigurationMutationEvidence{}, err
 	}
 	if !evidenceMatchesMutation(result.Evidence, mutation) {
@@ -693,6 +706,21 @@ func (a ConfigurationAuthority) validateFinalDefault() error {
 		return domain.ErrInvalidContentConfiguration
 	}
 	return nil
+}
+
+func (a ConfigurationAuthority) validateSwissRoundSelection(mode domain.CategoryMode, categories []domain.Category) error {
+	// A random round selects from the full pool; individual Series expose one resolved category.
+	if mode == domain.CategoryModeRandom && len(categories) > 1 {
+		pool, ok := a.poolForStage(domain.TournamentStageSwiss)
+		if !ok {
+			return domain.ErrInternal
+		}
+		if !validUniqueCategories(categories) || !slices.Equal(canonicalCategories(categories), canonicalCategories(pool.Categories)) {
+			return domain.ErrValidation
+		}
+		return nil
+	}
+	return a.validateStageSelection(domain.TournamentStageSwiss, ConfigurationStageDefault{Mode: mode, Categories: categories})
 }
 
 func (a ConfigurationAuthority) validateStageSelection(stage domain.TournamentStage, selection ConfigurationStageDefault) error {
@@ -1494,4 +1522,11 @@ func cloneEvidence(value inbound.AdminConfigurationMutationEvidence) inbound.Adm
 	value.AffectedArtifacts = cloneArtifactViews(value.AffectedArtifacts)
 	value.UnlockIntents = cloneUnlockIntents(value.UnlockIntents)
 	return value
+}
+
+func equalOptionalUUID(first, second *uuid.UUID) bool {
+	if first == nil || second == nil {
+		return first == nil && second == nil
+	}
+	return *first == *second
 }

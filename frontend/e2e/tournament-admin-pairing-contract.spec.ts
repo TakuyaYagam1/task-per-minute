@@ -392,6 +392,51 @@ test("отправляет automatic план и отображает полны
   await expect(page).toHaveURL(new RegExp(`[?&]view=conduct(?:&|$)`));
 });
 
+test("меняет политику сохраненного раунда через API изменения конфигурации", async ({ page }) => {
+  const current = configuration(4);
+  const round = swissRound(4);
+  const { pairingRequests } = await setupPairingRoutes(page, 4, {
+    configuration: current,
+    onPairings: async (route, body) => {
+      current.rounds[0].pairings = round.pairings.map(({ first_participant_id, second_participant_id }) => ({
+        first_participant_id, second_participant_id,
+      }));
+      current.rounds[0].mode = body.category_mode;
+      current.rounds[0].categories = body.categories;
+      await fulfillJSON(route, 200, round);
+    },
+  });
+  const replacements: components["schemas"]["ReplaceTournamentSwissRoundConfigurationRequest"][] = [];
+  await page.route(`**/api/v1/admin/tournaments/${tournamentId}/swiss/rounds/1`, async (route) => {
+    replacements.push(route.request().postDataJSON());
+    await fulfillJSON(route, 200, {
+      command_id: "66666666-6666-4666-8666-666666666666",
+      tournament_id: tournamentId,
+      operator_id: "77777777-7777-4777-8777-777777777777",
+      reason: "Change round policy", requested_at: baseDate, validation_digest: "ab".repeat(32),
+      previous_configuration_revision: 3, next_configuration_revision: 4,
+      affected_artifact_ids: [], superseded_artifact_ids: [], rebuilt_artifact_ids: [],
+      affected_artifacts: [], unlock_intents: [],
+    });
+  });
+  const region = await openPairingEditor(page);
+  await region.getByLabel("Политика категорий").selectOption("admin");
+  await region.getByRole("button", { name: "Сформировать пары" }).click();
+  await expect(region).toContainText("План раунда 1");
+  await region.getByLabel("Политика категорий").selectOption("random");
+  await region.getByRole("button", { name: /Сформировать пары|Сохранить настройки раунда/ }).click();
+  await expect.poll(() => replacements.length).toBe(1);
+  expect(pairingRequests).toHaveLength(1);
+  expect(replacements[0]).toMatchObject({
+    expected_projection_revision: 9, expected_round_revision: 5,
+    mode: "random", categories: ["web", "crypto", "pwn"], confirmed: true,
+    unlock_intents: [],
+  });
+  expect(replacements[0].manual_pairings).toEqual(current.rounds[0].pairings);
+  expect(replacements[0].manual_bye_participant_id).toBeNull();
+  await expect(region).toContainText("Настройки раунда 1 сохранены");
+});
+
 test("берет следующий тур с сервера и показывает пары без повторных соперников", async ({ page }) => {
   const nextConfiguration = configuration(4);
   nextConfiguration.rounds[0] = {
@@ -496,6 +541,20 @@ test("не отправляет duplicate и omission manual сетки", async 
   await region.getByRole("button", { name: "Сформировать пары" }).click();
   await expect(region.getByRole("alert")).toContainText(/не может встречаться более одного раза/i);
   expect(pairingRequests).toHaveLength(0);
+});
+
+test("объясняет нехватку задач для драфта и сохраняет выбранную политику", async ({ page }) => {
+  await setupPairingRoutes(page, 4, {
+    onPairings: async (route) => {
+      await fulfillJSON(route, 422, problem(422, "invalid tournament content configuration"));
+    },
+  });
+  const region = await openPairingEditor(page);
+  await region.getByLabel("Политика категорий").selectOption("draft");
+  await region.getByRole("button", { name: "Сформировать пары" }).click();
+  await expect(region.getByRole("alert")).toContainText("Каталог задач не подходит для выбранных настроек");
+  await expect(region.getByRole("alert")).toContainText("на каждый возможный исход во всех парах");
+  await expect(region.getByLabel("Политика категорий")).toHaveValue("draft");
 });
 
 test("оставляет manual draft после серверного 422 о повторной встрече", async ({ page }) => {

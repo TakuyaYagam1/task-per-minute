@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -340,6 +341,165 @@ func newSwissCategoryFlowWithNormalTaskTimeLimit(
 	name string,
 	normalTaskTimeLimit int,
 ) swissCategoryFlow {
+	return newSwissCategoryFlowWithReserves(t, name, normalTaskTimeLimit, domain.AssignmentReserveCount)
+}
+
+func TestSwissDraftWithoutReserves(t *testing.T) {
+	flow := newSwissCategoryFlowWithReserves(t, "draft-no-reserves", 180, 0)
+	before := tournamentAdminSnapshotThroughREST(t, flow.fixture, flow.adminToken, flow.tournamentID)
+	round := configureSwissCategoryPairingsThroughREST(t, flow.fixture, flow.adminToken, flow.tournamentID,
+		before.NextCursor.ProjectionRevision, 1, api.CategoryModeDraft,
+		[]api.Category{api.CategoryCrypto, api.CategoryReverse, api.CategoryWeb}, uuid.New())
+	snapshot := tournamentAdminSnapshotThroughREST(t, flow.fixture, flow.adminToken, flow.tournamentID)
+	wave := findProductionSwissWave(t, snapshot, round)
+	completeSwissDraftsThroughREST(t, flow, wave)
+	openAndStartSwissWaveThroughREST(t, flow, wave)
+}
+
+func newSwissCategoryFlowWithReserves(t *testing.T, name string, normalTaskTimeLimit, reserveCount int) swissCategoryFlow {
+	return newSwissCategoryFlowWithCapacity(t, name, swissCategoryFlowCapacity{
+		normalTaskTimeLimit: normalTaskTimeLimit, reserveCount: reserveCount,
+		rosterSize: 4, normalTaskCount: createToChampionNormalTaskCount,
+	})
+}
+
+func TestSwissDraftInsufficientCategoryCapacityReturnsValidationError(t *testing.T) {
+	flow := newSwissCategoryFlowWithCapacity(t, "draft-small-catalog", swissCategoryFlowCapacity{
+		normalTaskTimeLimit: 180, rosterSize: 16, normalTaskCount: 3, extraCryptoTasks: 32,
+	})
+	before := tournamentAdminSnapshotThroughREST(t, flow.fixture, flow.adminToken, flow.tournamentID)
+	commandsBefore := swissPairingCommandCount(t, flow.tournamentID)
+	ledgerBefore := swissReservationLedgerForTournament(t, flow.tournamentID)
+	scopeBefore := readSwissMaterializationCounts(t, flow.tournamentID, before.Roster.Id)
+	body, err := json.Marshal(api.PairingConfigurationRequest{
+		Categories:   []api.Category{api.CategoryCrypto, api.CategoryReverse, api.CategoryWeb},
+		CategoryMode: api.CategoryModeDraft, ExpectedProjectionRevision: before.NextCursor.ProjectionRevision,
+		PairingMode: api.Automatic, RoundNumber: 1,
+	})
+	require.NoError(t, err)
+	path := "/api/v1/admin/tournaments/" + flow.tournamentID.String() + "/pairings"
+	request, response := doTournamentFlowJSON(t, flow.fixture, http.MethodPost, path, string(body),
+		adminSession(flow.adminToken), uuid.New(), "")
+	require.Equal(t, http.StatusUnprocessableEntity, response.Code, response.Body.String())
+	flow.fixture.validateResponse(t, request, response)
+	require.Contains(t, response.Body.String(), "invalid tournament content configuration")
+	after := tournamentAdminSnapshotThroughREST(t, flow.fixture, flow.adminToken, flow.tournamentID)
+	require.Equal(t, before.NextCursor.ProjectionRevision, after.NextCursor.ProjectionRevision)
+	require.Empty(t, after.Series)
+	require.Empty(t, after.Waves)
+	require.Equal(t, commandsBefore, swissPairingCommandCount(t, flow.tournamentID))
+	require.Equal(t, ledgerBefore, swissReservationLedgerForTournament(t, flow.tournamentID))
+	require.Equal(t, scopeBefore, readSwissMaterializationCounts(t, flow.tournamentID, before.Roster.Id))
+	// The rejected draft must not prevent a valid operator-selected round.
+	round := configureSwissCategoryPairingsThroughREST(t, flow.fixture, flow.adminToken, flow.tournamentID,
+		after.NextCursor.ProjectionRevision, 1, api.CategoryModeAdmin, []api.Category{api.CategoryCrypto}, uuid.New())
+	require.Len(t, round.Pairings, 8)
+	configurationPath := "/api/v1/admin/tournaments/" + flow.tournamentID.String() + "/configuration"
+	_, response = doTournamentFlowJSON(t, flow.fixture, http.MethodGet, configurationPath, "", adminSession(flow.adminToken), uuid.New(), "")
+	require.Equal(t, http.StatusOK, response.Code, response.Body.String())
+	configuration := decodeJSON[api.TournamentConfiguration](t, response)
+	require.Len(t, configuration.Rounds, 1)
+	saved := configuration.Rounds[0]
+	pairingEvidence := swissPairingEvidence(t, saved.Id)
+	edit := api.ReplaceTournamentSwissRoundConfigurationRequest{
+		ExpectedProjectionRevision: configuration.ProjectionRevision, ExpectedRoundRevision: saved.Revision,
+		Confirmed: true, Reason: "Change category policy before the round starts",
+		Mode: api.CategoryModeDraft, Categories: []api.Category{api.CategoryCrypto, api.CategoryReverse, api.CategoryWeb},
+		ManualPairings: &saved.Pairings, UnlockIntents: saved.UnlockIntents,
+	}
+	body, err = json.Marshal(edit)
+	require.NoError(t, err)
+	roundPath := "/api/v1/admin/tournaments/" + flow.tournamentID.String() + "/swiss/rounds/1"
+	request, response = doTournamentFlowJSON(t, flow.fixture, http.MethodPut, roundPath, string(body), adminSession(flow.adminToken), uuid.New(), "")
+	require.Equal(t, http.StatusUnprocessableEntity, response.Code, response.Body.String())
+	flow.fixture.validateResponse(t, request, response)
+	require.Contains(t, response.Body.String(), "invalid tournament content configuration")
+	_, response = doTournamentFlowJSON(t, flow.fixture, http.MethodGet, configurationPath, "", adminSession(flow.adminToken), uuid.New(), "")
+	require.Equal(t, http.StatusOK, response.Code, response.Body.String())
+	unchanged := decodeJSON[api.TournamentConfiguration](t, response)
+	require.Equal(t, configuration, unchanged)
+	edit.Mode = api.CategoryModeAdmin
+	edit.Categories = []api.Category{api.CategoryCrypto}
+	body, err = json.Marshal(edit)
+	require.NoError(t, err)
+	request, response = doTournamentFlowJSON(t, flow.fixture, http.MethodPut, roundPath, string(body), adminSession(flow.adminToken), uuid.New(), "")
+	require.Equal(t, http.StatusOK, response.Code, response.Body.String())
+	flow.fixture.validateResponse(t, request, response)
+	_, response = doTournamentFlowJSON(t, flow.fixture, http.MethodGet, configurationPath, "", adminSession(flow.adminToken), uuid.New(), "")
+	require.Equal(t, http.StatusOK, response.Code, response.Body.String())
+	updated := decodeJSON[api.TournamentConfiguration](t, response)
+	require.Equal(t, api.CategoryModeAdmin, updated.Rounds[0].Mode)
+	require.Equal(t, saved.Revision+1, updated.Rounds[0].Revision)
+	require.ElementsMatch(t, saved.Pairings, updated.Rounds[0].Pairings)
+	require.Equal(t, pairingEvidence, swissPairingEvidence(t, saved.Id))
+	snapshot := tournamentAdminSnapshotThroughREST(t, flow.fixture, flow.adminToken, flow.tournamentID)
+	openAndStartSwissWaveThroughREST(t, flow, findProductionSwissWave(t, snapshot, round))
+}
+
+func TestSwissAutomaticRoundPolicyPreservesByeAndPairingEvidence(t *testing.T) {
+	for _, rosterSize := range []int{5, 16} {
+		t.Run(strconv.Itoa(rosterSize), func(t *testing.T) {
+			flow := newSwissCategoryFlowWithCapacity(t, "automatic-policy-bye", swissCategoryFlowCapacity{
+				normalTaskTimeLimit: 180, rosterSize: rosterSize, normalTaskCount: 96,
+			})
+			before := tournamentAdminSnapshotThroughREST(t, flow.fixture, flow.adminToken, flow.tournamentID)
+			round := configureSwissCategoryPairingsThroughREST(t, flow.fixture, flow.adminToken, flow.tournamentID,
+				before.NextCursor.ProjectionRevision, 1, api.CategoryModeAdmin, []api.Category{api.CategoryCrypto}, uuid.New())
+			if rosterSize%2 == 1 {
+				require.NotNil(t, round.Bye)
+			}
+			configurationPath := "/api/v1/admin/tournaments/" + flow.tournamentID.String() + "/configuration"
+			_, response := doTournamentFlowJSON(t, flow.fixture, http.MethodGet, configurationPath, "", adminSession(flow.adminToken), uuid.New(), "")
+			require.Equal(t, http.StatusOK, response.Code, response.Body.String())
+			configuration := decodeJSON[api.TournamentConfiguration](t, response)
+			saved := configuration.Rounds[0]
+			evidence := swissPairingEvidence(t, saved.Id)
+			body, err := json.Marshal(api.ReplaceTournamentSwissRoundConfigurationRequest{
+				ExpectedProjectionRevision: configuration.ProjectionRevision, ExpectedRoundRevision: saved.Revision,
+				Confirmed: true, Reason: "Change policy without changing the automatic bye",
+				Mode: api.CategoryModeRandom, Categories: []api.Category{api.CategoryCrypto, api.CategoryReverse, api.CategoryWeb},
+				ManualPairings: &saved.Pairings, ManualByeParticipantId: saved.ByeParticipantId, UnlockIntents: saved.UnlockIntents,
+			})
+			require.NoError(t, err)
+			path := "/api/v1/admin/tournaments/" + flow.tournamentID.String() + "/swiss/rounds/1"
+			request, response := doTournamentFlowJSON(t, flow.fixture, http.MethodPut, path, string(body), adminSession(flow.adminToken), uuid.New(), "")
+			require.Equal(t, http.StatusOK, response.Code, response.Body.String())
+			flow.fixture.validateResponse(t, request, response)
+			require.Equal(t, evidence, swissPairingEvidence(t, saved.Id))
+			snapshot := tournamentAdminSnapshotThroughREST(t, flow.fixture, flow.adminToken, flow.tournamentID)
+			require.Len(t, snapshot.Waves, 1)
+			if rosterSize%2 == 1 {
+				openAndStartRevisedOddSwissWaveThroughREST(t, flow, snapshot.Waves[0])
+			} else {
+				openAndStartSwissWaveThroughREST(t, flow, snapshot.Waves[0])
+			}
+		})
+	}
+}
+
+func swissPairingEvidence(t *testing.T, roundID uuid.UUID) string {
+	t.Helper()
+	var evidence string
+	err := sharedPool.QueryRow(context.Background(), `SELECT jsonb_build_object(
+        'round', to_jsonb(r) - ARRAY['revision', 'content_configuration_id', 'content_configuration_revision', 'category_mode', 'effective_categories', 'updated_at'],
+        'pairs', (SELECT jsonb_agg(to_jsonb(p) ORDER BY p.id) FROM swiss_pairings p WHERE p.round_id=r.id),
+        'members', (SELECT jsonb_agg(to_jsonb(m) ORDER BY m.pairing_id, m.seat) FROM swiss_pairing_members m WHERE m.round_id=r.id),
+        'bye', (SELECT to_jsonb(b) FROM swiss_byes b WHERE b.round_id=r.id),
+        'wave_bye', (SELECT jsonb_build_array(l.bye_participant_id, l.bye_revision_id) FROM swiss_wave_links l WHERE l.round_id=r.id)
+    )::text FROM swiss_rounds r WHERE r.id=$1`, roundID).Scan(&evidence)
+	require.NoError(t, err)
+	return evidence
+}
+
+type swissCategoryFlowCapacity struct {
+	normalTaskTimeLimit int
+	reserveCount        int
+	rosterSize          int
+	normalTaskCount     int
+	extraCryptoTasks    int
+}
+
+func newSwissCategoryFlowWithCapacity(t *testing.T, name string, capacity swissCategoryFlowCapacity) swissCategoryFlow {
 	t.Helper()
 	ctx := context.Background()
 	truncateRoundProofTables(ctx, t)
@@ -348,18 +508,47 @@ func newSwissCategoryFlowWithNormalTaskTimeLimit(
 	catalog := prepareCreateToChampionContentWithCountsAndNormalTimeLimit(
 		ctx,
 		t,
-		createToChampionNormalTaskCount,
-		createToChampionGoldenTaskCount,
-		normalTaskTimeLimit,
+		capacity.normalTaskCount,
+		max(createToChampionGoldenTaskCount, capacity.rosterSize/2*(capacity.reserveCount+1)),
+		capacity.normalTaskTimeLimit,
 	)
+	if capacity.extraCryptoTasks > 0 {
+		for range capacity.extraCryptoTasks {
+			_, err := sharedPool.Exec(ctx, `INSERT INTO tasks (title, description, category, difficulty, time_limit, flag, kind)
+			VALUES ('extra-' || gen_random_uuid(), 'fixture', 'crypto', 'easy', 180, 'fixture-answer', 'normal')`)
+			require.NoError(t, err)
+		}
+		_, err := sharedPool.Exec(ctx, `INSERT INTO task_version_health_attestations(task_id,task_version,revision,healthy,source)
+			SELECT task_id,version,1,true,'content_validation' FROM task_versions v WHERE NOT EXISTS(SELECT 1 FROM task_version_health_attestations a WHERE a.task_id=v.task_id AND a.task_version=v.version)`)
+		require.NoError(t, err)
+		_, err = sharedPool.Exec(ctx, `SELECT publish_task_pool_heads()`)
+		require.NoError(t, err)
+		catalog.revision = currentTaskPoolPublicationRevision(ctx, t)
+	}
 	fixture := newTournamentFlowRESTFixture(t)
 	adminToken := fixture.adminAccessToken(t)
-	players := joinTournamentFlowPlayers(t, fixture, 4)
-	created := createTournamentThroughREST(t, fixture, adminToken, catalog.revision, "swiss-category-"+name)
+	players := joinTournamentFlowPlayers(t, fixture, capacity.rosterSize)
+	created := createTournamentWithRosterSizeThroughREST(t, fixture, adminToken, catalog.revision, "swiss-category-"+name, capacity.rosterSize)
 	openRegistrationThroughREST(t, fixture, adminToken, created.Id, created.Revision)
 	setTournamentReserveCountThroughREST(
-		t, fixture, adminToken, created.Id, domain.AssignmentReserveCount,
+		t, fixture, adminToken, created.Id, capacity.reserveCount,
 	)
+	if capacity.extraCryptoTasks > 0 {
+		path := "/api/v1/admin/tournaments/" + created.Id.String() + "/configuration"
+		_, response := doTournamentFlowJSON(t, fixture, http.MethodGet, path, "", adminSession(adminToken), uuid.New(), "")
+		require.Equal(t, http.StatusOK, response.Code, response.Body.String())
+		config := decodeJSON[api.TournamentConfiguration](t, response)
+		body, err := json.Marshal(api.UpdateTournamentConfigurationRequest{
+			ExpectedProjectionRevision: config.ProjectionRevision, ExpectedConfigurationRevision: config.ConfigurationRevision,
+			ReserveCount: int32(capacity.reserveCount), Confirmed: true, Reason: "Restrict Swiss to the sufficiently populated category",
+			SwissDefault:     api.TournamentConfigurationStageDefaultInput{Mode: api.CategoryModeRandom, Categories: []api.Category{api.CategoryCrypto}},
+			SemifinalDefault: api.TournamentConfigurationStageDefaultInput{Mode: config.SemifinalDefault.Mode, Categories: config.SemifinalDefault.Categories},
+			UnlockIntents:    []api.ConfigurationUnlockIntent{},
+		})
+		require.NoError(t, err)
+		_, response = doTournamentFlowJSON(t, fixture, http.MethodPatch, path, string(body), adminSession(adminToken), uuid.New(), "")
+		require.Equal(t, http.StatusOK, response.Code, response.Body.String())
+	}
 	roster := replaceTournamentRosterThroughREST(t, fixture, adminToken, created.Id, players)
 	preflight := runTournamentRosterPreflightThroughREST(t, fixture, adminToken, created.Id)
 	lockTournamentRosterThroughREST(t, fixture, adminToken, created.Id, roster, preflight)

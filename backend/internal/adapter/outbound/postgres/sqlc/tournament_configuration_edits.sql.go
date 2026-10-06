@@ -2577,6 +2577,102 @@ func (q *Queries) UpdateTournamentConfigurationEditSwissRoundCAS(ctx context.Con
 	return i, err
 }
 
+const updateTournamentConfigurationEditSwissRoundPolicyCAS = `-- name: UpdateTournamentConfigurationEditSwissRoundPolicyCAS :one
+UPDATE swiss_rounds AS round
+SET revision = round.revision + 1,
+    content_configuration_id = $1::UUID,
+    content_configuration_revision = $2::BIGINT,
+    category_mode = $3::VARCHAR,
+    effective_categories = $4::JSONB,
+    updated_at = $5::TIMESTAMPTZ
+WHERE round.id = $6::UUID
+    AND round.tournament_id = $7::UUID
+    AND round.roster_id = $8::UUID
+    AND round.revision = $9::BIGINT
+    AND round.lock_revision IS NULL
+    AND round.locked_at IS NULL
+    AND NOT EXISTS (
+        SELECT 1
+        FROM swiss_round_lock_proofs AS proof
+        WHERE proof.round_id = round.id
+    )
+    AND EXISTS (
+        SELECT 1
+        FROM swiss_wave_links AS link
+        JOIN waves AS wave ON wave.id = link.wave_id
+        WHERE link.round_id = round.id
+            AND link.roster_id = round.roster_id
+            AND wave.state = 'planned'
+            AND wave.started_at IS NULL
+            AND wave.paused_at IS NULL
+            AND wave.closed_at IS NULL
+    )
+RETURNING round.id,
+    round.tournament_id,
+    round.roster_id,
+    round.round_number,
+    round.revision,
+    round.content_configuration_id,
+    round.content_configuration_revision,
+    round.category_mode,
+    round.effective_categories,
+    round.updated_at
+`
+
+type UpdateTournamentConfigurationEditSwissRoundPolicyCASParams struct {
+	ConfigurationID       uuid.UUID
+	ConfigurationRevision int64
+	CategoryMode          string
+	EffectiveCategories   []byte
+	UpdatedAt             pgtype.Timestamptz
+	RoundID               uuid.UUID
+	TournamentID          uuid.UUID
+	RosterID              uuid.UUID
+	ExpectedRoundRevision int64
+}
+
+type UpdateTournamentConfigurationEditSwissRoundPolicyCASRow struct {
+	ID                           uuid.UUID
+	TournamentID                 uuid.UUID
+	RosterID                     uuid.UUID
+	RoundNumber                  int16
+	Revision                     int64
+	ContentConfigurationID       uuid.NullUUID
+	ContentConfigurationRevision *int64
+	CategoryMode                 *string
+	EffectiveCategories          []byte
+	UpdatedAt                    pgtype.Timestamptz
+}
+
+// Policy-only edits retain the original pairing records and decision evidence.
+func (q *Queries) UpdateTournamentConfigurationEditSwissRoundPolicyCAS(ctx context.Context, arg UpdateTournamentConfigurationEditSwissRoundPolicyCASParams) (UpdateTournamentConfigurationEditSwissRoundPolicyCASRow, error) {
+	row := q.db.QueryRow(ctx, updateTournamentConfigurationEditSwissRoundPolicyCAS,
+		arg.ConfigurationID,
+		arg.ConfigurationRevision,
+		arg.CategoryMode,
+		arg.EffectiveCategories,
+		arg.UpdatedAt,
+		arg.RoundID,
+		arg.TournamentID,
+		arg.RosterID,
+		arg.ExpectedRoundRevision,
+	)
+	var i UpdateTournamentConfigurationEditSwissRoundPolicyCASRow
+	err := row.Scan(
+		&i.ID,
+		&i.TournamentID,
+		&i.RosterID,
+		&i.RoundNumber,
+		&i.Revision,
+		&i.ContentConfigurationID,
+		&i.ContentConfigurationRevision,
+		&i.CategoryMode,
+		&i.EffectiveCategories,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const updateTournamentConfigurationEditSwissWaveLinkByeCAS = `-- name: UpdateTournamentConfigurationEditSwissWaveLinkByeCAS :one
 UPDATE swiss_wave_links AS link
 SET bye_participant_id = $1::UUID,

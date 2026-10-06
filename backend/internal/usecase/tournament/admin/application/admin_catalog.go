@@ -8,6 +8,7 @@ import (
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	usecase "github.com/TakuyaYagam1/task-per-minute/internal/port/inbound"
+	assignmentusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/assignment"
 	admininbound "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/inbound"
 	lifecycleusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/lifecycle"
 	operationusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/operation"
@@ -82,6 +83,10 @@ func validTournamentPage(page usecase.TournamentPage) bool {
 func normalizeAdminError(err error) error {
 	if err == nil || !errors.Is(err, domain.ErrConflict) {
 		return err
+	}
+	// Exact assignment exhaustion is a content failure, not a stale operator revision.
+	if errors.Is(err, assignmentusecase.ErrInvalidExactNormalAssignment) {
+		return domain.ErrInvalidContentConfiguration
 	}
 	var conflict *operationusecase.RevisionConflictError
 	if !errors.As(err, &conflict) || conflict.ExpectedRevision < 1 || conflict.CurrentRevision < 1 ||

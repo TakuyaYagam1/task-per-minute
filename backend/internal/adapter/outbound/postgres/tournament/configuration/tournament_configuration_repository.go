@@ -571,6 +571,9 @@ func (r *TournamentConfigurationPostgres) applyRoundChange(
 	if mutation.RoundChange == nil {
 		return nil
 	}
+	if mutation.RoundChange.PreservePairings {
+		return r.applyRoundPolicyChange(ctx, q, mutation, configurationID, configurationRevision, rosterID)
+	}
 	priorMeetingCounts, err := mutation.Authority.PriorMeetingCountsBeforeRound(mutation.RoundChange.Previous.Number)
 	if err != nil {
 		return err
@@ -671,6 +674,28 @@ func (r *TournamentConfigurationPostgres) applyRoundChange(
 		EffectiveCategories: categoriesJSON(categories), UpdatedAt: validTimestamp(mutation.Evidence.RequestedAt),
 	}); err != nil {
 		return configurationQueryError("update Swiss round", err)
+	}
+	return nil
+}
+
+func (r *TournamentConfigurationPostgres) applyRoundPolicyChange(
+	ctx context.Context, q *sqlc.Queries, mutation configurationusecase.ConfigurationMutation,
+	configurationID uuid.UUID, configurationRevision int64, rosterID uuid.UUID,
+) error {
+	change := mutation.RoundChange
+	if len(change.Series) == 0 {
+		return domain.ErrValidation
+	}
+	selection := change.Series[0].Next
+	_, err := q.UpdateTournamentConfigurationEditSwissRoundPolicyCAS(ctx, sqlc.UpdateTournamentConfigurationEditSwissRoundPolicyCASParams{
+		RoundID: change.Previous.ID, TournamentID: mutation.Authority.TournamentID, RosterID: rosterID,
+		ExpectedRoundRevision: change.Previous.Revision,
+		ConfigurationID:       configurationID, ConfigurationRevision: configurationRevision,
+		CategoryMode: string(selection.Mode), EffectiveCategories: categoriesJSON(selection.Categories),
+		UpdatedAt: validTimestamp(mutation.Evidence.RequestedAt),
+	})
+	if err != nil {
+		return configurationQueryError("update Swiss round policy", err)
 	}
 	return nil
 }

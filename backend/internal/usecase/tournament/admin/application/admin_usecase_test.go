@@ -11,6 +11,7 @@ import (
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	inbound "github.com/TakuyaYagam1/task-per-minute/internal/port/inbound"
+	assignmentusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/assignment"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/audit"
 	correctionusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/correction"
 	executionusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/execution"
@@ -268,6 +269,12 @@ func TestNormalizeAdminErrorRequiresCompleteRevisionEvidence(t *testing.T) {
 		CurrentState:     domain.TournamentStateSwiss,
 	}
 	require.Same(t, conflict, normalizeAdminError(conflict))
+}
+
+func TestNormalizeAdminErrorReportsAssignmentCapacity(t *testing.T) {
+	t.Parallel()
+	err := fmt.Errorf("draft branch: %w: %w", assignmentusecase.ErrInvalidExactNormalAssignment, domain.ErrConflict)
+	require.ErrorIs(t, normalizeAdminError(err), domain.ErrInvalidContentConfiguration)
 }
 
 type adminCommands struct {

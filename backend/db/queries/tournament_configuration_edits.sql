@@ -928,6 +928,48 @@ RETURNING round.id,
     round.effective_categories,
     round.updated_at;
 
+-- Policy-only edits retain the original pairing records and decision evidence.
+-- name: UpdateTournamentConfigurationEditSwissRoundPolicyCAS :one
+UPDATE swiss_rounds AS round
+SET revision = round.revision + 1,
+    content_configuration_id = sqlc.arg(configuration_id)::UUID,
+    content_configuration_revision = sqlc.arg(configuration_revision)::BIGINT,
+    category_mode = sqlc.arg(category_mode)::VARCHAR,
+    effective_categories = sqlc.arg(effective_categories)::JSONB,
+    updated_at = sqlc.arg(updated_at)::TIMESTAMPTZ
+WHERE round.id = sqlc.arg(round_id)::UUID
+    AND round.tournament_id = sqlc.arg(tournament_id)::UUID
+    AND round.roster_id = sqlc.arg(roster_id)::UUID
+    AND round.revision = sqlc.arg(expected_round_revision)::BIGINT
+    AND round.lock_revision IS NULL
+    AND round.locked_at IS NULL
+    AND NOT EXISTS (
+        SELECT 1
+        FROM swiss_round_lock_proofs AS proof
+        WHERE proof.round_id = round.id
+    )
+    AND EXISTS (
+        SELECT 1
+        FROM swiss_wave_links AS link
+        JOIN waves AS wave ON wave.id = link.wave_id
+        WHERE link.round_id = round.id
+            AND link.roster_id = round.roster_id
+            AND wave.state = 'planned'
+            AND wave.started_at IS NULL
+            AND wave.paused_at IS NULL
+            AND wave.closed_at IS NULL
+    )
+RETURNING round.id,
+    round.tournament_id,
+    round.roster_id,
+    round.round_number,
+    round.revision,
+    round.content_configuration_id,
+    round.content_configuration_revision,
+    round.category_mode,
+    round.effective_categories,
+    round.updated_at;
+
 -- A pre-start configuration edit changes the normalized bye pair together.
 -- The old pair is an exact CAS fence; both old and new values must be either
 -- NULL or non-NULL.  The round and wave predicates keep the link editable

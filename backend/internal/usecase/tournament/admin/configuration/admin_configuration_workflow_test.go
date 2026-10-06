@@ -583,3 +583,26 @@ func configurationAuthorityFixture(t *testing.T) ConfigurationAuthority {
 		FinalDefault:     inbound.AdminConfigurationStageDefault{Mode: domain.CategoryModeDraft, Categories: []domain.Category{domain.CategoryWeb, domain.CategoryCrypto, domain.CategoryForensics, domain.CategoryReverse, domain.CategoryPwn}},
 	}
 }
+
+func TestSwissRoundRandomSelectionAcceptsPoolWithoutRelaxingStageDefaults(t *testing.T) {
+	t.Parallel()
+	authority := configurationAuthorityFixture(t)
+	pool := []domain.Category{domain.CategoryWeb, domain.CategoryCrypto, domain.CategoryForensics}
+	if err := authority.validateSwissRoundSelection(domain.CategoryModeRandom, pool); err != nil {
+		t.Fatalf("full random round pool rejected: %v", err)
+	}
+	if err := authority.validateStageSelection(domain.TournamentStageSwiss, ConfigurationStageDefault{
+		Mode: domain.CategoryModeRandom, Categories: pool,
+	}); !errors.Is(err, domain.ErrValidation) {
+		t.Fatalf("stage default must still require its resolved category, got %v", err)
+	}
+	for _, invalid := range [][]domain.Category{
+		{domain.CategoryWeb, domain.CategoryCrypto},
+		{domain.CategoryWeb, domain.CategoryCrypto, domain.CategoryPwn},
+		{domain.CategoryWeb, domain.CategoryCrypto, domain.CategoryForensics, domain.CategoryWeb},
+	} {
+		if err := authority.validateSwissRoundSelection(domain.CategoryModeRandom, invalid); !errors.Is(err, domain.ErrValidation) {
+			t.Errorf("invalid random round pool %v accepted: %v", invalid, err)
+		}
+	}
+}

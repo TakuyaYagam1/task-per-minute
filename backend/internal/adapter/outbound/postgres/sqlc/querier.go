@@ -1358,6 +1358,8 @@ type Querier interface {
 	// A manual Swiss round can be retargeted while its Wave is still planned and
 	// no immutable start proof exists. Its identity remains stable.
 	UpdateTournamentConfigurationEditSwissRoundCAS(ctx context.Context, arg UpdateTournamentConfigurationEditSwissRoundCASParams) (UpdateTournamentConfigurationEditSwissRoundCASRow, error)
+	// Policy-only edits retain the original pairing records and decision evidence.
+	UpdateTournamentConfigurationEditSwissRoundPolicyCAS(ctx context.Context, arg UpdateTournamentConfigurationEditSwissRoundPolicyCASParams) (UpdateTournamentConfigurationEditSwissRoundPolicyCASRow, error)
 	// A pre-start configuration edit changes the normalized bye pair together.
 	// The old pair is an exact CAS fence; both old and new values must be either
 	// NULL or non-NULL.  The round and wave predicates keep the link editable

@@ -7,6 +7,7 @@ import {
   ApiError,
   createOperatorCommandIntent,
   getTournamentConfiguration,
+  replaceTournamentSwissRoundConfiguration,
   operatorApi,
   type AdminPlayer,
   type PairingConfigurationRequest,
@@ -364,8 +365,9 @@ export const SwissPairingEditor = ({
         const officialCategories = currentConfiguration.category_pools.find(
           (pool) => pool.format === "bo1",
         )?.categories ?? [];
-        const configuredCategoryMode = currentConfiguration.swiss_default.mode;
-        const configuredAdminCategory = currentConfiguration.swiss_default.categories.find(
+        const currentRound = currentConfiguration.rounds.find((round) => round.round_number === nextRound);
+        const configuredCategoryMode = currentRound?.mode ?? currentConfiguration.swiss_default.mode;
+        const configuredAdminCategory = (currentRound?.categories ?? currentConfiguration.swiss_default.categories).find(
           (category) => officialCategories.includes(category),
         ) ?? officialCategories[0];
         setCategoryMode(configuredCategoryMode);
@@ -585,11 +587,10 @@ export const SwissPairingEditor = ({
     const canApply = (): boolean =>
       !controller.signal.aborted && loadRunRef.current === submitLoadRun;
     try {
-      const freshSnapshot = await operatorApi.getSnapshot(
-        selectedTournament.id,
-        undefined,
-        controller.signal,
-      );
+      const [freshSnapshot, freshConfiguration] = await Promise.all([
+        operatorApi.getSnapshot(selectedTournament.id, undefined, controller.signal),
+        getTournamentConfiguration(selectedTournament.id, controller.signal),
+      ]);
       if (!canApply()) {
         return;
       }
@@ -601,6 +602,7 @@ export const SwissPairingEditor = ({
         return;
       }
       setSnapshot(freshSnapshot);
+      setConfiguration(freshConfiguration);
       if (freshSnapshot.tournament.state !== "swiss") {
         const freshLifecycle = pairingLifecycleMessage(
           freshSnapshot.tournament.state,
@@ -608,6 +610,38 @@ export const SwissPairingEditor = ({
         );
         setFormError(freshLifecycle.detail);
         void onReloadTournaments();
+        return;
+      }
+      const existingRound = freshConfiguration.rounds.find((round) => round.round_number === roundNumber);
+      if (existingRound && existingRound.pairings.length > 0) {
+        if (existingRound.locked || existingRound.started || existingRound.consumed || existingRound.disclosed) {
+          setFormError("Раунд уже заблокирован или начат. Изменить настройки нельзя.");
+          return;
+        }
+        await replaceTournamentSwissRoundConfiguration(selectedTournament.id, roundNumber, {
+          expected_projection_revision: freshConfiguration.projection_revision,
+          expected_round_revision: existingRound.revision,
+          confirmed: true,
+          reason: "Изменение настроек раунда до старта",
+          mode: categoryMode,
+          categories: requestCategories,
+          unlock_intents: existingRound.unlock_intents,
+          manual_pairings: pairingMode === "manual"
+            ? draftPairings.map((pairing) => ({
+              first_participant_id: pairing.firstParticipantId,
+              second_participant_id: pairing.secondParticipantId,
+            }))
+            : existingRound.pairings,
+          manual_bye_participant_id: pairingMode === "manual"
+            ? byeParticipantId || null
+            : existingRound.bye_participant_id ?? null,
+        }, createOperatorCommandIntent().idempotencyKey, controller.signal);
+        if (!canApply()) return;
+        setSavedRound(null);
+        setNotice(`Настройки раунда ${roundNumber} сохранены. Следующий шаг — в разделе "Проведение".`);
+        reportDirty(false);
+        await loadTournamentData(tournamentId, true);
+        await onReloadTournaments();
         return;
       }
       const body: PairingConfigurationRequest = {
@@ -660,7 +694,9 @@ export const SwissPairingEditor = ({
         await loadTournamentData(tournamentId, true);
       } else if (error instanceof ApiError && error.status === 422) {
         const detail = problemMessage(error, "");
-        if (pairingMode === "manual") {
+        if (detail === "invalid tournament content configuration") {
+          setFormError("Каталог задач не подходит для выбранных настроек: проверьте доступность задач по категориям и резерв. Для драфта задач должно хватать на каждый возможный исход во всех парах. Выберите другую политику или дополните каталог для нового соревнования.");
+        } else if (pairingMode === "manual") {
           const repeatMessage = isRepeatProblem(error)
             ? "Повторные пары запрещены. Выберите участников, которые еще не встречались."
             : "Не удалось принять ручную сетку. Проверьте пары, bye и состав участников.";
@@ -1000,7 +1036,7 @@ export const SwissPairingEditor = ({
                 loadingLabel="Формируем пары"
                 disabled={pairingFormDisabled || eligibleParticipants.length < 2}
               >
-                Сформировать пары
+                {activeConfigurationRound?.pairings.length ? "Сохранить настройки раунда" : "Сформировать пары"}
               </Button>
             </div>
           </section>
