@@ -50,21 +50,18 @@ interface LastUploadedSource {
   expiresInSeconds: number;
 }
 
-const CATEGORY_CONFIG: Record<
-  TaskCategory,
-  { label: string; icon: string; color: string }
-> = {
-  web: { label: "Web", icon: "🌐", color: "#72d1eb" },
-  crypto: { label: "Crypto", icon: "🔐", color: "#fbbf24" },
-  forensics: { label: "Forensics", icon: "🔍", color: "#a78bfa" },
-  reverse: { label: "Reverse", icon: "⚙️", color: "#f472b6" },
-  pwn: { label: "Pwn", icon: "💥", color: "#ef4444" },
-  steganography: { label: "Steganography", icon: "🖼️", color: "#38bdf8" },
-  ppc: { label: "PPC", icon: "🧮", color: "#fb7185" },
-  osint: { label: "OSINT", icon: "🛰️", color: "#22c55e" },
-  mobile: { label: "Mobile", icon: "📱", color: "#60a5fa" },
-  hardware: { label: "Hardware", icon: "🔧", color: "#f97316" },
-  misc: { label: "Misc", icon: "🧩", color: "#34d399" },
+const CATEGORY_CONFIG: Record<TaskCategory, { label: string }> = {
+  web: { label: "Web" },
+  crypto: { label: "Crypto" },
+  forensics: { label: "Forensics" },
+  reverse: { label: "Reverse" },
+  pwn: { label: "Pwn" },
+  steganography: { label: "Steganography" },
+  ppc: { label: "PPC" },
+  osint: { label: "OSINT" },
+  mobile: { label: "Mobile" },
+  hardware: { label: "Hardware" },
+  misc: { label: "Misc" },
 };
 
 const DIFFICULTY_CONFIG: Record<
@@ -1351,7 +1348,7 @@ export default function AdminPanel() {
       <>
         <div className={styles.categoryField}>
           <div className={styles.categoryFieldLabel}>
-            {CATEGORY_CONFIG[category].icon} {CATEGORY_CONFIG[category].label}{" "}
+            {CATEGORY_CONFIG[category].label}{" "}
             URL
           </div>
           <div className={styles.inputGroup}>
@@ -1380,18 +1377,18 @@ export default function AdminPanel() {
 
         <div className={styles.categoryField}>
           <div className={styles.categoryFieldLabel}>
-            {CATEGORY_CONFIG[category].icon} ZIP-архив с исходниками
+            ZIP-архив с исходниками
           </div>
           <div className={styles.fileUpload}>
-            <div
+            <button
+              type="button"
               className={`${styles.fileUploadZone} ${taskFormErrors.sourceFile ? styles.fileUploadZoneError : ""}`}
               onClick={() => fileInputRef.current?.click()}
             >
-              <div className={styles.fileUploadIcon}>📁</div>
-              <div className={styles.fileUploadText}>
+              <span className={styles.fileUploadText}>
                 <strong>Нажмите для выбора</strong> или перетащите ZIP-архив
-              </div>
-            </div>
+              </span>
+            </button>
             <input
               ref={fileInputRef}
               type="file"
@@ -1401,7 +1398,6 @@ export default function AdminPanel() {
             />
             {sourceFile && (
               <div className={styles.fileInfo}>
-                <span aria-hidden="true">📦</span>
                 <span className={styles.fileInfoName}>
                   <strong>{sourceFile.name}</strong>
                   <span className={styles.fileInfoMeta}>
@@ -1423,7 +1419,6 @@ export default function AdminPanel() {
             )}
             {!sourceFile && existingSourceFileURL && !sourceFileCleared && (
               <div className={styles.fileInfo}>
-                <span aria-hidden="true">📦</span>
                 <span className={styles.fileInfoName}>
                   <strong>Текущий архив сохранён</strong>
                   <span className={styles.fileInfoMeta}>
@@ -1453,7 +1448,6 @@ export default function AdminPanel() {
             )}
             {!sourceFile && existingSourceFileURL && sourceFileCleared && (
               <div className={styles.fileInfo}>
-                <span aria-hidden="true">🗑</span>
                 <span className={styles.fileInfoName}>
                   <strong>Архив будет удалён после сохранения задачи</strong>
                   <span className={styles.fileInfoMeta}>
@@ -1481,8 +1475,8 @@ export default function AdminPanel() {
 
   const renderPlayersSection = () => (
     <>
-      <div className={`${styles.card} motion-panel`}>
-        <h2 className={styles.cardTitle}>👥 Игроки</h2>
+      <div className={styles.card}>
+        <h2 className={styles.cardTitle}>Игроки</h2>
         <form onSubmit={handlePlayerSubmit} className={styles.form} noValidate>
           <div className={styles.formRow}>
             <div className={styles.inputGroup}>
@@ -1596,7 +1590,7 @@ export default function AdminPanel() {
           <div className={styles.btnGroup}>
             <button
               type="submit"
-              className={`${styles.btn} ${styles.btnPrimary} motion-button`}
+              className={`${styles.btn} ${styles.btnPrimary}`}
               disabled={!editingPlayerId || playerSubmitting}
             >
               {playerSubmitting ? (
@@ -1608,12 +1602,12 @@ export default function AdminPanel() {
                   Сохранение...
                 </>
               ) : (
-                "💾 Сохранить игрока"
+                "Сохранить игрока"
               )}
             </button>
             <button
               type="button"
-              className={`${styles.btn} ${styles.btnSecondary} motion-button`}
+              className={`${styles.btn} ${styles.btnSecondary}`}
               onClick={resetPlayerForm}
               disabled={!editingPlayerId || playerSubmitting}
             >
@@ -1625,7 +1619,7 @@ export default function AdminPanel() {
 
       <div className={styles.taskList}>
         <div className={styles.playerListHeader}>
-          <h2 className={styles.taskListTitle}>👥 Список игроков</h2>
+          <h2 className={styles.taskListTitle}>Список игроков</h2>
           <label className={styles.toggleRow}>
             <input
               type="checkbox"
@@ -1639,13 +1633,12 @@ export default function AdminPanel() {
         {playersLoading ? (
           <div className={styles.loading}>
             <div className={styles.spinner}></div>
-            <p style={{ color: "rgba(255,255,255,0.5)", fontSize: "0.9rem" }}>
+            <p style={{ color: "var(--fsp-muted)", fontSize: "0.9rem" }}>
               Загрузка игроков...
             </p>
           </div>
         ) : players.length === 0 ? (
           <div className={styles.empty}>
-            <div className={styles.emptyIcon}>👤</div>
             <p className={styles.emptyText}>Пока нет игроков</p>
           </div>
         ) : (
@@ -1654,7 +1647,7 @@ export default function AdminPanel() {
             return (
               <div
                 key={player.id}
-                className={`${styles.taskItem} ${editingPlayerId === player.id ? styles.playerItemActive : ""} ${isDeleted ? styles.playerItemDeleted : ""} motion-list-item`}
+                className={`${styles.taskItem} ${editingPlayerId === player.id ? styles.playerItemActive : ""} ${isDeleted ? styles.playerItemDeleted : ""}`}
               >
                 <div className={styles.taskItemInfo}>
                   <div className={styles.taskItemTitle}>{player.username}</div>
@@ -1685,15 +1678,15 @@ export default function AdminPanel() {
                 </div>
                 <div className={styles.taskItemActions}>
                   <button
-                    className={`${styles.taskItemBtn} motion-button`}
+                    className={styles.taskItemBtn}
                     onClick={() => openPlayerAudit(player)}
                     aria-label={`История игрока ${player.username}`}
                     title="История изменений"
                   >
-                    🕘
+                    История
                   </button>
                   <button
-                    className={`${styles.taskItemBtn} motion-button`}
+                    className={styles.taskItemBtn}
                     onClick={() => startEditingPlayer(player)}
                     aria-label={`Редактировать игрока ${player.username}`}
                     title={
@@ -1703,16 +1696,16 @@ export default function AdminPanel() {
                     }
                     disabled={isDeleted}
                   >
-                    ✏️
+                    Изменить
                   </button>
                   <button
-                    className={`${styles.taskItemBtn} ${styles.taskItemBtnDanger} motion-button`}
+                    className={`${styles.taskItemBtn} ${styles.taskItemBtnDanger}`}
                     onClick={() => handleDeletePlayer(player)}
                     aria-label={`Удалить игрока ${player.username}`}
                     title={isDeleted ? "Игрок уже удален" : "Удалить игрока"}
                     disabled={isDeleted}
                   >
-                    🗑️
+                    Удалить
                   </button>
                 </div>
               </div>
@@ -1727,11 +1720,11 @@ export default function AdminPanel() {
     if (!auditPlayer) return null;
     return (
       <div
-        className={`${styles.modalBackdrop} motion-modal-backdrop`}
+        className={styles.modalBackdrop}
         onMouseDown={closePlayerAudit}
       >
         <div
-          className={`${styles.auditModal} motion-modal`}
+          className={styles.auditModal}
           role="dialog"
           aria-modal="true"
           aria-labelledby="player-audit-title"
@@ -1746,7 +1739,7 @@ export default function AdminPanel() {
             </div>
             <button
               type="button"
-              className={`${styles.modalClose} motion-button`}
+              className={styles.modalClose}
               onClick={closePlayerAudit}
               aria-label="Закрыть историю"
             >
@@ -1757,7 +1750,7 @@ export default function AdminPanel() {
           {playerAuditLoading ? (
             <div className={styles.loading}>
               <div className={styles.spinner}></div>
-              <p style={{ color: "rgba(255,255,255,0.5)", fontSize: "0.9rem" }}>
+              <p style={{ color: "var(--fsp-muted)", fontSize: "0.9rem" }}>
                 Загрузка истории...
               </p>
             </div>
@@ -1772,7 +1765,7 @@ export default function AdminPanel() {
                 return (
                   <article
                     key={event.id}
-                    className={`${styles.auditEvent} motion-list-item`}
+                    className={styles.auditEvent}
                   >
                     <div className={styles.auditEventHeader}>
                       <span className={styles.auditAction}>
@@ -1822,15 +1815,15 @@ export default function AdminPanel() {
 
   if (!tokens) {
     return (
-      <main className={`${styles.container} motion-page gpu-optimized`}>
-        <div className={`${styles.header} motion-panel`}>
+      <main className={styles.container}>
+        <div className={styles.header}>
           <div className={styles.headerTop}>
             <h1 className={styles.title}>Admin</h1>
           </div>
           <p className={styles.subtitle}>Панель управления задачами</p>
         </div>
 
-        <div className={`${styles.card} ${styles.loginCard} motion-panel`}>
+        <div className={`${styles.card} ${styles.loginCard}`}>
           <h2 className={styles.cardTitle}>Авторизация</h2>
           <form onSubmit={handleLogin} className={styles.form} noValidate>
             <div className={styles.inputGroup}>
@@ -1859,7 +1852,7 @@ export default function AdminPanel() {
             </div>
             <button
               type="submit"
-              className={`${styles.btn} ${styles.btnPrimary} motion-button`}
+              className={`${styles.btn} ${styles.btnPrimary}`}
               disabled={authLoading || logoutPending || !password.trim()}
             >
               {authLoading || logoutPending ? (
@@ -1880,6 +1873,7 @@ export default function AdminPanel() {
         {notification && (
           <ViewportPortal>
             <div
+              role="status"
               className={`${styles.notification} ${
                 notification.type === "success"
                   ? styles.notificationSuccess
@@ -1896,10 +1890,11 @@ export default function AdminPanel() {
     );
   }
   return (
-    <main className={`${styles.container} motion-page gpu-optimized`}>
+    <main className={styles.container}>
       {notification && (
         <ViewportPortal>
           <div
+            role="status"
             className={`${styles.notification} ${
               notification.type === "success"
                 ? styles.notificationSuccess
@@ -1912,10 +1907,10 @@ export default function AdminPanel() {
           </div>
         </ViewportPortal>
       )}
-      <div className={`${styles.header} motion-panel`}>
+      <div className={styles.header}>
         <button
           type="button"
-          className={`${styles.btn} ${styles.btnSecondary} ${styles.logoutButton} motion-button`}
+          className={`${styles.btn} ${styles.btnSecondary} ${styles.logoutButton}`}
           onClick={handleLogout}
         >
           Выйти
@@ -1931,14 +1926,14 @@ export default function AdminPanel() {
         <div className={styles.sectionTabs}>
           <button
             type="button"
-            className={`${styles.sectionTab} ${activeSection === "tasks" ? styles.sectionTabActive : ""} motion-button`}
+            className={`${styles.sectionTab} ${activeSection === "tasks" ? styles.sectionTabActive : ""}`}
             onClick={() => setActiveSection("tasks")}
           >
             Задания
           </button>
           <button
             type="button"
-            className={`${styles.sectionTab} ${activeSection === "players" ? styles.sectionTabActive : ""} motion-button`}
+            className={`${styles.sectionTab} ${activeSection === "players" ? styles.sectionTabActive : ""}`}
             onClick={() => setActiveSection("players")}
           >
             Игроки
@@ -1947,15 +1942,15 @@ export default function AdminPanel() {
       </div>
       <div
         key={activeSection}
-        className={`${styles.sectionPanel} ${styles.sectionPanelEnter}`}
+        className={styles.sectionPanel}
       >
         {activeSection === "tasks" ? (
           <>
-            <div className={`${styles.card} motion-panel`}>
+            <div className={styles.card}>
               <h2 className={styles.cardTitle}>
                 {editingTaskId
-                  ? "✏️ Редактировать задачу"
-                  : "➕ Создать задачу"}
+                  ? "Редактировать задачу"
+                  : "Создать задачу"}
               </h2>
               <form onSubmit={handleSubmit} className={styles.form} noValidate>
                 <div className={styles.inputGroup}>
@@ -2032,17 +2027,17 @@ export default function AdminPanel() {
                       }}
                       className={styles.select}
                     >
-                      <option value="web">🌐 Web</option>
-                      <option value="crypto">🔐 Crypto</option>
-                      <option value="forensics">🔍 Forensics</option>
-                      <option value="reverse">⚙️ Reverse</option>
-                      <option value="pwn">💥 Pwn</option>
-                      <option value="steganography">🖼️ Steganography</option>
-                      <option value="ppc">🧮 PPC</option>
-                      <option value="osint">🛰️ OSINT</option>
-                      <option value="mobile">📱 Mobile</option>
-                      <option value="hardware">🔧 Hardware</option>
-                      <option value="misc">🧩 Misc</option>
+                      <option value="web">Web</option>
+                      <option value="crypto">Crypto</option>
+                      <option value="forensics">Forensics</option>
+                      <option value="reverse">Reverse</option>
+                      <option value="pwn">Pwn</option>
+                      <option value="steganography">Steganography</option>
+                      <option value="ppc">PPC</option>
+                      <option value="osint">OSINT</option>
+                      <option value="mobile">Mobile</option>
+                      <option value="hardware">Hardware</option>
+                      <option value="misc">Misc</option>
                     </select>
                   </div>
 
@@ -2055,9 +2050,9 @@ export default function AdminPanel() {
                       }
                       className={styles.select}
                     >
-                      <option value="easy">🟢 Лёгкая</option>
-                      <option value="medium">🟡 Средняя</option>
-                      <option value="hard">🔴 Сложная</option>
+                      <option value="easy">Лёгкая</option>
+                      <option value="medium">Средняя</option>
+                      <option value="hard">Сложная</option>
                     </select>
                   </div>
                 </div>
@@ -2107,9 +2102,7 @@ export default function AdminPanel() {
                         clearTaskFormError("form");
                       }}
                       placeholder="flag{...}"
-                      className={
-                        taskFormErrors.flag ? styles.inputError : undefined
-                      }
+                      className={`${styles.flagInput} ${taskFormErrors.flag ? styles.inputError : ""}`}
                       aria-invalid={Boolean(taskFormErrors.flag)}
                       aria-describedby={
                         taskFormErrors.flag
@@ -2167,7 +2160,7 @@ export default function AdminPanel() {
                 <div className={styles.btnGroup}>
                   <button
                     type="submit"
-                    className={`${styles.btn} ${styles.btnPrimary} motion-button`}
+                    className={`${styles.btn} ${styles.btnPrimary}`}
                     disabled={submitting}
                   >
                     {submitting ? (
@@ -2179,14 +2172,14 @@ export default function AdminPanel() {
                         {editingTaskId ? "Сохранение..." : "Создание..."}
                       </>
                     ) : editingTaskId ? (
-                      "💾 Сохранить задачу"
+                      "Сохранить задачу"
                     ) : (
-                      "🚀 Создать задачу"
+                      "Создать задачу"
                     )}
                   </button>
                   <button
                     type="button"
-                    className={`${styles.btn} ${styles.btnSecondary} motion-button`}
+                    className={`${styles.btn} ${styles.btnSecondary}`}
                     onClick={resetForm}
                   >
                     {editingTaskId ? "Отменить" : "Очистить"}
@@ -2212,7 +2205,7 @@ export default function AdminPanel() {
                   </span>
                 </div>
                 <a
-                  className={`${styles.btn} ${styles.btnSecondary} ${styles.sourceDownloadButton} motion-button`}
+                  className={`${styles.btn} ${styles.btnSecondary} ${styles.sourceDownloadButton}`}
                   href={lastUploadedSource.url}
                   download={lastUploadedSource.fileName}
                   target="_blank"
@@ -2223,14 +2216,14 @@ export default function AdminPanel() {
               </div>
             )}
             <div className={styles.taskList}>
-              <h2 className={styles.taskListTitle}>📋 Список задач</h2>
+              <h2 className={styles.taskListTitle}>Список задач</h2>
 
               {tasksLoading ? (
                 <div className={styles.loading}>
                   <div className={styles.spinner}></div>
                   <p
                     style={{
-                      color: "rgba(255,255,255,0.5)",
+                      color: "var(--fsp-muted)",
                       fontSize: "0.9rem",
                     }}
                   >
@@ -2239,14 +2232,13 @@ export default function AdminPanel() {
                 </div>
               ) : tasks.length === 0 ? (
                 <div className={styles.empty}>
-                  <div className={styles.emptyIcon}>📭</div>
                   <p className={styles.emptyText}>Пока нет созданных задач</p>
                 </div>
               ) : (
                 tasks.map((task) => (
                   <div
                     key={task.id}
-                    className={`${styles.taskItem} motion-list-item`}
+                    className={styles.taskItem}
                   >
                     <div className={styles.taskItemInfo}>
                       <div className={styles.taskItemTitle}>{task.title}</div>
@@ -2260,7 +2252,6 @@ export default function AdminPanel() {
                                 : styles.taskBadgeFile
                           }`}
                         >
-                          {CATEGORY_CONFIG[task.category]?.icon || "📦"}{" "}
                           {CATEGORY_CONFIG[task.category]?.label ||
                             task.category}
                         </span>
@@ -2272,28 +2263,28 @@ export default function AdminPanel() {
                         </span>
                         <span
                           style={{
-                            fontSize: "0.65rem",
-                            color: "rgba(255,255,255,0.3)",
+                            fontSize: "0.75rem",
+                            color: "var(--fsp-muted)",
                           }}
                         >
-                          ⏱ {task.time_limit}с
+                          {task.time_limit}с
                         </span>
                       </div>
                     </div>
                     <div className={styles.taskItemActions}>
                       <button
-                        className={`${styles.taskItemBtn} motion-button`}
+                        className={styles.taskItemBtn}
                         onClick={() => startEditing(task)}
                         title="Редактировать задачу"
                       >
-                        ✏️
+                        Изменить
                       </button>
                       <button
-                        className={`${styles.taskItemBtn} ${styles.taskItemBtnDanger} motion-button`}
+                        className={`${styles.taskItemBtn} ${styles.taskItemBtnDanger}`}
                         onClick={() => handleDeleteTask(task.id)}
                         title="Удалить задачу"
                       >
-                        🗑️
+                        Удалить
                       </button>
                     </div>
                   </div>

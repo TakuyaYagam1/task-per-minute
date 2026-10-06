@@ -5,38 +5,25 @@ import React from "react";
 interface PlayButtonProps {
   onClick: () => void;
   disabled?: boolean;
+  ref?: React.Ref<HTMLButtonElement>;
 }
+
 export const PlayButton: React.FC<PlayButtonProps> = ({
   onClick,
   disabled = false,
+  ref,
 }) => {
   return (
     <button
+      ref={ref}
+      type="button"
       onClick={onClick}
       disabled={disabled}
-      className={`
-        btn btn-primary w-full text-lg font-bold py-4 px-8 
-        transition-all duration-300 ease-out transform
-        ${
-          disabled
-            ? "opacity-50 cursor-not-allowed"
-            : "hover:scale-105 hover:shadow-lg animate-glow"
-        }
-        ${disabled ? "" : "active:scale-95"}
-      `}
+      className="btn btn-primary"
+      style={{ width: "100%", minHeight: "3.25rem", fontWeight: 600 }}
     >
-      <span className={`${disabled ? "" : "animate-pulse"}`}>
-        {disabled ? (
-          <span className="flex items-center justify-center gap-2">
-            <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-            ЗАГРУЗКА...
-          </span>
-        ) : (
-          <span className="flex items-center justify-center gap-2">
-            🚀 ИГРАТЬ
-          </span>
-        )}
-      </span>
+      {disabled ? "ЗАГРУЗКА..." : "ИГРАТЬ"}
+      {!disabled && <span aria-hidden="true">-&gt;</span>}
     </button>
   );
 };

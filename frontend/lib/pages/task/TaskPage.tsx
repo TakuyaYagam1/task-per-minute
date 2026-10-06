@@ -46,19 +46,19 @@ interface HintView {
 
 const CATEGORY_CONFIG: Record<
   TaskCategory,
-  { label: string; icon: string; color: string }
+  { label: string }
 > = {
-  web: { label: "Web", icon: "🌐", color: "#72d1eb" },
-  crypto: { label: "Crypto", icon: "🔐", color: "#fbbf24" },
-  forensics: { label: "Forensics", icon: "🔍", color: "#a78bfa" },
-  reverse: { label: "Reverse", icon: "⚙️", color: "#f472b6" },
-  pwn: { label: "Pwn", icon: "💥", color: "#ef4444" },
-  steganography: { label: "Steganography", icon: "🖼️", color: "#38bdf8" },
-  ppc: { label: "PPC", icon: "🧮", color: "#fb7185" },
-  osint: { label: "OSINT", icon: "🛰️", color: "#22c55e" },
-  mobile: { label: "Mobile", icon: "📱", color: "#60a5fa" },
-  hardware: { label: "Hardware", icon: "🔧", color: "#f97316" },
-  misc: { label: "Misc", icon: "🧩", color: "#34d399" },
+  web: { label: "Web" },
+  crypto: { label: "Crypto" },
+  forensics: { label: "Forensics" },
+  reverse: { label: "Reverse" },
+  pwn: { label: "Pwn" },
+  steganography: { label: "Steganography" },
+  ppc: { label: "PPC" },
+  osint: { label: "OSINT" },
+  mobile: { label: "Mobile" },
+  hardware: { label: "Hardware" },
+  misc: { label: "Misc" },
 };
 
 const DIFFICULTY_CONFIG: Record<
@@ -1110,52 +1110,52 @@ export const TaskPage: React.FC = () => {
     switch (gameState) {
       case "won":
         return {
-          emoji: "🏆",
+          symbol: "✓",
           title: "ПОБЕДА!",
           message: "Поздравляем! Вы успешно решили задание!",
-          color: "#4ade80",
+          color: "var(--fsp-green)",
         };
       case "lost":
         return {
-          emoji: "😢",
+          symbol: "×",
           title: "ПОРАЖЕНИЕ",
           message: "Другой игрок раньше ввел правильный флаг.",
-          color: "#ef4444",
+          color: "var(--fsp-red)",
         };
-        case "timeup":
-          return {
-          emoji: "⏰",
+      case "timeup":
+        return {
+          symbol: "00",
           title: "ВРЕМЯ ВЫШЛО!",
           message: "Дуэль завершилась без победителя.",
-            color: "#fbbf24",
-          };
-        case "timeup_pending":
-          return {
-            emoji: "⏳",
-            title: "ВРЕМЯ ВЫШЛО!",
-            message: "Ждём подтверждение результата от сервера.",
-            color: "#fbbf24",
-          };
+          color: "var(--fsp-accent)",
+        };
+      case "timeup_pending":
+        return {
+          symbol: "00",
+          title: "ВРЕМЯ ВЫШЛО!",
+          message: "Ждём подтверждение результата от сервера.",
+          color: "var(--fsp-accent)",
+        };
       default:
         return {
-          emoji: "❓",
+          symbol: "—",
           title: "ИГРА ЗАВЕРШЕНА",
           message: "Игра завершена.",
-          color: "#888",
+          color: "var(--fsp-muted)",
         };
     }
   };
 
-    const timerClass =
+  const timerClass =
     timeLeft <= 10
       ? styles.timerDanger
       : timeLeft <= 60
-          ? styles.timerWarning
-          : styles.timerNormal;
-    const canUseWebSocket = connectionState === "open";
+        ? styles.timerWarning
+        : styles.timerNormal;
+  const canUseWebSocket = connectionState === "open";
 
   return (
-    <main className={`${styles.container} motion-page gpu-optimized`}>
+    <main className={styles.container}>
       {notification && (
         <ViewportPortal>
           <div className={`${styles.notification} ${styles.notificationError}`}>
@@ -1165,10 +1165,12 @@ export const TaskPage: React.FC = () => {
       )}
 
       {isPaused && gameState === "playing" && (
-        <div className={`${styles.overlay} motion-modal-backdrop`}>
-          <div className={`${styles.modal} motion-modal`}>
-            <span className={styles.modalEmoji}>⏸</span>
-            <h2 className={styles.modalTitle} style={{ color: "#fbbf24" }}>
+        <div className={styles.overlay}>
+          <div className={styles.modal}>
+            <span className={styles.modalSymbol} aria-hidden="true">
+              Ⅱ
+            </span>
+            <h2 className={styles.modalTitle} style={{ color: "var(--fsp-accent)" }}>
               СОПЕРНИК ОТКЛЮЧИЛСЯ
             </h2>
             <p className={styles.modalMessage}>
@@ -1183,12 +1185,12 @@ export const TaskPage: React.FC = () => {
               </p>
             )}
             <button
-              className={`${styles.modalBtn} ${styles.modalBtnDanger} motion-button`}
-                onClick={handleSurrender}
-                disabled={
-                  isSurrendering || gameState !== "playing" || !canUseWebSocket
-                }
-              >
+              className={`${styles.modalBtn} ${styles.modalBtnDanger}`}
+              onClick={handleSurrender}
+              disabled={
+                isSurrendering || gameState !== "playing" || !canUseWebSocket
+              }
+            >
               {isSurrendering ? "Сдаёмся..." : "Сдаться"}
             </button>
           </div>
@@ -1197,33 +1199,32 @@ export const TaskPage: React.FC = () => {
 
       <div className={styles.content}>
         <div className={styles.header}>
-          <div className={styles.headerTop}>
-            <span className={styles.headerIcon}>{categoryConfig.icon}</span>
-            <h1 className={styles.title}>{taskData.title}</h1>
-          </div>
+          <h1 className={styles.title}>{taskData.title}</h1>
           <p className={styles.subtitle}>Решите задание быстрее соперника</p>
         </div>
 
-        <div className={styles.duelInfo}>
-          <span className={styles.duelInfoLabel}>Ваш соперник</span>
-          <strong className={styles.duelInfoName}>{opponentUsername}</strong>
-        </div>
+        <div className={styles.matchOverview}>
+          <div className={styles.duelInfo}>
+            <span className={styles.duelInfoLabel}>Ваш соперник</span>
+            <strong className={styles.duelInfoName}>{opponentUsername}</strong>
+          </div>
 
-        <div className={styles.card}>
-          <h2 className={styles.cardTitle}>⏱ Осталось времени</h2>
-          <div className={styles.timerWrapper}>
-            <div>
-              <div className={`${styles.timerDisplay} ${timerClass}`}>
-                {formatTime(timeLeft)}
-              </div>
-              <div className={styles.timerLabel}>
-                {isPaused
-                  ? "Пауза"
-                  : timeLeft <= 10
-                    ? "Критично!"
-                    : timeLeft <= 60
-                      ? "Мало времени"
-                      : "В запасе"}
+          <div className={styles.timerPanel}>
+            <h2 className={styles.timerTitle}>Осталось времени</h2>
+            <div className={styles.timerWrapper}>
+              <div className={styles.timerReadout}>
+                <div className={`${styles.timerDisplay} ${timerClass}`}>
+                  {formatTime(timeLeft)}
+                </div>
+                <div className={styles.timerLabel}>
+                  {isPaused
+                    ? "Пауза"
+                    : timeLeft <= 10
+                      ? "Критично!"
+                      : timeLeft <= 60
+                        ? "Мало времени"
+                        : "В запасе"}
+                </div>
               </div>
             </div>
           </div>
@@ -1231,12 +1232,12 @@ export const TaskPage: React.FC = () => {
 
         <div className={styles.card}>
           <h2 className={styles.cardTitle}>
-            {categoryConfig.icon} {categoryConfig.label} - Задание
+            {categoryConfig.label} — Задание
           </h2>
 
           <div className={styles.taskBadges}>
             <span className={`${styles.badge} ${styles.badgeCategory}`}>
-              {categoryConfig.icon} {categoryConfig.label}
+              {categoryConfig.label}
             </span>
             <span className={`${styles.badge} ${difficultyConfig.badgeClass}`}>
               {difficultyConfig.label}
@@ -1247,18 +1248,18 @@ export const TaskPage: React.FC = () => {
 
           {taskTarget && isExternalTaskURL && (
             <button
-              className={`${styles.taskLinkBtn} ${taskOpened ? styles.taskLinkBtnOpened : ""} motion-button`}
+              className={`${styles.taskLinkBtn} ${taskOpened ? styles.taskLinkBtnOpened : ""}`}
               onClick={openTask}
             >
               {taskOpened
                 ? "✓ Задание открыто"
-                : `${categoryConfig.icon} Перейти к заданию`}
+                : "Перейти к заданию ↗"}
             </button>
           )}
 
           {taskTarget && !isExternalTaskURL && (
             <div className={styles.connectionTarget}>
-              <span className={styles.connectionTargetIcon}>⌁</span>
+              <span className={styles.connectionTargetIcon} aria-hidden="true">⌁</span>
               <div className={styles.connectionTargetInfo}>
                 <div className={styles.connectionTargetLabel}>
                   Endpoint подключения
@@ -1268,7 +1269,7 @@ export const TaskPage: React.FC = () => {
                 </code>
               </div>
               <button
-                className={`${styles.connectionTargetBtn} motion-button`}
+                className={styles.connectionTargetBtn}
                 onClick={copyTaskTarget}
               >
                 {taskOpened ? "✓ Скопировано" : "Копировать"}
@@ -1278,7 +1279,7 @@ export const TaskPage: React.FC = () => {
 
           {taskSourceURL && (
             <div className={styles.fileDownload}>
-              <span className={styles.fileDownloadIcon}>📦</span>
+              <span className={styles.fileDownloadIcon} aria-hidden="true">↓</span>
               <div className={styles.fileDownloadInfo}>
                 <div className={styles.fileDownloadName}>source.zip</div>
                 <div className={styles.fileDownloadHint}>
@@ -1286,10 +1287,10 @@ export const TaskPage: React.FC = () => {
                 </div>
               </div>
               <button
-                className={`${styles.fileDownloadBtn} motion-button`}
+                className={styles.fileDownloadBtn}
                 onClick={downloadFile}
               >
-                ⬇ Скачать
+                Скачать
               </button>
             </div>
           )}
@@ -1297,7 +1298,7 @@ export const TaskPage: React.FC = () => {
 
         {hints.length > 0 && (
           <div className={styles.card}>
-            <h2 className={styles.cardTitle}>💡 Подсказки</h2>
+            <h2 className={styles.cardTitle}>Подсказки</h2>
             <div className={styles.hintsSection}>
               {hints.map((hint) => (
                 <div
@@ -1310,7 +1311,7 @@ export const TaskPage: React.FC = () => {
                   </span>
                   {!hint.hint && (
                     <button
-                      className={`${styles.hintRevealBtn} motion-button`}
+                      className={styles.hintRevealBtn}
                       disabled
                     >
                       Ждите
@@ -1323,12 +1324,13 @@ export const TaskPage: React.FC = () => {
         )}
 
         <div className={styles.card}>
-          <h2 className={styles.cardTitle}>🚩 Отправка флага</h2>
+          <h2 className={styles.cardTitle}>Отправка флага</h2>
 
           <div className={styles.flagForm}>
             <div className={styles.flagInputRow}>
               <input
                 type="text"
+                aria-label="Флаг"
                 className={styles.flagInput}
                 value={flagInput}
                 onChange={(e) => setFlagInput(e.target.value)}
@@ -1346,7 +1348,7 @@ export const TaskPage: React.FC = () => {
                   disabled={gameState !== "playing" || isPaused || !canUseWebSocket}
               />
               <button
-                className={`${styles.flagSubmitBtn} motion-button`}
+                className={styles.flagSubmitBtn}
                 onClick={handleFlagSubmit}
                 disabled={
                   isSubmitting ||
@@ -1365,7 +1367,7 @@ export const TaskPage: React.FC = () => {
                     Отправка...
                   </>
                 ) : (
-                  "🚀 Отправить"
+                  "Отправить"
                 )}
               </button>
             </div>
@@ -1376,7 +1378,7 @@ export const TaskPage: React.FC = () => {
 
             <button
               type="button"
-              className={`${styles.surrenderBtn} motion-button`}
+              className={styles.surrenderBtn}
               onClick={handleSurrender}
                 disabled={
                   isSurrendering || gameState !== "playing" || !canUseWebSocket
@@ -1403,8 +1405,8 @@ export const TaskPage: React.FC = () => {
                     : styles.flagStatusIncorrect
                 }`}
               >
-                <span className={styles.flagStatusIcon}>
-                  {flagStatus === "correct" ? "✅" : "❌"}
+                <span className={styles.flagStatusIcon} aria-hidden="true">
+                  {flagStatus === "correct" ? "✓" : "×"}
                 </span>
                 <span>
                   {flagStatus === "correct" ? "Флаг верный!" : "Неверный флаг"}
@@ -1415,29 +1417,41 @@ export const TaskPage: React.FC = () => {
         </div>
       </div>
 
-        {gameState === "timeup_pending" && (
-          <div className={`${styles.overlay} motion-modal-backdrop`}>
-            <div className={`${styles.modal} motion-modal`}>
-              <span className={styles.modalEmoji}>{getResultConfig().emoji}</span>
-              <h2
-                className={styles.modalTitle}
-                style={{ color: getResultConfig().color }}
-              >
-                {getResultConfig().title}
-              </h2>
-              <p className={styles.modalMessage}>{getResultConfig().message}</p>
-              <div
-                className={styles.spinner}
-                style={{ width: 24, height: 24, borderWidth: 3 }}
-              ></div>
-            </div>
+      {gameState === "timeup_pending" && (
+        <div className={styles.overlay}>
+          <div className={styles.modal}>
+            <span
+              className={styles.modalSymbol}
+              aria-hidden="true"
+              style={{ color: getResultConfig().color }}
+            >
+              {getResultConfig().symbol}
+            </span>
+            <h2
+              className={styles.modalTitle}
+              style={{ color: getResultConfig().color }}
+            >
+              {getResultConfig().title}
+            </h2>
+            <p className={styles.modalMessage}>{getResultConfig().message}</p>
+            <div
+              className={styles.spinner}
+              style={{ width: 24, height: 24, borderWidth: 3 }}
+            ></div>
           </div>
-        )}
+        </div>
+      )}
 
-        {gameState !== "playing" && gameState !== "timeup_pending" && (
-        <div className={`${styles.overlay} motion-modal-backdrop`}>
-          <div className={`${styles.modal} motion-modal`}>
-            <span className={styles.modalEmoji}>{getResultConfig().emoji}</span>
+      {gameState !== "playing" && gameState !== "timeup_pending" && (
+        <div className={styles.overlay}>
+          <div className={styles.modal}>
+            <span
+              className={styles.modalSymbol}
+              aria-hidden="true"
+              style={{ color: getResultConfig().color }}
+            >
+              {getResultConfig().symbol}
+            </span>
             <h2
               className={styles.modalTitle}
               style={{ color: getResultConfig().color }}
@@ -1446,10 +1460,10 @@ export const TaskPage: React.FC = () => {
             </h2>
             <p className={styles.modalMessage}>{getResultConfig().message}</p>
             <button
-              className={`${styles.modalBtn} motion-button`}
+              className={styles.modalBtn}
               onClick={handleReturnHome}
             >
-              🏠 Вернуться на главную
+              Вернуться на главную
             </button>
           </div>
         </div>

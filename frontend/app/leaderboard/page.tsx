@@ -1,5 +1,5 @@
 'use client';
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import styles from './leaderboard.module.css';
 import { ApiError, leaderboardApi } from '../../lib/shared/api';
@@ -11,37 +11,6 @@ interface LeaderboardEntry {
   average_solve_time_ms: number;
 }
 
-const getMedalEmoji = (rank: number): string | null => {
-  switch(rank) {
-    case 1: return '🥇';
-    case 2: return '🥈';
-    case 3: return '🥉';
-    default: return null;
-  }
-};
-
-const getRankBadgeClass = (rank: number): string => {
-  switch(rank) {
-    case 1: return styles.rankBadgeGold;
-    case 2: return styles.rankBadgeSilver;
-    case 3: return styles.rankBadgeBronze;
-    default: return '';
-  }
-};
-
-const getAvatarClass = (rank: number): string => {
-  switch(rank) {
-    case 1: return styles.avatarGold;
-    case 2: return styles.avatarSilver;
-    case 3: return styles.avatarBronze;
-    default: return '';
-  }
-};
-
-const getInitials = (username: string): string => {
-  return username.slice(0, 2).toUpperCase();
-};
-
 const formatTime = (ms: number): string => {
   const totalSeconds = ms / 1000;
   const minutes = Math.floor(totalSeconds / 60);
@@ -50,11 +19,6 @@ const formatTime = (ms: number): string => {
     return `${minutes}м ${seconds}с`;
   }
   return `${seconds}с`;
-};
-
-const getMaxWins = (entries: LeaderboardEntry[]): number => {
-  if (entries.length === 0) return 0;
-  return Math.max(...entries.map(e => e.wins));
 };
 
 export default function Leaderboard() {
@@ -176,10 +140,6 @@ export default function Leaderboard() {
     };
   }, []);
 
-  const maxWins = useMemo(() => getMaxWins(entries), [entries]);
-
-  const topThree = entries.slice(0, 3);
-  const restEntries = entries.slice(3);
   const totalPlayers = entries.length;
   const totalWins = entries.reduce((sum, e) => sum + e.wins, 0);
   const avgTime = totalPlayers > 0
@@ -188,138 +148,72 @@ export default function Leaderboard() {
 
   return (
     <main className={styles.container}>
-      <Link href="/" className={styles.homeLink}>
-        <span aria-hidden="true">←</span>
-        На главную
-      </Link>
-      <div className={styles.header}>
-        <div className={styles.headerTop}>
-          <span className={styles.crown}>👑</span>
-          <h1 className={styles.title}>
-            Leaderboard
-          </h1>
+      <Link href="/" className={styles.homeLink}>На главную</Link>
+      <header className={styles.header}>
+        <div className={styles.headerCopy}>
+          <h1 className={styles.title}>Leaderboard</h1>
+          <p className={styles.subtitle}>Рейтинг лучших игроков в CTF дуэлях</p>
         </div>
-        <p className={styles.subtitle}>Рейтинг лучших игроков в CTF дуэлях</p>
-        <div className={styles.badges}>
-          <span className={`${styles.badge} ${styles.badgeLive}`}>Live</span>
+        <span className={styles.liveStatus}>Live</span>
+      </header>
+      <dl className={styles.statsRow}>
+        <div className={styles.stat}>
+          <dt>Всего игроков</dt>
+          <dd>{totalPlayers}</dd>
         </div>
-      </div>
-      <div className={styles.statsRow}>
-        <div className={styles.statCard}>
-          <div className={styles.statLabel}>Всего игроков</div>
-          <div className={`${styles.statValue} ${styles.statValueAccent}`}>
-            {totalPlayers}
-          </div>
+        <div className={styles.stat}>
+          <dt>Всего побед</dt>
+          <dd>{totalWins}</dd>
         </div>
-        <div className={styles.statCard}>
-          <div className={styles.statLabel}>Всего побед</div>
-          <div className={styles.statValue}>{totalWins}</div>
+        <div className={styles.stat}>
+          <dt>Среднее время</dt>
+          <dd>{formatTime(avgTime)}</dd>
         </div>
-        <div className={styles.statCard}>
-          <div className={styles.statLabel}>Среднее время</div>
-          <div className={styles.statValue}>{formatTime(avgTime)}</div>
-        </div>
-      </div>
-      <div className={styles.boardWrapper}>
+      </dl>
+      <div className={styles.boardWrapper} aria-busy={loading}>
         {loading ? (
-          <div className={styles.loading}>
-            <div className={styles.spinner}></div>
+          <div className={styles.loading} role="status">
+            <div className={styles.spinner} aria-hidden="true" />
             <p>Загрузка рейтинга...</p>
           </div>
         ) : loadError && entries.length === 0 ? (
-          <div className={styles.empty}>
-            <div className={styles.emptyIcon}>⚠️</div>
-            <p className={styles.emptyText}>{loadError}</p>
+          <div className={`${styles.empty} ${styles.error}`} role="alert">
+            <p>{loadError}</p>
           </div>
         ) : entries.length === 0 ? (
           <div className={styles.empty}>
-            <div className={styles.emptyIcon}>🏆</div>
-            <p className={styles.emptyText}>Пока нет данных о игроках</p>
+            <p>Пока нет данных о игроках</p>
           </div>
         ) : (
-          <>
-            {topThree.length > 0 && (
-              <div className={styles.podiumContainer}>
-                {topThree.map((entry) => (
-                  <div
-                    key={entry.username}
-                    className={`${styles.podiumCard} ${styles[`podiumCard_${entry.rank}`]}`}
-                  >
-                    <div className={styles.podiumInner}>
-                      <span className={styles.podiumMedal}>
-                        {getMedalEmoji(entry.rank)}
-                      </span>
-                      <div className={styles.podiumRank}>
-                        #{entry.rank} место
-                      </div>
-                      <div className={styles.podiumName}>
-                        {entry.username}
-                      </div>
-                      <div className={styles.podiumStats}>
-                        <div className={styles.podiumStat}>
-                          <span className={styles.podiumStatLabel}>Победы</span>
-                          <span className={styles.podiumStatValue}>
-                            {entry.wins}
-                          </span>
-                        </div>
-                        <div className={styles.podiumStat}>
-                          <span className={styles.podiumStatLabel}>Время</span>
-                          <span className={styles.podiumStatValue}>
-                            {formatTime(entry.average_solve_time_ms)}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-            {restEntries.length > 0 && (
-              <div className={styles.board}>
-                <div className={styles.boardHeader}>
-                  <div className={styles.colRank}>#</div>
-                  <div className={styles.colAvatar}></div>
-                  <div className={styles.colPlayer}>Игрок</div>
-                  <div className={styles.colTasks}>Победы</div>
-                  <div className={styles.colTime}>Время</div>
-                </div>
-                {restEntries.map((entry) => (
-                  <div key={entry.username} className={styles.boardRow}>
-                    <div className={styles.rankCell}>
-                      <span className={`${styles.rankBadge} ${getRankBadgeClass(entry.rank)}`}>
-                        #{entry.rank}
-                      </span>
-                    </div>
-                    <div className={styles.avatarCell}>
-                      <div className={`${styles.avatar} ${getAvatarClass(entry.rank)}`}>
-                        {getInitials(entry.username)}
-                      </div>
-                    </div>
-                    <div className={styles.playerCell}>
-                      <span className={styles.playerName}>{entry.username}</span>
-                    </div>
-                    <div className={styles.tasksCell}>
-                      <span className={styles.tasksValue}>{entry.wins}</span>
-                      {maxWins > 0 && (
-                        <div className={styles.tasksBar}>
-                          <div
-                            className={styles.tasksBarFill}
-                            style={{
-                              width: `${(entry.wins / maxWins) * 100}%`,
-                            }}
-                          />
-                        </div>
-                      )}
-                    </div>
-                    <div className={styles.timeCell}>
-                      {formatTime(entry.average_solve_time_ms)}
-                      <span className={styles.timeLabel}>среднее</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </>
+          <table className={styles.board} aria-label="Рейтинг игроков">
+            <colgroup>
+              <col className={styles.rankColumn} />
+              <col className={styles.playerColumn} />
+              <col className={styles.winsColumn} />
+              <col className={styles.timeColumn} />
+            </colgroup>
+            <thead>
+              <tr>
+                <th scope="col">#</th>
+                <th scope="col">Игрок</th>
+                <th scope="col" className={styles.numeric}>Победы</th>
+                <th scope="col" className={styles.numeric}>Время</th>
+              </tr>
+            </thead>
+            <tbody>
+              {entries.map((entry) => (
+                <tr key={entry.username} className={entry.rank <= 3 ? styles.leadingRow : undefined}>
+                  <td className={styles.rankCell}>#{entry.rank}</td>
+                  <th scope="row" className={styles.playerName}>{entry.username}</th>
+                  <td className={`${styles.numeric} ${styles.winsCell}`}>{entry.wins}</td>
+                  <td className={styles.numeric}>
+                    {formatTime(entry.average_solve_time_ms)}
+                    <span className={styles.timeLabel}>среднее</span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         )}
       </div>
     </main>

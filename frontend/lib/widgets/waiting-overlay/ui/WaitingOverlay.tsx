@@ -1,112 +1,103 @@
 "use client";
 
-import React from "react";
+import React, { useCallback, useEffect, useRef } from "react";
 import { PacManLoader } from "./PacManLoader";
-import { Button } from "../../../shared/ui";
+import { ViewportPortal } from "../../../shared/ui";
+import styles from "./WaitingOverlay.module.css";
 
 interface WaitingOverlayProps {
   onCancel: () => void;
   onChangePlayer?: () => void;
   changePlayerDisabled?: boolean;
   queueSize?: number;
+  returnFocusRef?: React.RefObject<HTMLButtonElement | null>;
 }
 
-const STYLES = {
-  overlay: {
-    position: "absolute" as const,
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: "rgba(0, 0, 0, 0.85)",
-    display: "flex",
-    flexDirection: "column" as const,
-    alignItems: "center",
-    justifyContent: "center",
-    zIndex: 100,
-    padding: "2rem",
-  },
-
-  waitingCard: {
-    display: "flex",
-    flexDirection: "column" as const,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "rgba(112, 206, 206, 0.8)",
-    borderRadius: "1rem",
-    padding: "2rem",
-    maxWidth: "700px",
-    textAlign: "center" as const,
-    boxShadow: "0 8px 32px rgba(0, 0, 0, 0.6)",
-  },
-};
 export const WaitingOverlay: React.FC<WaitingOverlayProps> = ({
   onCancel,
   onChangePlayer,
   changePlayerDisabled = false,
   queueSize,
+  returnFocusRef,
 }) => {
+  const panelRef = useRef<HTMLDivElement>(null);
+  const previousFocusRef = useRef<HTMLElement | null>(null);
+
+  const focusPanel = useCallback((panel: HTMLDivElement | null) => {
+    panelRef.current = panel;
+    if (!panel) return;
+    previousFocusRef.current = document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : null;
+    panel.querySelector<HTMLButtonElement>("button:not(:disabled)")?.focus();
+  }, []);
+
+  useEffect(() => {
+    const returnFocus = returnFocusRef?.current;
+    return () => {
+      const target = returnFocus ?? previousFocusRef.current;
+      if (target?.isConnected) {
+        target.focus();
+      }
+    };
+  }, [returnFocusRef]);
+
+  const keepFocusInPanel = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== "Tab") return;
+    const buttons = panelRef.current?.querySelectorAll<HTMLButtonElement>("button:not(:disabled)");
+    if (!buttons?.length) return;
+    const first = buttons[0];
+    const last = buttons[buttons.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  };
+
   return (
-    <div style={STYLES.overlay}>
-      <div style={STYLES.waitingCard}>
-        <h2
-          style={{
-            fontSize: "2rem",
-            marginBottom: "1.5rem",
-            fontWeight: 700,
-            color: "#FFF",
-          }}
+    <ViewportPortal>
+      <div className={styles.overlay}>
+        <div
+          ref={focusPanel}
+          className={styles.panel}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="waiting-title"
+          aria-describedby="waiting-description"
+          onKeyDown={keepFocusInPanel}
         >
-          Ожидание второго игрока...
-        </h2>
-
-        <PacManLoader />
-
-        <p
-          style={{
-            fontSize: "1.2rem",
-            lineHeight: "1.6",
-            color: "#FFF",
-          }}
-        >
-          Ваша игра скоро начнется.
-          <br />
-          Подготовьтесь к решению задачи!
-        </p>
-
-        {queueSize !== undefined && (
-          <p
-            style={{
-              fontSize: "1rem",
-              marginTop: "1rem",
-              color: "rgba(255, 255, 255, 0.8)",
-            }}
-          >
-            В очереди: {queueSize} игроков
+          <PacManLoader />
+          <h2 id="waiting-title">Ожидание второго игрока...</h2>
+          <p id="waiting-description" className={styles.description}>
+            Ваша игра скоро начнется.
+            <br />
+            Подготовьтесь к решению задачи!
           </p>
-        )}
-
-        <div style={{
-          display: "flex",
-          flexWrap: "wrap",
-          gap: "0.75rem",
-          justifyContent: "center",
-          marginTop: "2rem",
-        }}>
-          <Button onClick={onCancel} variant="secondary">
-            Отменить поиск
-          </Button>
-          {onChangePlayer && (
-            <Button
-              onClick={onChangePlayer}
-              disabled={changePlayerDisabled}
-              variant="secondary"
-            >
-              {changePlayerDisabled ? "Смена игрока..." : "Сменить игрока"}
-            </Button>
+          {queueSize !== undefined && (
+            <p className={styles.queue} role="status" aria-live="polite">
+              В очереди: <strong>{queueSize}</strong> игроков
+            </p>
           )}
+          <div className={styles.actions}>
+            <button type="button" onClick={onCancel} className="btn btn-secondary">
+              Отменить поиск
+            </button>
+            {onChangePlayer && (
+              <button
+                type="button"
+                onClick={onChangePlayer}
+                disabled={changePlayerDisabled}
+                className={`btn btn-secondary ${styles.changePlayer}`}
+              >
+                {changePlayerDisabled ? "Смена игрока..." : "Сменить игрока"}
+              </button>
+            )}
+          </div>
         </div>
       </div>
-    </div>
+    </ViewportPortal>
   );
 };

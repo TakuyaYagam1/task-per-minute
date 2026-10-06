@@ -23,6 +23,7 @@ import {
 } from "../../shared/types";
 import { ViewportPortal } from "../../shared/ui";
 import { WaitingOverlay } from "../../widgets/waiting-overlay";
+import styles from "./HomePage.module.css";
 
 type HomeFlow = "queue" | "restore";
 
@@ -55,6 +56,7 @@ const opponentIDFromMatch = (
 
 export default function HomePage() {
   const router = useRouter();
+  const playButtonRef = useRef<HTMLButtonElement>(null);
   const [nickname, setNickname] = useState("");
   const [playerID, setPlayerID] = useState<string | null>(null);
   const [currentPlayer, setCurrentPlayer] = useState<Player | null>(null);
@@ -730,29 +732,28 @@ export default function HomePage() {
     <>
       {notification && (
         <ViewportPortal>
-          <div className="fixed right-4 top-4 z-50 flex max-w-[calc(100vw-2rem)] justify-end pointer-events-none sm:right-6 sm:top-6">
-            <div className="pointer-events-auto max-w-md bg-black/80 text-white px-4 py-2 rounded-lg animate-fadeIn">
-              {notification}
-            </div>
+          <div className={styles.notification} role="status" aria-live="polite">
+            {notification}
           </div>
         </ViewportPortal>
       )}
 
       {isTransitioningToTask && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 px-4 backdrop-blur-md motion-modal-backdrop">
-          <div className="motion-modal rounded-xl border border-white/15 bg-white/10 px-6 py-5 text-center text-white shadow-2xl backdrop-blur-lg">
-            <div className="mx-auto mb-3 h-8 w-8 rounded-full border-2 border-white/30 border-t-white animate-spin"></div>
-            <div className="text-base font-bold">Загрузка дуэли...</div>
-            <div className="mt-1 text-sm text-gray-300">
-              Подготавливаем задание и переходим в бой
+        <ViewportPortal>
+          <div className={styles.transitionOverlay}>
+            <div className={styles.transitionPanel} role="status" aria-live="polite">
+              <span className={styles.loadingMark} aria-hidden="true" />
+              <h2>Загрузка дуэли...</h2>
+              <p>Подготавливаем задание и переходим в бой</p>
             </div>
           </div>
-        </div>
+        </ViewportPortal>
       )}
 
-      <main className="min-h-screen flex flex-col items-center justify-center p-3 lg:p-6 relative animate-fadeIn gpu-optimized">
+      <main className={styles.page}>
         {isWaiting && (
           <WaitingOverlay
+            returnFocusRef={playButtonRef}
             onCancel={cancelSearch}
             onChangePlayer={canChangePlayer ? handleChangePlayer : undefined}
             changePlayerDisabled={isClearingPlayer}
@@ -760,228 +761,184 @@ export default function HomePage() {
           />
         )}
 
-        <div className="container max-w-6xl">
-          <div className="card overflow-hidden animate-scaleIn will-change-transform">
-            <div className="flex flex-col lg:flex-row">
-              <div className="lg:w-2/3 relative overflow-hidden">
-                <Image
-                  src="/task.png"
-                  alt="Task Per Minute"
-                  width={900}
-                  height={600}
-                  className="w-full h-72 sm:h-64 lg:h-full object-cover animate-slideInLeft will-change-transform"
-                  priority
-                />
-                <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent lg:bg-gradient-to-r lg:from-transparent lg:via-transparent lg:to-black/60"></div>
-
-                <div className="absolute top-4 right-4 w-12 h-12 bg-white/10 rounded-full animate-bounce hidden lg:block"></div>
-                <div className="absolute bottom-6 left-6 w-8 h-8 bg-white/20 rounded-full animate-pulse hidden lg:block"></div>
-                <div className="absolute inset-x-0 bottom-6 z-10 flex justify-center px-4">
-                  <Link
-                    href="/leaderboard"
-                    className="btn btn-secondary !w-auto !min-w-[92px] sm:!min-w-[140px] lg:!min-w-[180px] border-white/35 bg-white/15 !px-3 sm:!px-4 lg:!px-5 !py-1.5 sm:!py-2 lg:!py-3 !text-[10px] sm:!text-xs lg:!text-base font-bold uppercase leading-none text-white shadow-lg backdrop-blur-md hover:bg-white/25 active:scale-95 !gap-1 sm:!gap-2"
-                  >
-                    <span aria-hidden="true">🏆</span>
-                    Лидерборд
-                  </Link>
+        <section className={styles.hero} aria-labelledby="home-title">
+          <div className={styles.heroArtwork} aria-hidden="true">
+            <Image
+              src="/brand/main.webp"
+              alt=""
+              fill
+              sizes="(max-width: 760px) 1px, 1200px"
+              className={styles.heroImage}
+              priority
+            />
+          </div>
+          <div className={styles.heroInner}>
+            <div className={styles.heroContent}>
+              <div className={styles.heroIntro}>
+                <h1 id="home-title" className={styles.title} aria-label="Task Per Minute">
+                  <span>TASK</span>
+                  <span>PER MINUTE</span>
+                </h1>
+                <div className={styles.introCopy}>
+                  <h2>CTF-дуэли один на один</h2>
+                  <p>
+                    Решай задачу быстрее соперника.
+                    Первый корректный флаг завершает дуэль.
+                  </p>
                 </div>
               </div>
 
-              <div className="lg:w-1/3 p-6 lg:p-8 flex flex-col justify-center animate-slideInRight">
-                <h1 className="text-2xl lg:text-3xl xl:text-4xl font-bold mb-4 lg:mb-6 text-center">
-                  Стань первым!
-                </h1>
-
-                <h2 className="text-lg lg:text-xl font-semibold mb-4 text-blue-200 text-center">
-                  Сразись в CTF дуэли!
-                </h2>
-
-                <p className="text-sm lg:text-base text-gray-300 mb-6 lg:mb-8 leading-relaxed text-center">
-                  Испытай наш новый формат CTF соревнований на скорость! Каждая
-                  секунда решает исход битвы.
+              <section className={styles.joinPanel} aria-labelledby="join-title">
+                <div className={styles.panelHeading}>
+                  <h2 id="join-title">{playerID ? "Начать дуэль" : "Вход в игру"}</h2>
+                </div>
+                <p className={styles.panelDescription}>
+                  {playerID
+                    ? 'Нажми "ИГРАТЬ", чтобы найти соперника.'
+                    : "Выбери никнейм и подключись к игре."}
                 </p>
 
                 {!playerID ? (
-                  <form onSubmit={handleJoin} className="mb-4">
-                    <div className="flex flex-col gap-3">
-                      <input
-                        type="text"
-                        value={nickname}
-                        onChange={(e) => setNickname(e.target.value)}
-                        placeholder="Введите никнейм..."
-                        maxLength={50}
-                        className="w-full px-4 py-2.5 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent transition-all text-sm"
-                        disabled={isInitializing}
-                      />
-                      <button
-                        type="submit"
-                        disabled={isInitializing || !nickname.trim()}
-                        className="btn btn-primary w-full text-lg font-bold py-4 px-8 transition-all duration-300 ease-out transform disabled:opacity-50 disabled:cursor-not-allowed hover:scale-105 hover:shadow-lg animate-glow active:scale-95"
-                      >
-                        <span className="flex items-center justify-center gap-2">
-                          {isInitializing ? (
-                            <>
-                              <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-                              ПОДКЛЮЧЕНИЕ...
-                            </>
-                          ) : (
-                            <>ПОДКЛЮЧИТЬСЯ</>
-                          )}
-                        </span>
-                      </button>
-                    </div>
+                  <form onSubmit={handleJoin} className={styles.joinForm}>
+                    <label htmlFor="player-nickname" className={styles.fieldLabel}>
+                      Никнейм
+                    </label>
+                    <input
+                      id="player-nickname"
+                      name="nickname"
+                      type="text"
+                      value={nickname}
+                      onChange={(e) => setNickname(e.target.value)}
+                      placeholder="Введите никнейм..."
+                      maxLength={50}
+                      className={`input ${styles.nicknameInput}`}
+                      disabled={isInitializing}
+                      autoComplete="nickname"
+                    />
+                    <button
+                      type="submit"
+                      disabled={isInitializing || !nickname.trim()}
+                      className={`btn btn-primary ${styles.mainButton}`}
+                    >
+                      {isInitializing ? (
+                        <>
+                          <span className={styles.buttonSpinner} aria-hidden="true" />
+                          ПОДКЛЮЧЕНИЕ...
+                        </>
+                      ) : (
+                        <>ПОДКЛЮЧИТЬСЯ<span aria-hidden="true">-&gt;</span></>
+                      )}
+                    </button>
                   </form>
                 ) : (
-                  <div className="mb-4 flex flex-col gap-3">
-                    <div className="animate-on-hover will-change-transform">
-                      <PlayButton
-                        onClick={handleReady}
-                        disabled={
-                          !playerID ||
-                          isWaiting ||
-                          isClearingPlayer ||
-                          connectionState === "connecting" ||
-                          connectionState === "reconnecting"
-                        }
-                      />
+                  <div className={styles.playerControls}>
+                    <div className={styles.playerIdentity}>
+                      <span className={styles.fieldLabel}>Никнейм</span>
+                      <strong>{currentPlayer?.username || nickname}</strong>
                     </div>
+                    <PlayButton
+                      ref={playButtonRef}
+                      onClick={handleReady}
+                      disabled={
+                        !playerID ||
+                        isWaiting ||
+                        isTransitioningToTask ||
+                        isClearingPlayer ||
+                        connectionState === "connecting" ||
+                        connectionState === "reconnecting"
+                      }
+                    />
                     {!isWaiting && (
                       <button
                         type="button"
                         onClick={handleChangePlayer}
                         disabled={isClearingPlayer}
-                        className="btn btn-secondary w-full text-sm font-bold py-3 px-5 transition-all duration-300 ease-out transform disabled:opacity-50 disabled:cursor-not-allowed hover:scale-105 hover:shadow-lg active:scale-95"
+                        className={`btn btn-secondary ${styles.changePlayerButton}`}
                       >
-                        {isClearingPlayer
-                          ? "Смена игрока..."
-                          : "Сменить игрока"}
+                        {isClearingPlayer ? "Смена игрока..." : "Сменить игрока"}
                       </button>
                     )}
                   </div>
                 )}
 
-                <div className="text-xs text-gray-400">
-                  {playerID ? (
-                    <div className="flex items-center justify-center gap-2">
-                      <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
-                      Игрок готов
-                    </div>
-                  ) : (
-                    <div className="flex items-center justify-center gap-2">
-                      <div className="w-2 h-2 bg-yellow-400 rounded-full animate-pulse"></div>
-                      {isInitializing ? "Подключение..." : "Введите никнейм"}
-                    </div>
-                  )}
+                <div className={styles.playerStatus} role="status" aria-live="polite">
+                  <span
+                    className={`${styles.statusDot} ${playerID ? styles.statusReady : ""}`}
+                    aria-hidden="true"
+                  />
+                  {playerID
+                    ? "Игрок готов"
+                    : isInitializing ? "Подключение..." : "Введите никнейм"}
                 </div>
-              </div>
+              </section>
+              <Link href="/leaderboard" className={styles.leaderboardLink}>
+                Лидерборд
+                <span aria-hidden="true">-&gt;</span>
+              </Link>
             </div>
           </div>
+        </section>
 
-          <div
-            className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 lg:gap-6 mt-6 lg:mt-8 animate-fadeIn"
-            style={{ animationDelay: "0.3s" }}
-          >
-            <div className="card p-4 lg:p-6 animate-on-hover will-change-transform">
-              <div className="text-3xl lg:text-4xl mb-3 text-center">⚡</div>
-              <h3 className="font-bold text-lg mb-2 text-center">
-                Скоростные дуэли
-              </h3>
-              <p className="text-sm text-gray-300 text-center">
-                2 игрока, общий дедлайн, быстрый матч
-              </p>
-            </div>
-
-            <div className="card p-4 lg:p-6 animate-on-hover will-change-transform">
-              <div className="text-3xl lg:text-4xl mb-3 text-center">🏆</div>
-              <h3 className="font-bold text-lg mb-2 text-center">Победитель</h3>
-              <p className="text-sm text-gray-300 text-center">
-                Первый корректный флаг завершает дуэль
-              </p>
-            </div>
-
-            <div className="card p-4 lg:p-6 animate-on-hover will-change-transform md:col-span-2 lg:col-span-1">
-              <div className="text-3xl lg:text-4xl mb-3 text-center">🧩</div>
-              <h3 className="font-bold text-lg mb-2 text-center">
-                Разные категории
-              </h3>
-              <p className="text-sm text-gray-300 text-center">
-                Категория любая, сложность по прогрессу
-              </p>
-            </div>
-          </div>
-
-          <div
-            className="card p-6 lg:p-8 mt-6 lg:mt-8 animate-fadeIn"
-            style={{ animationDelay: "0.6s" }}
-          >
-            <h3 className="text-xl lg:text-2xl font-bold mb-2 text-center">
-              Правила игры
-            </h3>
-            <p className="text-sm lg:text-base text-gray-300 text-center max-w-3xl mx-auto mb-6 lg:mb-8">
-              <strong className="text-white">CTF (Capture The Flag)</strong> -
-              формат соревнований по информационной безопасности: участники ищут
-              уязвимости и собирают «флаги» - секретные строки, подтверждающие
-              выполнение задания.
-            </p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-5">
-              <div className="rule-step-card relative rounded-xl border border-white/10 bg-white/5 p-4 lg:p-5 backdrop-blur-sm hover:border-white/20 hover:bg-white/10">
-                <div className="absolute -top-3 -left-3 flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-blue-400 to-cyan-500 text-sm font-bold text-white shadow-lg">
-                  1
-                </div>
-                <div className="mb-2 text-2xl lg:text-3xl">👥</div>
-                <h4 className="mb-1 text-base lg:text-lg font-semibold text-white">
-                  Двое в очереди
-                </h4>
-                <p className="text-xs lg:text-sm text-gray-300 leading-relaxed">
-                  Нажимаешь Play, попадаешь в очередь, а сервер подбирает
-                  второго игрока и стартует дуэль.
-                </p>
-              </div>
-
-              <div className="rule-step-card relative rounded-xl border border-white/10 bg-white/5 p-4 lg:p-5 backdrop-blur-sm hover:border-white/20 hover:bg-white/10">
-                <div className="absolute -top-3 -left-3 flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-blue-400 to-cyan-500 text-sm font-bold text-white shadow-lg">
-                  2
-                </div>
-                <div className="mb-2 text-2xl lg:text-3xl">🎲</div>
-                <h4 className="mb-1 text-base lg:text-lg font-semibold text-white">
-                  Случайный таск
-                </h4>
-                <p className="text-xs lg:text-sm text-gray-300 leading-relaxed">
-                  Сложность берётся из открытого для игрока пула. Если общего
-                  нерешённого таска нет, задания могут отличаться.
-                </p>
-              </div>
-
-              <div className="rule-step-card relative rounded-xl border border-white/10 bg-white/5 p-4 lg:p-5 backdrop-blur-sm hover:border-white/20 hover:bg-white/10">
-                <div className="absolute -top-3 -left-3 flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-blue-400 to-cyan-500 text-sm font-bold text-white shadow-lg">
-                  3
-                </div>
-                <div className="mb-2 text-2xl lg:text-3xl">⏱️</div>
-                <h4 className="mb-1 text-base lg:text-lg font-semibold text-white">
-                  Время на решение
-                </h4>
-                <p className="text-xs lg:text-sm text-gray-300 leading-relaxed">
-                  Дедлайн общий и считается по самому длинному лимиту выданных
-                  заданий. Подсказки открываются по таймеру.
-                </p>
-              </div>
-
-              <div className="rule-step-card relative rounded-xl border border-white/10 bg-white/5 p-4 lg:p-5 backdrop-blur-sm hover:border-white/20 hover:bg-white/10">
-                <div className="absolute -top-3 -left-3 flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-blue-400 to-cyan-500 text-sm font-bold text-white shadow-lg">
-                  4
-                </div>
-                <div className="mb-2 text-2xl lg:text-3xl">🏁</div>
-                <h4 className="mb-1 text-base lg:text-lg font-semibold text-white">
-                  Победа за флаг
-                </h4>
-                <p className="text-xs lg:text-sm text-gray-300 leading-relaxed">
-                  Первый корректный флаг даёт победу. Если время вышло без
-                  решения, дуэль завершается без победителя.
-                </p>
-              </div>
-            </div>
-          </div>
+        <div className={styles.matchFacts} aria-label="Формат игры">
+          <p><strong>Два игрока</strong><span>Одна дуэль</span></p>
+          <p><strong>Общий дедлайн</strong><span>Лимит зависит от задания</span></p>
+          <p><strong>Первый верный флаг</strong><span>Решает исход матча</span></p>
         </div>
+
+        <section className={styles.rules} aria-labelledby="rules-title">
+          <div className={styles.rulesInner}>
+            <div className={styles.rulesIntro}>
+              <h2 id="rules-title">Правила игры</h2>
+              <p>
+                CTF (Capture The Flag) - соревнование по информационной безопасности.
+                Участники решают задания и находят флаги: секретные строки,
+                подтверждающие решение.
+              </p>
+            </div>
+            <ol className={styles.ruleList}>
+              <li>
+                <span className={styles.ruleNumber} aria-hidden="true">01</span>
+                <div>
+                  <h3>Найди соперника</h3>
+                  <p>
+                    Нажми &quot;ИГРАТЬ&quot;, чтобы встать в очередь. Сервер подберёт
+                    второго игрока и запустит дуэль.
+                  </p>
+                </div>
+              </li>
+              <li>
+                <span className={styles.ruleNumber} aria-hidden="true">02</span>
+                <div>
+                  <h3>Получи задание</h3>
+                  <p>
+                    Сложность зависит от открытого для игрока пула. Если общего
+                    нерешённого задания нет, задания могут отличаться.
+                  </p>
+                </div>
+              </li>
+              <li>
+                <span className={styles.ruleNumber} aria-hidden="true">03</span>
+                <div>
+                  <h3>Успей до дедлайна</h3>
+                  <p>
+                    Дедлайн общий и считается по самому длинному лимиту выданных
+                    заданий. Подсказки открываются по таймеру.
+                  </p>
+                </div>
+              </li>
+              <li>
+                <span className={styles.ruleNumber} aria-hidden="true">04</span>
+                <div>
+                  <h3>Отправь флаг</h3>
+                  <p>
+                    Первый корректный флаг даёт победу. Если время вышло без
+                    решения, дуэль завершается без победителя.
+                  </p>
+                </div>
+              </li>
+            </ol>
+          </div>
+        </section>
       </main>
     </>
   );

@@ -18,13 +18,13 @@ export const Button: React.FC<ButtonProps> = ({
   className = "",
   style = {},
 }) => {
-  const baseClasses = "btn will-change-transform";
+  const baseClasses = "btn";
 
   const variantClasses = {
     primary: "btn-primary",
     secondary: "btn-secondary",
-    success: "bg-green-500 hover:bg-green-600 text-white",
-    danger: "bg-red-500 hover:bg-red-600 text-white",
+    success: "btn-success",
+    danger: "btn-danger",
   };
 
   const sizeClasses = {
@@ -37,7 +37,7 @@ export const Button: React.FC<ButtonProps> = ({
     ${baseClasses}
     ${variantClasses[variant]}
     ${sizeClasses[size]}
-    ${disabled ? "opacity-50 cursor-not-allowed" : "animate-on-hover"}
+    ${disabled ? "opacity-50 cursor-not-allowed" : ""}
     ${className}
   `
     .trim()
@@ -45,6 +45,7 @@ export const Button: React.FC<ButtonProps> = ({
 
   return (
     <button
+      type="button"
       onClick={onClick}
       disabled={disabled}
       className={combinedClasses}

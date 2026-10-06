@@ -1,0 +1,124 @@
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  padding: 1.25rem;
+  background: rgb(4 9 16 / 92%);
+  overflow-y: auto;
+}
+
+.panel {
+  width: min(100%, 520px);
+  min-width: 0;
+  padding: 2.5rem;
+  border: 1px solid var(--fsp-line);
+  background: var(--fsp-surface);
+  color: var(--fsp-text);
+}
+
+.panel h2 {
+  margin: 1.75rem 0 1rem;
+  font-family: var(--font-display), Georgia, serif;
+  font-size: clamp(1.65rem, 3vw, 2.15rem);
+  font-weight: 400;
+  line-height: 1.2;
+  letter-spacing: -0.025em;
+}
+
+.description {
+  margin: 0;
+  color: var(--fsp-muted);
+  font-size: 1rem;
+  line-height: 1.7;
+}
+
+.queue {
+  margin: 1.5rem 0 0;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--fsp-line);
+  color: var(--fsp-muted);
+  font-size: 0.95rem;
+  line-height: 1.6;
+}
+
+.queue strong {
+  color: var(--fsp-accent);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  margin-top: 2rem;
+}
+
+.actions button {
+  min-height: 3.25rem;
+  font-size: 0.95rem;
+  font-weight: 500;
+}
+
+.actions .changePlayer {
+  border-color: transparent;
+  color: var(--fsp-muted);
+}
+
+.loader {
+  position: relative;
+  width: 50px;
+  height: 50px;
+  border: 1px solid var(--fsp-accent);
+  border-radius: 50%;
+}
+
+.loader span {
+  position: absolute;
+  display: block;
+  background: var(--fsp-accent);
+}
+
+.loader span:first-child {
+  width: 1px;
+  height: 17px;
+  top: 7px;
+  left: 24px;
+  transform-origin: center bottom;
+  animation: clockNeedle 6s linear infinite;
+}
+
+.loader span:nth-child(2) {
+  width: 12px;
+  height: 1px;
+  top: 24px;
+  left: 24px;
+  transform: rotate(30deg);
+  transform-origin: left center;
+}
+
+.loader span:nth-child(3) {
+  width: 3px;
+  height: 3px;
+  top: 23px;
+  left: 23px;
+  border-radius: 50%;
+}
+
+@keyframes clockNeedle {
+  to { transform: rotate(360deg); }
+}
+
+@media (max-width: 480px) {
+  .panel {
+    padding: 1.5rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .loader span:first-child {
+    animation: none;
+  }
+}

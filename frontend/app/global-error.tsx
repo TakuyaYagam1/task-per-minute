@@ -8,9 +8,9 @@ const containerStyle: React.CSSProperties = {
   alignItems: "center",
   justifyContent: "center",
   padding: "1.5rem",
-  background: "linear-gradient(135deg, #3E7284 0%, #2a5a6b 100%)",
-  fontFamily: "Inter, -apple-system, BlinkMacSystemFont, sans-serif",
-  color: "#ffffff",
+  background: "#080d14",
+  fontFamily: "Arial, sans-serif",
+  color: "#f3ede1",
   margin: 0,
 };
 
@@ -19,26 +19,24 @@ const cardStyle: React.CSSProperties = {
   maxWidth: "32rem",
   padding: "2.5rem 2rem",
   textAlign: "center",
-  background: "rgba(255, 255, 255, 0.1)",
-  border: "1px solid rgba(255, 255, 255, 0.2)",
-  borderRadius: "1rem",
-  boxShadow: "0 10px 15px -3px rgba(0, 0, 0, 0.1)",
+  background: "#101b2b",
+  border: "1px solid #ac8a4b",
 };
 
 const codeStyle: React.CSSProperties = {
-  fontFamily: "ui-monospace, monospace",
+  fontFamily: "Georgia, serif",
   fontSize: "5rem",
-  fontWeight: 800,
+  fontWeight: 400,
   lineHeight: 1,
   margin: "0 0 1rem 0",
-  color: "#72d1eb",
-  textShadow: "0 0 20px rgba(114, 209, 235, 0.5)",
+  color: "#dbbb82",
 };
 
 const titleStyle: React.CSSProperties = {
   margin: "0 0 0.75rem 0",
   fontSize: "1.5rem",
-  fontWeight: 700,
+  fontFamily: "Georgia, serif",
+  fontWeight: 400,
   textTransform: "uppercase",
   letterSpacing: "0.02em",
 };
@@ -46,18 +44,17 @@ const titleStyle: React.CSSProperties = {
 const descStyle: React.CSSProperties = {
   margin: "0 0 1.75rem 0",
   fontSize: "1rem",
-  color: "rgba(255, 255, 255, 0.8)",
+  color: "#b8bcc4",
   lineHeight: 1.6,
 };
 
 const buttonStyle: React.CSSProperties = {
   padding: "0.75rem 1.5rem",
   border: "none",
-  borderRadius: "0.5rem",
-  background: "linear-gradient(135deg, #72d1eb, #5db3d3)",
-  color: "white",
+  background: "#dbbb82",
+  color: "#080d14",
   fontSize: "1rem",
-  fontWeight: 500,
+  fontWeight: 600,
   cursor: "pointer",
 };
 
