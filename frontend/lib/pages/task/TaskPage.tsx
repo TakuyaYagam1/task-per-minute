@@ -118,6 +118,7 @@ export const TaskPage: React.FC = () => {
 
   const [gameData, setGameData] = useState<GameData | null>(null);
   const [gameState, setGameState] = useState<TaskViewState>("playing");
+  const [resultReason, setResultReason] = useState<string>();
   const [flagStatus, setFlagStatus] = useState<FlagStatus>("idle");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSurrendering, setIsSurrendering] = useState(false);
@@ -413,6 +414,14 @@ export const TaskPage: React.FC = () => {
       clearActiveDuelState(false);
 
       const winnerID = message.payload.winner_id || null;
+      const reason =
+        message.payload.your_solved || message.payload.opponent_solved
+          ? "solved"
+          : winnerID &&
+              message.payload.your_solved === false &&
+              message.payload.opponent_solved === false
+            ? "surrender"
+            : undefined;
       const state: GameState =
         winnerID === null
           ? "timeup"
@@ -420,9 +429,11 @@ export const TaskPage: React.FC = () => {
             ? "won"
             : "lost";
       setGameState(state);
+      setResultReason(reason);
       gameModel.saveGameResult({
         state,
         source: "server",
+        reason,
         duel_id: message.payload.duel_id,
         winner_id: winnerID,
         winner_username: message.payload.winner_username || null,
@@ -708,6 +719,7 @@ export const TaskPage: React.FC = () => {
       hasFinished.current = true;
       terminalSource.current = "server";
       setGameState(storedResult.state);
+      setResultReason(storedResult.reason);
       return;
     }
 
@@ -1112,14 +1124,24 @@ export const TaskPage: React.FC = () => {
         return {
           symbol: "✓",
           title: "ПОБЕДА!",
-          message: "Поздравляем! Вы успешно решили задание!",
+          message:
+            resultReason === "surrender"
+              ? "Вы победили! Ваш соперник сдался."
+              : resultReason === "solved"
+                ? "Поздравляем! Вы успешно решили задание!"
+                : "Вы победили!",
           color: "var(--fsp-green)",
         };
       case "lost":
         return {
           symbol: "×",
           title: "ПОРАЖЕНИЕ",
-          message: "Другой игрок раньше ввел правильный флаг.",
+          message:
+            resultReason === "surrender"
+              ? "Вы сдались. Победа присуждена сопернику."
+              : resultReason === "solved"
+                ? "Другой игрок раньше ввел правильный флаг."
+                : "Дуэль завершилась победой соперника.",
           color: "var(--fsp-red)",
         };
       case "timeup":

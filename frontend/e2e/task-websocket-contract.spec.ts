@@ -532,6 +532,74 @@ test('task reconnect fallback waits for server terminal confirmation', async ({ 
   await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('game_result'))).toBeNull();
 });
 
+for (const outcome of [
+  { name: 'solved task', solved: true, reason: 'solved', message: 'Поздравляем! Вы успешно решили задание!' },
+  { name: 'opponent surrender', solved: false, reason: 'surrender', message: 'Вы победили! Ваш соперник сдался.' },
+]) {
+  test(`task page explains victory after ${outcome.name}`, async ({ page }) => {
+    const playerID = '71717171-7171-7171-7171-717171717171';
+    const opponentID = '73737373-7373-7373-7373-737373737373';
+    const duelID = '72727272-7272-7272-7272-727272727272';
+    const deadline = inSecondsISO(120);
+    let socket: WebSocketRoute | null = null;
+
+    await page.addInitScript(({ playerID, opponentID, duelID, deadline }) => {
+      window.sessionStorage.setItem('player_id', playerID);
+      window.sessionStorage.setItem('username', 'alice');
+      window.sessionStorage.setItem('currentGame', JSON.stringify({
+        duel_id: duelID,
+        deadline,
+        time_limit_seconds: 120,
+        opponent_id: opponentID,
+        opponent_username: 'bob',
+        task: {
+          id: '74747474-7474-7474-7474-747474747474',
+          title: 'Victory Result',
+          description: 'Show the reason for the completed duel.',
+          category: 'web',
+          difficulty: 'easy',
+          time_limit: 120,
+          time_limit_seconds: 120,
+        },
+      }));
+    }, { playerID, opponentID, duelID, deadline });
+
+    await page.routeWebSocket((url) => url.pathname === '/ws', (ws) => {
+      socket = ws;
+    });
+
+    await page.goto('/task');
+    await expect(page.getByRole('heading', { name: 'Victory Result' })).toBeVisible();
+    await expect.poll(() => socket !== null).toBeTruthy();
+    socket!.send(JSON.stringify({
+      type: 'duel_finished',
+      payload: {
+        duel_id: duelID,
+        winner_id: playerID,
+        winner_username: 'alice',
+        your_solved: outcome.solved,
+        opponent_solved: false,
+        duel: {
+          id: duelID,
+          player1_id: playerID,
+          player2_id: opponentID,
+          status: 'finished',
+          winner_id: playerID,
+          deadline,
+          started_at: nowISO(),
+          finished_at: nowISO(),
+        },
+      },
+    }));
+
+    await expect(page.getByRole('heading', { name: 'ПОБЕДА!' })).toBeVisible();
+    await expect(page.getByText(outcome.message, { exact: true })).toBeVisible();
+    await expect.poll(() => page.evaluate(() => {
+      return JSON.parse(window.sessionStorage.getItem('game_result') || '{}').reason;
+    })).toBe(outcome.reason);
+  });
+}
+
 test('task page sends surrender payload and waits for duel_finished result', async ({ page }) => {
   const playerID = '71717171-7171-7171-7171-717171717171';
   const sessionToken = '10000000-0000-0000-0000-000000000026';
@@ -603,6 +671,7 @@ test('task page sends surrender payload and waits for duel_finished result', asy
   await page.getByRole('button', { name: 'Сдаться' }).click();
 
   await expect(page.getByText('ПОРАЖЕНИЕ')).toBeVisible();
+  await expect(page.getByText('Вы сдались. Победа присуждена сопернику.')).toBeVisible();
   await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('player_id'))).toBeNull();
   await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('session_token'))).toBeNull();
   await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('username'))).toBeNull();

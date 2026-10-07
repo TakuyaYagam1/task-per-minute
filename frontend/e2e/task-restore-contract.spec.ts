@@ -872,6 +872,7 @@ test('stored terminal task result restores without opening websocket', async ({ 
       duel_id: duelID,
       winner_id: playerID,
       winner_username: 'alice',
+      reason: 'surrender',
     }));
   }, { playerID, sessionToken, duelID, task });
 
@@ -883,6 +884,7 @@ test('stored terminal task result restores without opening websocket', async ({ 
   await page.goto('/task');
   await expect(page.getByRole('heading', { name: 'Stored Terminal Result' })).toBeVisible();
   await expect(page.getByText('ПОБЕДА!')).toBeVisible();
+  await expect(page.getByText('Вы победили! Ваш соперник сдался.')).toBeVisible();
   await page.waitForTimeout(200);
 
   await expect.poll(() => websocketOpened).toBe(false);
