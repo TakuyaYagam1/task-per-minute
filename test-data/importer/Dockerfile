@@ -1,4 +1,4 @@
-FROM python:3.13-alpine
+FROM python:3.15-alpine
 
 RUN addgroup -g 1001 -S importer && adduser -u 1001 -S -G importer importer && \
     mkdir -p /bots /bot-control && chown 1001:1001 /bots /bot-control && chmod 0700 /bots /bot-control
