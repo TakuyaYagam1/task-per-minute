@@ -1,4 +1,4 @@
-FROM node:24.21.0-alpine3.23@sha256:9ec4a2e289874ed0d722e1772ec2de45d2801541db8612f3638b26f128c69ac2 AS builder
+FROM node:26.13.1-alpine3.23@sha256:39d8c143e60e99ae98f014bebea1e72fc96d3c9bdf9504bc3a27af5c05bfa39f AS builder
 
 WORKDIR /app
 
@@ -44,7 +44,7 @@ ENV BACKEND_URL=$BACKEND_URL
 COPY . .
 RUN npm run build
 
-FROM node:24.21.0-alpine3.23@sha256:9ec4a2e289874ed0d722e1772ec2de45d2801541db8612f3638b26f128c69ac2 AS runner
+FROM node:26.13.1-alpine3.23@sha256:39d8c143e60e99ae98f014bebea1e72fc96d3c9bdf9504bc3a27af5c05bfa39f AS runner
 WORKDIR /app
 
 ARG SOURCE_REVISION
